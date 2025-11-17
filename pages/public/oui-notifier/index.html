@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Helium DC Alerts – OUI Notifier</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 2rem; max-width: 700px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+    form { margin-top: 1rem; padding: 1.5rem; border-radius: 0.75rem; border: 1px solid #ddd; background: #fafafa; }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
+    input { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; border-radius: 0.5rem; border: 1px solid #ccc; font-size: 0.95rem; }
+    button { padding: 0.6rem 1.2rem; border-radius: 999px; border: none; cursor: pointer; background: #2563eb; color: white; font-weight: 600; }
+    button:hover { background: #1d4ed8; }
+    small { color: #555; }
+    .msg { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; }
+    .msg-ok { background: #ecfdf5; color: #064e3b; border: 1px solid #a7f3d0; }
+    .msg-err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  </style>
+</head>
+<body>
+  <h1>Helium Data Credit Alerts (OUI Notifier)</h1>
+  <p>Get email (and optional webhook) alerts when your Helium DC escrow account is projected to run out within 14, 7, or 1 day based on recent burn.</p>
+
+  <!-- The API endpoint is on the Worker at api.heliumtools.org -->
+  <form method="POST" action="https://api.heliumtools.org/oui-notifier/subscribe">
+    <label for="email">Email address</label>
+    <input id="email" name="email" type="email" required placeholder="you@example.com" />
+
+    <label for="escrow_account">Escrow token account (Solana)</label>
+    <input id="escrow_account" name="escrow_account" type="text" required placeholder="Solana base58 escrow token address" />
+
+    <label for="label">Label (optional)</label>
+    <input id="label" name="label" type="text" placeholder="e.g. Prod IoT OUI" />
+
+    <label for="webhook_url">Webhook URL (optional)</label>
+    <input id="webhook_url" name="webhook_url" type="url" placeholder="https://example.com/helium-webhook" />
+
+    <small>We store a daily balance snapshot, estimate your burn over the last 7 days, and email you when you’re about 14, 7, and 1 day from running out.</small>
+
+    <div style="margin-top: 1rem;">
+      <button type="submit">Subscribe</button>
+    </div>
+  </form>
+</body>
+</html>
