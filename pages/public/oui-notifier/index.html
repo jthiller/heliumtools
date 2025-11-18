@@ -5,17 +5,31 @@
   <title>Helium DC Alerts – OUI Notifier</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 2rem; max-width: 700px; margin: 0 auto; }
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 2rem; max-width: 760px; margin: 0 auto; background: #f8fafc; color: #0f172a; }
     h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
-    form { margin-top: 1rem; padding: 1.5rem; border-radius: 0.75rem; border: 1px solid #ddd; background: #fafafa; }
-    label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
-    input { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; border-radius: 0.5rem; border: 1px solid #ccc; font-size: 0.95rem; }
-    button { padding: 0.6rem 1.2rem; border-radius: 999px; border: none; cursor: pointer; background: #2563eb; color: white; font-weight: 600; }
+    h2 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+    p { margin: 0 0 0.75rem; color: #334155; }
+    .panel, form { margin-top: 1rem; padding: 1.25rem; border-radius: 0.75rem; background: #fff; border: 1px solid #e2e8f0; }
+    label { display: block; margin-bottom: 0.25rem; font-weight: 600; color: #0f172a; }
+    input, button { font-size: 0.95rem; }
+    input { width: 100%; padding: 0.55rem 0.6rem; margin-bottom: 0.7rem; border-radius: 0.5rem; border: 1px solid #cbd5e1; background: #fff; }
+    button { padding: 0.65rem 1.2rem; border-radius: 999px; border: none; cursor: pointer; background: #2563eb; color: #fff; font-weight: 600; }
     button:hover { background: #1d4ed8; }
-    small { color: #555; }
-    .msg { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; }
-    .msg-ok { background: #ecfdf5; color: #064e3b; border: 1px solid #a7f3d0; }
-    .msg-err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    small { color: #475569; }
+    .grid { display: grid; gap: 0.65rem; }
+    .info-row { display: flex; gap: 0.35rem; align-items: baseline; }
+    .info-label { font-weight: 600; color: #0f172a; min-width: 70px; }
+    .info-value { color: #1f2937; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    .actions { display: flex; gap: 0.75rem; align-items: center; }
+    .status { font-size: 0.9rem; color: #334155; }
+    .status.error { color: #b91c1c; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .form-actions { margin-top: 1rem; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
@@ -23,28 +37,38 @@
   <p>Get email (and optional webhook) alerts when your Helium DC escrow account is projected to run out within 14, 7, or 1 day based on recent burn.</p>
   <p><strong>Note:</strong> Data transfer halts when an escrow hits $35 (≈3,500,000 DC). Alerts and charts treat that as zero.</p>
 
-  <section style="margin-top: 1.5rem; padding: 1rem; border: 1px solid #e5e7eb; border-radius: 0.75rem; background: #fff;">
-    <h2 style="margin-top: 0; font-size: 1.1rem;">Find your escrow by OUI</h2>
-    <p style="margin-top: 0; color: #374151;">Lookup any on-chain OUI to auto-fill the escrow address and see the live DC balance.</p>
-    <div style="display: grid; gap: 0.5rem;">
+  <section class="panel">
+    <h2>Find your escrow by OUI</h2>
+    <p>Lookup any on-chain OUI to view its payer, escrow address, and live DC balance.</p>
+    <div class="grid">
       <div>
         <label for="oui_lookup">OUI</label>
         <input id="oui_lookup" type="number" name="oui_lookup" placeholder="e.g. 3" list="oui-list" form="subscribe_form" />
         <datalist id="oui-list"></datalist>
       </div>
-      <div>
-        <label for="escrow_account">Escrow token account (Solana)</label>
-        <input id="escrow_account" name="escrow_account" type="text" required placeholder="Solana base58 escrow token address" form="subscribe_form" />
+      <div class="info-row">
+        <span class="info-label">Escrow:</span>
+        <a id="escrow_display" class="info-value mono" target="_blank" rel="noreferrer noopener"></a>
       </div>
-      <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <div class="info-row">
+        <span class="info-label">Payer:</span>
+        <span id="payer_display" class="info-value mono"></span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Balance:</span>
+        <span id="balance_display" class="info-value mono"></span>
+      </div>
+      <div class="actions">
         <button type="button" id="check_balance">Check live DC balance</button>
-        <div id="balance_status" style="font-size: 0.9rem; color: #374151;"></div>
+        <div id="balance_status" class="status"></div>
       </div>
     </div>
   </section>
 
   <!-- The API endpoint is on the Worker at api.heliumtools.org -->
   <form id="subscribe_form" method="POST" action="https://api.heliumtools.org/oui-notifier/subscribe">
+    <input id="escrow_field" class="hidden" type="text" name="escrow_account" required />
+
     <label for="email">Email address</label>
     <input id="email" name="email" type="email" required placeholder="you@example.com" />
 
@@ -56,7 +80,7 @@
 
     <small>We store a daily balance snapshot, estimate your burn over the last 7 days, and email you when you’re about 14, 7, and 1 day from running out.</small>
 
-    <div style="margin-top: 1rem;">
+    <div class="form-actions">
       <button type="submit">Subscribe</button>
     </div>
   </form>
@@ -65,15 +89,19 @@
     (() => {
       const API_BASE = "https://api.heliumtools.org/oui-notifier";
       const ouiInput = document.getElementById("oui_lookup");
-      const escrowInput = document.getElementById("escrow_account");
+      const escrowDisplay = document.getElementById("escrow_display");
+      const payerDisplay = document.getElementById("payer_display");
+      const balanceDisplay = document.getElementById("balance_display");
       const statusEl = document.getElementById("balance_status");
       const checkBtn = document.getElementById("check_balance");
       const datalist = document.getElementById("oui-list");
+      const escrowField = document.getElementById("escrow_field");
+      const emailField = document.getElementById("email");
       let ouiIndex = [];
 
       function setStatus(text, isError = false) {
         statusEl.textContent = text || "";
-        statusEl.style.color = isError ? "#b91c1c" : "#374151";
+        statusEl.className = `status${isError ? " error" : ""}`;
       }
 
       function hydrateDatalist(orgs) {
@@ -81,7 +109,7 @@
         orgs.forEach((org) => {
           const opt = document.createElement("option");
           opt.value = org.oui;
-          opt.label = `OUI ${org.oui} • escrow ${org.escrow}`;
+          opt.label = `OUI ${org.oui} • payer ${org.payer || "n/a"} • escrow ${org.escrow}`;
           datalist.appendChild(opt);
         });
       }
@@ -112,27 +140,50 @@
         return res.json();
       }
 
+      function renderOrg(org) {
+        payerDisplay.textContent = org?.payer || "";
+
+        if (org?.escrow) {
+          escrowDisplay.textContent = org.escrow;
+          escrowDisplay.href = `https://solscan.io/account/${encodeURIComponent(org.escrow)}`;
+          escrowDisplay.style.visibility = "visible";
+          escrowField.value = org.escrow;
+          localStorage.setItem("ouiNotifierEscrow", org.escrow);
+        } else {
+          escrowDisplay.textContent = "";
+          escrowDisplay.removeAttribute("href");
+          escrowDisplay.style.visibility = "hidden";
+          escrowField.value = "";
+          localStorage.removeItem("ouiNotifierEscrow");
+        }
+      }
+
       async function updateBalance() {
-        const escrow = (escrowInput.value || "").trim();
         const ouiValue = (ouiInput.value || "").trim();
-        if (!escrow && !ouiValue) {
-          setStatus("Enter an escrow address or OUI number.", true);
+        if (!ouiValue) {
+          setStatus("Enter an OUI number.", true);
           return;
         }
 
+        const match = lookupOui(ouiValue);
+        renderOrg(match);
+
         setStatus("Fetching live balance…");
+        balanceDisplay.textContent = "";
         try {
-          const payload = await fetchBalance(
-            escrow ? { escrow } : { oui: ouiValue }
-          );
+          const payload = await fetchBalance({ oui: ouiValue });
           if (payload.error) throw new Error(payload.error);
+          if (payload.escrow) {
+            escrowField.value = payload.escrow;
+            escrowDisplay.textContent = payload.escrow;
+            escrowDisplay.href = `https://solscan.io/account/${encodeURIComponent(payload.escrow)}`;
+            escrowDisplay.style.visibility = "visible";
+            localStorage.setItem("ouiNotifierEscrow", payload.escrow);
+          }
           const usd = Number(payload.balance_usd || 0);
           const dc = Number(payload.balance_dc || 0);
-          setStatus(
-            `Live balance: ${dc.toLocaleString("en-US")} DC (~$${usd.toFixed(
-              2
-            )}). Zeroed at $${payload.zero_balance_usd}.`
-          );
+          balanceDisplay.textContent = `${dc.toLocaleString("en-US")} DC / $${usd.toFixed(2)}`;
+          setStatus(`Live balance retrieved for OUI ${ouiValue}.`);
         } catch (err) {
           console.error(err);
           setStatus("Could not fetch balance. Please try again.", true);
@@ -141,10 +192,12 @@
 
       ouiInput.addEventListener("change", () => {
         const match = lookupOui(ouiInput.value);
-        if (match?.escrow) {
-          escrowInput.value = match.escrow;
-          setStatus(`Escrow auto-filled for OUI ${match.oui}.`);
-          updateBalance();
+        renderOrg(match);
+        if (match?.oui) {
+          setStatus(`Loaded details for OUI ${match.oui}.`);
+        } else {
+          setStatus("");
+          balanceDisplay.textContent = "";
         }
       });
 
@@ -153,7 +206,24 @@
         updateBalance();
       });
 
+      emailField.addEventListener("input", (ev) => {
+        localStorage.setItem("ouiNotifierEmail", ev.target.value || "");
+      });
+
+      function loadSavedFields() {
+        const savedEmail = localStorage.getItem("ouiNotifierEmail");
+        const savedEscrow = localStorage.getItem("ouiNotifierEscrow");
+        if (savedEmail) emailField.value = savedEmail;
+        if (savedEscrow) {
+          escrowField.value = savedEscrow;
+          escrowDisplay.textContent = savedEscrow;
+          escrowDisplay.href = `https://solscan.io/account/${encodeURIComponent(savedEscrow)}`;
+          escrowDisplay.style.visibility = "visible";
+        }
+      }
+
       loadOuis();
+      loadSavedFields();
     })();
   </script>
 </body>
