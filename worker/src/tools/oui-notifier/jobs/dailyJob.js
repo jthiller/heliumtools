@@ -149,7 +149,8 @@ export async function runDailyJob(env) {
         continue;
       }
 
-      const subject = `[${env.APP_NAME || "Helium DC Alerts"}] ~${threshold} days of DC remaining`;
+      const appName = env.APP_NAME || "Helium DC Alerts";
+      const subject = `[${appName}] ~${threshold} days of DC remaining`;
       const labelText = label ? ` (${label})` : "";
       const usd = balanceDC * DC_TO_USD_RATE;
 
@@ -166,6 +167,20 @@ ${env.APP_BASE_URL || ""}
 
 (If you topped up your DC balance significantly, alerts will reset on the next run.)`;
 
+      const htmlBody = `<p>Helium DC alert for escrow account <strong>${escrow}</strong>${labelText}.</p>
+<ul>
+  <li><strong>Current balance:</strong> ${balanceDC.toLocaleString("en-US")} DC (~$${usd.toFixed(
+        2
+      )})</li>
+  <li><strong>Average daily burn (last ${BURN_LOOKBACK_DAYS} days):</strong> ${avgBurn.toFixed(2)} DC/day</li>
+  <li><strong>Estimated days remaining:</strong> ${daysRemaining.toFixed(1)} days</li>
+</ul>
+<p>This crossed the <strong>${threshold}-day</strong> threshold.</p>
+<p>You can review or change your subscription by visiting <a href="${
+        env.APP_BASE_URL || ""
+      }">${env.APP_BASE_URL || "Manage your alert"}</a>.</p>
+<p>If you topped up your DC balance significantly, alerts will reset on the next run.</p>`;
+
       const payloadForWebhook = {
         wallet: null,
         escrowAccount: escrow,
@@ -181,12 +196,16 @@ ${env.APP_BASE_URL || ""}
       let anySuccess = false;
 
       try {
-        const emailOk = await sendEmail(env, {
+        const { ok: emailOk, id: emailId } = await sendEmail(env, {
           to: email,
           subject,
           text: textBody,
+          html: htmlBody,
         });
         if (emailOk) anySuccess = true;
+        if (emailId) {
+          console.log(`Email sent for subscription ${subId} (resend id=${emailId})`);
+        }
         else console.error(`Email sending failed for subscription ${subId}`);
       } catch (e) {
         console.error(`Error sending email for subscription ${subId}`, e);

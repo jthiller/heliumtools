@@ -167,16 +167,17 @@ async function handleSubscribe(request, env) {
     }
 
     if (!user || !user.verified) {
+      const appName = env.APP_NAME || "Helium DC Alerts";
       const verifyUrl = `${env.APP_BASE_URL || ""}/verify?token=${encodeURIComponent(
         verifyToken
       )}&email=${encodeURIComponent(email)}`;
 
-      const sent = await sendEmail(env, {
+      const { ok: sent } = await sendEmail(env, {
         to: email,
-        subject: `[${env.APP_NAME || "Helium DC Alerts"}] Verify your email`,
+        subject: `[${appName}] Verify your email`,
         text: `Hi,
 
-Please verify your email address for ${env.APP_NAME || "Helium DC Alerts"} by clicking this link:
+Please verify your email address for ${appName} by clicking this link:
 
 ${verifyUrl}
 
@@ -185,6 +186,12 @@ This link will expire in 24 hours.
 If you did not request this, you can ignore this message.
 
 Thanks!`,
+        html: `<p>Hi,</p>
+<p>Please verify your email address for <strong>${appName}</strong> by clicking the link below:</p>
+<p><a href="${verifyUrl}">Verify email</a></p>
+<p>This link will expire in 24 hours.</p>
+<p>If you did not request this, you can ignore this message.</p>
+<p>Thanks!</p>`,
       });
 
       if (!sent) {
