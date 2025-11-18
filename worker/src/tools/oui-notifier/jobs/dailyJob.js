@@ -1,8 +1,13 @@
-import { BURN_LOOKBACK_DAYS, DC_TO_USD_RATE } from "../config.js";
+import { BURN_LOOKBACK_DAYS, DC_TO_USD_RATE, ZERO_BALANCE_DC } from "../config.js";
 import { computeAvgDailyBurn, pickThreshold } from "../utils.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
 import { sendEmail } from "../services/email.js";
 import { sendWebhook } from "../services/webhook.js";
+import {
+  fetchAllOuisFromApi,
+  recordOuiBalance,
+  upsertOuis,
+} from "../services/ouis.js";
 
 export async function runDailyJob(env) {
   console.log("Starting daily DC alert job (oui-notifier)");
@@ -23,13 +28,39 @@ export async function runDailyJob(env) {
        WHERE u.verified = 1`
     ).all();
 
+    const today = new Date();
+    const todayDate = today.toISOString().slice(0, 10);
+
+    // Step 1: sync all OUIs and record balances for everyone (whether subscribed or not).
+    const escrowBalanceCache = new Map();
+    try {
+      const orgs = await fetchAllOuisFromApi();
+      const syncedAt = new Date().toISOString();
+      await upsertOuis(env, orgs, syncedAt);
+
+      for (const org of orgs) {
+        if (!org.escrow) continue;
+        if (escrowBalanceCache.has(org.escrow)) continue;
+
+        try {
+          const balanceDC = await fetchEscrowBalanceDC(env, org.escrow);
+          const entry = { oui: org.oui, balanceDC };
+          escrowBalanceCache.set(org.escrow, entry);
+          await recordOuiBalance(env, org, balanceDC, todayDate, syncedAt);
+        } catch (err) {
+          console.error(`Unable to fetch/store balance for OUI ${org.oui} (${org.escrow})`, err);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to sync OUIs; continuing with subscriptions.", err);
+    }
+
     if (!subs || subs.length === 0) {
       console.log("No verified subscriptions found; job complete.");
       return;
     }
 
-    const today = new Date();
-    const todayDate = today.toISOString().slice(0, 10);
+    // Step 2: run subscription alerts, reusing cached balances when possible.
 
     for (const sub of subs) {
       const subId = sub.id;
@@ -44,7 +75,13 @@ export async function runDailyJob(env) {
 
       let balanceDC;
       try {
-        balanceDC = await fetchEscrowBalanceDC(env, escrow);
+        const cached = escrowBalanceCache.get(escrow);
+        if (cached && Number.isFinite(cached.balanceDC)) {
+          balanceDC = cached.balanceDC;
+        } else {
+          balanceDC = await fetchEscrowBalanceDC(env, escrow);
+          escrowBalanceCache.set(escrow, { balanceDC, oui: cached?.oui ?? null });
+        }
       } catch (rpcErr) {
         console.error(`Failed to fetch balance for ${escrow}`, rpcErr);
         continue;
@@ -90,13 +127,14 @@ export async function runDailyJob(env) {
           "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
         )
           .bind(balanceDC, subId)
-          .run();
+        .run();
         continue;
       }
 
-      const daysRemaining = balanceDC / avgBurn;
+      const effectiveBalance = Math.max(balanceDC - ZERO_BALANCE_DC, 0);
+      const daysRemaining = effectiveBalance / avgBurn;
       console.log(
-        `Subscription ${subId}: balance=${balanceDC}, avgBurn=${avgBurn.toFixed(
+        `Subscription ${subId}: balance=${balanceDC} (effective ${effectiveBalance}), avgBurn=${avgBurn.toFixed(
           2
         )}, daysRemaining=${daysRemaining.toFixed(2)}`
       );

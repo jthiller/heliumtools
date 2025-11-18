@@ -1,3 +1,4 @@
+# Default (dev) deployment. Use `wrangler deploy` for dev and `wrangler deploy --env production` for prod.
 name = "heliumtools"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
@@ -10,8 +11,29 @@ APP_NAME = "Helium DC Alerts"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "helium_dc_alerts"
+database_name = "heliumtools-dev"
 database_id = "ee41a4ee-4152-4f57-b999-5ae75b01597c" 
+
+[env.production]
+name = "heliumtools-prod"
+# Configure production vars here. If you want to reuse dev values, delete overrides below.
+[env.production.vars]
+SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+FROM_EMAIL = "no-reply@alerts.heliumtools.org"
+APP_BASE_URL = "https://heliumtools.org/oui-notifier"
+APP_NAME = "Helium DC Alerts"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "heliumtools-prod" # replace with your production D1 name
+database_id = "<replace-with-production-d1-id>" # production DB; keep dev above for local/staging
 
 [triggers]
 crons = ["0 8 * * *"]
+
+[observability]
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true

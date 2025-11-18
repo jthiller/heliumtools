@@ -21,14 +21,32 @@
 <body>
   <h1>Helium Data Credit Alerts (OUI Notifier)</h1>
   <p>Get email (and optional webhook) alerts when your Helium DC escrow account is projected to run out within 14, 7, or 1 day based on recent burn.</p>
+  <p><strong>Note:</strong> Data transfer halts when an escrow hits $35 (≈3,500,000 DC). Alerts and charts treat that as zero.</p>
+
+  <section style="margin-top: 1.5rem; padding: 1rem; border: 1px solid #e5e7eb; border-radius: 0.75rem; background: #fff;">
+    <h2 style="margin-top: 0; font-size: 1.1rem;">Find your escrow by OUI</h2>
+    <p style="margin-top: 0; color: #374151;">Lookup any on-chain OUI to auto-fill the escrow address and see the live DC balance.</p>
+    <div style="display: grid; gap: 0.5rem;">
+      <div>
+        <label for="oui_lookup">OUI</label>
+        <input id="oui_lookup" type="number" name="oui_lookup" placeholder="e.g. 3" list="oui-list" form="subscribe_form" />
+        <datalist id="oui-list"></datalist>
+      </div>
+      <div>
+        <label for="escrow_account">Escrow token account (Solana)</label>
+        <input id="escrow_account" name="escrow_account" type="text" required placeholder="Solana base58 escrow token address" form="subscribe_form" />
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button type="button" id="check_balance">Check live DC balance</button>
+        <div id="balance_status" style="font-size: 0.9rem; color: #374151;"></div>
+      </div>
+    </div>
+  </section>
 
   <!-- The API endpoint is on the Worker at api.heliumtools.org -->
-  <form method="POST" action="https://api.heliumtools.org/oui-notifier/subscribe">
+  <form id="subscribe_form" method="POST" action="https://api.heliumtools.org/oui-notifier/subscribe">
     <label for="email">Email address</label>
     <input id="email" name="email" type="email" required placeholder="you@example.com" />
-
-    <label for="escrow_account">Escrow token account (Solana)</label>
-    <input id="escrow_account" name="escrow_account" type="text" required placeholder="Solana base58 escrow token address" />
 
     <label for="label">Label (optional)</label>
     <input id="label" name="label" type="text" placeholder="e.g. Prod IoT OUI" />
@@ -42,5 +60,101 @@
       <button type="submit">Subscribe</button>
     </div>
   </form>
+
+  <script>
+    (() => {
+      const API_BASE = "https://api.heliumtools.org/oui-notifier";
+      const ouiInput = document.getElementById("oui_lookup");
+      const escrowInput = document.getElementById("escrow_account");
+      const statusEl = document.getElementById("balance_status");
+      const checkBtn = document.getElementById("check_balance");
+      const datalist = document.getElementById("oui-list");
+      let ouiIndex = [];
+
+      function setStatus(text, isError = false) {
+        statusEl.textContent = text || "";
+        statusEl.style.color = isError ? "#b91c1c" : "#374151";
+      }
+
+      function hydrateDatalist(orgs) {
+        datalist.innerHTML = "";
+        orgs.forEach((org) => {
+          const opt = document.createElement("option");
+          opt.value = org.oui;
+          opt.label = `OUI ${org.oui} • escrow ${org.escrow}`;
+          datalist.appendChild(opt);
+        });
+      }
+
+      function lookupOui(ouiNum) {
+        const numericOui = Number(ouiNum);
+        if (!Number.isInteger(numericOui)) return null;
+        return ouiIndex.find((o) => o.oui === numericOui);
+      }
+
+      async function loadOuis() {
+        try {
+          const res = await fetch(`${API_BASE}/ouis`);
+          if (!res.ok) throw new Error("failed to fetch OUIs");
+          const data = await res.json();
+          ouiIndex = Array.isArray(data.orgs) ? data.orgs : [];
+          hydrateDatalist(ouiIndex);
+        } catch (err) {
+          console.error("Unable to load OUIs", err);
+          setStatus("Unable to load OUI list right now.", true);
+        }
+      }
+
+      async function fetchBalance(params) {
+        const query = new URLSearchParams(params);
+        const res = await fetch(`${API_BASE}/balance?${query.toString()}`);
+        if (!res.ok) throw new Error("failed to fetch balance");
+        return res.json();
+      }
+
+      async function updateBalance() {
+        const escrow = (escrowInput.value || "").trim();
+        const ouiValue = (ouiInput.value || "").trim();
+        if (!escrow && !ouiValue) {
+          setStatus("Enter an escrow address or OUI number.", true);
+          return;
+        }
+
+        setStatus("Fetching live balance…");
+        try {
+          const payload = await fetchBalance(
+            escrow ? { escrow } : { oui: ouiValue }
+          );
+          if (payload.error) throw new Error(payload.error);
+          const usd = Number(payload.balance_usd || 0);
+          const dc = Number(payload.balance_dc || 0);
+          setStatus(
+            `Live balance: ${dc.toLocaleString("en-US")} DC (~$${usd.toFixed(
+              2
+            )}). Zeroed at $${payload.zero_balance_usd}.`
+          );
+        } catch (err) {
+          console.error(err);
+          setStatus("Could not fetch balance. Please try again.", true);
+        }
+      }
+
+      ouiInput.addEventListener("change", () => {
+        const match = lookupOui(ouiInput.value);
+        if (match?.escrow) {
+          escrowInput.value = match.escrow;
+          setStatus(`Escrow auto-filled for OUI ${match.oui}.`);
+          updateBalance();
+        }
+      });
+
+      checkBtn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        updateBalance();
+      });
+
+      loadOuis();
+    })();
+  </script>
 </body>
 </html>

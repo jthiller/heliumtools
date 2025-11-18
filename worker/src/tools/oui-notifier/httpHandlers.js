@@ -1,9 +1,25 @@
 import { isValidEmail, isLikelyBase58 } from "./utils.js";
 import { sendEmail } from "./services/email.js";
+import { fetchEscrowBalanceDC } from "./services/solana.js";
+import { getOuiBalanceSeries, getOuiByNumber, listOuis } from "./services/ouis.js";
+import { DC_TO_USD_RATE, ZERO_BALANCE_DC, ZERO_BALANCE_USD } from "./config.js";
+
+const jsonHeaders = {
+  "content-type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+};
+
+const okResponse = (body, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const pathname = url.pathname;
+
+  if (request.method === "OPTIONS") {
+    return new Response("", { status: 204, headers: jsonHeaders });
+  }
 
   if (request.method === "POST" && pathname === "/subscribe") {
     return handleSubscribe(request, env);
@@ -18,6 +34,18 @@ export async function handleRequest(request, env, ctx) {
       status: 200,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  if (request.method === "GET" && pathname === "/ouis") {
+    return handleListOuis(env);
+  }
+
+  if (request.method === "GET" && pathname === "/balance") {
+    return handleBalance(url, env);
+  }
+
+  if (request.method === "GET" && pathname === "/timeseries") {
+    return handleTimeseries(url, env);
   }
 
   return new Response("Not found (oui-notifier)", { status: 404 });
@@ -201,5 +229,108 @@ async function handleVerify(request, env) {
   } catch (err) {
     console.error("Error in /verify", err);
     return new Response("Error while verifying your email.", { status: 500 });
+  }
+}
+
+async function handleListOuis(env) {
+  try {
+    const orgs = await listOuis(env);
+    const parsed = orgs.map((org) => {
+      let delegateKeys = [];
+      try {
+        delegateKeys = org.delegate_keys ? JSON.parse(org.delegate_keys) : [];
+      } catch {
+        delegateKeys = [];
+      }
+      return {
+        oui: org.oui,
+        owner: org.owner,
+        payer: org.payer,
+        escrow: org.escrow,
+        locked: Boolean(org.locked),
+        delegate_keys: delegateKeys,
+        last_synced_at: org.last_synced_at,
+      };
+    });
+    return okResponse({ orgs: parsed });
+  } catch (err) {
+    console.error("Error in /ouis", err);
+    return okResponse({ error: "Unable to load OUIs" }, 500);
+  }
+}
+
+async function handleBalance(url, env) {
+  const ouiParam = url.searchParams.get("oui");
+  const escrowParam = url.searchParams.get("escrow");
+  try {
+    let targetEscrow = escrowParam;
+    let oui = ouiParam ? Number(ouiParam) : null;
+    let org = null;
+
+    if (ouiParam && (!Number.isInteger(oui) || oui < 0)) {
+      return okResponse({ error: "Invalid OUI" }, 400);
+    }
+
+    if (!targetEscrow && Number.isInteger(oui)) {
+      org = await getOuiByNumber(env, oui);
+      if (!org) {
+        return okResponse({ error: "OUI not found" }, 404);
+      }
+      targetEscrow = org.escrow;
+    }
+
+    if (!targetEscrow) {
+      return okResponse({ error: "escrow or oui is required" }, 400);
+    }
+
+    const balanceDC = await fetchEscrowBalanceDC(env, targetEscrow);
+    const balanceUSD = balanceDC * DC_TO_USD_RATE;
+    return okResponse({
+      oui,
+      escrow: targetEscrow,
+      balance_dc: balanceDC,
+      balance_usd: balanceUSD,
+      zero_balance_dc: ZERO_BALANCE_DC,
+      zero_balance_usd: ZERO_BALANCE_USD,
+    });
+  } catch (err) {
+    console.error("Error in /balance", err);
+    return okResponse({ error: "Unable to fetch balance" }, 500);
+  }
+}
+
+async function handleTimeseries(url, env) {
+  const ouiParam = url.searchParams.get("oui");
+  const daysParam = url.searchParams.get("days");
+  const oui = Number(ouiParam);
+  const days = daysParam ? Number(daysParam) : 30;
+
+  if (!Number.isInteger(oui)) {
+    return okResponse({ error: "Invalid OUI" }, 400);
+  }
+  if (!Number.isFinite(days) || days <= 0) {
+    return okResponse({ error: "Invalid days" }, 400);
+  }
+
+  try {
+    const org = await getOuiByNumber(env, oui);
+    if (!org) {
+      return okResponse({ error: "OUI not found" }, 404);
+    }
+
+    const series = await getOuiBalanceSeries(env, oui, days);
+    return okResponse({
+      oui,
+      escrow: org.escrow,
+      days,
+      points: series.map((row) => ({
+        date: row.date,
+        balance_dc: row.balance_dc,
+        fetched_at: row.fetched_at,
+      })),
+    });
+  } catch (err) {
+    console.error("Error in /timeseries", err);
+    return okResponse({ error: "Unable to fetch timeseries" }, 500);
   }
 }

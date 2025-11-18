@@ -28,3 +28,29 @@ CREATE TABLE IF NOT EXISTS balances (
   UNIQUE (subscription_id, date),
   FOREIGN KEY (subscription_id) REFERENCES subscriptions(id)
 );
+
+-- Catalog of all OUIs observed on the network.
+CREATE TABLE IF NOT EXISTS ouis (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  oui INTEGER NOT NULL UNIQUE,
+  owner TEXT,
+  payer TEXT,
+  escrow TEXT,
+  delegate_keys TEXT,
+  locked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  last_synced_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ouis_escrow ON ouis (escrow);
+
+-- Daily DC balance snapshots for every OUI (used for charts regardless of subscription).
+CREATE TABLE IF NOT EXISTS oui_balances (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  oui INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  balance_dc REAL NOT NULL,
+  fetched_at TEXT NOT NULL,
+  UNIQUE (oui, date),
+  FOREIGN KEY (oui) REFERENCES ouis(oui)
+);

@@ -10,9 +10,7 @@ export default {
       const pathname = url.pathname;
 
       // Route oui-notifier endpoints
-      if (pathname === "/oui-notifier/subscribe" ||
-          pathname === "/oui-notifier/verify" ||
-          pathname === "/oui-notifier/health") {
+      if (pathname.startsWith("/oui-notifier/")) {
         const subUrl = new URL(request.url);
         subUrl.pathname = pathname.replace(/^\/oui-notifier/, "") || "/";
         const subRequest = new Request(subUrl.toString(), request);
