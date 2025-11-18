@@ -28,6 +28,37 @@ export async function fetchAllOuisFromApi() {
     .filter((org) => Number.isInteger(org.oui) && org.escrow);
 }
 
+export async function ensureOuiTables(env) {
+  // Creates OUI tables if not present to avoid 500s on first run.
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS ouis (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      oui INTEGER NOT NULL UNIQUE,
+      owner TEXT,
+      payer TEXT,
+      escrow TEXT,
+      delegate_keys TEXT,
+      locked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ouis_escrow ON ouis (escrow);`,
+    `CREATE TABLE IF NOT EXISTS oui_balances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      oui INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      balance_dc REAL NOT NULL,
+      fetched_at TEXT NOT NULL,
+      UNIQUE (oui, date),
+      FOREIGN KEY (oui) REFERENCES ouis(oui)
+    );`,
+  ];
+
+  for (const sql of statements) {
+    await env.DB.prepare(sql).run();
+  }
+}
+
 export async function upsertOuis(env, orgs, syncedAtIso) {
   if (!orgs?.length) return;
   const createdAtIso = syncedAtIso;
@@ -84,6 +115,15 @@ export async function getOuiByNumber(env, oui) {
      FROM ouis WHERE oui = ?`
   )
     .bind(oui)
+    .first();
+}
+
+export async function getOuiByEscrow(env, escrow) {
+  return env.DB.prepare(
+    `SELECT oui, owner, payer, escrow, delegate_keys, locked, last_synced_at
+     FROM ouis WHERE escrow = ?`
+  )
+    .bind(escrow)
     .first();
 }
 

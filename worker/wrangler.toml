@@ -1,39 +1,60 @@
-# Default (dev) deployment. Use `wrangler deploy` for dev and `wrangler deploy --env production` for prod.
+# Default (dev) deployment.
+# Use `wrangler deploy` for dev and `wrangler deploy --env production` for prod.
+
 name = "heliumtools"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
+workers_dev = false
+
+# ---------- Dev (default env) ----------
 
 [vars]
-SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
-FROM_EMAIL = "no-reply@alerts.heliumtools.org"
+FROM_EMAIL   = "no-reply-dev@alerts.heliumtools.org"
 APP_BASE_URL = "https://heliumtools.org/oui-notifier"
-APP_NAME = "Helium DC Alerts"
+APP_NAME     = "Helium DC Alerts"
+# RESEND_API_KEY is required for outbound email; set via `wrangler secret put RESEND_API_KEY`.
+
+# Dev can use a plain RPC URL; prod will use a secret
+# SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 [[d1_databases]]
-binding = "DB"
+binding       = "DB-dev"
 database_name = "heliumtools-dev"
-database_id = "ee41a4ee-4152-4f57-b999-5ae75b01597c" 
+database_id   = "ee41a4ee-4152-4f57-b999-5ae75b01597c"
+routes = [
+  { pattern = "api-dev.heliumtools.org", custom_domain = true }
+]
+
+# ---------- Production env ----------
 
 [env.production]
 name = "heliumtools-prod"
-# Configure production vars here. If you want to reuse dev values, delete overrides below.
+
 [env.production.vars]
-SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
-FROM_EMAIL = "no-reply@alerts.heliumtools.org"
+FROM_EMAIL   = "no-reply@heliumtools.org"
 APP_BASE_URL = "https://heliumtools.org/oui-notifier"
-APP_NAME = "Helium DC Alerts"
+APP_NAME     = "Helium DC Alerts"
+# RESEND_API_KEY is required for outbound email; set via `wrangler secret put RESEND_API_KEY`.
+# NOTE: No SOLANA_RPC_URL here – it's provided as a secret.
 
 [[env.production.d1_databases]]
-binding = "DB"
+binding       = "DB"
 database_name = "heliumtools-prod"
-database_id = "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
+database_id   = "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
+
+# Prod custom domain: api.heliumtools.org
+routes = [
+  { pattern = "api.heliumtools.org", custom_domain = true }
+]
+
+# ---------- Cron + logs ----------
 
 [triggers]
 crons = ["0 8 * * *"]
 
 [observability]
 [observability.logs]
-enabled = true
+enabled           = true
 head_sampling_rate = 1
-invocation_logs = true
-persist = true
+invocation_logs   = true
+persist           = true

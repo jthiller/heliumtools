@@ -1,8 +1,22 @@
 import { isValidEmail, isLikelyBase58 } from "./utils.js";
 import { sendEmail } from "./services/email.js";
 import { fetchEscrowBalanceDC } from "./services/solana.js";
-import { getOuiBalanceSeries, getOuiByNumber, listOuis } from "./services/ouis.js";
-import { DC_TO_USD_RATE, ZERO_BALANCE_DC, ZERO_BALANCE_USD } from "./config.js";
+import {
+  fetchAllOuisFromApi,
+  getOuiBalanceSeries,
+  getOuiByNumber,
+  getOuiByEscrow,
+  listOuis,
+  upsertOuis,
+  ensureOuiTables,
+  recordOuiBalance,
+} from "./services/ouis.js";
+import {
+  DC_TO_USD_RATE,
+  ZERO_BALANCE_DC,
+  ZERO_BALANCE_USD,
+  MAX_BALANCE_FETCH_PER_UPDATE,
+} from "./config.js";
 
 const jsonHeaders = {
   "content-type": "application/json",
@@ -46,6 +60,12 @@ export async function handleRequest(request, env, ctx) {
 
   if (request.method === "GET" && pathname === "/timeseries") {
     return handleTimeseries(url, env);
+  }
+
+  if (request.method === "POST" && pathname.startsWith("/update-ouis")) {
+    const match = pathname.match(/^\/update-ouis\/(\d+)\/?$/);
+    const targetOui = match ? Number(match[1]) : null;
+    return handleUpdateOuis(env, targetOui);
   }
 
   return new Response("Not found (oui-notifier)", { status: 404 });
@@ -192,6 +212,7 @@ async function handleVerify(request, env) {
     const url = new URL(request.url);
     const token = url.searchParams.get("token") || "";
     const email = (url.searchParams.get("email") || "").toLowerCase().trim();
+    const redirectParam = url.searchParams.get("redirect");
 
     if (!token || !email) {
       return new Response("Missing verification token or email.", { status: 400 });
@@ -218,14 +239,27 @@ async function handleVerify(request, env) {
       }
     }
 
+    let redirectBase = env.APP_BASE_URL || "https://heliumtools.org/oui-notifier";
+    if (redirectParam) {
+      try {
+        const candidate = new URL(redirectParam);
+        if (candidate.protocol === "http:" || candidate.protocol === "https:") {
+          redirectBase = candidate.toString();
+        }
+      } catch {
+        // ignore bad redirect params
+      }
+    }
+
     await env.DB.prepare(
       "UPDATE users SET verified = 1, verify_token = NULL, verify_expires_at = NULL WHERE id = ?"
     )
       .bind(user.id)
       .run();
 
-    const redirectUrl = `${env.APP_BASE_URL || "https://heliumtools.org/oui-notifier"}?verified=1`;
-    return Response.redirect(redirectUrl, 302);
+    const redirectUrl = new URL(redirectBase);
+    redirectUrl.searchParams.set("verified", "1");
+    return Response.redirect(redirectUrl.toString(), 302);
   } catch (err) {
     console.error("Error in /verify", err);
     return new Response("Error while verifying your email.", { status: 500 });
@@ -283,6 +317,16 @@ async function handleBalance(url, env) {
       return okResponse({ error: "escrow or oui is required" }, 400);
     }
 
+    if (!org) {
+      const byEscrow = await getOuiByEscrow(env, targetEscrow);
+      if (byEscrow) {
+        org = byEscrow;
+        if (oui == null) {
+          oui = byEscrow.oui;
+        }
+      }
+    }
+
     const balanceDC = await fetchEscrowBalanceDC(env, targetEscrow);
     const balanceUSD = balanceDC * DC_TO_USD_RATE;
     return okResponse({
@@ -332,5 +376,92 @@ async function handleTimeseries(url, env) {
   } catch (err) {
     console.error("Error in /timeseries", err);
     return okResponse({ error: "Unable to fetch timeseries" }, 500);
+  }
+}
+
+async function handleUpdateOuis(env, targetOui) {
+  const startedAt = new Date().toISOString();
+  const todayDate = new Date().toISOString().slice(0, 10);
+  try {
+    await ensureOuiTables(env);
+
+    // If a specific OUI is requested, refresh just that one (metadata + balance).
+    if (targetOui != null) {
+      if (!Number.isInteger(targetOui) || targetOui < 0) {
+        return okResponse({ error: "Invalid OUI" }, 400);
+      }
+
+      let org = await getOuiByNumber(env, targetOui);
+      if (!org) {
+        const all = await fetchAllOuisFromApi();
+        org = all.find((o) => o.oui === targetOui);
+        if (!org) {
+          return okResponse({ error: "OUI not found" }, 404);
+        }
+        await upsertOuis(env, [org], startedAt);
+      }
+
+      if (!org.escrow) {
+        return okResponse({ error: "OUI missing escrow" }, 400);
+      }
+
+      try {
+        const balanceDC = await fetchEscrowBalanceDC(env, org.escrow);
+        await recordOuiBalance(env, org, balanceDC, todayDate, startedAt);
+        return okResponse({
+          ok: true,
+          updated: true,
+          oui: targetOui,
+          escrow: org.escrow,
+          balance_dc: balanceDC,
+          updated_at: startedAt,
+        });
+      } catch (err) {
+        console.error(`Failed to fetch/store balance for OUI ${targetOui} (${org.escrow})`, err);
+        return okResponse({ error: "Unable to update balance for OUI" }, 500);
+      }
+    }
+
+    const existing = await listOuis(env);
+    const existingSet = new Set((existing || []).map((o) => o.oui));
+
+    const orgs = await fetchAllOuisFromApi();
+    const newOrgs = orgs.filter((o) => !existingSet.has(o.oui));
+    const newCount = newOrgs.length;
+
+    await upsertOuis(env, orgs, startedAt);
+
+    // Immediately capture balances for freshly synced OUIs (limited to avoid subrequest caps).
+    const escrowCache = new Set();
+    let balanceFetched = 0;
+    let balanceSkipped = 0;
+    const balanceTargets = newOrgs.slice(0, MAX_BALANCE_FETCH_PER_UPDATE);
+
+    for (const org of balanceTargets) {
+      if (!org.escrow || escrowCache.has(org.escrow)) {
+        balanceSkipped++;
+        continue;
+      }
+      escrowCache.add(org.escrow);
+      try {
+        const balanceDC = await fetchEscrowBalanceDC(env, org.escrow);
+        await recordOuiBalance(env, org, balanceDC, todayDate, startedAt);
+        balanceFetched++;
+      } catch (err) {
+        console.error(`Failed to fetch/store balance for OUI ${org.oui} (${org.escrow})`, err);
+      }
+    }
+
+    return okResponse({
+      ok: true,
+      fetched: orgs.length,
+      new: newCount,
+      balances_recorded: balanceFetched,
+      balances_skipped: balanceSkipped + Math.max(0, newOrgs.length - balanceTargets.length),
+      updated_at: startedAt,
+    });
+  } catch (err) {
+    console.error("Error in /update-ouis", err);
+    return okResponse({ error: "Unable to update OUI index" }, 500);
   }
 }
