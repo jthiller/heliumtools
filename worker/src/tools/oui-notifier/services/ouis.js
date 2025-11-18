@@ -1,4 +1,4 @@
-import { OUI_API_URL } from "../config.js";
+import { OUI_API_URL, BALANCE_HISTORY_DAYS } from "../config.js";
 import { safeText } from "../utils.js";
 
 async function fetchJson(url) {
@@ -56,6 +56,19 @@ export async function ensureOuiTables(env) {
 
   for (const sql of statements) {
     await env.DB.prepare(sql).run();
+  }
+}
+
+export async function pruneOuiBalanceHistory(env, keepDays = BALANCE_HISTORY_DAYS) {
+  if (!Number.isFinite(keepDays) || keepDays <= 0) return;
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - keepDays);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+
+  try {
+    await env.DB.prepare("DELETE FROM oui_balances WHERE date < ?").bind(cutoffDate).run();
+  } catch (err) {
+    console.error("Failed to prune oui_balances history", err);
   }
 }
 
@@ -137,6 +150,7 @@ export async function listOuis(env) {
 }
 
 export async function getOuiBalanceSeries(env, oui, days = 30) {
+  await ensureOuiTables(env);
   const { results } = await env.DB.prepare(
     `SELECT date, balance_dc, fetched_at
      FROM oui_balances

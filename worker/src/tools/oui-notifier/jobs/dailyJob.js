@@ -1,10 +1,17 @@
-import { BURN_LOOKBACK_DAYS, DC_TO_USD_RATE, ZERO_BALANCE_DC } from "../config.js";
+import {
+  BURN_LOOKBACK_DAYS,
+  DC_TO_USD_RATE,
+  ZERO_BALANCE_DC,
+  BALANCE_HISTORY_DAYS,
+} from "../config.js";
 import { computeAvgDailyBurn, pickThreshold } from "../utils.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
 import { sendEmail } from "../services/email.js";
 import { sendWebhook } from "../services/webhook.js";
 import {
   fetchAllOuisFromApi,
+  ensureOuiTables,
+  pruneOuiBalanceHistory,
   recordOuiBalance,
   upsertOuis,
 } from "../services/ouis.js";
@@ -13,6 +20,8 @@ export async function runDailyJob(env) {
   console.log("Starting daily DC alert job (oui-notifier)");
 
   try {
+    await ensureOuiTables(env);
+
     const { results: subs } = await env.DB.prepare(
       `SELECT
          s.id,
@@ -227,7 +236,22 @@ ${env.APP_BASE_URL || ""}
     }
 
     console.log("Daily DC alert job complete (oui-notifier).");
+    await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
+    await pruneSubscriptionBalanceHistory(env, BALANCE_HISTORY_DAYS);
   } catch (err) {
     console.error("Fatal error in daily job (oui-notifier)", err);
+  }
+}
+
+async function pruneSubscriptionBalanceHistory(env, keepDays = BALANCE_HISTORY_DAYS) {
+  if (!Number.isFinite(keepDays) || keepDays <= 0) return;
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - keepDays);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+
+  try {
+    await env.DB.prepare("DELETE FROM balances WHERE date < ?").bind(cutoffDate).run();
+  } catch (err) {
+    console.error("Failed to prune balances history", err);
   }
 }

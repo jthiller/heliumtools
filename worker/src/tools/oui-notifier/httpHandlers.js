@@ -10,12 +10,14 @@ import {
   upsertOuis,
   ensureOuiTables,
   recordOuiBalance,
+  pruneOuiBalanceHistory,
 } from "./services/ouis.js";
 import {
   DC_TO_USD_RATE,
   ZERO_BALANCE_DC,
   ZERO_BALANCE_USD,
   MAX_BALANCE_FETCH_PER_UPDATE,
+  BALANCE_HISTORY_DAYS,
 } from "./config.js";
 
 const jsonHeaders = {
@@ -297,6 +299,7 @@ async function handleBalance(url, env) {
   const ouiParam = url.searchParams.get("oui");
   const escrowParam = url.searchParams.get("escrow");
   try {
+    await ensureOuiTables(env);
     let targetEscrow = escrowParam;
     let oui = ouiParam ? Number(ouiParam) : null;
     let org = null;
@@ -329,6 +332,17 @@ async function handleBalance(url, env) {
 
     const balanceDC = await fetchEscrowBalanceDC(env, targetEscrow);
     const balanceUSD = balanceDC * DC_TO_USD_RATE;
+
+    if (org?.oui) {
+      const todayDate = new Date().toISOString().slice(0, 10);
+      const fetchedAt = new Date().toISOString();
+      await recordOuiBalance(env, org, balanceDC, todayDate, fetchedAt);
+      await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
+    }
+
+    const series =
+      org?.oui != null ? await getOuiBalanceSeries(env, org.oui, BALANCE_HISTORY_DAYS) : [];
+
     return okResponse({
       oui,
       escrow: targetEscrow,
@@ -336,6 +350,11 @@ async function handleBalance(url, env) {
       balance_usd: balanceUSD,
       zero_balance_dc: ZERO_BALANCE_DC,
       zero_balance_usd: ZERO_BALANCE_USD,
+      timeseries: series.map((row) => ({
+        date: row.date,
+        balance_dc: row.balance_dc,
+        fetched_at: row.fetched_at,
+      })),
     });
   } catch (err) {
     console.error("Error in /balance", err);
