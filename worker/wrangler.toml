@@ -25,8 +25,8 @@ APP_NAME = "Helium DC Alerts"
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_name = "heliumtools-prod" # replace with your production D1 name
-database_id = "<replace-with-production-d1-id>" # production DB; keep dev above for local/staging
+database_name = "heliumtools-prod"
+database_id = "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
 
 [triggers]
 crons = ["0 8 * * *"]
