@@ -1,77 +1,12 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Helium DC Alerts – Verify Email</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 2rem; max-width: 700px; margin: 0 auto; }
-    h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
-    p { color: #374151; }
-    .msg { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.95rem; border: 1px solid #e5e7eb; background: #f9fafb; }
-    .ok { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
-    .err { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
-    a.button { display: inline-block; margin-top: 1rem; padding: 0.55rem 1.1rem; border-radius: 999px; background: #2563eb; color: #fff; text-decoration: none; font-weight: 600; }
-    a.button:hover { background: #1d4ed8; }
-  </style>
-</head>
-<body>
-  <h1>Verify your email</h1>
-  <p id="status">Verifying&hellip;</p>
-  <div id="message" class="msg" hidden></div>
-  <a id="homeLink" class="button" href="/oui-notifier/" hidden>Back to alerts</a>
-
-  <script>
-    (() => {
-      const API_BASE = "https://api.heliumtools.org/oui-notifier";
-      const statusEl = document.getElementById("status");
-      const msgEl = document.getElementById("message");
-      const homeLink = document.getElementById("homeLink");
-
-      function showMessage(text, ok = false) {
-        msgEl.textContent = text;
-        msgEl.className = `msg ${ok ? "ok" : "err"}`;
-        msgEl.hidden = false;
-      }
-
-      const params = new URLSearchParams(window.location.search);
-      const verified = params.get("verified");
-      const token = params.get("token");
-      const email = params.get("email");
-
-      if (verified === "1") {
-        statusEl.textContent = "Your email is verified.";
-        showMessage("Thanks! Your email has been verified. You can now manage your alerts.", true);
-        homeLink.hidden = false;
-        return;
-      }
-
-      if (!token || !email) {
-        statusEl.textContent = "Missing verification details.";
-        showMessage("The verification link is missing required details. Please try subscribing again.", false);
-        homeLink.hidden = false;
-        return;
-      }
-
-      (async () => {
-        try {
-          const redirectTarget = `${window.location.origin}${window.location.pathname}`;
-          const url = new URL(`${API_BASE}/verify`);
-          url.searchParams.set("token", token);
-          url.searchParams.set("email", email);
-          url.searchParams.set("redirect", redirectTarget);
-
-          statusEl.textContent = "Contacting verification service…";
-          // Navigate so the Worker can perform verification and bounce back with ?verified=1.
-          window.location.href = url.toString();
-        } catch (err) {
-          console.error(err);
-          statusEl.textContent = "Unable to verify.";
-          showMessage("We couldn't verify your email right now. Please try again later.", false);
-          homeLink.hidden = false;
-        }
-      })();
-    })();
-  </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verify Email – Helium DC Alerts</title>
+  </head>
+  <body class="antialiased bg-slate-50">
+    <div id="root"></div>
+    <script type="module" src="/src/oui-notifier/verify.jsx"></script>
+  </body>
 </html>
