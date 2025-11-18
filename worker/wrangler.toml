@@ -11,7 +11,7 @@ APP_NAME = "Helium DC Alerts"
 [[d1_databases]]
 binding = "DB"
 database_name = "helium_dc_alerts"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_id = "ee41a4ee-4152-4f57-b999-5ae75b01597c" 
 
 [triggers]
 crons = ["0 8 * * *"]
