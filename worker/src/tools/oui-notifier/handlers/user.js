@@ -40,9 +40,34 @@ export async function handleGetUser(request, env) {
 export async function handleDeleteSubscription(request, env) {
     const url = new URL(request.url);
     const id = url.pathname.split("/").pop();
+    const userUuid = request.headers.get("X-User-Uuid");
 
     if (!id) {
         return new Response("Missing subscription ID", { status: 400 });
+    }
+
+    if (!userUuid) {
+        return new Response("Missing user UUID", { status: 401 });
+    }
+
+    const user = await env.DB.prepare("SELECT id FROM users WHERE uuid = ?")
+        .bind(userUuid)
+        .first();
+
+    if (!user) {
+        return new Response("Invalid user UUID", { status: 403 });
+    }
+
+    const subscription = await env.DB.prepare("SELECT user_id FROM subscriptions WHERE id = ?")
+        .bind(id)
+        .first();
+
+    if (!subscription) {
+        return new Response("Subscription not found", { status: 404 });
+    }
+
+    if (subscription.user_id !== user.id) {
+        return new Response("Unauthorized", { status: 403 });
     }
 
     await env.DB.prepare("DELETE FROM subscriptions WHERE id = ?").bind(id).run();
@@ -53,9 +78,34 @@ export async function handleDeleteSubscription(request, env) {
 export async function handleUpdateSubscription(request, env) {
     const url = new URL(request.url);
     const id = url.pathname.split("/").pop();
+    const userUuid = request.headers.get("X-User-Uuid");
 
     if (!id) {
         return new Response("Missing subscription ID", { status: 400 });
+    }
+
+    if (!userUuid) {
+        return new Response("Missing user UUID", { status: 401 });
+    }
+
+    const user = await env.DB.prepare("SELECT id FROM users WHERE uuid = ?")
+        .bind(userUuid)
+        .first();
+
+    if (!user) {
+        return new Response("Invalid user UUID", { status: 403 });
+    }
+
+    const subscription = await env.DB.prepare("SELECT user_id FROM subscriptions WHERE id = ?")
+        .bind(id)
+        .first();
+
+    if (!subscription) {
+        return new Response("Subscription not found", { status: 404 });
+    }
+
+    if (subscription.user_id !== user.id) {
+        return new Response("Unauthorized", { status: 403 });
     }
 
     const { label, webhook_url } = await request.json();

@@ -325,6 +325,7 @@ export default function HomePage() {
     try {
       const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
         method: "DELETE",
+        headers: { "X-User-Uuid": userUuid },
       });
       if (res.ok) {
         setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
@@ -341,7 +342,7 @@ export default function HomePage() {
     try {
       const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-User-Uuid": userUuid },
         body: JSON.stringify({ label: editLabel, webhook_url: editWebhook }),
       });
       if (res.ok) {
