@@ -593,7 +593,7 @@ export default function HomePage() {
                     <p className="text-sm font-semibold text-indigo-600">Manage</p>
                     <h2 className="text-xl font-semibold text-slate-900">Your Subscriptions</h2>
                     <p className="text-sm text-slate-600">
-                      Managing settings for {userData?.email}
+                      Manage your alert preferences and webhooks.
                     </p>
                   </div>
 
