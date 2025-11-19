@@ -1,19 +1,20 @@
 import { getOuiByEscrow } from "../services/ouis.js";
+import { jsonHeaders } from "../responseUtils.js";
 
 export async function handleGetUser(request, env) {
     const url = new URL(request.url);
     const uuid = url.pathname.split("/").pop();
 
     if (!uuid) {
-        return new Response("Missing UUID", { status: 400 });
+        return new Response("Missing UUID", { status: 400, headers: jsonHeaders });
     }
 
-    const user = await env.DB.prepare("SELECT id, email, uuid FROM users WHERE uuid = ?")
+    const user = await env.DB.prepare("SELECT id, uuid FROM users WHERE uuid = ?")
         .bind(uuid)
         .first();
 
     if (!user) {
-        return new Response("User not found", { status: 404 });
+        return new Response("User not found", { status: 404, headers: jsonHeaders });
     }
 
     const { results } = await env.DB.prepare(
@@ -33,7 +34,7 @@ export async function handleGetUser(request, env) {
     );
 
     return new Response(JSON.stringify({ user, subscriptions }), {
-        headers: { "content-type": "application/json" },
+        headers: jsonHeaders,
     });
 }
 
@@ -43,11 +44,11 @@ export async function handleDeleteSubscription(request, env) {
     const userUuid = request.headers.get("X-User-Uuid");
 
     if (!id) {
-        return new Response("Missing subscription ID", { status: 400 });
+        return new Response("Missing subscription ID", { status: 400, headers: jsonHeaders });
     }
 
     if (!userUuid) {
-        return new Response("Missing user UUID", { status: 401 });
+        return new Response("Missing user UUID", { status: 401, headers: jsonHeaders });
     }
 
     const user = await env.DB.prepare("SELECT id FROM users WHERE uuid = ?")
@@ -55,7 +56,7 @@ export async function handleDeleteSubscription(request, env) {
         .first();
 
     if (!user) {
-        return new Response("Invalid user UUID", { status: 403 });
+        return new Response("Invalid user UUID", { status: 403, headers: jsonHeaders });
     }
 
     const subscription = await env.DB.prepare("SELECT user_id FROM subscriptions WHERE id = ?")
@@ -63,16 +64,16 @@ export async function handleDeleteSubscription(request, env) {
         .first();
 
     if (!subscription) {
-        return new Response("Subscription not found", { status: 404 });
+        return new Response("Subscription not found", { status: 404, headers: jsonHeaders });
     }
 
     if (subscription.user_id !== user.id) {
-        return new Response("Unauthorized", { status: 403 });
+        return new Response("Unauthorized", { status: 403, headers: jsonHeaders });
     }
 
     await env.DB.prepare("DELETE FROM subscriptions WHERE id = ?").bind(id).run();
 
-    return new Response("Subscription deleted", { status: 200 });
+    return new Response("Subscription deleted", { status: 200, headers: jsonHeaders });
 }
 
 export async function handleUpdateSubscription(request, env) {
@@ -81,11 +82,11 @@ export async function handleUpdateSubscription(request, env) {
     const userUuid = request.headers.get("X-User-Uuid");
 
     if (!id) {
-        return new Response("Missing subscription ID", { status: 400 });
+        return new Response("Missing subscription ID", { status: 400, headers: jsonHeaders });
     }
 
     if (!userUuid) {
-        return new Response("Missing user UUID", { status: 401 });
+        return new Response("Missing user UUID", { status: 401, headers: jsonHeaders });
     }
 
     const user = await env.DB.prepare("SELECT id FROM users WHERE uuid = ?")
@@ -93,7 +94,7 @@ export async function handleUpdateSubscription(request, env) {
         .first();
 
     if (!user) {
-        return new Response("Invalid user UUID", { status: 403 });
+        return new Response("Invalid user UUID", { status: 403, headers: jsonHeaders });
     }
 
     const subscription = await env.DB.prepare("SELECT user_id FROM subscriptions WHERE id = ?")
@@ -101,11 +102,11 @@ export async function handleUpdateSubscription(request, env) {
         .first();
 
     if (!subscription) {
-        return new Response("Subscription not found", { status: 404 });
+        return new Response("Subscription not found", { status: 404, headers: jsonHeaders });
     }
 
     if (subscription.user_id !== user.id) {
-        return new Response("Unauthorized", { status: 403 });
+        return new Response("Unauthorized", { status: 403, headers: jsonHeaders });
     }
 
     const { label, webhook_url } = await request.json();
@@ -116,7 +117,7 @@ export async function handleUpdateSubscription(request, env) {
         .bind(label || null, webhook_url || null, id)
         .run();
 
-    return new Response("Subscription updated", { status: 200 });
+    return new Response("Subscription updated", { status: 200, headers: jsonHeaders });
 }
 
 export async function handleDeleteUser(request, env) {
@@ -124,7 +125,7 @@ export async function handleDeleteUser(request, env) {
     const uuid = url.pathname.split("/").pop();
 
     if (!uuid) {
-        return new Response("Missing UUID", { status: 400 });
+        return new Response("Missing UUID", { status: 400, headers: jsonHeaders });
     }
 
     const user = await env.DB.prepare("SELECT id FROM users WHERE uuid = ?")
@@ -132,7 +133,7 @@ export async function handleDeleteUser(request, env) {
         .first();
 
     if (!user) {
-        return new Response("User not found", { status: 404 });
+        return new Response("User not found", { status: 404, headers: jsonHeaders });
     }
 
     await env.DB.prepare("DELETE FROM subscriptions WHERE user_id = ?")
@@ -141,5 +142,5 @@ export async function handleDeleteUser(request, env) {
 
     await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
 
-    return new Response("User deleted", { status: 200 });
+    return new Response("User deleted", { status: 200, headers: jsonHeaders });
 }
