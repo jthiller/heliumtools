@@ -5,7 +5,7 @@ const features = [
   {
     name: "OUI Notifier",
     description:
-      "Get alerts before your Data Credit escrow runs low. Lookup OUIs, fetch live balances, and subscribe to email or webhook alerts.",
+      "Get alerts before your Data Credit escrow runs low. Lookup OUIs, fetch balances, and subscribe to email or webhook alerts.",
     href: "/oui-notifier/",
     icon: BellAlertIcon,
     badge: "Live",

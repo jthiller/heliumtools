@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   ArrowPathIcon,
   BellAlertIcon,
@@ -6,7 +6,19 @@ import {
   EnvelopeIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
+  InformationCircleIcon,
+  ClipboardDocumentIcon,
+  CheckIcon,
 } from "@heroicons/react/24/outline";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 import Header from "../components/Header.jsx";
 import {
   API_BASE,
@@ -68,12 +80,69 @@ function StatusBanner({ tone = "muted", title, message }) {
   );
 }
 
+function MiddleTruncate({ text, startChars = 6, endChars = 6 }) {
+  if (!text || text.length <= startChars + endChars + 3) {
+    return <span>{text}</span>;
+  }
+  const start = text.slice(0, startChars);
+  const end = text.slice(-endChars);
+  return (
+    <span title={text}>
+      {start}
+      <span className="text-slate-400">...</span>
+      {end}
+    </span>
+  );
+}
+
+function SimpleTooltip({ content, children }) {
+  return (
+    <div className="group relative flex items-center">
+      {children}
+      <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden w-64 -translate-x-1/2 rounded-lg bg-slate-900 p-2 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:block group-hover:opacity-100 z-10">
+        {content}
+        <div className="absolute left-1/2 top-full -mt-1 h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-900"></div>
+      </div>
+    </div>
+  );
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="ml-2 inline-flex items-center text-slate-400 hover:text-indigo-600 transition-colors"
+      title="Copy to clipboard"
+    >
+      {copied ? (
+        <CheckIcon className="h-4 w-4 text-emerald-500" />
+      ) : (
+        <ClipboardDocumentIcon className="h-4 w-4" />
+      )}
+    </button>
+  );
+}
+
 export default function HomePage() {
   const [ouis, setOuis] = useState([]);
   const [ouiInput, setOuiInput] = useState("");
   const [payer, setPayer] = useState("");
   const [escrow, setEscrow] = useState("");
   const [balance, setBalance] = useState(null);
+  const [timeseries, setTimeseries] = useState([]);
   const [balanceStatus, setBalanceStatus] = useState({ tone: "muted", message: "" });
   const [loadingBalance, setLoadingBalance] = useState(false);
 
@@ -97,13 +166,9 @@ export default function HomePage() {
         const directory = await fetchOuiIndex();
         if (cancelled) return;
         setOuis(directory);
-        setBalanceStatus({ tone: "info", message: "Live OUI directory loaded." });
       } catch (err) {
         if (cancelled) return;
-        setBalanceStatus({
-          tone: "warning",
-          message: "Unable to load the OUI list right now. Manual entry still works.",
-        });
+        console.error("Unable to load OUI list", err);
       }
     })();
     return () => {
@@ -123,56 +188,53 @@ export default function HomePage() {
     return ouis.find((o) => o.oui === numeric) || null;
   }, [ouiInput, ouis]);
 
+  // Debounced balance check
   useEffect(() => {
-    if (!ouiInput) return;
-    if (matchedOui) {
-      setPayer(matchedOui.payer || "");
-      setEscrow(matchedOui.escrow || "");
-      setBalance(null);
-      setBalanceStatus({
-        tone: "info",
-        message: `Loaded details for OUI ${matchedOui.oui}. Click Check balance to fetch live DC.`,
-      });
-      if (matchedOui.escrow) {
-        localStorage.setItem("ouiNotifierEscrow", matchedOui.escrow);
-      }
-    } else {
+    const numericOui = Number(ouiInput);
+    if (!ouiInput || !Number.isInteger(numericOui)) {
       setPayer("");
       setEscrow("");
       setBalance(null);
+      setTimeseries([]);
       localStorage.removeItem("ouiNotifierEscrow");
-    }
-  }, [matchedOui, ouiInput]);
-
-  const handleCheckBalance = async () => {
-    if (!ouiInput) {
-      setBalanceStatus({ tone: "warning", message: "Enter an OUI number to check balance." });
       return;
     }
 
-    setLoadingBalance(true);
-    setBalanceStatus({ tone: "info", message: "Fetching live balance and escrow…" });
-    setBalance(null);
-
-    try {
-      const payload = await fetchBalanceForOui(ouiInput);
-      const dc = Number(payload.balance_dc || 0);
-      const usd = Number(payload.balance_usd || 0);
-      setBalance({ dc, usd });
-
-      if (payload.escrow) {
-        setEscrow(payload.escrow);
-        localStorage.setItem("ouiNotifierEscrow", payload.escrow);
+    // Optimistic update from directory
+    if (matchedOui) {
+      setPayer(matchedOui.payer || "");
+      setEscrow(matchedOui.escrow || "");
+      if (matchedOui.escrow) {
+        localStorage.setItem("ouiNotifierEscrow", matchedOui.escrow);
       }
-
-      setBalanceStatus({ tone: "success", message: `Live balance for OUI ${ouiInput} loaded.` });
-    } catch (err) {
-      setBalance(null);
-      setBalanceStatus({ tone: "error", message: err.message || "Could not fetch balance." });
-    } finally {
-      setLoadingBalance(false);
     }
-  };
+
+    const timer = setTimeout(async () => {
+      setLoadingBalance(true);
+      try {
+        const payload = await fetchBalanceForOui(numericOui);
+        const dc = Number(payload.balance_dc || 0);
+        const usd = Number(payload.balance_usd || 0);
+        setBalance({ dc, usd });
+        setTimeseries(payload.timeseries || []);
+
+        if (payload.escrow) {
+          setEscrow(payload.escrow);
+          localStorage.setItem("ouiNotifierEscrow", payload.escrow);
+        }
+        // If we didn't have payer from directory, maybe we could get it here if API returned it,
+        // but currently API mostly returns balance/escrow.
+      } catch (err) {
+        console.error("Failed to fetch balance", err);
+        setBalance(null);
+        setTimeseries([]);
+      } finally {
+        setLoadingBalance(false);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [ouiInput, matchedOui]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -214,27 +276,34 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 space-y-6">
           <div className="space-y-2">
             <p className="text-sm font-semibold text-indigo-600">OUI Notifier</p>
-            <h1 className="text-2xl font-semibold text-slate-900">Helium DC alerts</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Helium DC Alerts</h1>
             <p className="text-sm text-slate-600">
-              Lookup OUIs, fetch live balances, and subscribe to email or webhook alerts.
+              Lookup OUIs, fetch balances, and subscribe to email or webhook alerts.
             </p>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
-            <section className="lg:col-span-2 rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-indigo-600">Lookup</p>
-                  <h2 className="text-xl font-semibold text-slate-900">Find your escrow and check live DC</h2>
+            <section className="lg:col-span-2 space-y-6">
+              <div className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-indigo-600">Lookup</p>
+                    <h2 className="text-xl font-semibold text-slate-900">
+                      Find your OUI
+                    </h2>
+                  </div>
+                  {loadingBalance && (
+                    <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full">
+                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      Fetching...
+                    </div>
+                  )}
                 </div>
-                <StatusBanner tone={balanceStatus.tone} message={balanceStatus.message} />
-              </div>
 
-              <div className="mt-6 space-y-6">
-                <div className="grid gap-4 md:grid-cols-[1.1fr_auto] md:items-end">
+                <div className="mt-6 space-y-6">
                   <div className="space-y-2">
                     <label htmlFor="oui" className="text-sm font-semibold text-slate-800">
-                      OUI number
+                      OUI Number
                     </label>
                     <input
                       id="oui"
@@ -252,89 +321,165 @@ export default function HomePage() {
                         <option
                           key={org.oui}
                           value={org.oui}
-                          label={`OUI ${org.oui} • payer ${org.payer || "n/a"} • escrow ${org.escrow}`}
+                          label={`OUI ${org.oui} • Payer ${org.payer || "n/a"}`}
                         />
                       ))}
                     </datalist>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleCheckBalance}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 md:w-auto"
-                  >
-                    {loadingBalance ? (
-                      <>
-                        <ArrowPathIcon className="h-5 w-5 animate-spin" aria-hidden="true" />
-                        Checking balance…
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheckIcon className="h-5 w-5" aria-hidden="true" />
-                        Check live DC balance
-                      </>
-                    )}
-                  </button>
-                </div>
 
-                <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <dt className="text-sm font-semibold text-slate-800">Escrow account</dt>
-                    <dd className="text-sm text-slate-700 break-all">
-                      {escrow ? (
-                        <a
-                          className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500"
-                          href={`https://solscan.io/account/${encodeURIComponent(escrow)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <span className="truncate">{escrow}</span>
-                          <span aria-hidden="true">↗</span>
-                        </a>
-                      ) : (
-                        <span className="text-slate-500">Lookup an OUI to populate the escrow.</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-sm font-semibold text-slate-800">Payer</dt>
-                    <dd className="text-sm text-slate-700 break-all">
-                      {payer || <span className="text-slate-500">—</span>}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-sm font-semibold text-slate-800">Live balance</dt>
-                    <dd className="text-sm text-slate-700">
-                      {balance ? (
-                        <div className="space-y-0.5 text-sm font-semibold text-slate-900">
-                          <p>{numberFormatter.format(balance.dc)} DC</p>
-                          <p className="text-slate-600">{usdFormatter.format(balance.usd)}</p>
-                        </div>
-                      ) : (
-                        <span className="text-slate-500">Not fetched yet</span>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
+                  <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-[0.5fr_1fr_1fr_1fr]">
+                    <div className="space-y-1">
+                      <dt className="text-sm font-semibold text-slate-800">OUI</dt>
+                      <dd className="text-sm text-slate-700">
+                        {ouiInput ? (
+                          <span>{ouiInput}</span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
+                        Escrow account
+                        <SimpleTooltip content="Helium uses this account to burn Data Credits as they are used. It is provided here as a link for direct reference. Do not send tokens here.">
+                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
+                        </SimpleTooltip>
+                      </dt>
+                      <dd className="text-sm text-slate-700">
+                        {escrow ? (
+                          <a
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500 max-w-full"
+                            href={`https://solscan.io/account/${encodeURIComponent(escrow)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <MiddleTruncate text={escrow} startChars={6} endChars={6} />
+                            <span aria-hidden="true" className="shrink-0">
+                              ↗
+                            </span>
+                          </a>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
+                        Payer
+                        <SimpleTooltip content="This key is used when delegating tokens to your OUI. Tokens must be _delegated_ to this address in order to appear in the escrow account.">
+                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
+                        </SimpleTooltip>
+                      </dt>
+                      <dd className="text-sm text-slate-700 flex items-center">
+                        {payer ? (
+                          <>
+                            <MiddleTruncate text={payer} startChars={6} endChars={6} />
+                            <CopyButton text={payer} />
+                          </>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1 overflow-hidden">
+                      <dt className="text-sm font-semibold text-slate-800">Balance</dt>
+                      <dd className="text-sm text-slate-700">
+                        {balance ? (
+                          <div className="space-y-0.5 text-sm font-semibold text-slate-900">
+                            <p className={balance.usd > 35 ? 'text-green-600' : 'text-slate-600'}>
+                              {usdFormatter.format(balance.usd)}
+                            </p>
+                            <p>{numberFormatter.format(balance.dc)} DC</p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
 
-                <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/60 p-4 text-sm text-slate-700">
-                  <p className="font-semibold text-indigo-900">Heads up</p>
-                  <p className="mt-1">
-                    Data transfer halts when an escrow hits roughly $35 (≈3,500,000 DC). Alerts treat that as zero to
-                    keep you ahead of the cutoff.
-                  </p>
+                  <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/60 p-4 text-sm text-slate-700">
+                    <p className="font-semibold text-indigo-900">Heads up</p>
+                    <p className="mt-1">
+                      Data transfer halts when an escrow hits $35 (3,500,000 DC). Alerts treat that
+                      as zero to keep you ahead of the cutoff.
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              {timeseries.length > 0 && (
+                <div className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
+                  <h3 className="text-base font-semibold text-slate-900 mb-4">
+                    30-Day DC Balance History
+                  </h3>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={timeseries}
+                        margin={{ top: 5, right: 0, left: 0, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorDc" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
+                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 12, fill: "#64748b" }}
+                          tickLine={false}
+                          axisLine={false}
+                          minTickGap={30}
+                          tickFormatter={(str) => {
+                            const d = new Date(str);
+                            return `${d.getMonth() + 1}/${d.getDate()}`;
+                          }}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 12, fill: "#64748b" }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(val) =>
+                            val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val
+                          }
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "8px",
+                            border: "none",
+                            boxShadow:
+                              "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+                          }}
+                          formatter={(val) => [numberFormatter.format(val), "DC"]}
+                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="balance_dc"
+                          stroke="#4f46e5"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorDc)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </section>
 
-            <section className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
+            <section className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100 h-fit">
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-indigo-600">Subscribe</p>
                 <h2 className="text-xl font-semibold text-slate-900">Email + webhook alerts</h2>
                 <p className="text-sm text-slate-600">
-                  Daily balance snapshots and 7-day burn estimates trigger alerts at 14, 7, and 1 day from running out.
+                  Daily balance snapshots and 7-day burn estimates trigger alerts at 14, 7, and 1
+                  day from running out.
                 </p>
               </div>
-              <div className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+              <div className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 w-fit">
                 {API_BASE.replace("https://", "")}
               </div>
 
