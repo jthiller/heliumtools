@@ -40,7 +40,7 @@ export default function VerifyPage() {
     const email = params.get("email");
 
     if (verified === "1") {
-      setState({ tone: "success", message: "Thanks! Your email has been verified." });
+      setState({ tone: "success", message: "Your email has been verified. You are now subscribed." });
       return;
     }
 
@@ -73,7 +73,7 @@ export default function VerifyPage() {
               <p className="text-sm font-semibold text-indigo-600">OUI Notifier</p>
               <h1 className="text-2xl font-semibold text-slate-900">Verify your email</h1>
               <p className="text-sm text-slate-600">
-                We verify emails before sending alerts. This page will redirect automatically when needed.
+                We verify emails before sending alerts.
               </p>
             </div>
             <div className="mt-4">
@@ -86,7 +86,6 @@ export default function VerifyPage() {
               >
                 Back to alerts
               </a>
-              <p className="text-sm text-slate-600">This page refreshes if verification needs to run.</p>
             </div>
           </div>
         </div>

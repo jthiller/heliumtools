@@ -216,7 +216,12 @@ export default function HomePage() {
         const dc = Number(payload.balance_dc || 0);
         const usd = Number(payload.balance_usd || 0);
         setBalance({ dc, usd });
-        setTimeseries(payload.timeseries || []);
+        setTimeseries(
+          (payload.timeseries || []).map((t) => ({
+            ...t,
+            balance_usd: t.balance_dc * 0.00001,
+          }))
+        );
 
         if (payload.escrow) {
           setEscrow(payload.escrow);
@@ -327,16 +332,14 @@ export default function HomePage() {
                     </datalist>
                   </div>
 
-                  <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-[0.5fr_1fr_1fr_1fr]">
-                    <div className="space-y-1">
-                      <dt className="text-sm font-semibold text-slate-800">OUI</dt>
-                      <dd className="text-sm text-slate-700">
-                        {ouiInput ? (
-                          <span>{ouiInput}</span>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </dd>
+                  <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-3">
+                    <div className="space-y-1 col-span-full">
+                      <div className="flex items-center">
+                        <dt className="text-sm font-semibold text-slate-800">OUI&nbsp;</dt>
+                        <dd className="text-sm text-slate-700">
+                          {ouiInput ? ouiInput : <span className="text-slate-500">—</span>}
+                        </dd>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
@@ -397,7 +400,7 @@ export default function HomePage() {
                       </dd>
                     </div>
                     {timeseries.length > 5 && (
-                      <div className="col-span-full rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
+                      <div className="col-span-full">
                         <div className="h-64 w-full">
                           <ResponsiveContainer width="100%" height="100%">
                             <AreaChart
@@ -422,14 +425,6 @@ export default function HomePage() {
                                   return `${d.getMonth() + 1}/${d.getDate()}`;
                                 }}
                               />
-                              <YAxis
-                                tick={{ fontSize: 12, fill: "#64748b" }}
-                                tickLine={false}
-                                axisLine={false}
-                                tickFormatter={(val) =>
-                                  val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val
-                                }
-                              />
                               <Tooltip
                                 contentStyle={{
                                   borderRadius: "8px",
@@ -437,16 +432,16 @@ export default function HomePage() {
                                   boxShadow:
                                     "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
                                 }}
-                                formatter={(val) => [numberFormatter.format(val), "DC"]}
+                                formatter={(val) => [usdFormatter.format(val), "USD"]}
                                 labelFormatter={(label) => new Date(label).toLocaleDateString()}
                               />
                               <Area
                                 type="monotone"
-                                dataKey="balance_dc"
+                                dataKey="balance_usd"
                                 stroke="#4f46e5"
                                 strokeWidth={2}
                                 fillOpacity={1}
-                                fill="url(#colorDc)"
+                                fill="url(#colorUsd)"
                               />
                             </AreaChart>
                           </ResponsiveContainer>
