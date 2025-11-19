@@ -35,6 +35,7 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2,
+  roundingMode: "floor",
 });
 
 const classNames = (...classes) => classes.filter(Boolean).join(" ");
@@ -398,7 +399,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 space-y-6">
           <div className="space-y-2">
             <p className="text-sm font-semibold text-indigo-600">OUI Notifier</p>
-            <h1 className="text-2xl font-semibold text-slate-900">Helium DC Alerts</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Helium Data Credit Alerts</h1>
             <p className="text-sm text-slate-600">
               Lookup OUIs, fetch balances, and subscribe to email or webhook alerts.
             </p>
