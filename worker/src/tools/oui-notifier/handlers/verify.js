@@ -50,6 +50,9 @@ export async function handleVerify(request, env) {
 
         const redirectUrl = new URL(redirectBase);
         redirectUrl.searchParams.set("verified", "1");
+        if (user.uuid) {
+            redirectUrl.searchParams.set("uuid", user.uuid);
+        }
         return Response.redirect(redirectUrl.toString(), 302);
     } catch (err) {
         console.error("Error in /verify", err);

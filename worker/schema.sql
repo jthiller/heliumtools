@@ -4,8 +4,10 @@ CREATE TABLE IF NOT EXISTS users (
   verified INTEGER NOT NULL DEFAULT 0,
   verify_token TEXT,
   verify_expires_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  uuid TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid);
 
 CREATE TABLE IF NOT EXISTS subscriptions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -9,6 +9,9 @@ import {
   InformationCircleIcon,
   ClipboardDocumentIcon,
   CheckIcon,
+  TrashIcon,
+  PencilIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import {
   AreaChart,
@@ -152,12 +155,57 @@ export default function HomePage() {
   const [formStatus, setFormStatus] = useState({ tone: "muted", message: "" });
   const [saving, setSaving] = useState(false);
 
+  // User Management State
+  const [userUuid, setUserUuid] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [userSubscriptions, setUserSubscriptions] = useState([]);
+  const [loadingUser, setLoadingUser] = useState(false);
+  const [editingSubId, setEditingSubId] = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editWebhook, setEditWebhook] = useState("");
+
   useEffect(() => {
     const savedEmail = localStorage.getItem("ouiNotifierEmail");
     const savedEscrow = localStorage.getItem("ouiNotifierEscrow");
     if (savedEmail) setEmail(savedEmail);
     if (savedEscrow) setEscrow(savedEscrow);
+
+    // Check for UUID in URL (search or hash)
+    const searchParams = new URLSearchParams(window.location.search);
+    let uuid = searchParams.get("uuid");
+
+    if (!uuid && window.location.hash.includes("?")) {
+      const hashParams = new URLSearchParams(window.location.hash.split("?")[1]);
+      uuid = hashParams.get("uuid");
+    }
+    if (uuid) {
+      setUserUuid(uuid);
+      fetchUserData(uuid);
+    }
   }, []);
+
+  const fetchUserData = async (uuid) => {
+    setLoadingUser(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/user/${uuid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUserData(data.user);
+        setUserSubscriptions(data.subscriptions);
+
+        // Populate lookup with first OUI if available
+        if (data.subscriptions.length > 0 && data.subscriptions[0].oui) {
+          setOuiInput(data.subscriptions[0].oui.toString());
+        }
+      } else {
+        console.error("Failed to fetch user data");
+      }
+    } catch (err) {
+      console.error("Error fetching user data", err);
+    } finally {
+      setLoadingUser(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -266,11 +314,84 @@ export default function HomePage() {
         escrow_account: escrow,
       });
       setFormStatus({ tone: "success", message });
+      // Refresh user data if we are in management mode
+      if (userUuid) {
+        fetchUserData(userUuid);
+      }
     } catch (err) {
       setFormStatus({ tone: "error", message: err.message || "Unable to save subscription." });
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDeleteSubscription = async (id) => {
+    if (!confirm("Are you sure you want to delete this subscription?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
+      } else {
+        alert("Failed to delete subscription");
+      }
+    } catch (err) {
+      console.error("Error deleting subscription", err);
+      alert("Error deleting subscription");
+    }
+  };
+
+  const handleUpdateSubscription = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: editLabel, webhook_url: editWebhook }),
+      });
+      if (res.ok) {
+        setUserSubscriptions((prev) =>
+          prev.map((sub) =>
+            sub.id === id ? { ...sub, label: editLabel, webhook_url: editWebhook } : sub
+          )
+        );
+        setEditingSubId(null);
+      } else {
+        alert("Failed to update subscription");
+      }
+    } catch (err) {
+      console.error("Error updating subscription", err);
+      alert("Error updating subscription");
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (
+      !confirm(
+        "Are you sure you want to delete your account? This will remove all your subscriptions and cannot be undone."
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`${API_BASE}/api/user/${userUuid}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        alert("Account deleted successfully.");
+        window.location.href = "/oui-notifier";
+      } else {
+        alert("Failed to delete account");
+      }
+    } catch (err) {
+      console.error("Error deleting account", err);
+      alert("Error deleting account");
+    }
+  };
+
+  const startEditing = (sub) => {
+    setEditingSubId(sub.id);
+    setEditLabel(sub.label || "");
+    setEditWebhook(sub.webhook_url || "");
   };
 
   return (
@@ -469,7 +590,6 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-
 
             </section>
 
