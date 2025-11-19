@@ -396,6 +396,63 @@ export default function HomePage() {
                         )}
                       </dd>
                     </div>
+                    {timeseries.length > 5 && (
+                      <div className="col-span-full rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
+                        <div className="h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart
+                              data={timeseries}
+                              margin={{ top: 5, right: 0, left: 0, bottom: 0 }}
+                            >
+                              <defs>
+                                <linearGradient id="colorDc" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
+                                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                              <XAxis
+                                dataKey="date"
+                                tick={{ fontSize: 12, fill: "#64748b" }}
+                                tickLine={false}
+                                axisLine={false}
+                                minTickGap={30}
+                                tickFormatter={(str) => {
+                                  const d = new Date(str);
+                                  return `${d.getMonth() + 1}/${d.getDate()}`;
+                                }}
+                              />
+                              <YAxis
+                                tick={{ fontSize: 12, fill: "#64748b" }}
+                                tickLine={false}
+                                axisLine={false}
+                                tickFormatter={(val) =>
+                                  val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val
+                                }
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  borderRadius: "8px",
+                                  border: "none",
+                                  boxShadow:
+                                    "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+                                }}
+                                formatter={(val) => [numberFormatter.format(val), "DC"]}
+                                labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="balance_dc"
+                                stroke="#4f46e5"
+                                strokeWidth={2}
+                                fillOpacity={1}
+                                fill="url(#colorDc)"
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
                   </dl>
 
                   <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/60 p-4 text-sm text-slate-700">
@@ -418,66 +475,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {timeseries.length > 0 && (
-                <div className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
-                  <h3 className="text-base font-semibold text-slate-900 mb-4">
-                    30-Day DC Balance History
-                  </h3>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={timeseries}
-                        margin={{ top: 5, right: 0, left: 0, bottom: 0 }}
-                      >
-                        <defs>
-                          <linearGradient id="colorDc" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
-                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis
-                          dataKey="date"
-                          tick={{ fontSize: 12, fill: "#64748b" }}
-                          tickLine={false}
-                          axisLine={false}
-                          minTickGap={30}
-                          tickFormatter={(str) => {
-                            const d = new Date(str);
-                            return `${d.getMonth() + 1}/${d.getDate()}`;
-                          }}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12, fill: "#64748b" }}
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(val) =>
-                            val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val
-                          }
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "none",
-                            boxShadow:
-                              "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-                          }}
-                          formatter={(val) => [numberFormatter.format(val), "DC"]}
-                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="balance_dc"
-                          stroke="#4f46e5"
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#colorDc)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
+
             </section>
 
             <section className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100 h-fit">
