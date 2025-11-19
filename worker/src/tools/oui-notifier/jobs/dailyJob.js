@@ -32,7 +32,9 @@ export async function runDailyJob(env) {
          s.webhook_url,
          s.last_notified_level,
          s.last_balance_dc,
-         u.email
+         s.last_balance_dc,
+         u.email,
+         u.uuid
        FROM subscriptions s
        JOIN users u ON u.id = s.user_id
        WHERE u.verified = 1`
@@ -200,6 +202,7 @@ ${env.APP_BASE_URL || ""}
         threshold,
         burnLookbackDays: BURN_LOOKBACK_DAYS,
         appBaseUrl: env.APP_BASE_URL || "https://heliumtools.org/oui-notifier",
+        userUuid: sub.uuid,
       });
 
       try {

@@ -9,6 +9,9 @@ import {
   InformationCircleIcon,
   ClipboardDocumentIcon,
   CheckIcon,
+  TrashIcon,
+  PencilIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import {
   AreaChart,
@@ -152,12 +155,52 @@ export default function HomePage() {
   const [formStatus, setFormStatus] = useState({ tone: "muted", message: "" });
   const [saving, setSaving] = useState(false);
 
+  // User Management State
+  const [userUuid, setUserUuid] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [userSubscriptions, setUserSubscriptions] = useState([]);
+  const [loadingUser, setLoadingUser] = useState(false);
+  const [editingSubId, setEditingSubId] = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editWebhook, setEditWebhook] = useState("");
+
   useEffect(() => {
     const savedEmail = localStorage.getItem("ouiNotifierEmail");
     const savedEscrow = localStorage.getItem("ouiNotifierEscrow");
     if (savedEmail) setEmail(savedEmail);
     if (savedEscrow) setEscrow(savedEscrow);
+
+    // Check for UUID in URL
+    const params = new URLSearchParams(window.location.search);
+    const uuid = params.get("uuid");
+    if (uuid) {
+      setUserUuid(uuid);
+      fetchUserData(uuid);
+    }
   }, []);
+
+  const fetchUserData = async (uuid) => {
+    setLoadingUser(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/user/${uuid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUserData(data.user);
+        setUserSubscriptions(data.subscriptions);
+
+        // Populate lookup with first OUI if available
+        if (data.subscriptions.length > 0 && data.subscriptions[0].oui) {
+          setOuiInput(data.subscriptions[0].oui.toString());
+        }
+      } else {
+        console.error("Failed to fetch user data");
+      }
+    } catch (err) {
+      console.error("Error fetching user data", err);
+    } finally {
+      setLoadingUser(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -266,11 +309,85 @@ export default function HomePage() {
         escrow_account: escrow,
       });
       setFormStatus({ tone: "success", message });
+      // Refresh user data if we are in management mode
+      if (userUuid) {
+        fetchUserData(userUuid);
+      }
     } catch (err) {
       setFormStatus({ tone: "error", message: err.message || "Unable to save subscription." });
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDeleteSubscription = async (id) => {
+    if (!confirm("Are you sure you want to delete this subscription?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
+        method: "DELETE",
+        headers: { "X-User-Uuid": userUuid },
+      });
+      if (res.ok) {
+        setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
+      } else {
+        alert("Failed to delete subscription");
+      }
+    } catch (err) {
+      console.error("Error deleting subscription", err);
+      alert("Error deleting subscription");
+    }
+  };
+
+  const handleUpdateSubscription = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Uuid": userUuid },
+        body: JSON.stringify({ label: editLabel, webhook_url: editWebhook }),
+      });
+      if (res.ok) {
+        setUserSubscriptions((prev) =>
+          prev.map((sub) =>
+            sub.id === id ? { ...sub, label: editLabel, webhook_url: editWebhook } : sub
+          )
+        );
+        setEditingSubId(null);
+      } else {
+        alert("Failed to update subscription");
+      }
+    } catch (err) {
+      console.error("Error updating subscription", err);
+      alert("Error updating subscription");
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (
+      !confirm(
+        "Are you sure you want to delete your account? This will remove all your subscriptions and cannot be undone."
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`${API_BASE}/api/user/${userUuid}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        alert("Account deleted successfully.");
+        window.location.href = "/oui-notifier";
+      } else {
+        alert("Failed to delete account");
+      }
+    } catch (err) {
+      console.error("Error deleting account", err);
+      alert("Error deleting account");
+    }
+  };
+
+  const startEditing = (sub) => {
+    setEditingSubId(sub.id);
+    setEditLabel(sub.label || "");
+    setEditWebhook(sub.webhook_url || "");
   };
 
   return (
@@ -470,7 +587,125 @@ export default function HomePage() {
                 </div>
               </div>
 
+              {userUuid && (
+                <div className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-indigo-600">Manage</p>
+                    <h2 className="text-xl font-semibold text-slate-900">Your Subscriptions</h2>
+                    <p className="text-sm text-slate-600">
+                      Managing settings for {userData?.email}
+                    </p>
+                  </div>
 
+                  <div className="mt-6 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200">
+                      <thead>
+                        <tr>
+                          <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900">
+                            OUI / Escrow
+                          </th>
+                          <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900">
+                            Label
+                          </th>
+                          <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900">
+                            Webhook
+                          </th>
+                          <th className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {userSubscriptions.map((sub) => (
+                          <tr key={sub.id}>
+                            <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
+                              <button
+                                onClick={() => setOuiInput(sub.oui ? sub.oui.toString() : "")}
+                                className="text-indigo-600 hover:text-indigo-900 hover:underline"
+                              >
+                                {sub.oui ? `OUI ${sub.oui}` : "Unknown OUI"}
+                              </button>
+                              <div className="text-xs text-slate-400">
+                                <MiddleTruncate text={sub.escrow_account} />
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
+                              {editingSubId === sub.id ? (
+                                <input
+                                  type="text"
+                                  value={editLabel}
+                                  onChange={(e) => setEditLabel(e.target.value)}
+                                  className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                />
+                              ) : (
+                                sub.label || <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
+                              {editingSubId === sub.id ? (
+                                <input
+                                  type="text"
+                                  value={editWebhook}
+                                  onChange={(e) => setEditWebhook(e.target.value)}
+                                  className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                />
+                              ) : (
+                                sub.webhook_url ? (
+                                  <span title={sub.webhook_url}>Configured</span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )
+                              )}
+                            </td>
+                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                              {editingSubId === sub.id ? (
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    onClick={() => handleUpdateSubscription(sub.id)}
+                                    className="text-indigo-600 hover:text-indigo-900"
+                                  >
+                                    <CheckIcon className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingSubId(null)}
+                                    className="text-slate-600 hover:text-slate-900"
+                                  >
+                                    <XMarkIcon className="h-5 w-5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    onClick={() => startEditing(sub)}
+                                    className="text-indigo-600 hover:text-indigo-900"
+                                  >
+                                    <PencilIcon className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSubscription(sub.id)}
+                                    className="text-rose-600 hover:text-rose-900"
+                                  >
+                                    <TrashIcon className="h-5 w-5" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-6 border-t border-slate-200 pt-6">
+                    <button
+                      onClick={handleDeleteUser}
+                      className="text-sm text-rose-600 hover:text-rose-900 hover:underline"
+                    >
+                      Delete my account and all data
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100 h-fit">

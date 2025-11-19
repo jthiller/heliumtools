@@ -1,6 +1,10 @@
 
-export function baseEmailTemplate(content) {
-    return `
+export function baseEmailTemplate(content, managementUrl) {
+  const managementLink = managementUrl
+    ? `<p><a href="${managementUrl}">Manage your subscription settings</a></p>`
+    : "";
+
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -138,9 +142,7 @@ export function baseEmailTemplate(content) {
     </div>
     <div class="footer">
       <p>Sent by Helium Tools OUI Notifier</p>
-      <p>
-        <a href="https://heliumtools.org/oui-notifier">Manage Subscription</a>
-      </p>
+      ${managementLink}
     </div>
   </div>
 </body>

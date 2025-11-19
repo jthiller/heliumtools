@@ -2,19 +2,20 @@
 import { baseEmailTemplate } from "./base.js";
 
 export function alertEmailTemplate({
-    escrow,
-    label,
-    balanceDC,
-    balanceUSD,
-    avgBurn,
-    daysRemaining,
-    threshold,
-    burnLookbackDays,
-    appBaseUrl,
+  escrow,
+  label,
+  balanceDC,
+  balanceUSD,
+  avgBurn,
+  daysRemaining,
+  threshold,
+  burnLookbackDays,
+  appBaseUrl,
+  userUuid,
 }) {
-    const labelHtml = label ? `<span class="label">${label}</span>` : "";
+  const labelHtml = label ? `<span class="label">${label}</span>` : "";
 
-    const content = `
+  const content = `
     <div class="alert-box">
       <strong>Heads up!</strong> Your DC balance has crossed the ${threshold}-day threshold.
     </div>
@@ -60,5 +61,6 @@ export function alertEmailTemplate({
     </p>
   `;
 
-    return baseEmailTemplate(content);
+  const managementUrl = `${appBaseUrl}?uuid=${userUuid}`;
+  return baseEmailTemplate(content, managementUrl);
 }

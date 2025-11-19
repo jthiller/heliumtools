@@ -38,9 +38,10 @@ export default function VerifyPage() {
     const verified = params.get("verified");
     const token = params.get("token");
     const email = params.get("email");
+    const uuid = params.get("uuid");
 
     if (verified === "1") {
-      setState({ tone: "success", message: "Your email has been verified. You are now subscribed." });
+      setState({ tone: "success", message: "Your email has been verified. You are now subscribed.", uuid });
       return;
     }
 
@@ -82,7 +83,7 @@ export default function VerifyPage() {
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <a
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                href="/oui-notifier/"
+                href={state.uuid ? `/oui-notifier/?uuid=${state.uuid}` : "/oui-notifier/"}
               >
                 Back to alerts
               </a>

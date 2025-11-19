@@ -50,20 +50,32 @@ export async function handleSubscribe(request, env) {
 
         let userId;
         let verifyToken;
+        let userUuid;
 
         if (!user) {
             verifyToken = crypto.randomUUID();
+            userUuid = crypto.randomUUID();
             const verifyExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
             const result = await env.DB.prepare(
-                "INSERT INTO users (email, verified, verify_token, verify_expires_at, created_at) VALUES (?, 0, ?, ?, ?)"
+                "INSERT INTO users (email, verified, verify_token, verify_expires_at, created_at, uuid) VALUES (?, 0, ?, ?, ?, ?)"
             )
-                .bind(email, verifyToken, verifyExpiresAt, nowIso)
+                .bind(email, verifyToken, verifyExpiresAt, nowIso, userUuid)
                 .run();
 
             userId = result.lastRowId;
         } else {
             userId = user.id;
+            userUuid = user.uuid;
+
+            // Backfill UUID if missing
+            if (!userUuid) {
+                userUuid = crypto.randomUUID();
+                await env.DB.prepare("UPDATE users SET uuid = ? WHERE id = ?")
+                    .bind(userUuid, userId)
+                    .run();
+            }
+
             if (!user.verified) {
                 verifyToken = crypto.randomUUID();
                 const verifyExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
