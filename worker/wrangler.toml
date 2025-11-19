@@ -13,9 +13,7 @@ FROM_EMAIL   = "no-reply-dev@alerts.heliumtools.org"
 APP_BASE_URL = "https://heliumtools.org/oui-notifier"
 APP_NAME     = "Helium DC Alerts"
 # RESEND_API_KEY is required for outbound email; set via `wrangler secret put RESEND_API_KEY`.
-
-# Dev can use a plain RPC URL; prod will use a secret
-# SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+# SOLANA_RPC_URL is required for inbound data; set via `wrangler secret put SOLANA_RPC_URL`.
 
 [[d1_databases]]
 binding       = "DB-dev"
@@ -35,7 +33,7 @@ FROM_EMAIL   = "no-reply@heliumtools.org"
 APP_BASE_URL = "https://heliumtools.org/oui-notifier"
 APP_NAME     = "Helium DC Alerts"
 # RESEND_API_KEY is required for outbound email; set via `wrangler secret put RESEND_API_KEY`.
-# NOTE: No SOLANA_RPC_URL here – it's provided as a secret.
+# SOLANA_RPC_URL is required for inbound data; set via `wrangler secret put SOLANA_RPC_URL`.
 
 [[env.production.d1_databases]]
 binding       = "DB"
