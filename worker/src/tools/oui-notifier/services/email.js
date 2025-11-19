@@ -1,6 +1,6 @@
 import { safeText } from "../utils.js";
 
-export async function sendEmail(env, { to, subject, text }) {
+export async function sendEmail(env, { to, subject, text, html }) {
   if (!to) return false;
 
   const apiKey = env.RESEND_API_KEY;
@@ -21,6 +21,7 @@ export async function sendEmail(env, { to, subject, text }) {
     to: [to],
     subject,
     text,
+    html,
   };
 
   let res;

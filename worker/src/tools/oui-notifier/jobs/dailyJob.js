@@ -7,6 +7,7 @@ import {
 import { computeAvgDailyBurn, pickThreshold } from "../utils.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
 import { sendEmail } from "../services/email.js";
+import { alertEmailTemplate } from "../templates/alert.js";
 import { sendWebhook } from "../services/webhook.js";
 import {
   fetchAllOuisFromApi,
@@ -136,7 +137,7 @@ export async function runDailyJob(env) {
           "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
         )
           .bind(balanceDC, subId)
-        .run();
+          .run();
         continue;
       }
 
@@ -189,11 +190,24 @@ ${env.APP_BASE_URL || ""}
 
       let anySuccess = false;
 
+      const htmlBody = alertEmailTemplate({
+        escrow,
+        label,
+        balanceDC,
+        balanceUSD: usd,
+        avgBurn,
+        daysRemaining,
+        threshold,
+        burnLookbackDays: BURN_LOOKBACK_DAYS,
+        appBaseUrl: env.APP_BASE_URL || "https://heliumtools.org/oui-notifier",
+      });
+
       try {
         const emailOk = await sendEmail(env, {
           to: email,
           subject,
           text: textBody,
+          html: htmlBody,
         });
         if (emailOk) anySuccess = true;
         else console.error(`Email sending failed for subscription ${subId}`);

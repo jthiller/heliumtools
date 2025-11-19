@@ -1,5 +1,6 @@
 import { isValidEmail, isLikelyBase58 } from "../utils.js";
 import { sendEmail } from "../services/email.js";
+import { verifyEmailTemplate } from "../templates/verify.js";
 
 export async function handleSubscribe(request, env) {
     try {
@@ -101,12 +102,15 @@ export async function handleSubscribe(request, env) {
                 verifyToken
             )}&email=${encodeURIComponent(email)}`;
 
+            const appName = env.APP_NAME || "Helium DC Alerts";
+            const htmlBody = verifyEmailTemplate({ verifyUrl, appName });
+
             const sent = await sendEmail(env, {
                 to: email,
-                subject: `[${env.APP_NAME || "Helium DC Alerts"}] Verify your email`,
+                subject: `[${appName}] Verify your email`,
                 text: `Hi,
 
-Please verify your email address for ${env.APP_NAME || "Helium DC Alerts"} by clicking this link:
+Please verify your email address for ${appName} by clicking this link:
 
 ${verifyUrl}
 
@@ -115,6 +119,7 @@ This link will expire in 24 hours.
 If you did not request this, you can ignore this message.
 
 Thanks!`,
+                html: htmlBody,
             });
 
             if (!sent) {
