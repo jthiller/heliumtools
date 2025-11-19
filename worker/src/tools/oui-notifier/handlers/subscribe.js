@@ -1,12 +1,18 @@
 import { isValidEmail, isLikelyBase58 } from "../utils.js";
 import { sendEmail } from "../services/email.js";
 import { verifyEmailTemplate } from "../templates/verify.js";
+import { jsonHeaders } from "../responseUtils.js";
+
+const textHeaders = {
+    ...jsonHeaders,
+    "content-type": "text/plain",
+};
 
 export async function handleSubscribe(request, env) {
     try {
         const contentType = request.headers.get("content-type") || "";
         if (!contentType.includes("application/x-www-form-urlencoded")) {
-            return new Response("Invalid content-type; expected form submission.", { status: 400 });
+            return new Response("Invalid content-type; expected form submission.", { status: 400, headers: textHeaders });
         }
 
         const form = await request.formData();
@@ -16,15 +22,15 @@ export async function handleSubscribe(request, env) {
         const webhookUrlRaw = (form.get("webhook_url") || "").toString().trim();
 
         if (!email || !escrowAccount) {
-            return new Response("Email and escrow token account are required.", { status: 400 });
+            return new Response("Email and escrow token account are required.", { status: 400, headers: textHeaders });
         }
 
         if (!isValidEmail(email)) {
-            return new Response("Invalid email address.", { status: 400 });
+            return new Response("Invalid email address.", { status: 400, headers: textHeaders });
         }
 
         if (!isLikelyBase58(escrowAccount)) {
-            return new Response("Escrow token account is not a valid Solana base58 address.", { status: 400 });
+            return new Response("Escrow token account is not a valid Solana base58 address.", { status: 400, headers: textHeaders });
         }
 
         let webhookUrl = null;
@@ -32,11 +38,11 @@ export async function handleSubscribe(request, env) {
             try {
                 const u = new URL(webhookUrlRaw);
                 if (u.protocol !== "http:" && u.protocol !== "https:") {
-                    return new Response("Webhook URL must be HTTP or HTTPS.", { status: 400 });
+                    return new Response("Webhook URL must be HTTP or HTTPS.", { status: 400, headers: textHeaders });
                 }
                 webhookUrl = u.toString();
             } catch {
-                return new Response("Webhook URL is not a valid URL.", { status: 400 });
+                return new Response("Webhook URL is not a valid URL.", { status: 400, headers: textHeaders });
             }
         }
 
@@ -137,19 +143,19 @@ Thanks!`,
             if (!sent) {
                 return new Response(
                     "Subscription saved, but we could not send the verification email. Please try again later.",
-                    { status: 500 }
+                    { status: 500, headers: textHeaders }
                 );
             }
 
             return new Response(
                 "Subscription saved. Please check your inbox to verify your email before alerts are sent.",
-                { status: 200 }
+                { status: 200, headers: textHeaders }
             );
         }
 
-        return new Response("Subscription saved. Email already verified.", { status: 200 });
+        return new Response("Subscription saved. Email already verified.", { status: 200, headers: textHeaders });
     } catch (err) {
         console.error("Error in /subscribe", err);
-        return new Response("Error while saving your subscription.", { status: 500 });
+        return new Response("Error while saving your subscription.", { status: 500, headers: textHeaders });
     }
 }

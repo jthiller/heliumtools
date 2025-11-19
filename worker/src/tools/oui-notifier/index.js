@@ -10,6 +10,17 @@ import {
 export async function handleOuiNotifierRequest(request, env, ctx) {
   const url = new URL(request.url);
 
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, X-User-Uuid",
+      },
+    });
+  }
+
   if (url.pathname.startsWith("/api/user/")) {
     if (request.method === "GET") {
       return handleGetUser(request, env);

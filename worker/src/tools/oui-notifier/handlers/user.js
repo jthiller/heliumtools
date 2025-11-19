@@ -34,7 +34,12 @@ export async function handleGetUser(request, env) {
     );
 
     return new Response(JSON.stringify({ user, subscriptions }), {
-        headers: jsonHeaders,
+        headers: {
+            "content-type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type,X-User-Uuid",
+        },
     });
 }
 
