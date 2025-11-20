@@ -6,12 +6,12 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import Address from '@helium/address';
 // import { ED25519_KEY_TYPE } from '@helium/address/build/KeyTypes'; // This might need adjustment based on export
 
-// Hardcoded config from reference docusaurus.config.js
-const MIGRATION_SERVICE_URL = 'https://migration.web.helium.io';
-const SOLANA_URL = 'https://solana-rpc.web.helium.io/?session-key=Pluto';
+const MIGRATION_SERVICE_URL = import.meta.env.VITE_MIGRATION_SERVICE_URL || 'https://migration.web.helium.io';
+const SOLANA_URL = import.meta.env.VITE_SOLANA_URL || 'https://solana-rpc.web.helium.io/?session-key=Pluto';
 
 export const L1MigrationToolContent = () => {
     const [wallet, setWallet] = useState("");
+    const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: string }
 
     const solanaWallet = useMemo(() => {
         try {
@@ -51,37 +51,45 @@ export const L1MigrationToolContent = () => {
         error: errorInflate,
         loading: loadingInflate,
     } = useAsyncCallback(async (wallet) => {
-        async function getTxs() {
-            return (await axios.get(`${MIGRATION_SERVICE_URL}/migrate/${wallet.toBase58()}?limit=1000`)).data;
-        }
-        const txs = (await getTxs()).transactions;
-        if (!txs || txs.length === 0) {
-            alert("No transactions found to migrate.");
+        setStatus(null);
+        try {
+            async function getTxs() {
+                return (await axios.get(`${MIGRATION_SERVICE_URL}/migrate/${wallet.toBase58()}?limit=1000`)).data;
+            }
+            const txs = (await getTxs()).transactions;
+            if (!txs || txs.length === 0) {
+                setStatus({ type: 'info', message: "No transactions found to migrate." });
+                return true;
+            }
+
+            // Fix: Decode base64 strings correctly
+            const txBuffers = txs.map((tx) => Buffer.from(tx, 'base64'));
+
+            await bulkSendRawTransactions(connection, txBuffers);
+
+            const txs2 = (await getTxs()).transactions;
+            if (txs2.length !== 0) {
+                throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
+            }
+
+            setStatus({ type: 'success', message: "Migration successful!" });
             return true;
+        } catch (e) {
+            throw e;
         }
-
-        const txBuffers = txs.map((tx) => Buffer.from(tx));
-
-        await bulkSendRawTransactions(connection, txBuffers);
-
-        const txs2 = (await getTxs()).transactions;
-        if (txs2.length !== 0) {
-            throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
-        }
-
-        alert("Migration successful!");
-        return true;
     });
 
     return (
         <div className="space-y-6">
-            {errorInflate && (
-                <div className="rounded-md bg-red-50 p-4">
+            {(errorInflate || status) && (
+                <div className={`rounded-md p-4 ${status?.type === 'success' ? 'bg-green-50' : status?.type === 'info' ? 'bg-blue-50' : 'bg-red-50'}`}>
                     <div className="flex">
                         <div className="ml-3">
-                            <h3 className="text-sm font-medium text-red-800">Error</h3>
-                            <div className="mt-2 text-sm text-red-700">
-                                <p>{errorInflate.message}</p>
+                            <h3 className={`text-sm font-medium ${status?.type === 'success' ? 'text-green-800' : status?.type === 'info' ? 'text-blue-800' : 'text-red-800'}`}>
+                                {status?.type === 'success' ? 'Success' : status?.type === 'info' ? 'Info' : 'Error'}
+                            </h3>
+                            <div className={`mt-2 text-sm ${status?.type === 'success' ? 'text-green-700' : status?.type === 'info' ? 'text-blue-700' : 'text-red-700'}`}>
+                                <p>{errorInflate?.message || status?.message}</p>
                             </div>
                         </div>
                     </div>
