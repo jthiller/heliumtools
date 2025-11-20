@@ -1,10 +1,12 @@
 import React, { Suspense } from 'react';
+import Header from '../components/Header';
 
 const L1MigrationToolContent = React.lazy(() => import('./L1MigrationToolContent'));
 
 export const L1MigrationTool = () => {
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900">
+            <Header />
             <div className="max-w-3xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
                 <div className="bg-white shadow sm:rounded-lg">
                     <div className="px-4 py-5 sm:p-6">
