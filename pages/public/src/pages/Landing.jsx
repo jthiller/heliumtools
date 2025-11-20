@@ -1,4 +1,4 @@
-import { ArrowTopRightOnSquareIcon, BellAlertIcon } from "@heroicons/react/24/outline";
+import { ArrowTopRightOnSquareIcon, BellAlertIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 
 const features = [
@@ -9,6 +9,14 @@ const features = [
     href: "/oui-notifier/",
     icon: BellAlertIcon,
     badge: "Live",
+  },
+  {
+    name: "L1 Migration Tool",
+    description:
+      "Migrate legacy Helium L1 accounts to Solana. For accounts that may not have been accessed after the migration.",
+    href: "/l1-migration",
+    icon: ArrowPathIcon,
+    badge: "New",
   },
 ];
 

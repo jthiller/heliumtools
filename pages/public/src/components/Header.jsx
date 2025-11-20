@@ -14,9 +14,6 @@ export default function Header() {
           </div>
         </a>
         <nav className="flex items-center gap-4 text-sm font-semibold text-slate-700">
-          <a className="hover:text-indigo-600" href="/oui-notifier/">
-            OUI Notifier
-          </a>
           <a
             className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-indigo-700 ring-1 ring-indigo-200 transition hover:bg-indigo-100"
             href="/donate"
