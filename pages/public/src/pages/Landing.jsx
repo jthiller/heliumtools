@@ -8,15 +8,15 @@ const features = [
       "Get alerts before your Data Credit escrow runs low. Lookup OUIs, fetch balances, and subscribe to email or webhook alerts.",
     href: "/oui-notifier/",
     icon: BellAlertIcon,
-    badge: "Live",
+    badge: "New",
   },
   {
     name: "L1 Migration Tool",
     description:
-      "Migrate legacy Helium L1 accounts to Solana. For accounts that may not have been accessed after the migration.",
+      "Migrate legacy Helium L1 accounts to Solana. For accounts that may not have been accessed after April 2023.",
     href: "/l1-migration",
     icon: ArrowPathIcon,
-    badge: "New",
+    badge: null,
   },
 ];
 
@@ -31,7 +31,7 @@ export default function Landing() {
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold text-slate-900">Helium Tools</h1>
               <p className="text-sm text-slate-600">
-                Operator utilities to keep your network running smoothly. More tools coming soon.
+                Operator utilities to keep Helium running smoothly. More tools coming soon.
               </p>
             </div>
 
