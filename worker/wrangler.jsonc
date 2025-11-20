@@ -1,0 +1,54 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "heliumtools",
+    "main": "src/index.js",
+    "compatibility_date": "2024-11-01",
+    "workers_dev": true,
+    "vars": {
+        "FROM_EMAIL": "alerts-dev@heliumtools.org",
+        "APP_BASE_URL": "https://heliumtools.org/oui-notifier",
+        "APP_NAME": "Helium Data Credit Alerts"
+        // RESEND_API_KEY set via `wrangler secret put RESEND_API_KEY`.
+        // SOLANA_RPC_URL set via `wrangler secret put SOLANA_RPC_URL`.
+    },
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "heliumtools-dev",
+            "database_id": "ee41a4ee-4152-4f57-b999-5ae75b01597c"
+        }
+    ],
+    // Production Environment
+    "env": {
+        "production": {
+            "routes": [
+                {
+                    "pattern": "api.heliumtools.org",
+                    "custom_domain": true
+                }
+            ],
+            "vars": {
+                "FROM_EMAIL": "alerts@heliumtools.org"
+            },
+            "d1_databases": [
+                {
+                    "binding": "DB",
+                    "database_name": "heliumtools-prod",
+                    "database_id": "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
+                }
+            ]
+        }
+    },
+    "triggers": {
+        "crons": [
+            "0 1 * * *" // UTC 1:00AM
+        ]
+    },
+    "observability": {
+        "logs": {
+            "enabled": true,
+            "head_sampling_rate": 1,
+            "invocation_logs": true
+        }
+    }
+}
