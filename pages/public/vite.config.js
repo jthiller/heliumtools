@@ -11,6 +11,15 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   plugins: [react(), nodePolyfills()],
   base: "/",
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:8787",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
+  },
   build: {
     rollupOptions: {
       input: {
