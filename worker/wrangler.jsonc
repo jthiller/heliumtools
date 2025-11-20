@@ -28,7 +28,7 @@
                 }
             ],
             "vars": {
-                "FROM_EMAIL": "alerts@heliumtools.org",
+                "FROM_EMAIL": "alerts@heliumtools.org"
             },
             "d1_databases": [
                 {
