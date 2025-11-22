@@ -49,7 +49,7 @@ export function alertEmailTemplate({
     </div>
 
     <p style="font-size: 14px; color: #475569;">
-      Average daily burn (last ${burnLookbackDays} days): <strong>${avgBurn.toFixed(2)} DC/day</strong>
+      Last day's burn: <strong>${avgBurn.toFixed(2)} DC</strong>
     </p>
 
     <div style="text-align: center; margin-top: 32px;">
