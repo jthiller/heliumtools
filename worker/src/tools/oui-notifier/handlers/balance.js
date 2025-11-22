@@ -78,6 +78,6 @@ export async function handleBalance(url, env) {
         });
     } catch (err) {
         console.error("Error in /balance", err);
-        return okResponse({ error: "Unable to fetch balance" }, 500);
+        return okResponse({ error: `Unable to fetch balance: ${err.message}` }, 500);
     }
 }
