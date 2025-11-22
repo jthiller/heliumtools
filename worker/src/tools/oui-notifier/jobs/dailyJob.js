@@ -4,7 +4,7 @@ import {
   ZERO_BALANCE_DC,
   BALANCE_HISTORY_DAYS,
 } from "../config.js";
-import { computeAvgDailyBurn, pickThreshold } from "../utils.js";
+import { computeLastDayBurn, pickThreshold } from "../utils.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
 import { sendEmail } from "../services/email.js";
 import { alertEmailTemplate } from "../templates/alert.js";
@@ -130,10 +130,10 @@ export async function runDailyJob(env) {
         .bind(subId, BURN_LOOKBACK_DAYS + 1)
         .all();
 
-      const avgBurn = computeAvgDailyBurn(balanceRows);
-      if (!avgBurn || avgBurn <= 0) {
+      const lastDayBurn = computeLastDayBurn(balanceRows);
+      if (!lastDayBurn || lastDayBurn <= 0) {
         console.log(
-          `No burn detected for subscription ${subId} (avg burn = ${avgBurn}). Skipping notifications.`
+          `No recent burn detected for subscription ${subId} (lastDayBurn = ${lastDayBurn}). Skipping notifications.`
         );
         await env.DB.prepare(
           "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
@@ -144,9 +144,9 @@ export async function runDailyJob(env) {
       }
 
       const effectiveBalance = Math.max(balanceDC - ZERO_BALANCE_DC, 0);
-      const daysRemaining = effectiveBalance / avgBurn;
+      const daysRemaining = effectiveBalance / lastDayBurn;
       console.log(
-        `Subscription ${subId}: balance=${balanceDC} (effective ${effectiveBalance}), avgBurn=${avgBurn.toFixed(
+        `Subscription ${subId}: balance=${balanceDC} (effective ${effectiveBalance}), lastDayBurn=${lastDayBurn.toFixed(
           2
         )}, daysRemaining=${daysRemaining.toFixed(2)}`
       );
@@ -168,8 +168,8 @@ export async function runDailyJob(env) {
       const textBody = `Helium DC alert for escrow account ${escrow}${labelText}:
 
 Current balance: ${balanceDC.toLocaleString("en-US")} DC (~$${usd.toFixed(2)})
-Average daily burn (last ${BURN_LOOKBACK_DAYS} days): ${avgBurn.toFixed(2)} DC/day
-Estimated days remaining: ${daysRemaining.toFixed(1)} days
+Last day's burn: ${lastDayBurn.toFixed(2)} DC
+Estimated days remaining: ${daysRemaining.toFixed(2)} days
 
 This crossed the ${threshold}-day threshold.
 
@@ -184,7 +184,7 @@ ${env.APP_BASE_URL || ""}
         label,
         currentBalanceDC: balanceDC,
         currentBalanceUSD: usd,
-        avgDailyBurnDC: avgBurn,
+        avgDailyBurnDC: lastDayBurn,
         daysRemaining,
         thresholdHit: threshold,
         timestamp: today.toISOString(),
@@ -197,7 +197,7 @@ ${env.APP_BASE_URL || ""}
         label,
         balanceDC,
         balanceUSD: usd,
-        avgBurn,
+        avgBurn: lastDayBurn,
         daysRemaining,
         threshold,
         burnLookbackDays: BURN_LOOKBACK_DAYS,
