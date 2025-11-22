@@ -22,20 +22,26 @@ export async function safeText(res) {
   }
 }
 
-export function computeAvgDailyBurn(rows) {
+export function computeLastDayBurn(rows) {
   if (!rows || rows.length < 2) return 0;
-  let totalBurn = 0;
-  let days = 0;
-  for (let i = 0; i < rows.length - 1; i++) {
+
+  // Look for the most recent day with a burn (balance decreased)
+  // We look back a few days to handle cases where the very last day might be a top-up
+  const MAX_LOOKBACK = 3;
+
+  for (let i = 0; i < Math.min(rows.length - 1, MAX_LOOKBACK); i++) {
     const current = Number(rows[i].balance_dc);
     const prev = Number(rows[i + 1].balance_dc);
+
     if (!Number.isFinite(current) || !Number.isFinite(prev)) continue;
+
     const diff = prev - current;
-    if (diff > 0) totalBurn += diff;
-    days++;
+    if (diff > 0) {
+      return diff; // Found the most recent burn
+    }
   }
-  if (days === 0) return 0;
-  return totalBurn / days;
+
+  return 0; // No burn found in lookback period
 }
 
 export function pickThreshold(daysRemaining, lastNotifiedLevel) {
