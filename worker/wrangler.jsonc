@@ -36,7 +36,7 @@
                     "database_name": "heliumtools-prod",
                     "database_id": "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
                 }
-            ]
+            ],"name": "heliumtools"
         }
     },
     "triggers": {
