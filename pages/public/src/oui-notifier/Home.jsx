@@ -147,7 +147,7 @@ export default function HomePage() {
   const [escrow, setEscrow] = useState("");
   const [balance, setBalance] = useState(null);
   const [timeseries, setTimeseries] = useState([]);
-  const [balanceStatus, setBalanceStatus] = useState({ tone: "muted", message: "" });
+
   const [loadingBalance, setLoadingBalance] = useState(false);
 
   const [email, setEmail] = useState("");
@@ -158,9 +158,9 @@ export default function HomePage() {
 
   // User Management State
   const [userUuid, setUserUuid] = useState(null);
-  const [userData, setUserData] = useState(null);
+
   const [userSubscriptions, setUserSubscriptions] = useState([]);
-  const [loadingUser, setLoadingUser] = useState(false);
+
   const [editingSubId, setEditingSubId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [editWebhook, setEditWebhook] = useState("");
@@ -181,12 +181,12 @@ export default function HomePage() {
   }, []);
 
   const fetchUserData = async (uuid) => {
-    setLoadingUser(true);
+
     try {
       const res = await fetch(`${API_BASE}/api/user/${uuid}`);
       if (res.ok) {
         const data = await res.json();
-        setUserData(data.user);
+
         setUserSubscriptions(data.subscriptions);
 
         // Populate lookup with first OUI if available
@@ -199,7 +199,7 @@ export default function HomePage() {
     } catch (err) {
       console.error("Error fetching user data", err);
     } finally {
-      setLoadingUser(false);
+
     }
   };
 
@@ -532,6 +532,7 @@ export default function HomePage() {
                                 </linearGradient>
                               </defs>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                              <YAxis domain={["dataMin", "dataMax"]} hide />
                               <XAxis
                                 dataKey="date"
                                 tick={{ fontSize: 12, fill: "#64748b" }}
