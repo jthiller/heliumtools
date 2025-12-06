@@ -36,12 +36,16 @@
                     "database_name": "heliumtools-prod",
                     "database_id": "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
                 }
-            ],"name": "heliumtools"
+            ],
+            "name": "heliumtools"
         }
     },
     "triggers": {
         "crons": [
-            "0 1 * * *" // UTC 1:00AM
+            "0 0 * * *", // UTC 00:00 (midnight)
+            "0 6 * * *", // UTC 06:00
+            "0 12 * * *", // UTC 12:00 (noon)
+            "0 18 * * *" // UTC 18:00
         ]
     },
     "observability": {
