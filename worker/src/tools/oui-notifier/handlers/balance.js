@@ -2,8 +2,6 @@ import {
     ensureOuiTables,
     getOuiByNumber,
     getOuiByEscrow,
-    recordOuiBalance,
-    pruneOuiBalanceHistory,
     getOuiBalanceSeries,
 } from "../services/ouis.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
@@ -53,12 +51,8 @@ export async function handleBalance(url, env) {
         const balanceDC = await fetchEscrowBalanceDC(env, targetEscrow);
         const balanceUSD = balanceDC * DC_TO_USD_RATE;
 
-        if (org?.oui) {
-            const todayDate = new Date().toISOString().slice(0, 10);
-            const fetchedAt = new Date().toISOString();
-            await recordOuiBalance(env, org, balanceDC, todayDate, fetchedAt);
-            await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
-        }
+        // Note: Balance recording is handled by the daily cron job only.
+        // The /balance endpoint is read-only.
 
         const series =
             org?.oui != null ? await getOuiBalanceSeries(env, org.oui, BALANCE_HISTORY_DAYS) : [];

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   created_at TEXT NOT NULL,
   last_notified_level INTEGER NOT NULL DEFAULT 0,
   last_balance_dc REAL,
+  last_webhook_date TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id),
   UNIQUE (user_id, escrow_account)
 );

@@ -17,38 +17,37 @@ import {
   upsertOuis,
 } from "../services/ouis.js";
 
+/**
+ * Main scheduled job - runs every 6 hours.
+ * 
+ * EVERY RUN (4x/day):
+ * - Syncs all OUIs from the Helium API
+ * - Fetches and records balances for all OUIs
+ * - Records balances for subscribed escrow accounts
+ * 
+ * ONCE PER DAY (first run of the day for each subscription):
+ * - Sends webhook payloads (if webhook_url configured)
+ * - Sends threshold-based email alerts (if threshold crossed)
+ */
 export async function runDailyJob(env) {
-  console.log("Starting daily DC alert job (oui-notifier)");
+  const now = new Date();
+  const todayDate = now.toISOString().slice(0, 10);
+
+  console.log(`Starting scheduled job (oui-notifier) at ${now.toISOString()}`);
 
   try {
     await ensureOuiTables(env);
 
-    const { results: subs } = await env.DB.prepare(
-      `SELECT
-         s.id,
-         s.user_id,
-         s.escrow_account,
-         s.label,
-         s.webhook_url,
-         s.last_notified_level,
-         s.last_balance_dc,
-         s.last_balance_dc,
-         u.email,
-         u.uuid
-       FROM subscriptions s
-       JOIN users u ON u.id = s.user_id
-       WHERE u.verified = 1`
-    ).all();
+    // Ensure the last_webhook_date column exists (migration may not have run)
+    await ensureWebhookDateColumn(env);
 
-    const today = new Date();
-    const todayDate = today.toISOString().slice(0, 10);
-
-    // Step 1: sync all OUIs and record balances for everyone (whether subscribed or not).
+    // Step 1: Sync all OUIs and record balances (runs every 6 hours)
     const escrowBalanceCache = new Map();
     try {
       const orgs = await fetchAllOuisFromApi();
-      const syncedAt = new Date().toISOString();
+      const syncedAt = now.toISOString();
       await upsertOuis(env, orgs, syncedAt);
+      console.log(`Synced ${orgs.length} OUIs from API`);
 
       for (const org of orgs) {
         if (!org.escrow) continue;
@@ -63,109 +62,189 @@ export async function runDailyJob(env) {
           console.error(`Unable to fetch/store balance for OUI ${org.oui} (${org.escrow})`, err);
         }
       }
+      console.log(`Recorded balances for ${escrowBalanceCache.size} OUIs`);
     } catch (err) {
       console.error("Failed to sync OUIs; continuing with subscriptions.", err);
     }
 
+    // Step 2: Process subscriptions
+    const { results: subs } = await env.DB.prepare(
+      `SELECT
+         s.id,
+         s.user_id,
+         s.escrow_account,
+         s.label,
+         s.webhook_url,
+         s.last_notified_level,
+         s.last_balance_dc,
+         s.last_webhook_date,
+         u.email,
+         u.uuid
+       FROM subscriptions s
+       JOIN users u ON u.id = s.user_id
+       WHERE u.verified = 1`
+    ).all();
+
     if (!subs || subs.length === 0) {
       console.log("No verified subscriptions found; job complete.");
+      await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
       return;
     }
 
-    // Step 2: run subscription alerts, reusing cached balances when possible.
+    console.log(`Processing ${subs.length} verified subscriptions`);
 
     for (const sub of subs) {
-      const subId = sub.id;
-      const escrow = sub.escrow_account;
-      const label = sub.label || null;
-      const webhookUrl = sub.webhook_url || null;
-      const email = sub.email;
-      const lastNotifiedLevel = Number(sub.last_notified_level || 0);
-      const lastBalanceDc = sub.last_balance_dc != null ? Number(sub.last_balance_dc) : null;
+      await processSubscription(env, sub, escrowBalanceCache, todayDate, now);
+    }
 
-      console.log(`Processing subscription ${subId} for ${email} / ${escrow}`);
+    console.log("Scheduled job complete (oui-notifier).");
+    await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
+    await pruneSubscriptionBalanceHistory(env, BALANCE_HISTORY_DAYS);
+  } catch (err) {
+    console.error("Fatal error in scheduled job (oui-notifier)", err);
+  }
+}
 
-      let balanceDC;
-      try {
-        const cached = escrowBalanceCache.get(escrow);
-        if (cached && Number.isFinite(cached.balanceDC)) {
-          balanceDC = cached.balanceDC;
-        } else {
-          balanceDC = await fetchEscrowBalanceDC(env, escrow);
-          escrowBalanceCache.set(escrow, { balanceDC, oui: cached?.oui ?? null });
-        }
-      } catch (rpcErr) {
-        console.error(`Failed to fetch balance for ${escrow}`, rpcErr);
-        continue;
-      }
+/**
+ * Process a single subscription.
+ * - Always records balance (every 6 hours)
+ * - Sends webhook once per day (if not already sent today)
+ * - Sends email on threshold crossing
+ */
+async function processSubscription(env, sub, escrowBalanceCache, todayDate, now) {
+  const subId = sub.id;
+  const escrow = sub.escrow_account;
+  const label = sub.label || null;
+  const webhookUrl = sub.webhook_url || null;
+  const email = sub.email;
+  const lastNotifiedLevel = Number(sub.last_notified_level || 0);
+  const lastBalanceDc = sub.last_balance_dc != null ? Number(sub.last_balance_dc) : null;
+  const lastWebhookDate = sub.last_webhook_date || null;
 
-      let newLastNotifiedLevel = lastNotifiedLevel;
-      if (lastBalanceDc != null && balanceDC > lastBalanceDc * 1.2) {
-        console.log(
-          `Detected possible top-up for subscription ${subId} (from ${lastBalanceDc} to ${balanceDC}), resetting notification level.`
-        );
-        newLastNotifiedLevel = 0;
-      }
+  console.log(`Processing subscription ${subId} for ${escrow}`);
 
-      try {
+  // --- STEP 1: Fetch current balance ---
+  let balanceDC;
+  try {
+    const cached = escrowBalanceCache.get(escrow);
+    if (cached && Number.isFinite(cached.balanceDC)) {
+      balanceDC = cached.balanceDC;
+    } else {
+      balanceDC = await fetchEscrowBalanceDC(env, escrow);
+      escrowBalanceCache.set(escrow, { balanceDC, oui: cached?.oui ?? null });
+    }
+  } catch (rpcErr) {
+    console.error(`Failed to fetch balance for ${escrow}`, rpcErr);
+    return;
+  }
+
+  // --- STEP 2: Record balance in subscription history ---
+  try {
+    await env.DB.prepare(
+      `INSERT INTO balances (subscription_id, date, balance_dc)
+       VALUES (?, ?, ?)
+       ON CONFLICT(subscription_id, date) DO UPDATE SET balance_dc = excluded.balance_dc`
+    )
+      .bind(subId, todayDate, balanceDC)
+      .run();
+  } catch (e) {
+    console.error(`Error inserting balance row for subscription ${subId}`, e);
+    return;
+  }
+
+  // --- STEP 3: Calculate burn rate and days remaining ---
+  const { results: balanceRows } = await env.DB.prepare(
+    `SELECT date, balance_dc
+     FROM balances
+     WHERE subscription_id = ?
+     ORDER BY date DESC
+     LIMIT ?`
+  )
+    .bind(subId, BURN_LOOKBACK_DAYS + 1)
+    .all();
+
+  const lastDayBurn = computeLastDayBurn(balanceRows);
+  const usd = balanceDC * DC_TO_USD_RATE;
+
+  let daysRemaining = null;
+  if (lastDayBurn && lastDayBurn > 0) {
+    const effectiveBalance = Math.max(balanceDC - ZERO_BALANCE_DC, 0);
+    daysRemaining = effectiveBalance / lastDayBurn;
+    console.log(
+      `Subscription ${subId}: balance=${balanceDC}, burn=${lastDayBurn.toFixed(2)}, daysRemaining=${daysRemaining.toFixed(2)}`
+    );
+  } else {
+    console.log(`Subscription ${subId}: balance=${balanceDC}, no burn data`);
+  }
+
+  // --- STEP 4: Check for top-up (reset notification level) ---
+  let newLastNotifiedLevel = lastNotifiedLevel;
+  if (lastBalanceDc != null && balanceDC > lastBalanceDc * 1.2) {
+    console.log(`Detected top-up for subscription ${subId}, resetting notification level`);
+    newLastNotifiedLevel = 0;
+  }
+
+  // --- STEP 5: Send DAILY WEBHOOK (once per day) ---
+  const alreadySentWebhookToday = lastWebhookDate === todayDate;
+
+  if (webhookUrl && !alreadySentWebhookToday) {
+    const webhookPayload = {
+      escrowAccount: escrow,
+      label,
+      currentBalanceDC: balanceDC,
+      currentBalanceUSD: usd,
+      avgDailyBurnDC: lastDayBurn || 0,
+      daysRemaining, // null if no burn data
+      timestamp: now.toISOString(),
+    };
+
+    try {
+      console.log(`Sending daily webhook for subscription ${subId} to ${webhookUrl}`);
+      const webhookOk = await sendWebhook(webhookUrl, webhookPayload);
+      if (webhookOk) {
+        console.log(`Daily webhook sent successfully for subscription ${subId}`);
         await env.DB.prepare(
-          `INSERT INTO balances (subscription_id, date, balance_dc)
-           VALUES (?, ?, ?)
-           ON CONFLICT(subscription_id, date) DO UPDATE SET balance_dc = excluded.balance_dc`
+          "UPDATE subscriptions SET last_webhook_date = ? WHERE id = ?"
         )
-          .bind(subId, todayDate, balanceDC)
+          .bind(todayDate, subId)
           .run();
-      } catch (e) {
-        console.error(`Error inserting balance row for subscription ${subId}`, e);
-        continue;
+      } else {
+        console.error(`Webhook delivery failed for subscription ${subId}`);
       }
+    } catch (e) {
+      console.error(`Error sending webhook for subscription ${subId}`, e);
+    }
+  } else if (webhookUrl && alreadySentWebhookToday) {
+    console.log(`Webhook already sent today for subscription ${subId}, skipping`);
+  }
 
-      const { results: balanceRows } = await env.DB.prepare(
-        `SELECT date, balance_dc
-         FROM balances
-         WHERE subscription_id = ?
-         ORDER BY date DESC
-         LIMIT ?`
-      )
-        .bind(subId, BURN_LOOKBACK_DAYS + 1)
-        .all();
+  // --- STEP 6: Send THRESHOLD EMAIL (when threshold is crossed) ---
+  if (!lastDayBurn || lastDayBurn <= 0) {
+    // No burn data, update balance and skip email
+    await env.DB.prepare(
+      "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+    )
+      .bind(balanceDC, subId)
+      .run();
+    return;
+  }
 
-      const lastDayBurn = computeLastDayBurn(balanceRows);
-      if (!lastDayBurn || lastDayBurn <= 0) {
-        console.log(
-          `No recent burn detected for subscription ${subId} (lastDayBurn = ${lastDayBurn}). Skipping notifications.`
-        );
-        await env.DB.prepare(
-          "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
-        )
-          .bind(balanceDC, subId)
-          .run();
-        continue;
-      }
+  const threshold = pickThreshold(daysRemaining, newLastNotifiedLevel);
+  if (!threshold) {
+    // No threshold crossed, just update balance
+    await env.DB.prepare(
+      "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+    )
+      .bind(balanceDC, subId)
+      .run();
+    return;
+  }
 
-      const effectiveBalance = Math.max(balanceDC - ZERO_BALANCE_DC, 0);
-      const daysRemaining = effectiveBalance / lastDayBurn;
-      console.log(
-        `Subscription ${subId}: balance=${balanceDC} (effective ${effectiveBalance}), lastDayBurn=${lastDayBurn.toFixed(
-          2
-        )}, daysRemaining=${daysRemaining.toFixed(2)}`
-      );
+  // Threshold crossed - send email
+  const subject = `[${env.APP_NAME || "Helium DC Alerts"}] ~${threshold} days of DC remaining`;
+  const labelText = label ? ` (${label})` : "";
 
-      const threshold = pickThreshold(daysRemaining, newLastNotifiedLevel);
-      if (!threshold) {
-        await env.DB.prepare(
-          "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
-        )
-          .bind(balanceDC, subId)
-          .run();
-        continue;
-      }
-
-      const subject = `[${env.APP_NAME || "Helium DC Alerts"}] ~${threshold} days of DC remaining`;
-      const labelText = label ? ` (${label})` : "";
-      const usd = balanceDC * DC_TO_USD_RATE;
-
-      const textBody = `Helium DC alert for escrow account ${escrow}${labelText}:
+  const textBody = `Helium DC alert for escrow account ${escrow}${labelText}:
 
 Current balance: ${balanceDC.toLocaleString("en-US")} DC (~$${usd.toFixed(2)})
 Last day's burn: ${lastDayBurn.toFixed(2)} DC
@@ -178,85 +257,63 @@ ${env.APP_BASE_URL || ""}
 
 (If you topped up your DC balance significantly, alerts will reset on the next run.)`;
 
-      const payloadForWebhook = {
-        wallet: null,
-        escrowAccount: escrow,
-        label,
-        currentBalanceDC: balanceDC,
-        currentBalanceUSD: usd,
-        avgDailyBurnDC: lastDayBurn,
-        daysRemaining,
-        thresholdHit: threshold,
-        timestamp: today.toISOString(),
-      };
+  const htmlBody = alertEmailTemplate({
+    escrow,
+    label,
+    balanceDC,
+    balanceUSD: usd,
+    avgBurn: lastDayBurn,
+    daysRemaining,
+    threshold,
+    burnLookbackDays: BURN_LOOKBACK_DAYS,
+    appBaseUrl: env.APP_BASE_URL || "https://heliumtools.org/oui-notifier",
+    userUuid: sub.uuid,
+  });
 
-      let anySuccess = false;
-
-      const htmlBody = alertEmailTemplate({
-        escrow,
-        label,
-        balanceDC,
-        balanceUSD: usd,
-        avgBurn: lastDayBurn,
-        daysRemaining,
-        threshold,
-        burnLookbackDays: BURN_LOOKBACK_DAYS,
-        appBaseUrl: env.APP_BASE_URL || "https://heliumtools.org/oui-notifier",
-        userUuid: sub.uuid,
-      });
-
-      try {
-        const emailOk = await sendEmail(env, {
-          to: email,
-          subject,
-          text: textBody,
-          html: htmlBody,
-        });
-        if (emailOk) anySuccess = true;
-        else console.error(`Email sending failed for subscription ${subId}`);
-      } catch (e) {
-        console.error(`Error sending email for subscription ${subId}`, e);
-      }
-
-      if (webhookUrl) {
-        try {
-          const webhookOk = await sendWebhook(webhookUrl, payloadForWebhook);
-          if (webhookOk) anySuccess = true;
-        } catch (e) {
-          console.error(`Error sending webhook for subscription ${subId}`, e);
-        }
-      }
-
-      if (anySuccess) {
-        try {
-          await env.DB.prepare(
-            "UPDATE subscriptions SET last_notified_level = ?, last_balance_dc = ? WHERE id = ?"
-          )
-            .bind(threshold, balanceDC, subId)
-            .run();
-        } catch (e) {
-          console.error(
-            `Error updating subscription notification level for ${subId}`,
-            e
-          );
-        }
-      } else {
-        console.error(
-          `No successful notifications sent for subscription ${subId}; will retry on next run.`
-        );
-        await env.DB.prepare(
-          "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
-        )
-          .bind(balanceDC, subId)
-          .run();
-      }
+  try {
+    const emailOk = await sendEmail(env, {
+      to: email,
+      subject,
+      text: textBody,
+      html: htmlBody,
+    });
+    if (emailOk) {
+      console.log(`Threshold email sent for subscription ${subId} (${threshold} days)`);
+      await env.DB.prepare(
+        "UPDATE subscriptions SET last_notified_level = ?, last_balance_dc = ? WHERE id = ?"
+      )
+        .bind(threshold, balanceDC, subId)
+        .run();
+    } else {
+      console.error(`Email sending failed for subscription ${subId}`);
+      await env.DB.prepare(
+        "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+      )
+        .bind(balanceDC, subId)
+        .run();
     }
+  } catch (e) {
+    console.error(`Error sending email for subscription ${subId}`, e);
+    await env.DB.prepare(
+      "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+    )
+      .bind(balanceDC, subId)
+      .run();
+  }
+}
 
-    console.log("Daily DC alert job complete (oui-notifier).");
-    await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
-    await pruneSubscriptionBalanceHistory(env, BALANCE_HISTORY_DAYS);
+/**
+ * Ensure the last_webhook_date column exists (handles case where migration hasn't run)
+ */
+async function ensureWebhookDateColumn(env) {
+  try {
+    // Try to add the column - will fail silently if it already exists
+    await env.DB.prepare(
+      "ALTER TABLE subscriptions ADD COLUMN last_webhook_date TEXT"
+    ).run();
+    console.log("Added last_webhook_date column to subscriptions table");
   } catch (err) {
-    console.error("Fatal error in daily job (oui-notifier)", err);
+    // Column likely already exists, which is fine
   }
 }
 
