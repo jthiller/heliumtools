@@ -28,7 +28,9 @@
                 }
             ],
             "vars": {
-                "FROM_EMAIL": "alerts@heliumtools.org"
+                "FROM_EMAIL": "alerts@heliumtools.org",
+                "APP_BASE_URL": "https://heliumtools.org/oui-notifier",
+                "APP_NAME": "Helium Data Credit Alerts"
             },
             "d1_databases": [
                 {
