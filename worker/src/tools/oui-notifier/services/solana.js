@@ -49,8 +49,8 @@ export async function fetchEscrowBalanceDC(env, escrowAccount) {
  * @param {string[]} escrowAccounts - Array of escrow account addresses
  * @returns {Map<string, number>} Map of escrow address -> balance in DC
  */
-const BATCH_SIZE = 10; //syndica free tier limit
-const BATCH_DELAY_MS = 105; //100 rps
+const BATCH_SIZE = 10; // syndica free tier limit
+const BATCH_DELAY_MS = 105; // 100 rps
 
 export async function fetchEscrowBalancesBatched(env, escrowAccounts) {
   const rpcUrl = env.SOLANA_RPC_URL;
