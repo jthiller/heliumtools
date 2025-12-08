@@ -5,7 +5,7 @@ import {
   BALANCE_HISTORY_DAYS,
 } from "../config.js";
 import { computeLastDayBurn, pickThreshold } from "../utils.js";
-import { fetchEscrowBalanceDC } from "../services/solana.js";
+import { fetchEscrowBalanceDC, fetchEscrowBalancesBatched } from "../services/solana.js";
 import { sendEmail } from "../services/email.js";
 import { alertEmailTemplate } from "../templates/alert.js";
 import { sendWebhook } from "../services/webhook.js";
@@ -42,6 +42,7 @@ export async function runDailyJob(env) {
     await ensureWebhookDateColumn(env);
 
     // Step 1: Sync all OUIs and record balances (runs every 6 hours)
+    // Use batched RPC fetch to avoid Cloudflare subrequest limits
     const escrowBalanceCache = new Map();
     try {
       const orgs = await fetchAllOuisFromApi();
@@ -49,19 +50,39 @@ export async function runDailyJob(env) {
       await upsertOuis(env, orgs, syncedAt);
       console.log(`Synced ${orgs.length} OUIs from API`);
 
+      // Collect unique escrow addresses and map to all associated OUIs
+      const escrowToOrgs = new Map();
       for (const org of orgs) {
         if (!org.escrow) continue;
-        if (escrowBalanceCache.has(org.escrow)) continue;
+        if (!escrowToOrgs.has(org.escrow)) {
+          escrowToOrgs.set(org.escrow, []);
+        }
+        escrowToOrgs.get(org.escrow).push(org);
+      }
 
-        try {
-          const balanceDC = await fetchEscrowBalanceDC(env, org.escrow);
-          const entry = { oui: org.oui, balanceDC };
-          escrowBalanceCache.set(org.escrow, entry);
-          await recordOuiBalance(env, org, balanceDC, todayDate, syncedAt);
-        } catch (err) {
-          console.error(`Unable to fetch/store balance for OUI ${org.oui} (${org.escrow})`, err);
+      const escrowAddresses = Array.from(escrowToOrgs.keys());
+      console.log(`Fetching balances for ${escrowAddresses.length} unique escrow accounts (batched)`);
+
+      // Fetch all balances in a single batched RPC request
+      const balanceMap = await fetchEscrowBalancesBatched(env, escrowAddresses);
+
+      // Process results and record to database for all OUIs sharing each escrow
+      for (const [escrow, balanceDC] of balanceMap) {
+        const orgsForEscrow = escrowToOrgs.get(escrow);
+        if (!orgsForEscrow) continue;
+
+        escrowBalanceCache.set(escrow, { oui: orgsForEscrow[0].oui, balanceDC });
+        
+        // Record balance for all OUIs that share this escrow address
+        for (const org of orgsForEscrow) {
+          try {
+            await recordOuiBalance(env, org, balanceDC, todayDate, syncedAt);
+          } catch (err) {
+            console.error(`Failed to record balance for OUI ${org.oui} (${escrow})`, err);
+          }
         }
       }
+
       console.log(`Recorded balances for ${escrowBalanceCache.size} OUIs`);
     } catch (err) {
       console.error("Failed to sync OUIs; continuing with subscriptions.", err);
