@@ -5,6 +5,7 @@ import {
     getOuiBalanceSeries,
 } from "../services/ouis.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
+import { computeBurnRates } from "../services/burnRate.js";
 import {
     DC_TO_USD_RATE,
     ZERO_BALANCE_DC,
@@ -57,11 +58,20 @@ export async function handleBalance(url, env) {
         const series =
             org?.oui != null ? await getOuiBalanceSeries(env, org.oui, BALANCE_HISTORY_DAYS) : [];
 
+        // Compute burn rates from timeseries
+        const burnRates = computeBurnRates(series);
+
         return okResponse({
             oui,
             escrow: targetEscrow,
             balance_dc: balanceDC,
             balance_usd: balanceUSD,
+            burn_rate: {
+                burn_1d_dc: burnRates.burn1d?.dc ?? null,
+                burn_1d_usd: burnRates.burn1d?.usd ?? null,
+                burn_30d_dc: burnRates.burn30d?.dc ?? null,
+                burn_30d_usd: burnRates.burn30d?.usd ?? null,
+            },
             zero_balance_dc: ZERO_BALANCE_DC,
             zero_balance_usd: ZERO_BALANCE_USD,
             timeseries: series.map((row) => ({
@@ -75,3 +85,4 @@ export async function handleBalance(url, env) {
         return okResponse({ error: `Unable to fetch balance: ${err.message}` }, 500);
     }
 }
+

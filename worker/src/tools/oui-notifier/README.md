@@ -57,6 +57,12 @@ curl "https://api.heliumtools.org/oui-notifier/balance?escrow=FfUwicjJe5G1hkbDKC
   "escrow": "FfUwicjJe5G1hkbDKCZ9NzjBT57RkQFvUZKXFXqXFXrV",
   "balance_dc": 892145678900,
   "balance_usd": 8921456.79,
+  "burn_rate": {
+    "burn_1d_dc": 5000000,
+    "burn_1d_usd": 50.00,
+    "burn_30d_dc": 4500000,
+    "burn_30d_usd": 45.00
+  },
   "zero_balance_dc": 3500000,
   "zero_balance_usd": 35,
   "timeseries": [
@@ -66,6 +72,8 @@ curl "https://api.heliumtools.org/oui-notifier/balance?escrow=FfUwicjJe5G1hkbDKC
   ]
 }
 ```
+
+> **Note**: `burn_rate` values may be `null` if insufficient historical data is available or if no burn has occurred (only balance increases/top-ups).
 
 ---
 
@@ -272,11 +280,15 @@ The worker runs a scheduled job every 6 hours (UTC 00:00, 06:00, 12:00, 18:00).
      "label": "My OUI",
      "currentBalanceDC": 1234567890,
      "currentBalanceUSD": 12345.67,
-     "avgDailyBurnDC": 100000,
+     "burn1dDC": 5000000,
+     "burn1dUSD": 50.00,
+     "burn30dDC": 4500000,
+     "burn30dUSD": 45.00,
      "daysRemaining": 45.6,
      "timestamp": "2024-12-05T00:00:00.000Z"
    }
    ```
+   > Burn rate values are `null` if insufficient data is available.
 5. **Sends email alert** only when crossing a threshold (14, 7, or 1 day remaining)
 6. **Prunes old balance history** (keeps 30 days)
 

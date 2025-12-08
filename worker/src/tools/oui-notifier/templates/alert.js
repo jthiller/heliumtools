@@ -6,14 +6,18 @@ export function alertEmailTemplate({
   label,
   balanceDC,
   balanceUSD,
-  avgBurn,
+  burn1dDC,
+  burn1dUSD,
+  burn30dDC,
+  burn30dUSD,
   daysRemaining,
   threshold,
-  burnLookbackDays,
   appBaseUrl,
   userUuid,
 }) {
   const labelHtml = label ? `<span class="label">${label}</span>` : "";
+  const formatDC = (val) => val != null && val > 0 ? val.toFixed(2) : "N/A";
+  const formatUSD = (val) => val != null && val > 0 ? `$${val.toFixed(2)}` : "—";
 
   const content = `
     <div class="alert-box">
@@ -43,14 +47,23 @@ export function alertEmailTemplate({
         <div class="stat-label">Est. Days Remaining</div>
         <div class="stat-value">${daysRemaining.toFixed(1)} days</div>
         <div style="font-size: 13px; color: #64748b; margin-top: 2px;">
-          Based on recent burn
+          Based on 30d avg burn
         </div>
       </div>
     </div>
 
-    <p style="font-size: 14px; color: #475569;">
-      Last day's burn: <strong>${avgBurn.toFixed(2)} DC</strong>
-    </p>
+    <div class="stat-grid" style="margin-top: 16px;">
+      <div class="stat-item">
+        <div class="stat-label">1-Day Burn Rate</div>
+        <div class="stat-value">${formatDC(burn1dDC)} DC</div>
+        <div style="font-size: 13px; color: #64748b; margin-top: 2px;">${formatUSD(burn1dUSD)}/day</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">30-Day Avg Burn</div>
+        <div class="stat-value">${formatDC(burn30dDC)} DC</div>
+        <div style="font-size: 13px; color: #64748b; margin-top: 2px;">${formatUSD(burn30dUSD)}/day</div>
+      </div>
+    </div>
 
     <div style="text-align: center; margin-top: 32px;">
       <a href="${appBaseUrl}" class="button">View Dashboard</a>
@@ -64,3 +77,4 @@ export function alertEmailTemplate({
   const managementUrl = `${appBaseUrl}?uuid=${userUuid}`;
   return baseEmailTemplate(content, managementUrl);
 }
+
