@@ -50,31 +50,36 @@ export async function runDailyJob(env) {
       await upsertOuis(env, orgs, syncedAt);
       console.log(`Synced ${orgs.length} OUIs from API`);
 
-      // Collect unique escrow addresses
-      const escrowToOrg = new Map();
+      // Collect unique escrow addresses and map to all associated OUIs
+      const escrowToOrgs = new Map();
       for (const org of orgs) {
         if (!org.escrow) continue;
-        if (!escrowToOrg.has(org.escrow)) {
-          escrowToOrg.set(org.escrow, org);
+        if (!escrowToOrgs.has(org.escrow)) {
+          escrowToOrgs.set(org.escrow, []);
         }
+        escrowToOrgs.get(org.escrow).push(org);
       }
 
-      const escrowAddresses = Array.from(escrowToOrg.keys());
+      const escrowAddresses = Array.from(escrowToOrgs.keys());
       console.log(`Fetching balances for ${escrowAddresses.length} unique escrow accounts (batched)`);
 
       // Fetch all balances in a single batched RPC request
       const balanceMap = await fetchEscrowBalancesBatched(env, escrowAddresses);
 
-      // Process results and record to database
+      // Process results and record to database for all OUIs sharing each escrow
       for (const [escrow, balanceDC] of balanceMap) {
-        const org = escrowToOrg.get(escrow);
-        if (!org) continue;
+        const orgsForEscrow = escrowToOrgs.get(escrow);
+        if (!orgsForEscrow) continue;
 
-        escrowBalanceCache.set(escrow, { oui: org.oui, balanceDC });
-        try {
-          await recordOuiBalance(env, org, balanceDC, todayDate, syncedAt);
-        } catch (err) {
-          console.error(`Failed to record balance for OUI ${org.oui} (${escrow})`, err);
+        escrowBalanceCache.set(escrow, { oui: orgsForEscrow[0].oui, balanceDC });
+        
+        // Record balance for all OUIs that share this escrow address
+        for (const org of orgsForEscrow) {
+          try {
+            await recordOuiBalance(env, org, balanceDC, todayDate, syncedAt);
+          } catch (err) {
+            console.error(`Failed to record balance for OUI ${org.oui} (${escrow})`, err);
+          }
         }
       }
 
