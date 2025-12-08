@@ -75,7 +75,7 @@ function isAccountNotFoundError(error) {
  * @returns {Map<string, number>} Map of escrow address -> balance in DC
  */
 const BATCH_SIZE = 10; // syndica free tier limit
-const BATCH_DELAY_MS = 105; // 100 rps limit. delay of 105ms between batches of 10 keeps rate under 100 rps
+const BATCH_DELAY_MS = 105; // 100 rps limit. 10 requests * 105ms = 1050ms per batch → 1000ms/1050ms * 10 ≈ 9.52 batches/sec * 10 = 95.2 rps
 const RATE_LIMIT_DELAY_MS = 1000; // longer delay after rate limit errors
 
 export async function fetchEscrowBalancesBatched(env, escrowAccounts) {
