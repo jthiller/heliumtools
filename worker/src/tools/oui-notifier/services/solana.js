@@ -1,6 +1,6 @@
 /**
  * Fetch balance for a single escrow account.
- * Use fetchEscrowBalancesBatched() for bulk fetches to avoid subrequest limits.
+ * Use fetchEscrowBalancesBatched() for bulk fetches to avoid subrequest limits on free tiers (syndica).
  */
 export async function fetchEscrowBalanceDC(env, escrowAccount) {
   const rpcUrl = env.SOLANA_RPC_URL;

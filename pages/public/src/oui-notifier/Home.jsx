@@ -146,6 +146,7 @@ export default function HomePage() {
   const [payer, setPayer] = useState("");
   const [escrow, setEscrow] = useState("");
   const [balance, setBalance] = useState(null);
+  const [burnRate, setBurnRate] = useState(null);
   const [timeseries, setTimeseries] = useState([]);
 
   const [loadingBalance, setLoadingBalance] = useState(false);
@@ -239,6 +240,7 @@ export default function HomePage() {
       setPayer("");
       setEscrow("");
       setBalance(null);
+      setBurnRate(null);
       setTimeseries([]);
       localStorage.removeItem("ouiNotifierEscrow");
       return;
@@ -260,6 +262,19 @@ export default function HomePage() {
         const dc = Number(payload.balance_dc || 0);
         const usd = Number(payload.balance_usd || 0);
         setBalance({ dc, usd });
+
+        // Parse burn rate from API response
+        if (payload.burn_rate) {
+          setBurnRate({
+            burn1dDC: payload.burn_rate.burn_1d_dc,
+            burn1dUSD: payload.burn_rate.burn_1d_usd,
+            burn30dDC: payload.burn_rate.burn_30d_dc,
+            burn30dUSD: payload.burn_rate.burn_30d_usd,
+          });
+        } else {
+          setBurnRate(null);
+        }
+
         setTimeseries(
           (payload.timeseries || []).map((t) => ({
             ...t,
@@ -276,6 +291,7 @@ export default function HomePage() {
       } catch (err) {
         console.error("Failed to fetch balance", err);
         setBalance(null);
+        setBurnRate(null);
         setTimeseries([]);
       } finally {
         setLoadingBalance(false);
@@ -511,6 +527,34 @@ export default function HomePage() {
                               {usdFormatter.format(balance.usd)}
                             </p>
                             <p>{numberFormatter.format(balance.dc)} DC</p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
+                        Usage Rate
+                        <SimpleTooltip content="Rates at which Data Credits are being consumed.">
+                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
+                        </SimpleTooltip>
+                      </dt>
+                      <dd className="text-sm text-slate-700">
+                        {(burnRate?.burn1dUSD != null || burnRate?.burn30dUSD != null) ? (
+                          <div className="space-y-0.5 text-sm font-semibold text-slate-900">
+                            {burnRate?.burn1dUSD != null && (
+                              <p className="text-amber-600">
+                                1-Day: {usdFormatter.format(burnRate.burn1dUSD)}/day
+                                <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn1dDC))} DC)</span>
+                              </p>
+                            )}
+                            {burnRate?.burn30dUSD != null && (
+                              <p className="text-amber-600">
+                                30-Day Avg: {usdFormatter.format(burnRate.burn30dUSD)}/day
+                                <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn30dDC))} DC)</span>
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-500">—</span>

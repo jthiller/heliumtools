@@ -1,10 +1,10 @@
 import {
-  BURN_LOOKBACK_DAYS,
   DC_TO_USD_RATE,
   ZERO_BALANCE_DC,
   BALANCE_HISTORY_DAYS,
 } from "../config.js";
-import { computeLastDayBurn, pickThreshold } from "../utils.js";
+import { pickThreshold } from "../utils.js";
+import { computeBurnRates } from "../services/burnRate.js";
 import { fetchEscrowBalanceDC, fetchEscrowBalancesBatched } from "../services/solana.js";
 import { sendEmail } from "../services/email.js";
 import { alertEmailTemplate } from "../templates/alert.js";
@@ -72,7 +72,7 @@ export async function runDailyJob(env) {
         if (!orgsForEscrow) continue;
 
         escrowBalanceCache.set(escrow, { oui: orgsForEscrow[0].oui, balanceDC });
-        
+
         // Record balance for all OUIs that share this escrow address
         for (const org of orgsForEscrow) {
           try {
@@ -181,18 +181,23 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
      ORDER BY date DESC
      LIMIT ?`
   )
-    .bind(subId, BURN_LOOKBACK_DAYS + 1)
+    .bind(subId, BALANCE_HISTORY_DAYS + 1)
     .all();
 
-  const lastDayBurn = computeLastDayBurn(balanceRows);
+  // Use new timestamp-aware burn rate calculation
+  const burnRates = computeBurnRates(balanceRows);
+  const burn1dDC = burnRates.burn1d?.dc ?? 0;
+  const burn30dDC = burnRates.burn30d?.dc ?? 0;
   const usd = balanceDC * DC_TO_USD_RATE;
 
+  // Use 30-day average for days remaining calculation (more stable)
+  const burnForDaysRemaining = burn30dDC > 0 ? burn30dDC : burn1dDC;
   let daysRemaining = null;
-  if (lastDayBurn && lastDayBurn > 0) {
+  if (burnForDaysRemaining > 0) {
     const effectiveBalance = Math.max(balanceDC - ZERO_BALANCE_DC, 0);
-    daysRemaining = effectiveBalance / lastDayBurn;
+    daysRemaining = effectiveBalance / burnForDaysRemaining;
     console.log(
-      `Subscription ${subId}: balance=${balanceDC}, burn=${lastDayBurn.toFixed(2)}, daysRemaining=${daysRemaining.toFixed(2)}`
+      `Subscription ${subId}: balance=${balanceDC}, burn1d=${burn1dDC.toFixed(2)}, burn30d=${burn30dDC.toFixed(2)}, daysRemaining=${daysRemaining.toFixed(2)}`
     );
   } else {
     console.log(`Subscription ${subId}: balance=${balanceDC}, no burn data`);
@@ -214,8 +219,11 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
       label,
       currentBalanceDC: balanceDC,
       currentBalanceUSD: usd,
-      avgDailyBurnDC: lastDayBurn || 0,
-      daysRemaining, // null if no burn data
+      burn1dDC: burnRates.burn1d?.dc ?? null,
+      burn1dUSD: burnRates.burn1d?.usd ?? null,
+      burn30dDC: burnRates.burn30d?.dc ?? null,
+      burn30dUSD: burnRates.burn30d?.usd ?? null,
+      daysRemaining,
       timestamp: now.toISOString(),
     };
 
@@ -240,7 +248,7 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
   }
 
   // --- STEP 6: Send THRESHOLD EMAIL (when threshold is crossed) ---
-  if (!lastDayBurn || lastDayBurn <= 0) {
+  if (burnForDaysRemaining <= 0) {
     // No burn data, update balance and skip email
     await env.DB.prepare(
       "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
@@ -268,7 +276,8 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
   const textBody = `Helium DC alert for escrow account ${escrow}${labelText}:
 
 Current balance: ${balanceDC.toLocaleString("en-US")} DC (~$${usd.toFixed(2)})
-Last day's burn: ${lastDayBurn.toFixed(2)} DC
+1-day burn rate: ${burn1dDC > 0 ? burn1dDC.toFixed(2) : 'N/A'} DC ($${burnRates.burn1d?.usd?.toFixed(2) ?? 'N/A'})
+30-day avg burn: ${burn30dDC > 0 ? burn30dDC.toFixed(2) : 'N/A'} DC ($${burnRates.burn30d?.usd?.toFixed(2) ?? 'N/A'})
 Estimated days remaining: ${daysRemaining.toFixed(2)} days
 
 This crossed the ${threshold}-day threshold.
@@ -283,10 +292,12 @@ ${env.APP_BASE_URL || ""}
     label,
     balanceDC,
     balanceUSD: usd,
-    avgBurn: lastDayBurn,
+    burn1dDC,
+    burn1dUSD: burnRates.burn1d?.usd ?? null,
+    burn30dDC,
+    burn30dUSD: burnRates.burn30d?.usd ?? null,
     daysRemaining,
     threshold,
-    burnLookbackDays: BURN_LOOKBACK_DAYS,
     appBaseUrl: env.APP_BASE_URL || "https://heliumtools.org/oui-notifier",
     userUuid: sub.uuid,
   });
