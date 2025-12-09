@@ -466,7 +466,7 @@ export default function HomePage() {
                     </datalist>
                   </div>
 
-                  <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-3">
+                  <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
                     <div className="space-y-1 col-span-full">
                       <div className="flex items-center">
                         <dt className="text-sm font-semibold text-slate-800">OUI&nbsp;</dt>
@@ -536,25 +536,25 @@ export default function HomePage() {
                     <div className="space-y-1">
                       <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
                         Usage Rate
-                        <SimpleTooltip content="Rates at which Data Credits are being consumed.">
+                        <SimpleTooltip content="Usage rate over the past 24 hours.">
                           <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
                         </SimpleTooltip>
                       </dt>
-                      <dd className="text-sm text-slate-700">
+                      <dd className="text-sm text-slate-800">
                         {(burnRate?.burn1dUSD != null || burnRate?.burn30dUSD != null) ? (
                           <div className="space-y-0.5 text-sm font-semibold text-slate-900">
                             {burnRate?.burn1dUSD != null && (
-                              <p className="text-amber-600">
-                                1-Day: {usdFormatter.format(burnRate.burn1dUSD)}/day
-                                <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn1dDC))} DC)</span>
+                              <p>
+                                {usdFormatter.format(burnRate.burn1dUSD)}/day
+                                {/* <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn1dDC))} DC)</span> */}
                               </p>
                             )}
-                            {burnRate?.burn30dUSD != null && (
-                              <p className="text-amber-600">
+                            {/* {burnRate?.burn30dUSD != null && (
+                              <p>
                                 30-Day Avg: {usdFormatter.format(burnRate.burn30dUSD)}/day
                                 <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn30dDC))} DC)</span>
                               </p>
-                            )}
+                            )} */}
                           </div>
                         ) : (
                           <span className="text-slate-500">—</span>
