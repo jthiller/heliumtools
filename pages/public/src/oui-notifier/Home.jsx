@@ -535,34 +535,26 @@ export default function HomePage() {
                     </div>
                     <div className="space-y-1">
                       <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
-                        1-Day Burn
-                        <SimpleTooltip content="The rate at which Data Credits are being consumed over the most recent day, normalized to a daily rate.">
+                        Usage Rate
+                        <SimpleTooltip content="Rates at which Data Credits are being consumed.">
                           <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
                         </SimpleTooltip>
                       </dt>
                       <dd className="text-sm text-slate-700">
-                        {burnRate?.burn1dUSD != null ? (
+                        {(burnRate?.burn1dUSD != null || burnRate?.burn30dUSD != null) ? (
                           <div className="space-y-0.5 text-sm font-semibold text-slate-900">
-                            <p className="text-amber-600">{usdFormatter.format(burnRate.burn1dUSD)}/day</p>
-                            <p className="text-slate-500 font-normal">{numberFormatter.format(Math.round(burnRate.burn1dDC))} DC</p>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
-                        30-Day Avg Burn
-                        <SimpleTooltip content="Average daily burn rate calculated over the available history (up to 30 days). This provides a more stable estimate than the 1-day rate.">
-                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
-                        </SimpleTooltip>
-                      </dt>
-                      <dd className="text-sm text-slate-700">
-                        {burnRate?.burn30dUSD != null ? (
-                          <div className="space-y-0.5 text-sm font-semibold text-slate-900">
-                            <p className="text-amber-600">{usdFormatter.format(burnRate.burn30dUSD)}/day</p>
-                            <p className="text-slate-500 font-normal">{numberFormatter.format(Math.round(burnRate.burn30dDC))} DC</p>
+                            {burnRate?.burn1dUSD != null && (
+                              <p className="text-amber-600">
+                                1-Day: {usdFormatter.format(burnRate.burn1dUSD)}/day
+                                <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn1dDC))} DC)</span>
+                              </p>
+                            )}
+                            {burnRate?.burn30dUSD != null && (
+                              <p className="text-amber-600">
+                                30-Day Avg: {usdFormatter.format(burnRate.burn30dUSD)}/day
+                                <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn30dDC))} DC)</span>
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-500">—</span>
