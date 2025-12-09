@@ -69,7 +69,7 @@ export async function handleSubscribe(request, env) {
                 .bind(email, verifyToken, verifyExpiresAt, nowIso, userUuid)
                 .run();
 
-            userId = result.lastRowId;
+            userId = result.meta.last_row_id;
         } else {
             userId = user.id;
             userUuid = user.uuid;
