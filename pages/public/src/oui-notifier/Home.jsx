@@ -533,15 +533,13 @@ export default function HomePage() {
                             {burnRate?.burn1dUSD != null && (
                               <p>
                                 {usdFormatter.format(burnRate.burn1dUSD)}/day
-                                {/* <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn1dDC))} DC)</span> */}
+                                {balance?.usd != null && burnRate.burn1dUSD > 0 && (
+                                  <span className="ml-2 text-slate-500 font-normal">
+                                    ({Math.max(0, ((balance.usd - 35) / burnRate.burn1dUSD)).toFixed(1)} days remaining)
+                                  </span>
+                                )}
                               </p>
                             )}
-                            {/* {burnRate?.burn30dUSD != null && (
-                              <p>
-                                30-Day Avg: {usdFormatter.format(burnRate.burn30dUSD)}/day
-                                <span className="text-slate-500 font-normal"> ({numberFormatter.format(Math.round(burnRate.burn30dDC))} DC)</span>
-                              </p>
-                            )} */}
                           </div>
                         ) : (
                           <span className="text-slate-500">—</span>
