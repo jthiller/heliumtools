@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import MiddleEllipsis from "react-middle-ellipsis";
 import {
   ArrowPathIcon,
   BellAlertIcon,
@@ -84,20 +85,7 @@ function StatusBanner({ tone = "muted", title, message }) {
   );
 }
 
-function MiddleTruncate({ text, startChars = 6, endChars = 6 }) {
-  if (!text || text.length <= startChars + endChars + 3) {
-    return <span>{text}</span>;
-  }
-  const start = text.slice(0, startChars);
-  const end = text.slice(-endChars);
-  return (
-    <span title={text}>
-      {start}
-      <span className="text-slate-400">...</span>
-      {end}
-    </span>
-  );
-}
+
 
 function SimpleTooltip({ content, children }) {
   return (
@@ -490,7 +478,7 @@ export default function HomePage() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            <MiddleTruncate text={escrow} startChars={6} endChars={6} />
+                            <MiddleEllipsis><span title={escrow}>{escrow}</span></MiddleEllipsis>
                             <span aria-hidden="true" className="shrink-0">
                               ↗
                             </span>
@@ -510,7 +498,7 @@ export default function HomePage() {
                       <dd className="text-sm text-slate-700 flex items-center">
                         {payer ? (
                           <>
-                            <MiddleTruncate text={payer} startChars={6} endChars={6} />
+                            <MiddleEllipsis><span title={payer}>{payer}</span></MiddleEllipsis>
                             <CopyButton text={payer} />
                           </>
                         ) : (
@@ -522,11 +510,10 @@ export default function HomePage() {
                       <dt className="text-sm font-semibold text-slate-800">Balance</dt>
                       <dd className="text-sm text-slate-700">
                         {balance ? (
-                          <div className="space-y-0.5 text-sm font-semibold text-slate-900">
-                            <p className={balance.usd > 35 ? 'text-green-600' : 'text-slate-600'}>
-                              {usdFormatter.format(balance.usd)}
-                            </p>
-                            <p>{numberFormatter.format(balance.dc)} DC</p>
+                          <div className="space-y-0.5 text-sm">
+                            <p className="text-slate-500">
+                              <span className={`font-semibold ${balance.usd > 35 ? 'text-green-600' : 'text-slate-600'}`}>{usdFormatter.format(balance.usd)} </span>
+                              ({numberFormatter.format(balance.dc)} DC)</p>
                           </div>
                         ) : (
                           <span className="text-slate-500">—</span>
@@ -672,7 +659,7 @@ export default function HomePage() {
                                 {sub.oui ? `OUI ${sub.oui}` : "Unknown OUI"}
                               </button>
                               <div className="text-xs text-slate-400">
-                                <MiddleTruncate text={sub.escrow_account} />
+                                <MiddleEllipsis><span title={sub.escrow_account}>{sub.escrow_account}</span></MiddleEllipsis>
                               </div>
                             </td>
                             <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
@@ -759,13 +746,12 @@ export default function HomePage() {
                 <p className="text-sm font-semibold text-indigo-600">Subscribe</p>
                 <h2 className="text-xl font-semibold text-slate-900">Email + webhook alerts</h2>
                 <p className="text-sm text-slate-600">
-                  Daily balance snapshots and 7-day burn estimates trigger alerts at 14, 7, and 1
-                  day from running out.
+                  Email alerts at 14, 7, and 1 day from running out. Webhook updates are issued daily.
                 </p>
               </div>
-              <div className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 w-fit">
+              {/* <div className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 w-fit">
                 {API_BASE.replace("https://", "")}
-              </div>
+              </div> */}
 
               <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
