@@ -101,8 +101,8 @@ export function computeBurnRates(timeseries) {
 }
 
 /**
- * Calculate burn rate over the most recent ~24 hours.
- * Uses time-weighted averaging if multiple segments fall within the window.
+ * Calculate burn rate based on the most recent burn segment.
+ * Returns the normalized per-day rate from the most recent segment.
  */
 function calculate1DayBurn(burnSegments) {
     if (burnSegments.length === 0) return null;
@@ -111,13 +111,7 @@ function calculate1DayBurn(burnSegments) {
     const sorted = [...burnSegments].sort((a, b) => b.timestamp - a.timestamp);
     const mostRecent = sorted[0];
 
-    // If the most recent segment is roughly a day or less, use its normalized rate
-    if (mostRecent.intervalDays <= 1.5) {
-        // Normalize to per-day rate
-        return mostRecent.burnDC / mostRecent.intervalDays;
-    }
-
-    // For longer intervals, just use the per-day rate from that segment
+    // Normalize to per-day rate regardless of interval length
     return mostRecent.burnDC / mostRecent.intervalDays;
 }
 
@@ -160,15 +154,4 @@ function getTimestamp(record) {
         return new Date(record.date + "T00:00:00Z").getTime();
     }
     return 0;
-}
-
-/**
- * Legacy compatibility wrapper for computeLastDayBurn.
- * Use computeBurnRates() for new code.
- * 
- * @deprecated Use computeBurnRates() instead
- */
-export function computeLastDayBurnFromRates(timeseries) {
-    const rates = computeBurnRates(timeseries);
-    return rates.burn1d?.dc ?? 0;
 }
