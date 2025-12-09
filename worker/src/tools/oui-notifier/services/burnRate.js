@@ -3,8 +3,12 @@
  * 
  * Computes 1-day and 30-day average burn rates from balance timeseries data.
  * - Uses actual timestamps (fetched_at) for precise interval calculation
+ * - Falls back to date field (midnight UTC) when fetched_at is unavailable
  * - Ignores positive diffs (balance increases / top-ups)
  * - Returns rates in DC per day and converted to USD
+ * 
+ * Note: The `balances` table (subscriptions) only has `date`, while `oui_balances`
+ * has `fetched_at`. This means subscription burn rates use day-level precision.
  */
 
 import { DC_TO_USD_RATE } from "../config.js";
@@ -14,11 +18,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /**
  * Compute burn rates from timeseries balance data.
  * 
- * @param {Array<{balance_dc: number, fetched_at: string, date?: string}>} timeseries 
- *   Balance records in chronological order (oldest first). Each record should have:
+ * @param {Array<{balance_dc: number, fetched_at?: string, date?: string}>} timeseries 
+ *   Balance records. Each record should have:
  *   - balance_dc: Balance in Data Credits
- *   - fetched_at: ISO timestamp of when balance was fetched
- *   - date: Optional date string (fallback if fetched_at missing)
+ *   - fetched_at: ISO timestamp of when balance was fetched (preferred)
+ *   - date: Date string as fallback (uses midnight UTC)
  * 
  * @returns {{
  *   burn1d: { dc: number, usd: number } | null,
@@ -32,12 +36,13 @@ export function computeBurnRates(timeseries) {
         return { burn1d: null, burn30d: null, dataPoints: timeseries?.length ?? 0, periodDays: null };
     }
 
-    // Ensure chronological order (oldest first)
-    const sorted = [...timeseries].sort((a, b) => {
-        const timeA = getTimestamp(a);
-        const timeB = getTimestamp(b);
-        return timeA - timeB;
-    });
+    // Filter out records with invalid timestamps and sort chronologically
+    const validRecords = timeseries.filter(r => getTimestamp(r) !== null);
+    if (validRecords.length < 2) {
+        return { burn1d: null, burn30d: null, dataPoints: timeseries.length, periodDays: null };
+    }
+
+    const sorted = validRecords.sort((a, b) => getTimestamp(a) - getTimestamp(b));
 
     // Calculate all burn segments (only negative diffs = balance decreasing)
     const burnSegments = [];
@@ -86,10 +91,11 @@ export function computeBurnRates(timeseries) {
         };
     }
 
-    // Calculate 1-day burn rate (most recent ~24h of burn data)
+    // Calculate 1-day burn rate (most recent burn segment, normalized to per-day)
     const burn1d = calculate1DayBurn(burnSegments);
 
-    // Calculate 30-day average burn rate (all available burn data)
+    // Calculate 30-day average burn rate (total burn / total period)
+    // Note: This averages over the actual data period, which may be less than 30 days
     const burn30d = calculate30DayBurn(burnSegments, sorted);
 
     return {
@@ -107,9 +113,11 @@ export function computeBurnRates(timeseries) {
 function calculate1DayBurn(burnSegments) {
     if (burnSegments.length === 0) return null;
 
-    // Find the most recent burn segment
-    const sorted = [...burnSegments].sort((a, b) => b.timestamp - a.timestamp);
-    const mostRecent = sorted[0];
+    // Find the most recent burn segment using reduce (more efficient than sorting)
+    const mostRecent = burnSegments.reduce(
+        (max, seg) => seg.timestamp > max.timestamp ? seg : max,
+        burnSegments[0]
+    );
 
     // Normalize to per-day rate regardless of interval length
     return mostRecent.burnDC / mostRecent.intervalDays;
@@ -117,7 +125,9 @@ function calculate1DayBurn(burnSegments) {
 
 /**
  * Calculate average daily burn rate over all available data.
- * This is total burn divided by total time span.
+ * This is total burn divided by total time span of the dataset.
+ * 
+ * Note: If there are gaps in data collection, this may under-report the true burn rate.
  */
 function calculate30DayBurn(burnSegments, sortedTimeseries) {
     if (burnSegments.length === 0) return null;
@@ -139,11 +149,14 @@ function calculatePeriodDays(sortedTimeseries) {
     const firstTime = getTimestamp(sortedTimeseries[0]);
     const lastTime = getTimestamp(sortedTimeseries[sortedTimeseries.length - 1]);
 
+    if (firstTime === null || lastTime === null) return null;
+
     return (lastTime - firstTime) / MS_PER_DAY;
 }
 
 /**
  * Get timestamp from a record, preferring fetched_at over date.
+ * Returns null if neither is available (to avoid epoch issues).
  */
 function getTimestamp(record) {
     if (record.fetched_at) {
@@ -153,5 +166,6 @@ function getTimestamp(record) {
         // Date strings like "2024-12-05" - assume midnight UTC
         return new Date(record.date + "T00:00:00Z").getTime();
     }
-    return 0;
+    return null;
 }
+

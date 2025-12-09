@@ -16,8 +16,8 @@ export function alertEmailTemplate({
   userUuid,
 }) {
   const labelHtml = label ? `<span class="label">${label}</span>` : "";
-  const formatDC = (val) => val != null && val > 0 ? val.toFixed(2) : "N/A";
-  const formatUSD = (val) => val != null && val > 0 ? `$${val.toFixed(2)}` : "—";
+  const formatDC = (val) => val != null && val >= 0 ? val.toFixed(2) : "N/A";
+  const formatUSD = (val) => val != null && val >= 0 ? `$${val.toFixed(2)}` : "—";
 
   const content = `
     <div class="alert-box">
