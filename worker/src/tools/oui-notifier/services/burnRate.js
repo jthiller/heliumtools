@@ -99,8 +99,8 @@ export function computeBurnRates(timeseries) {
     const burn30d = calculate30DayBurn(burnSegments, sorted);
 
     return {
-        burn1d: burn1d ? { dc: burn1d, usd: burn1d * DC_TO_USD_RATE } : null,
-        burn30d: burn30d ? { dc: burn30d, usd: burn30d * DC_TO_USD_RATE } : null,
+        burn1d: burn1d != null ? { dc: burn1d, usd: burn1d * DC_TO_USD_RATE } : null,
+        burn30d: burn30d != null ? { dc: burn30d, usd: burn30d * DC_TO_USD_RATE } : null,
         dataPoints: sorted.length,
         periodDays: calculatePeriodDays(sorted)
     };
