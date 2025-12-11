@@ -18,6 +18,7 @@ export function alertEmailTemplate({
   const labelHtml = label ? `<span class="label">${label}</span>` : "";
   const formatDC = (val) => val != null && val >= 0 ? val.toFixed(2) : "N/A";
   const formatUSD = (val) => val != null && val >= 0 ? `$${val.toFixed(2)}` : "—";
+  const managementUrl = `${appBaseUrl}?uuid=${userUuid}`;
 
   const content = `
     <div class="alert-box">
@@ -26,13 +27,13 @@ export function alertEmailTemplate({
 
     <p style="margin-bottom: 16px;">
       Helium DC alert for escrow account:
+      ${labelHtml}
     </p>
     
     <div class="info-box">
       <div style="font-family: monospace; word-break: break-all; color: #475569;">
         ${escrow}
       </div>
-      ${labelHtml}
     </div>
 
     <div class="stat-grid">
@@ -66,7 +67,7 @@ export function alertEmailTemplate({
     </div>
 
     <div style="text-align: center; margin-top: 32px;">
-      <a href="${appBaseUrl}" class="button">View Dashboard</a>
+      <a href="${managementUrl}" class="button">View Dashboard</a>
     </div>
 
     <p style="margin-top: 24px; font-size: 13px; color: #94a3b8; text-align: center;">
@@ -74,7 +75,6 @@ export function alertEmailTemplate({
     </p>
   `;
 
-  const managementUrl = `${appBaseUrl}?uuid=${userUuid}`;
   return baseEmailTemplate(content, managementUrl);
 }
 
