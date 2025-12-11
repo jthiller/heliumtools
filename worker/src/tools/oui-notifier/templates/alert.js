@@ -46,7 +46,7 @@ export function alertEmailTemplate({
       </div>
       <div>
         <p style="margin: 0 0 2px; font-size: 13px; color: #64748b; font-weight: 500;">Days Remaining</p>
-        <p style="margin: 0; font-size: 32px; font-weight: 700; color: ${getDaysColor(daysRemaining)}; letter-spacing: -0.025em; line-height: 1.1;">${daysRemaining != null ? daysRemaining.toFixed(1) : 'N/A'}</p>
+        <p style="margin: 0; font-size: 32px; font-weight: 700; color: ${getDaysColor(daysRemaining)}; letter-spacing: -0.025em; line-height: 1.1;">${daysRemaining != null ? (daysRemaining % 1 === 0 ? daysRemaining : daysRemaining.toFixed(1)) : 'N/A'}</p>
         <p style="margin: 2px 0 0; font-size: 13px; color: #64748b;">at ${formatDC(burn1dDC)} DC (${formatUSD(burn1dUSD)}) per day</p>
       </div>
     </div>
