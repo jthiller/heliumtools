@@ -21,7 +21,7 @@ export function alertEmailTemplate({
   const getDaysColor = (days) => {
     if (days <= 1) return "#dc2626";
     if (days <= 7) return "#dc7526";
-    if (days <= 14) return "#FFCC00";
+    if (days <= 14) return "#ffcc00";
     return "#16a34a";
   };
 
@@ -46,7 +46,7 @@ export function alertEmailTemplate({
       </div>
       <div>
         <p style="margin: 0 0 2px; font-size: 13px; color: #64748b; font-weight: 500;">Days Remaining</p>
-        <p style="margin: 0; font-size: 32px; font-weight: 700; color: ${getDaysColor(daysRemaining)}; letter-spacing: -0.025em; line-height: 1.1;">${daysRemaining}</p>
+        <p style="margin: 0; font-size: 32px; font-weight: 700; color: ${getDaysColor(daysRemaining)}; letter-spacing: -0.025em; line-height: 1.1;">${daysRemaining != null ? daysRemaining.toFixed(1) : 'N/A'}</p>
         <p style="margin: 2px 0 0; font-size: 13px; color: #64748b;">at ${formatDC(burn1dDC)} DC (${formatUSD(burn1dUSD)}) per day</p>
       </div>
     </div>
@@ -56,9 +56,9 @@ export function alertEmailTemplate({
 
     <!-- Payer Key Section -->
     <div style="margin-bottom: 32px;">
-      <p style="margin: 0 0 8px; font-size: 13px; color: #64748b; font-weight: 500;">Payer Key <span style="color: #94a3b8;">· OUI ${oui}</span></p>
+      <p style="margin: 0 0 8px; font-size: 13px; color: #64748b; font-weight: 500;">Payer Key <span style="color: #94a3b8;">· OUI ${oui || 'N/A'}</span></p>
       <p style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #334155; word-break: break-all; background-color: #f8fafc; padding: 12px 14px; border-radius: 6px; border: 1px solid #e2e8f0; line-height: 1.5;">
-        ${payerKey}
+        ${payerKey || 'Not available'}
       </p>
       <p style="margin: 8px 0 0; font-size: 13px; color: #64748b;">
         Delegate Data Credits to this address to top up.
