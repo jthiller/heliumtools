@@ -12,7 +12,6 @@ const sampleData = {
         appName: "OUI Notifier",
     },
     alert: {
-        escrow: "13ucz1F4dDTPKPv1w74qnLyKzPGZ4mJmTHgLBF5aW1234",
         label: "My OUI XYZ",
         payerKey: "14h1xJRpb2r7kxLKGhLqwVxjbHfGq2v9xzPLgqYR9jqy",
         oui: 42,
@@ -20,7 +19,7 @@ const sampleData = {
         balanceUSD: 150.0,
         burn1dDC: 250000,
         burn1dUSD: 2.5,
-        daysRemaining: 12.1,
+        daysRemaining: 12,
         threshold: 14,
         appBaseUrl: "https://heliumtools.org/oui-notifier",
         userUuid: "sample-uuid-456",
