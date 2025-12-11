@@ -4,6 +4,7 @@ import { handleListOuis } from "./handlers/listOuis.js";
 import { handleBalance } from "./handlers/balance.js";
 import { handleTimeseries } from "./handlers/timeseries.js";
 import { handleUpdateOuis } from "./handlers/updateOuis.js";
+import { handlePreview } from "./handlers/preview.js";
 import { jsonHeaders } from "./responseUtils.js";
 
 export async function handleRequest(request, env, ctx) {
@@ -12,6 +13,11 @@ export async function handleRequest(request, env, ctx) {
 
   if (request.method === "OPTIONS") {
     return new Response("", { status: 204, headers: jsonHeaders });
+  }
+
+  if (request.method === "GET" && pathname.startsWith("/preview/")) {
+    const templateName = pathname.replace("/preview/", "");
+    return handlePreview(templateName);
   }
 
   if (request.method === "POST" && pathname === "/subscribe") {

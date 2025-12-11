@@ -15,6 +15,7 @@ import {
   pruneOuiBalanceHistory,
   recordOuiBalance,
   upsertOuis,
+  getOuiByEscrow,
 } from "../services/ouis.js";
 
 /**
@@ -287,15 +288,19 @@ ${env.APP_BASE_URL || ""}
 
 (If you topped up your DC balance significantly, alerts will reset on the next run.)`;
 
+  // Get OUI info for payer key
+  const ouiInfo = await getOuiByEscrow(env, escrow);
+  const payerKey = ouiInfo?.payer || null;
+  const oui = ouiInfo?.oui || null;
+
   const htmlBody = alertEmailTemplate({
-    escrow,
     label,
+    payerKey,
+    oui,
     balanceDC,
     balanceUSD: usd,
     burn1dDC,
     burn1dUSD: burnRates.burn1d?.usd ?? null,
-    burn30dDC,
-    burn30dUSD: burnRates.burn30d?.usd ?? null,
     daysRemaining,
     threshold,
     appBaseUrl: env.APP_BASE_URL || "https://heliumtools.org/oui-notifier",
