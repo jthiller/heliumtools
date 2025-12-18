@@ -21,6 +21,7 @@ import {
 } from "recharts";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
+import MiddleEllipsis from "react-middle-ellipsis";
 import { classNames } from "../lib/utils.js";
 import {
   API_BASE,
@@ -95,6 +96,7 @@ export default function HomePage() {
 
   const [userUuid, setUserUuid] = useState(null);
   const [userSubscriptions, setUserSubscriptions] = useState([]);
+  const [subscriptionError, setSubscriptionError] = useState("");
   const [editingSubId, setEditingSubId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [editWebhook, setEditWebhook] = useState("");
@@ -234,15 +236,22 @@ export default function HomePage() {
 
   const handleDeleteSubscription = async (id) => {
     if (!confirm("Delete this subscription?")) return;
+    setSubscriptionError("");
     try {
       const res = await fetch(`${API_BASE}/api/subscription/${id}`, { method: "DELETE", headers: { "X-User-Uuid": userUuid } });
-      if (res.ok) setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
+      if (res.ok) {
+        setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
+      } else {
+        setSubscriptionError("Failed to delete subscription. Please try again.");
+      }
     } catch (err) {
       console.error("Error deleting subscription", err);
+      setSubscriptionError("Failed to delete subscription. Please try again.");
     }
   };
 
   const handleUpdateSubscription = async (id) => {
+    setSubscriptionError("");
     try {
       const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
         method: "POST",
@@ -252,19 +261,28 @@ export default function HomePage() {
       if (res.ok) {
         setUserSubscriptions((prev) => prev.map((sub) => sub.id === id ? { ...sub, label: editLabel, webhook_url: editWebhook } : sub));
         setEditingSubId(null);
+      } else {
+        setSubscriptionError("Failed to update subscription. Please try again.");
       }
     } catch (err) {
       console.error("Error updating subscription", err);
+      setSubscriptionError("Failed to update subscription. Please try again.");
     }
   };
 
   const handleDeleteUser = async () => {
     if (!confirm("Delete your account and all subscriptions?")) return;
+    setSubscriptionError("");
     try {
       const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
-      if (res.ok) window.location.href = "/oui-notifier";
+      if (res.ok) {
+        window.location.href = "/oui-notifier";
+      } else {
+        setSubscriptionError("Failed to delete account. Please try again.");
+      }
     } catch (err) {
       console.error("Error deleting account", err);
+      setSubscriptionError("Failed to delete account. Please try again.");
     }
   };
 
@@ -383,7 +401,11 @@ export default function HomePage() {
                 </p>
                 {payer ? (
                   <div className="flex items-start gap-2">
-                    <code className="text-sm text-slate-700 break-all flex-1">{payer}</code>
+                    <div className="flex-1 min-w-0">
+                      <MiddleEllipsis>
+                        <code className="text-sm text-slate-700" title={payer}>{payer}</code>
+                      </MiddleEllipsis>
+                    </div>
                     <CopyButton text={payer} />
                   </div>
                 ) : (
@@ -391,16 +413,20 @@ export default function HomePage() {
                 )}
                 <p className="text-xs text-slate-400 mt-2">Delegate DC to this address to top up.</p>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2">Escrow Account</p>
                 {escrow ? (
                   <a
-                    className="text-sm text-sky-600 hover:text-sky-500 break-all inline-flex items-center gap-1"
+                    className="text-sm text-sky-600 hover:text-sky-500 inline-flex items-center gap-1 max-w-full"
                     href={`https://solscan.io/account/${encodeURIComponent(escrow)}`}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <code>{escrow}</code>
+                    <span className="min-w-0 overflow-hidden">
+                      <MiddleEllipsis>
+                        <code title={escrow}>{escrow}</code>
+                      </MiddleEllipsis>
+                    </span>
                     <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
                   </a>
                 ) : (
@@ -415,6 +441,12 @@ export default function HomePage() {
               <div className="border-t border-slate-200 pt-8">
                 <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2">Your Subscriptions</p>
                 <h2 className="text-xl font-bold text-slate-900 mb-4">Manage Alerts</h2>
+
+                {subscriptionError && (
+                  <div className="mb-4">
+                    <StatusBanner tone="error" message={subscriptionError} />
+                  </div>
+                )}
 
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200">
@@ -451,13 +483,13 @@ export default function HomePage() {
                           <td className="px-4 py-3 text-right">
                             {editingSubId === sub.id ? (
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => handleUpdateSubscription(sub.id)} className="text-emerald-600 hover:text-emerald-500"><CheckIcon className="h-4 w-4" /></button>
-                                <button onClick={() => setEditingSubId(null)} className="text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
+                                <button onClick={() => handleUpdateSubscription(sub.id)} aria-label="Save changes" title="Save changes" className="text-emerald-600 hover:text-emerald-500"><CheckIcon className="h-4 w-4" /></button>
+                                <button onClick={() => setEditingSubId(null)} aria-label="Cancel editing" title="Cancel editing" className="text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
                               </div>
                             ) : (
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => { setEditingSubId(sub.id); setEditLabel(sub.label || ""); setEditWebhook(sub.webhook_url || ""); }} className="text-slate-400 hover:text-slate-600"><PencilIcon className="h-4 w-4" /></button>
-                                <button onClick={() => handleDeleteSubscription(sub.id)} className="text-rose-400 hover:text-rose-600"><TrashIcon className="h-4 w-4" /></button>
+                                <button onClick={() => { setEditingSubId(sub.id); setEditLabel(sub.label || ""); setEditWebhook(sub.webhook_url || ""); }} aria-label="Edit subscription" title="Edit subscription" className="text-slate-400 hover:text-slate-600"><PencilIcon className="h-4 w-4" /></button>
+                                <button onClick={() => handleDeleteSubscription(sub.id)} aria-label="Delete subscription" title="Delete subscription" className="text-rose-400 hover:text-rose-600"><TrashIcon className="h-4 w-4" /></button>
                               </div>
                             )}
                           </td>
