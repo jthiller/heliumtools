@@ -111,6 +111,13 @@ export default function HomePage() {
       setUserUuid(uuid);
       fetchUserData(uuid);
     }
+
+    // Show success message if account was just deleted
+    if (params.get("deleted") === "1") {
+      setFormStatus({ tone: "success", message: "Your account and all data have been deleted." });
+      // Clean up the URL
+      window.history.replaceState({}, "", "/oui-notifier/");
+    }
   }, []);
 
   const fetchUserData = async (uuid) => {
@@ -276,7 +283,7 @@ export default function HomePage() {
     try {
       const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
       if (res.ok) {
-        window.location.href = "/oui-notifier";
+        window.location.href = "/oui-notifier/?deleted=1";
       } else {
         setSubscriptionError("Failed to delete account. Please try again.");
       }
