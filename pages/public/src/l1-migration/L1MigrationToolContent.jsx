@@ -4,47 +4,39 @@ import { useAsyncCallback } from 'react-async-hook';
 import { bulkSendRawTransactions } from '@helium/spl-utils';
 import { Connection, PublicKey } from '@solana/web3.js';
 import Address from '@helium/address';
-// import { ED25519_KEY_TYPE } from '@helium/address/build/KeyTypes'; // This might need adjustment based on export
+import { ArrowRightIcon } from '@heroicons/react/24/outline';
+import StatusBanner from '../components/StatusBanner.jsx';
 
 const MIGRATION_SERVICE_URL = import.meta.env.VITE_MIGRATION_SERVICE_URL || 'https://migration.web.helium.io';
 const SOLANA_URL = import.meta.env.VITE_SOLANA_URL || 'https://solana-rpc.web.helium.io/?session-key=Pluto';
 
 export const L1MigrationToolContent = () => {
     const [wallet, setWallet] = useState("");
-    const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: string }
+    const [status, setStatus] = useState(null);
 
     const solanaWallet = useMemo(() => {
         try {
             return new PublicKey(wallet);
         } catch (e) {
-            // ignore
             try {
                 return new PublicKey(Address.fromB58(wallet).publicKey);
             } catch (e) {
-                // ignore
+                return null;
             }
         }
     }, [wallet]);
 
-    const heliumWallet = useMemo(
-        () => {
-            if (!solanaWallet) return null;
-            try {
-                // Address constructor: version, netType, keyType, publicKey
-                // ED25519_KEY_TYPE is 1. 
-                return new Address(0, 0, 1, solanaWallet.toBytes());
-            } catch (e) {
-                console.error("Error creating helium address", e);
-                return null;
-            }
-        },
-        [solanaWallet]
-    );
+    const heliumWallet = useMemo(() => {
+        if (!solanaWallet) return null;
+        try {
+            return new Address(0, 0, 1, solanaWallet.toBytes());
+        } catch (e) {
+            console.error("Error creating helium address", e);
+            return null;
+        }
+    }, [solanaWallet]);
 
-    const connection = useMemo(
-        () => new Connection(SOLANA_URL),
-        []
-    );
+    const connection = useMemo(() => new Connection(SOLANA_URL), []);
 
     const {
         execute: executeInflate,
@@ -58,13 +50,11 @@ export const L1MigrationToolContent = () => {
             }
             const txs = (await getTxs()).transactions;
             if (!txs || txs.length === 0) {
-                setStatus({ type: 'info', message: "No transactions found to migrate." });
+                setStatus({ tone: 'info', message: "No transactions found to migrate." });
                 return true;
             }
 
-            // Fix: Decode base64 strings correctly
             const txBuffers = txs.map((tx) => Buffer.from(tx, 'base64'));
-
             await bulkSendRawTransactions(connection, txBuffers);
 
             const txs2 = (await getTxs()).transactions;
@@ -72,74 +62,66 @@ export const L1MigrationToolContent = () => {
                 throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
             }
 
-            setStatus({ type: 'success', message: "Migration successful!" });
+            setStatus({ tone: 'success', message: "Migration successful!" });
             return true;
         } catch (e) {
             throw e;
         }
     });
 
+    // Determine the banner to show
+    const bannerTone = errorInflate ? 'error' : status?.tone;
+    const bannerMessage = errorInflate?.message || status?.message;
+
     return (
         <div className="space-y-6">
-            {(errorInflate || status) && (
-                <div className={`rounded-md p-4 ${status?.type === 'success' ? 'bg-green-50' : status?.type === 'info' ? 'bg-blue-50' : 'bg-red-50'}`}>
-                    <div className="flex">
-                        <div className="ml-3">
-                            <h3 className={`text-sm font-medium ${status?.type === 'success' ? 'text-green-800' : status?.type === 'info' ? 'text-blue-800' : 'text-red-800'}`}>
-                                {status?.type === 'success' ? 'Success' : status?.type === 'info' ? 'Info' : 'Error'}
-                            </h3>
-                            <div className={`mt-2 text-sm ${status?.type === 'success' ? 'text-green-700' : status?.type === 'info' ? 'text-blue-700' : 'text-red-700'}`}>
-                                <p>{errorInflate?.message || status?.message}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {bannerMessage && <StatusBanner tone={bannerTone} message={bannerMessage} />}
 
+            {/* Input Section */}
             <div>
-                <label htmlFor="wallet" className="block text-sm font-medium text-slate-700">
-                    Helium or Solana Wallet Address
+                <label htmlFor="wallet" className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2 block">
+                    Wallet Address
                 </label>
-                <div className="mt-1">
-                    <input
-                        type="text"
-                        name="wallet"
-                        id="wallet"
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-slate-300 rounded-md p-2 border"
-                        placeholder="Enter address..."
-                        value={wallet}
-                        onChange={(e) => setWallet(e.target.value)}
-                    />
+                <input
+                    type="text"
+                    name="wallet"
+                    id="wallet"
+                    className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                    placeholder="Enter Helium or Solana address..."
+                    value={wallet}
+                    onChange={(e) => setWallet(e.target.value)}
+                />
+            </div>
+
+            {/* Address Display */}
+            <div className="grid gap-px bg-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-white p-4">
+                    <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Helium Address</p>
+                    <p className="font-mono text-sm text-slate-900 break-all">{heliumWallet?.b58 || '—'}</p>
+                </div>
+                <div className="bg-white p-4">
+                    <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Solana Address</p>
+                    {solanaWallet ? (
+                        <a
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-mono text-sm text-sky-600 hover:text-sky-500 break-all"
+                            href={`https://explorer.solana.com/address/${solanaWallet.toBase58()}`}
+                        >
+                            {solanaWallet.toBase58()}
+                            <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
+                        </a>
+                    ) : (
+                        <p className="font-mono text-sm text-slate-400">—</p>
+                    )}
                 </div>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-md space-y-2 text-sm">
-                <div className="flex justify-between">
-                    <span className="text-slate-500">Helium Address:</span>
-                    <span className="font-mono text-slate-900 break-all">{heliumWallet?.b58 || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                    <span className="text-slate-500">Solana Address:</span>
-                    <span className="font-mono text-slate-900 break-all">
-                        {solanaWallet ? (
-                            <a
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-indigo-600 hover:text-indigo-500"
-                                href={`https://explorer.solana.com/address/${solanaWallet.toBase58()}`}
-                            >
-                                {solanaWallet.toBase58()}
-                            </a>
-                        ) : '-'}
-                    </span>
-                </div>
-            </div>
-
+            {/* Action Button */}
             <button
                 disabled={!solanaWallet || loadingInflate}
                 onClick={() => executeInflate(solanaWallet)}
-                className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
-            ${!solanaWallet || loadingInflate ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}`}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {loadingInflate ? 'Submitting...' : 'Seed Wallet'}
             </button>
