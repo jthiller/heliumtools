@@ -1,33 +1,10 @@
 import { useEffect, useState } from "react";
-import {
-  ArrowPathIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-} from "@heroicons/react/24/outline";
 import { API_BASE } from "../lib/api.js";
 import Header from "../components/Header.jsx";
-
-const classNames = (...classes) => classes.filter(Boolean).join(" ");
-
-function StatusBanner({ tone = "info", message }) {
-  if (!message) return null;
-  const config = {
-    success: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-800", Icon: CheckCircleIcon },
-    error: { bg: "bg-rose-50 border-rose-200", text: "text-rose-800", Icon: ExclamationTriangleIcon },
-    info: { bg: "bg-sky-50 border-sky-200", text: "text-sky-800", Icon: ArrowPathIcon },
-  };
-  const { bg, text, Icon } = config[tone] || config.info;
-
-  return (
-    <div className={classNames("flex gap-3 rounded-lg border p-4", bg)}>
-      <Icon className={classNames("h-5 w-5 shrink-0", text)} aria-hidden="true" />
-      <p className={classNames("text-sm", text)}>{message}</p>
-    </div>
-  );
-}
+import StatusBanner from "../components/StatusBanner.jsx";
 
 export default function VerifyPage() {
-  const [state, setState] = useState({ tone: "info", message: "Verifying your email…" });
+  const [state, setState] = useState({ tone: "loading", message: "Verifying your email…" });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -55,7 +32,7 @@ export default function VerifyPage() {
     url.searchParams.set("email", email);
     url.searchParams.set("redirect", redirectTarget);
 
-    setState({ tone: "info", message: "Contacting verification service…" });
+    setState({ tone: "loading", message: "Contacting verification service…" });
     window.location.href = url.toString();
   }, []);
 

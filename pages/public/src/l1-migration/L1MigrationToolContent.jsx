@@ -4,29 +4,11 @@ import { useAsyncCallback } from 'react-async-hook';
 import { bulkSendRawTransactions } from '@helium/spl-utils';
 import { Connection, PublicKey } from '@solana/web3.js';
 import Address from '@helium/address';
-import { CheckCircleIcon, ExclamationTriangleIcon, InformationCircleIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
+import { ArrowRightIcon } from '@heroicons/react/24/outline';
+import StatusBanner from '../components/StatusBanner.jsx';
 
 const MIGRATION_SERVICE_URL = import.meta.env.VITE_MIGRATION_SERVICE_URL || 'https://migration.web.helium.io';
 const SOLANA_URL = import.meta.env.VITE_SOLANA_URL || 'https://solana-rpc.web.helium.io/?session-key=Pluto';
-
-function StatusBanner({ type, message }) {
-    if (!message) return null;
-
-    const config = {
-        success: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800', Icon: CheckCircleIcon },
-        error: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-800', Icon: ExclamationTriangleIcon },
-        info: { bg: 'bg-sky-50 border-sky-200', text: 'text-sky-800', Icon: InformationCircleIcon },
-    };
-
-    const { bg, text, Icon } = config[type] || config.info;
-
-    return (
-        <div className={`flex gap-3 rounded-lg border p-4 ${bg}`}>
-            <Icon className={`h-5 w-5 shrink-0 ${text}`} />
-            <p className={`text-sm ${text}`}>{message}</p>
-        </div>
-    );
-}
 
 export const L1MigrationToolContent = () => {
     const [wallet, setWallet] = useState("");
@@ -68,7 +50,7 @@ export const L1MigrationToolContent = () => {
             }
             const txs = (await getTxs()).transactions;
             if (!txs || txs.length === 0) {
-                setStatus({ type: 'info', message: "No transactions found to migrate." });
+                setStatus({ tone: 'info', message: "No transactions found to migrate." });
                 return true;
             }
 
@@ -80,18 +62,20 @@ export const L1MigrationToolContent = () => {
                 throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
             }
 
-            setStatus({ type: 'success', message: "Migration successful!" });
+            setStatus({ tone: 'success', message: "Migration successful!" });
             return true;
         } catch (e) {
             throw e;
         }
     });
 
+    // Determine the banner to show
+    const bannerTone = errorInflate ? 'error' : status?.tone;
+    const bannerMessage = errorInflate?.message || status?.message;
+
     return (
         <div className="space-y-6">
-            {(errorInflate || status) && (
-                <StatusBanner type={errorInflate ? 'error' : status?.type} message={errorInflate?.message || status?.message} />
-            )}
+            {bannerMessage && <StatusBanner tone={bannerTone} message={bannerMessage} />}
 
             {/* Input Section */}
             <div>

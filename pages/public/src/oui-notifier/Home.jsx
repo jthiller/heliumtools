@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowPathIcon,
   BellAlertIcon,
-  CheckCircleIcon,
   EnvelopeIcon,
-  ExclamationTriangleIcon,
   ClipboardDocumentIcon,
   CheckIcon,
   TrashIcon,
@@ -22,6 +20,8 @@ import {
   CartesianGrid,
 } from "recharts";
 import Header from "../components/Header.jsx";
+import StatusBanner from "../components/StatusBanner.jsx";
+import { classNames } from "../lib/utils.js";
 import {
   API_BASE,
   fetchBalanceForOui,
@@ -37,7 +37,13 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
   roundingMode: "floor",
 });
 
-const classNames = (...classes) => classes.filter(Boolean).join(" ");
+// Tailwind color values for chart (matches slate and sky palettes)
+const CHART_COLORS = {
+  stroke: "#0ea5e9",      // sky-500
+  grid: "#e2e8f0",        // slate-200
+  tickText: "#94a3b8",    // slate-400
+  tooltipBorder: "#e2e8f0", // slate-200
+};
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
@@ -68,25 +74,8 @@ function CopyButton({ text }) {
   );
 }
 
-function StatusBanner({ tone = "muted", message }) {
-  const variants = {
-    success: { wrapper: "bg-emerald-50 text-emerald-800 border-emerald-200", icon: "text-emerald-600", Icon: CheckCircleIcon },
-    info: { wrapper: "bg-sky-50 text-sky-800 border-sky-200", icon: "text-sky-600", Icon: BellAlertIcon },
-    warning: { wrapper: "bg-amber-50 text-amber-800 border-amber-200", icon: "text-amber-600", Icon: ExclamationTriangleIcon },
-    error: { wrapper: "bg-rose-50 text-rose-800 border-rose-200", icon: "text-rose-600", Icon: ExclamationTriangleIcon },
-    muted: { wrapper: "bg-slate-50 text-slate-700 border-slate-200", icon: "text-slate-500", Icon: BellAlertIcon },
-  };
-
-  const { wrapper, icon, Icon } = variants[tone] || variants.muted;
-  if (!message) return null;
-
-  return (
-    <div className={classNames("flex gap-3 rounded-lg p-3 border text-sm", wrapper)}>
-      <Icon className={classNames("h-5 w-5 shrink-0", icon)} />
-      <p>{message}</p>
-    </div>
-  );
-}
+// Standard input class for consistency
+const inputClassName = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
 
 export default function HomePage() {
   const [ouis, setOuis] = useState([]);
@@ -230,7 +219,7 @@ export default function HomePage() {
     }
 
     setSaving(true);
-    setFormStatus({ tone: "info", message: "Saving…" });
+    setFormStatus({ tone: "loading", message: "Saving…" });
 
     try {
       const message = await subscribeToAlerts({ email, label: label || undefined, webhook_url: webhookUrl || undefined, escrow_account: escrow });
@@ -356,26 +345,26 @@ export default function HomePage() {
                     <AreaChart data={timeseries} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.15} />
-                          <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                          <stop offset="5%" stopColor={CHART_COLORS.stroke} stopOpacity={0.15} />
+                          <stop offset="95%" stopColor={CHART_COLORS.stroke} stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_COLORS.grid} />
                       <YAxis domain={["dataMin", "dataMax"]} hide />
                       <XAxis
                         dataKey="date"
-                        tick={{ fontSize: 11, fill: "#94a3b8" }}
+                        tick={{ fontSize: 11, fill: CHART_COLORS.tickText }}
                         tickLine={false}
                         axisLine={false}
                         minTickGap={40}
                         tickFormatter={(str) => { const d = new Date(str); return `${d.getMonth() + 1}/${d.getDate()}`; }}
                       />
                       <Tooltip
-                        contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontSize: "13px" }}
+                        contentStyle={{ borderRadius: "8px", border: `1px solid ${CHART_COLORS.tooltipBorder}`, boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontSize: "13px" }}
                         formatter={(val) => [usdFormatter.format(val), "Balance"]}
                         labelFormatter={(label) => new Date(label).toLocaleDateString()}
                       />
-                      <Area type="monotone" dataKey="balance_usd" stroke="#0ea5e9" strokeWidth={2} fill="url(#balanceGradient)" />
+                      <Area type="monotone" dataKey="balance_usd" stroke={CHART_COLORS.stroke} strokeWidth={2} fill="url(#balanceGradient)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -447,14 +436,14 @@ export default function HomePage() {
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-600">
                             {editingSubId === sub.id ? (
-                              <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className="w-full rounded border-slate-200 px-2 py-1 text-sm" />
+                              <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className={inputClassName} />
                             ) : (
                               sub.label || <span className="text-slate-400">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-600">
                             {editingSubId === sub.id ? (
-                              <input type="text" value={editWebhook} onChange={(e) => setEditWebhook(e.target.value)} className="w-full rounded border-slate-200 px-2 py-1 text-sm" />
+                              <input type="text" value={editWebhook} onChange={(e) => setEditWebhook(e.target.value)} className={inputClassName} />
                             ) : (
                               sub.webhook_url ? "Configured" : <span className="text-slate-400">—</span>
                             )}
