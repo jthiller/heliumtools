@@ -7,11 +7,11 @@
 }
 
 body {
-  @apply text-slate-900 bg-slate-50;
+  @apply text-slate-900 bg-white antialiased;
 }
 
 a {
-  @apply text-indigo-600 hover:text-indigo-500;
+  @apply text-sky-600 hover:text-sky-500;
 }
 
 input[type="number"]::-webkit-inner-spin-button,

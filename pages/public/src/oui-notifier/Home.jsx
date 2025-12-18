@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import MiddleEllipsis from "react-middle-ellipsis";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowPathIcon,
   BellAlertIcon,
   CheckCircleIcon,
   EnvelopeIcon,
   ExclamationTriangleIcon,
-  ShieldCheckIcon,
-  InformationCircleIcon,
   ClipboardDocumentIcon,
   CheckIcon,
   TrashIcon,
   PencilIcon,
   XMarkIcon,
+  ArrowRightIcon,
 } from "@heroicons/react/24/outline";
 import {
   AreaChart,
@@ -41,64 +39,6 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
 
 const classNames = (...classes) => classes.filter(Boolean).join(" ");
 
-function StatusBanner({ tone = "muted", title, message }) {
-  const variants = {
-    success: {
-      wrapper: "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-100",
-      icon: "text-emerald-600",
-      Icon: CheckCircleIcon,
-    },
-    info: {
-      wrapper: "bg-indigo-50 text-indigo-900 ring-1 ring-indigo-100",
-      icon: "text-indigo-600",
-      Icon: BellAlertIcon,
-    },
-    warning: {
-      wrapper: "bg-amber-50 text-amber-900 ring-1 ring-amber-100",
-      icon: "text-amber-600",
-      Icon: ExclamationTriangleIcon,
-    },
-    error: {
-      wrapper: "bg-rose-50 text-rose-900 ring-1 ring-rose-100",
-      icon: "text-rose-600",
-      Icon: ExclamationTriangleIcon,
-    },
-    muted: {
-      wrapper: "bg-slate-50 text-slate-900 ring-1 ring-slate-200",
-      icon: "text-slate-500",
-      Icon: BellAlertIcon,
-    },
-  };
-
-  const { wrapper, icon, Icon } = variants[tone] || variants.muted;
-
-  if (!message) return null;
-
-  return (
-    <div className={classNames("flex gap-3 rounded-xl p-4 shadow-sm", wrapper)}>
-      <Icon className={classNames("h-5 w-5 shrink-0", icon)} aria-hidden="true" />
-      <div className="text-sm leading-6">
-        {title ? <p className="font-semibold">{title}</p> : null}
-        <p>{message}</p>
-      </div>
-    </div>
-  );
-}
-
-
-
-function SimpleTooltip({ content, children }) {
-  return (
-    <div className="group relative flex items-center">
-      {children}
-      <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden w-64 -translate-x-1/2 rounded-lg bg-slate-900 p-2 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:block group-hover:opacity-100 z-10">
-        {content}
-        <div className="absolute left-1/2 top-full -mt-1 h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-900"></div>
-      </div>
-    </div>
-  );
-}
-
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
 
@@ -116,7 +56,7 @@ function CopyButton({ text }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="ml-2 inline-flex items-center text-slate-400 hover:text-indigo-600 transition-colors"
+      className="inline-flex items-center text-slate-400 hover:text-slate-600 transition-colors"
       title="Copy to clipboard"
     >
       {copied ? (
@@ -128,6 +68,26 @@ function CopyButton({ text }) {
   );
 }
 
+function StatusBanner({ tone = "muted", message }) {
+  const variants = {
+    success: { wrapper: "bg-emerald-50 text-emerald-800 border-emerald-200", icon: "text-emerald-600", Icon: CheckCircleIcon },
+    info: { wrapper: "bg-sky-50 text-sky-800 border-sky-200", icon: "text-sky-600", Icon: BellAlertIcon },
+    warning: { wrapper: "bg-amber-50 text-amber-800 border-amber-200", icon: "text-amber-600", Icon: ExclamationTriangleIcon },
+    error: { wrapper: "bg-rose-50 text-rose-800 border-rose-200", icon: "text-rose-600", Icon: ExclamationTriangleIcon },
+    muted: { wrapper: "bg-slate-50 text-slate-700 border-slate-200", icon: "text-slate-500", Icon: BellAlertIcon },
+  };
+
+  const { wrapper, icon, Icon } = variants[tone] || variants.muted;
+  if (!message) return null;
+
+  return (
+    <div className={classNames("flex gap-3 rounded-lg p-3 border text-sm", wrapper)}>
+      <Icon className={classNames("h-5 w-5 shrink-0", icon)} />
+      <p>{message}</p>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [ouis, setOuis] = useState([]);
   const [ouiInput, setOuiInput] = useState("");
@@ -136,7 +96,6 @@ export default function HomePage() {
   const [balance, setBalance] = useState(null);
   const [burnRate, setBurnRate] = useState(null);
   const [timeseries, setTimeseries] = useState([]);
-
   const [loadingBalance, setLoadingBalance] = useState(false);
 
   const [email, setEmail] = useState("");
@@ -145,22 +104,16 @@ export default function HomePage() {
   const [formStatus, setFormStatus] = useState({ tone: "muted", message: "" });
   const [saving, setSaving] = useState(false);
 
-  // User Management State
   const [userUuid, setUserUuid] = useState(null);
-
   const [userSubscriptions, setUserSubscriptions] = useState([]);
-
   const [editingSubId, setEditingSubId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [editWebhook, setEditWebhook] = useState("");
 
   useEffect(() => {
     const savedEmail = localStorage.getItem("ouiNotifierEmail");
-    const savedEscrow = localStorage.getItem("ouiNotifierEscrow");
     if (savedEmail) setEmail(savedEmail);
-    if (savedEscrow) setEscrow(savedEscrow);
 
-    // Check for UUID in URL
     const params = new URLSearchParams(window.location.search);
     const uuid = params.get("uuid");
     if (uuid) {
@@ -170,25 +123,17 @@ export default function HomePage() {
   }, []);
 
   const fetchUserData = async (uuid) => {
-
     try {
       const res = await fetch(`${API_BASE}/api/user/${uuid}`);
       if (res.ok) {
         const data = await res.json();
-
         setUserSubscriptions(data.subscriptions);
-
-        // Populate lookup with first OUI if available
         if (data.subscriptions.length > 0 && data.subscriptions[0].oui) {
           setOuiInput(data.subscriptions[0].oui.toString());
         }
-      } else {
-        console.error("Failed to fetch user data");
       }
     } catch (err) {
       console.error("Error fetching user data", err);
-    } finally {
-
     }
   };
 
@@ -197,22 +142,16 @@ export default function HomePage() {
     (async () => {
       try {
         const directory = await fetchOuiIndex();
-        if (cancelled) return;
-        setOuis(directory);
+        if (!cancelled) setOuis(directory);
       } catch (err) {
-        if (cancelled) return;
-        console.error("Unable to load OUI list", err);
+        if (!cancelled) console.error("Unable to load OUI list", err);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (email) {
-      localStorage.setItem("ouiNotifierEmail", email);
-    }
+    if (email) localStorage.setItem("ouiNotifierEmail", email);
   }, [email]);
 
   const matchedOui = useMemo(() => {
@@ -221,7 +160,6 @@ export default function HomePage() {
     return ouis.find((o) => o.oui === numeric) || null;
   }, [ouiInput, ouis]);
 
-  // Debounced balance check
   useEffect(() => {
     const numericOui = Number(ouiInput);
     if (!ouiInput || !Number.isInteger(numericOui)) {
@@ -230,52 +168,29 @@ export default function HomePage() {
       setBalance(null);
       setBurnRate(null);
       setTimeseries([]);
-      localStorage.removeItem("ouiNotifierEscrow");
       return;
     }
 
-    // Optimistic update from directory
     if (matchedOui) {
       setPayer(matchedOui.payer || "");
       setEscrow(matchedOui.escrow || "");
-      if (matchedOui.escrow) {
-        localStorage.setItem("ouiNotifierEscrow", matchedOui.escrow);
-      }
     }
 
     const timer = setTimeout(async () => {
       setLoadingBalance(true);
       try {
         const payload = await fetchBalanceForOui(numericOui);
-        const dc = Number(payload.balance_dc || 0);
-        const usd = Number(payload.balance_usd || 0);
-        setBalance({ dc, usd });
-
-        // Parse burn rate from API response
+        setBalance({ dc: Number(payload.balance_dc || 0), usd: Number(payload.balance_usd || 0) });
         if (payload.burn_rate) {
           setBurnRate({
             burn1dDC: payload.burn_rate.burn_1d_dc,
             burn1dUSD: payload.burn_rate.burn_1d_usd,
-            burn30dDC: payload.burn_rate.burn_30d_dc,
-            burn30dUSD: payload.burn_rate.burn_30d_usd,
           });
         } else {
           setBurnRate(null);
         }
-
-        setTimeseries(
-          (payload.timeseries || []).map((t) => ({
-            ...t,
-            balance_usd: t.balance_dc * 0.00001,
-          }))
-        );
-
-        if (payload.escrow) {
-          setEscrow(payload.escrow);
-          localStorage.setItem("ouiNotifierEscrow", payload.escrow);
-        }
-        // If we didn't have payer from directory, maybe we could get it here if API returned it,
-        // but currently API mostly returns balance/escrow.
+        setTimeseries((payload.timeseries || []).map((t) => ({ ...t, balance_usd: t.balance_dc * 0.00001 })));
+        if (payload.escrow) setEscrow(payload.escrow);
       } catch (err) {
         console.error("Failed to fetch balance", err);
         setBalance(null);
@@ -284,62 +199,57 @@ export default function HomePage() {
       } finally {
         setLoadingBalance(false);
       }
-    }, 500); // 500ms debounce
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [ouiInput, matchedOui]);
 
+  const daysRemaining = useMemo(() => {
+    if (balance?.usd != null && burnRate?.burn1dUSD > 0) {
+      return Math.max(0, (balance.usd - 35) / burnRate.burn1dUSD);
+    }
+    return null;
+  }, [balance, burnRate]);
+
+  const getDaysColor = (days) => {
+    if (days === null) return "text-slate-300";
+    if (days <= 7) return "text-red-600";
+    if (days <= 14) return "text-amber-500";
+    return "text-emerald-600";
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!email) {
-      setFormStatus({ tone: "error", message: "Enter an email address to subscribe." });
+      setFormStatus({ tone: "error", message: "Enter an email address." });
       return;
     }
     if (!escrow) {
-      setFormStatus({
-        tone: "error",
-        message: "Look up your OUI so we can capture the escrow account before subscribing.",
-      });
+      setFormStatus({ tone: "error", message: "Look up your OUI first." });
       return;
     }
 
     setSaving(true);
-    setFormStatus({ tone: "info", message: "Saving your alert preferences…" });
+    setFormStatus({ tone: "info", message: "Saving…" });
 
     try {
-      const message = await subscribeToAlerts({
-        email,
-        label: label || undefined,
-        webhook_url: webhookUrl || undefined,
-        escrow_account: escrow,
-      });
+      const message = await subscribeToAlerts({ email, label: label || undefined, webhook_url: webhookUrl || undefined, escrow_account: escrow });
       setFormStatus({ tone: "success", message });
-      // Refresh user data if we are in management mode
-      if (userUuid) {
-        fetchUserData(userUuid);
-      }
+      if (userUuid) fetchUserData(userUuid);
     } catch (err) {
-      setFormStatus({ tone: "error", message: err.message || "Unable to save subscription." });
+      setFormStatus({ tone: "error", message: err.message || "Unable to save." });
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteSubscription = async (id) => {
-    if (!confirm("Are you sure you want to delete this subscription?")) return;
+    if (!confirm("Delete this subscription?")) return;
     try {
-      const res = await fetch(`${API_BASE}/api/subscription/${id}`, {
-        method: "DELETE",
-        headers: { "X-User-Uuid": userUuid },
-      });
-      if (res.ok) {
-        setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
-      } else {
-        alert("Failed to delete subscription");
-      }
+      const res = await fetch(`${API_BASE}/api/subscription/${id}`, { method: "DELETE", headers: { "X-User-Uuid": userUuid } });
+      if (res.ok) setUserSubscriptions((prev) => prev.filter((sub) => sub.id !== id));
     } catch (err) {
       console.error("Error deleting subscription", err);
-      alert("Error deleting subscription");
     }
   };
 
@@ -351,455 +261,294 @@ export default function HomePage() {
         body: JSON.stringify({ label: editLabel, webhook_url: editWebhook }),
       });
       if (res.ok) {
-        setUserSubscriptions((prev) =>
-          prev.map((sub) =>
-            sub.id === id ? { ...sub, label: editLabel, webhook_url: editWebhook } : sub
-          )
-        );
+        setUserSubscriptions((prev) => prev.map((sub) => sub.id === id ? { ...sub, label: editLabel, webhook_url: editWebhook } : sub));
         setEditingSubId(null);
-      } else {
-        alert("Failed to update subscription");
       }
     } catch (err) {
       console.error("Error updating subscription", err);
-      alert("Error updating subscription");
     }
   };
 
   const handleDeleteUser = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to delete your account? This will remove all your subscriptions and cannot be undone."
-      )
-    )
-      return;
+    if (!confirm("Delete your account and all subscriptions?")) return;
     try {
-      const res = await fetch(`${API_BASE}/api/user/${userUuid}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        alert("Account deleted successfully.");
-        window.location.href = "/oui-notifier";
-      } else {
-        alert("Failed to delete account");
-      }
+      const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
+      if (res.ok) window.location.href = "/oui-notifier";
     } catch (err) {
       console.error("Error deleting account", err);
-      alert("Error deleting account");
     }
   };
 
-  const startEditing = (sub) => {
-    setEditingSubId(sub.id);
-    setEditLabel(sub.label || "");
-    setEditWebhook(sub.webhook_url || "");
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-white">
       <Header />
 
-      <main className="py-10">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 space-y-6">
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-indigo-600">OUI Notifier</p>
-            <h1 className="text-2xl font-semibold text-slate-900">Helium Data Credit Alerts</h1>
-            <p className="text-sm text-slate-600">
-              Lookup OUIs, fetch balances, and subscribe to email or webhook alerts.
-            </p>
-          </div>
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        {/* Page Header */}
+        <div className="mb-8">
+          <p className="text-sm font-mono uppercase tracking-widest text-sky-600 mb-1">OUI Notifier</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Helium Data Credit Alerts</h1>
+        </div>
 
-          <div className="grid gap-6 lg:grid-cols-3">
-            <section className="lg:col-span-2 space-y-6">
-              <div className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-indigo-600">Lookup</p>
-                    <h2 className="text-xl font-semibold text-slate-900">
-                      Find your OUI
-                    </h2>
-                  </div>
+        {/* Main Grid: Content + Sidebar */}
+        <div className="grid lg:grid-cols-[1fr,340px] gap-8 lg:gap-12">
+
+          {/* Left Column: OUI Data */}
+          <div className="space-y-8">
+            {/* OUI Input + Balance/Days Grid */}
+            <div className="space-y-6">
+              {/* OUI Input */}
+              <div>
+                <label htmlFor="oui" className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2 block">
+                  OUI Number
+                </label>
+                <div className="relative">
+                  <input
+                    id="oui"
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="Enter OUI"
+                    list="oui-options"
+                    value={ouiInput}
+                    onChange={(e) => setOuiInput(e.target.value)}
+                    className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xl font-semibold text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                  />
                   {loadingBalance && (
-                    <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full">
-                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                      Fetching...
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <ArrowPathIcon className="h-5 w-5 animate-spin text-slate-400" />
                     </div>
                   )}
                 </div>
-
-                <div className="mt-6 space-y-6">
-                  <div className="space-y-2">
-                    <label htmlFor="oui" className="text-sm font-semibold text-slate-800">
-                      OUI Number
-                    </label>
-                    <input
-                      id="oui"
-                      name="oui"
-                      type="number"
-                      inputMode="numeric"
-                      placeholder="e.g. 3"
-                      list="oui-options"
-                      value={ouiInput}
-                      onChange={(e) => setOuiInput(e.target.value)}
-                      className="block w-full rounded-xl border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <datalist id="oui-options">
-                      {ouis.map((org) => (
-                        <option
-                          key={org.oui}
-                          value={org.oui}
-                          label={`OUI ${org.oui} • Payer ${org.payer || "n/a"}`}
-                        />
-                      ))}
-                    </datalist>
-                  </div>
-
-                  <dl className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
-                    <div className="space-y-1 col-span-full">
-                      <div className="flex items-center">
-                        <dt className="text-sm font-semibold text-slate-800">OUI&nbsp;</dt>
-                        <dd className="text-sm text-slate-700">
-                          {ouiInput ? ouiInput : <span className="text-slate-500">—</span>}
-                        </dd>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
-                        Escrow account
-                        <SimpleTooltip content="Helium uses this account to burn Data Credits as they are used. It is provided here as a link for direct reference. Do not send tokens here.">
-                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
-                        </SimpleTooltip>
-                      </dt>
-                      <dd className="text-sm text-slate-700">
-                        {escrow ? (
-                          <a
-                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-500 max-w-full"
-                            href={`https://solscan.io/account/${encodeURIComponent(escrow)}`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <MiddleEllipsis><span title={escrow}>{escrow}</span></MiddleEllipsis>
-                            <span aria-hidden="true" className="shrink-0">
-                              ↗
-                            </span>
-                          </a>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
-                        Payer
-                        <SimpleTooltip content="This key is used when delegating tokens to your OUI. Tokens must be _delegated_ to this address in order to appear in the escrow account.">
-                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
-                        </SimpleTooltip>
-                      </dt>
-                      <dd className="text-sm text-slate-700 flex items-center">
-                        {payer ? (
-                          <>
-                            <MiddleEllipsis><span title={payer}>{payer}</span></MiddleEllipsis>
-                            <CopyButton text={payer} />
-                          </>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </dd>
-                    </div>
-                    <div className="space-y-1 overflow-hidden">
-                      <dt className="text-sm font-semibold text-slate-800">Balance</dt>
-                      <dd className="text-sm text-slate-700">
-                        {balance ? (
-                          <div className="space-y-0.5 text-sm">
-                            <p className="text-slate-500">
-                              <span className={`font-semibold ${balance.usd > 35 ? 'text-green-600' : 'text-slate-600'}`}>{usdFormatter.format(balance.usd)} </span>
-                              ({numberFormatter.format(balance.dc)} DC)</p>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="text-sm font-semibold text-slate-800 flex items-center gap-1">
-                        Usage Rate
-                        <SimpleTooltip content="Usage rate over the past 24 hours.">
-                          <InformationCircleIcon className="h-4 w-4 text-slate-400 hover:text-slate-600 cursor-help" />
-                        </SimpleTooltip>
-                      </dt>
-                      <dd className="text-sm text-slate-800">
-                        {(burnRate?.burn1dUSD != null || burnRate?.burn30dUSD != null) ? (
-                          <div className="space-y-0.5 text-sm font-semibold text-slate-900">
-                            {burnRate?.burn1dUSD != null && (
-                              <p>
-                                {usdFormatter.format(burnRate.burn1dUSD)}/day
-                                {balance?.usd != null && burnRate.burn1dUSD > 0 && (
-                                  <span className="ml-2 text-slate-500 font-normal">
-                                    ({Math.max(0, ((balance.usd - 35) / burnRate.burn1dUSD)).toFixed(1)} days remaining)
-                                  </span>
-                                )}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </dd>
-                    </div>
-                    {timeseries.length > 5 && (
-                      <div className="col-span-full">
-                        <div className="h-64 w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart
-                              data={timeseries}
-                              margin={{ top: 5, right: 0, left: 0, bottom: 0 }}
-                            >
-                              <defs>
-                                <linearGradient id="colorDc" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
-                                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                              <YAxis domain={["dataMin", "dataMax"]} hide />
-                              <XAxis
-                                dataKey="date"
-                                tick={{ fontSize: 12, fill: "#64748b" }}
-                                tickLine={false}
-                                axisLine={false}
-                                minTickGap={30}
-                                tickFormatter={(str) => {
-                                  const d = new Date(str);
-                                  return `${d.getMonth() + 1}/${d.getDate()}`;
-                                }}
-                              />
-                              <Tooltip
-                                contentStyle={{
-                                  borderRadius: "8px",
-                                  border: "none",
-                                  boxShadow:
-                                    "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-                                }}
-                                formatter={(val) => [usdFormatter.format(val), "USD"]}
-                                labelFormatter={(label) => new Date(label).toLocaleDateString()}
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="balance_usd"
-                                stroke="#4f46e5"
-                                strokeWidth={2}
-                                fillOpacity={1}
-                                fill="url(#colorUsd)"
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-                  </dl>
-
-                  <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/60 p-4 text-sm text-slate-700">
-                    <p className="font-semibold text-indigo-900">Heads up</p>
-                    <p className="mt-1">
-                      Data transfer halts when an escrow hits $35 (3,500,000 DC). Alerts treat that
-                      as zero to keep you ahead of the cutoff.
-                    </p>
-                    <p className="mt-2">
-                      <a
-                        href="https://docs.helium.com/iot/run-an-lns/fund-an-oui/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-indigo-600 hover:text-indigo-500 underline"
-                      >
-                        Data Credits are generated by converting $HNT.
-                      </a>
-                    </p>
-                  </div>
-                </div>
+                <datalist id="oui-options">
+                  {ouis.map((org) => <option key={org.oui} value={org.oui} />)}
+                </datalist>
               </div>
 
-              {userUuid && (
-                <div className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-indigo-600">Manage</p>
-                    <h2 className="text-xl font-semibold text-slate-900">Your Subscriptions</h2>
-                    <p className="text-sm text-slate-600">
-                      Manage your alert preferences and webhooks.
-                    </p>
-                  </div>
-
-                  <div className="mt-6 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200">
-                      <thead>
-                        <tr>
-                          <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900">
-                            OUI / Escrow
-                          </th>
-                          <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900">
-                            Label
-                          </th>
-                          <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900">
-                            Webhook
-                          </th>
-                          <th className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                            <span className="sr-only">Actions</span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {userSubscriptions.map((sub) => (
-                          <tr key={sub.id}>
-                            <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
-                              <button
-                                onClick={() => setOuiInput(sub.oui ? sub.oui.toString() : "")}
-                                className="text-indigo-600 hover:text-indigo-900 hover:underline"
-                              >
-                                {sub.oui ? `OUI ${sub.oui}` : "Unknown OUI"}
-                              </button>
-                              <div className="text-xs text-slate-400">
-                                <MiddleEllipsis><span title={sub.escrow_account}>{sub.escrow_account}</span></MiddleEllipsis>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
-                              {editingSubId === sub.id ? (
-                                <input
-                                  type="text"
-                                  value={editLabel}
-                                  onChange={(e) => setEditLabel(e.target.value)}
-                                  className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                />
-                              ) : (
-                                sub.label || <span className="text-slate-400">—</span>
-                              )}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
-                              {editingSubId === sub.id ? (
-                                <input
-                                  type="text"
-                                  value={editWebhook}
-                                  onChange={(e) => setEditWebhook(e.target.value)}
-                                  className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                />
-                              ) : (
-                                sub.webhook_url ? (
-                                  <span title={sub.webhook_url}>Configured</span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )
-                              )}
-                            </td>
-                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                              {editingSubId === sub.id ? (
-                                <div className="flex justify-end gap-2">
-                                  <button
-                                    onClick={() => handleUpdateSubscription(sub.id)}
-                                    className="text-indigo-600 hover:text-indigo-900"
-                                  >
-                                    <CheckIcon className="h-5 w-5" />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingSubId(null)}
-                                    className="text-slate-600 hover:text-slate-900"
-                                  >
-                                    <XMarkIcon className="h-5 w-5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex justify-end gap-2">
-                                  <button
-                                    onClick={() => startEditing(sub)}
-                                    className="text-indigo-600 hover:text-indigo-900"
-                                  >
-                                    <PencilIcon className="h-5 w-5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteSubscription(sub.id)}
-                                    className="text-rose-600 hover:text-rose-900"
-                                  >
-                                    <TrashIcon className="h-5 w-5" />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="mt-6 border-t border-slate-200 pt-6">
-                    <button
-                      onClick={handleDeleteUser}
-                      className="text-sm text-rose-600 hover:text-rose-900 hover:underline"
-                    >
-                      Delete my account and all data
-                    </button>
-                  </div>
+              {/* Metrics Row */}
+              <div className="grid sm:grid-cols-2 gap-px bg-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-white p-6">
+                  <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Balance</p>
+                  <p className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+                    {balance ? usdFormatter.format(balance.usd) : '—'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {balance ? `${numberFormatter.format(balance.dc)} DC` : 'Enter OUI above'}
+                  </p>
                 </div>
-              )}
-            </section>
+                <div className="bg-white p-6">
+                  <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Days Remaining</p>
+                  <p className={classNames("text-3xl sm:text-4xl font-bold tracking-tight", getDaysColor(daysRemaining))}>
+                    {daysRemaining !== null ? daysRemaining.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {burnRate?.burn1dUSD != null ? `at ${usdFormatter.format(burnRate.burn1dUSD)}/day` : 'Waiting for data'}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-            <section className="rounded-2xl bg-white p-6 shadow-soft ring-1 ring-slate-100 h-fit">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-indigo-600">Subscribe</p>
-                <h2 className="text-xl font-semibold text-slate-900">Email + webhook alerts</h2>
-                <p className="text-sm text-slate-600">
-                  Email alerts at 14, 7, and 1 day from running out. Webhook updates are issued daily.
+            {/* Chart */}
+            <div className="bg-slate-50 rounded-xl p-6">
+              <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-4">30-Day History</p>
+              <div className="h-40">
+                {timeseries.length > 5 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={timeseries} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <YAxis domain={["dataMin", "dataMax"]} hide />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 11, fill: "#94a3b8" }}
+                        tickLine={false}
+                        axisLine={false}
+                        minTickGap={40}
+                        tickFormatter={(str) => { const d = new Date(str); return `${d.getMonth() + 1}/${d.getDate()}`; }}
+                      />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontSize: "13px" }}
+                        formatter={(val) => [usdFormatter.format(val), "Balance"]}
+                        labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                      />
+                      <Area type="monotone" dataKey="balance_usd" stroke="#0ea5e9" strokeWidth={2} fill="url(#balanceGradient)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-slate-400">
+                    Enter an OUI to see balance history
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Account Details */}
+            <div className="grid sm:grid-cols-2 gap-6">
+              <div>
+                <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2">
+                  Payer Key {ouiInput && <span className="text-slate-300">· OUI {ouiInput}</span>}
                 </p>
+                {payer ? (
+                  <div className="flex items-start gap-2">
+                    <code className="text-sm text-slate-700 break-all flex-1">{payer}</code>
+                    <CopyButton text={payer} />
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">—</p>
+                )}
+                <p className="text-xs text-slate-400 mt-2">Delegate DC to this address to top up.</p>
               </div>
-              {/* <div className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 w-fit">
-                {API_BASE.replace("https://", "")}
-              </div> */}
+              <div>
+                <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2">Escrow Account</p>
+                {escrow ? (
+                  <a
+                    className="text-sm text-sky-600 hover:text-sky-500 break-all inline-flex items-center gap-1"
+                    href={`https://solscan.io/account/${encodeURIComponent(escrow)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <code>{escrow}</code>
+                    <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
+                  </a>
+                ) : (
+                  <p className="text-sm text-slate-400">—</p>
+                )}
+                <p className="text-xs text-slate-400 mt-2">View on Solscan. Do not send tokens directly.</p>
+              </div>
+            </div>
 
-              <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-                <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-semibold text-slate-800">
-                    Email address
-                  </label>
+            {/* User Subscriptions (conditional) */}
+            {userUuid && userSubscriptions.length > 0 && (
+              <div className="border-t border-slate-200 pt-8">
+                <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2">Your Subscriptions</p>
+                <h2 className="text-xl font-bold text-slate-900 mb-4">Manage Alerts</h2>
+
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">OUI</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Label</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Webhook</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                      {userSubscriptions.map((sub) => (
+                        <tr key={sub.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 text-sm">
+                            <button onClick={() => setOuiInput(sub.oui?.toString() || "")} className="text-sky-600 hover:underline font-medium">
+                              {sub.oui ? `OUI ${sub.oui}` : "—"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {editingSubId === sub.id ? (
+                              <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className="w-full rounded border-slate-200 px-2 py-1 text-sm" />
+                            ) : (
+                              sub.label || <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {editingSubId === sub.id ? (
+                              <input type="text" value={editWebhook} onChange={(e) => setEditWebhook(e.target.value)} className="w-full rounded border-slate-200 px-2 py-1 text-sm" />
+                            ) : (
+                              sub.webhook_url ? "Configured" : <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {editingSubId === sub.id ? (
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => handleUpdateSubscription(sub.id)} className="text-emerald-600 hover:text-emerald-500"><CheckIcon className="h-4 w-4" /></button>
+                                <button onClick={() => setEditingSubId(null)} className="text-slate-400 hover:text-slate-600"><XMarkIcon className="h-4 w-4" /></button>
+                              </div>
+                            ) : (
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => { setEditingSubId(sub.id); setEditLabel(sub.label || ""); setEditWebhook(sub.webhook_url || ""); }} className="text-slate-400 hover:text-slate-600"><PencilIcon className="h-4 w-4" /></button>
+                                <button onClick={() => handleDeleteSubscription(sub.id)} className="text-rose-400 hover:text-rose-600"><TrashIcon className="h-4 w-4" /></button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4">
+                  <button onClick={handleDeleteUser} className="text-xs text-rose-600 hover:text-rose-500 hover:underline">
+                    Delete my account and all data
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Info Footer */}
+            <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 text-sm text-amber-800">
+              <p className="font-medium mb-1">Important</p>
+              <p>Data transfer halts when escrow reaches $35 (3,500,000 DC). Alerts treat this as zero.</p>
+              <a href="https://docs.helium.com/iot/run-an-lns/fund-an-oui/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-amber-900 hover:text-amber-700 font-medium mt-2">
+                Learn how to fund your OUI <ArrowRightIcon className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+
+          {/* Right Column: Persistent Subscribe Sidebar */}
+          <aside className="lg:sticky lg:top-8 lg:self-start">
+            <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+              <p className="text-sm font-mono uppercase tracking-widest text-sky-600 mb-1">Subscribe</p>
+              <h2 className="text-lg font-bold text-slate-900 mb-1">Get Notified</h2>
+              <p className="text-sm text-slate-600 mb-6">
+                Email alerts at 14, 7, and 1 day remaining. Optional daily webhook.
+              </p>
+
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">Email</label>
                   <div className="relative">
                     <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                      <EnvelopeIcon className="h-5 w-5" aria-hidden="true" />
+                      <EnvelopeIcon className="h-4 w-4" />
                     </div>
                     <input
                       id="email"
-                      name="email"
                       type="email"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="block w-full rounded-xl border-slate-200 bg-white px-3 py-2.5 pl-10 text-base text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 pl-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
                       placeholder="you@example.com"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label htmlFor="label" className="text-sm font-semibold text-slate-800">
-                    Label (optional)
+                <div>
+                  <label htmlFor="label" className="block text-sm font-medium text-slate-700 mb-1">
+                    Label <span className="text-slate-400 font-normal">(optional)</span>
                   </label>
                   <input
                     id="label"
-                    name="label"
                     type="text"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    className="block w-full rounded-xl border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="e.g. Prod IoT OUI"
+                    className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                    placeholder="e.g. Prod OUI"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label htmlFor="webhook" className="text-sm font-semibold text-slate-800">
-                    Webhook URL (optional)
+                <div>
+                  <label htmlFor="webhook" className="block text-sm font-medium text-slate-700 mb-1">
+                    Webhook <span className="text-slate-400 font-normal">(optional)</span>
                   </label>
                   <input
                     id="webhook"
-                    name="webhook_url"
                     type="url"
                     value={webhookUrl}
                     onChange={(e) => setWebhookUrl(e.target.value)}
-                    className="block w-full rounded-xl border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="https://example.com/helium-webhook"
+                    className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                    placeholder="https://..."
                   />
                 </div>
 
@@ -807,26 +556,20 @@ export default function HomePage() {
 
                 <button
                   type="submit"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50"
                   disabled={saving}
                 >
                   {saving ? (
-                    <>
-                      <ArrowPathIcon className="h-5 w-5 animate-spin" aria-hidden="true" />
-                      Saving subscription…
-                    </>
+                    <><ArrowPathIcon className="h-4 w-4 animate-spin" /> Saving…</>
                   ) : (
-                    <>
-                      <BellAlertIcon className="h-5 w-5" aria-hidden="true" />
-                      Subscribe to alerts
-                    </>
+                    <><BellAlertIcon className="h-4 w-4" /> Subscribe</>
                   )}
                 </button>
 
                 <StatusBanner tone={formStatus.tone} message={formStatus.message} />
               </form>
-            </section>
-          </div>
+            </div>
+          </aside>
         </div>
       </main>
     </div>
