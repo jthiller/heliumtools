@@ -16,7 +16,11 @@ export default function VerifyPage() {
     if (verified === "1") {
       // Store UUID in localStorage for session persistence across visits
       if (uuid) {
-        localStorage.setItem("ouiNotifierUuid", uuid);
+        try {
+          localStorage.setItem("ouiNotifierUuid", uuid);
+        } catch {
+          // Ignore errors in private browsing mode
+        }
       }
       setState({ tone: "success", message: "Your email has been verified. You are now subscribed.", uuid });
       return;
