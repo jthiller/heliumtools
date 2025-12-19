@@ -22,7 +22,7 @@ import {
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
-import { classNames } from "../lib/utils.js";
+import { classNames, getLocalStorageItem, setLocalStorageItem, removeLocalStorageItem } from "../lib/utils.js";
 import {
   API_BASE,
   fetchBalanceForOui,
@@ -102,11 +102,27 @@ export default function HomePage() {
   const [editWebhook, setEditWebhook] = useState("");
 
   useEffect(() => {
-    const savedEmail = localStorage.getItem("ouiNotifierEmail");
+    const savedEmail = getLocalStorageItem("ouiNotifierEmail");
     if (savedEmail) setEmail(savedEmail);
 
     const params = new URLSearchParams(window.location.search);
-    const uuid = params.get("uuid");
+    let uuid = params.get("uuid");
+
+    // If no UUID in URL, check localStorage for a stored session
+    if (!uuid) {
+      const storedUuid = getLocalStorageItem("ouiNotifierUuid");
+      if (storedUuid) {
+        uuid = storedUuid;
+        // Update URL with UUID for shareable links
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set("uuid", uuid);
+        window.history.replaceState({}, "", newUrl.toString());
+      }
+    } else {
+      // Store UUID from URL in localStorage for future visits
+      setLocalStorageItem("ouiNotifierUuid", uuid);
+    }
+
     if (uuid) {
       setUserUuid(uuid);
       fetchUserData(uuid);
@@ -129,6 +145,14 @@ export default function HomePage() {
         if (data.subscriptions.length > 0 && data.subscriptions[0].oui) {
           setOuiInput(data.subscriptions[0].oui.toString());
         }
+      } else {
+        // UUID is no longer valid (user may have been deleted)
+        removeLocalStorageItem("ouiNotifierUuid");
+        setUserUuid(null);
+        // Clean up the URL
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete("uuid");
+        window.history.replaceState({}, "", newUrl.toString());
       }
     } catch (err) {
       console.error("Error fetching user data", err);
@@ -149,7 +173,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (email) localStorage.setItem("ouiNotifierEmail", email);
+    if (email) setLocalStorageItem("ouiNotifierEmail", email);
   }, [email]);
 
   const matchedOui = useMemo(() => {
@@ -283,6 +307,9 @@ export default function HomePage() {
     try {
       const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
       if (res.ok) {
+        // Clear stored session data
+        removeLocalStorageItem("ouiNotifierUuid");
+        removeLocalStorageItem("ouiNotifierEmail");
         window.location.href = "/oui-notifier/?deleted=1";
       } else {
         setSubscriptionError("Failed to delete account. Please try again.");
