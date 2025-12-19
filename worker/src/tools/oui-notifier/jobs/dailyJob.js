@@ -163,21 +163,29 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
 
   // --- STEP 2: Calculate burn rate using OUI balance history ---
   // First, get the OUI for this escrow
-  const ouiInfo = await getOuiByEscrow(env, escrow);
-  if (!ouiInfo) {
-    console.log(`No OUI found for escrow ${escrow}, skipping burn rate calculation`);
+  let ouiInfo;
+  let balanceRows = [];
+  try {
+    ouiInfo = await getOuiByEscrow(env, escrow);
+    if (!ouiInfo) {
+      console.log(`No OUI found for escrow ${escrow}, skipping burn rate calculation`);
+      return;
+    }
+
+    const { results } = await env.DB.prepare(
+      `SELECT date, balance_dc, fetched_at
+       FROM oui_balances
+       WHERE oui = ?
+       ORDER BY date DESC
+       LIMIT ?`
+    )
+      .bind(ouiInfo.oui, BALANCE_HISTORY_DAYS + 1)
+      .all();
+    balanceRows = results || [];
+  } catch (dbErr) {
+    console.error(`Failed to fetch OUI/balance data for ${escrow}`, dbErr);
     return;
   }
-
-  const { results: balanceRows } = await env.DB.prepare(
-    `SELECT date, balance_dc
-     FROM oui_balances
-     WHERE oui = ?
-     ORDER BY date DESC
-     LIMIT ?`
-  )
-    .bind(ouiInfo.oui, BALANCE_HISTORY_DAYS + 1)
-    .all();
 
   // Use new timestamp-aware burn rate calculation
   const burnRates = computeBurnRates(balanceRows);
