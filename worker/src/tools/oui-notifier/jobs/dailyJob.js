@@ -121,7 +121,6 @@ export async function runDailyJob(env) {
 
     console.log("Scheduled job complete (oui-notifier).");
     await pruneOuiBalanceHistory(env, BALANCE_HISTORY_DAYS);
-    await pruneSubscriptionBalanceHistory(env, BALANCE_HISTORY_DAYS);
   } catch (err) {
     console.error("Fatal error in scheduled job (oui-notifier)", err);
   }
@@ -160,29 +159,24 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
     return;
   }
 
-  // --- STEP 2: Record balance in subscription history ---
-  try {
-    await env.DB.prepare(
-      `INSERT INTO balances (subscription_id, date, balance_dc)
-       VALUES (?, ?, ?)
-       ON CONFLICT(subscription_id, date) DO UPDATE SET balance_dc = excluded.balance_dc`
-    )
-      .bind(subId, todayDate, balanceDC)
-      .run();
-  } catch (e) {
-    console.error(`Error inserting balance row for subscription ${subId}`, e);
+  // Balances are now tracked per-OUI in oui_balances, not per-subscription
+
+  // --- STEP 2: Calculate burn rate using OUI balance history ---
+  // First, get the OUI for this escrow
+  const ouiInfo = await getOuiByEscrow(env, escrow);
+  if (!ouiInfo) {
+    console.log(`No OUI found for escrow ${escrow}, skipping burn rate calculation`);
     return;
   }
 
-  // --- STEP 3: Calculate burn rate and days remaining ---
   const { results: balanceRows } = await env.DB.prepare(
     `SELECT date, balance_dc
-     FROM balances
-     WHERE subscription_id = ?
+     FROM oui_balances
+     WHERE oui = ?
      ORDER BY date DESC
      LIMIT ?`
   )
-    .bind(subId, BALANCE_HISTORY_DAYS + 1)
+    .bind(ouiInfo.oui, BALANCE_HISTORY_DAYS + 1)
     .all();
 
   // Use new timestamp-aware burn rate calculation
@@ -288,10 +282,9 @@ ${env.APP_BASE_URL || ""}
 
 (If you topped up your DC balance significantly, alerts will reset on the next run.)`;
 
-  // Get OUI info for payer key
-  const ouiInfo = await getOuiByEscrow(env, escrow);
-  const payerKey = ouiInfo?.payer || null;
-  const oui = ouiInfo?.oui || null;
+  // OUI info already fetched above for burn rate calculation
+  const payerKey = ouiInfo.payer || null;
+  const oui = ouiInfo.oui || null;
 
   const htmlBody = alertEmailTemplate({
     label,
@@ -354,15 +347,3 @@ async function ensureWebhookDateColumn(env) {
   }
 }
 
-async function pruneSubscriptionBalanceHistory(env, keepDays = BALANCE_HISTORY_DAYS) {
-  if (!Number.isFinite(keepDays) || keepDays <= 0) return;
-  const cutoff = new Date();
-  cutoff.setUTCDate(cutoff.getUTCDate() - keepDays);
-  const cutoffDate = cutoff.toISOString().slice(0, 10);
-
-  try {
-    await env.DB.prepare("DELETE FROM balances WHERE date < ?").bind(cutoffDate).run();
-  } catch (err) {
-    console.error("Failed to prune balances history", err);
-  }
-}
