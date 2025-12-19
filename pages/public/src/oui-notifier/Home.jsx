@@ -22,38 +22,13 @@ import {
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
-import { classNames } from "../lib/utils.js";
+import { classNames, safeGetItem, safeSetItem, safeRemoveItem } from "../lib/utils.js";
 import {
   API_BASE,
   fetchBalanceForOui,
   fetchOuiIndex,
   subscribeToAlerts,
 } from "../lib/api.js";
-
-// Safe localStorage helpers to handle private browsing mode
-const safeGetItem = (key) => {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
-
-const safeSetItem = (key, value) => {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Ignore errors in private browsing mode
-  }
-};
-
-const safeRemoveItem = (key) => {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Ignore errors in private browsing mode
-  }
-};
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const usdFormatter = new Intl.NumberFormat("en-US", {

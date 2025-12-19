@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { API_BASE } from "../lib/api.js";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
+import { safeSetItem } from "../lib/utils.js";
 
 export default function VerifyPage() {
   const [state, setState] = useState({ tone: "loading", message: "Verifying your email…" });
@@ -16,11 +17,7 @@ export default function VerifyPage() {
     if (verified === "1") {
       // Store UUID in localStorage for session persistence across visits
       if (uuid) {
-        try {
-          localStorage.setItem("ouiNotifierUuid", uuid);
-        } catch {
-          // Ignore errors in private browsing mode
-        }
+        safeSetItem("ouiNotifierUuid", uuid);
       }
       setState({ tone: "success", message: "Your email has been verified. You are now subscribed.", uuid });
       return;
