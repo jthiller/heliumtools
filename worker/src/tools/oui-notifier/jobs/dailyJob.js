@@ -279,7 +279,7 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
 Current balance: ${balanceDC.toLocaleString("en-US")} DC (~$${usd.toFixed(2)})
 1-day burn rate: ${burn1dDC > 0 ? burn1dDC.toFixed(2) : 'N/A'} DC ($${burnRates.burn1d?.usd?.toFixed(2) ?? 'N/A'})
 30-day avg burn: ${burn30dDC > 0 ? burn30dDC.toFixed(2) : 'N/A'} DC ($${burnRates.burn30d?.usd?.toFixed(2) ?? 'N/A'})
-Estimated days remaining: ${daysRemaining != null ? (daysRemaining % 1 === 0 ? daysRemaining : daysRemaining.toFixed(1)) : 'N/A'} days
+Estimated days remaining: ${daysRemaining != null ? (() => { const r = Math.round(daysRemaining * 10) / 10; return r % 1 === 0 ? r : r.toFixed(1); })() : 'N/A'} days
 
 This crossed the ${threshold}-day threshold.
 
