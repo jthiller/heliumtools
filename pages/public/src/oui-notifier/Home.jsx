@@ -352,7 +352,7 @@ export default function HomePage() {
                 <div className="bg-white p-6">
                   <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Days Remaining</p>
                   <p className={classNames("text-3xl sm:text-4xl font-bold tracking-tight", getDaysColor(daysRemaining))}>
-                    {daysRemaining !== null ? (daysRemaining % 1 === 0 ? daysRemaining : daysRemaining.toFixed(1)) : '—'}
+                    {daysRemaining !== null ? (() => { const rounded = Math.round(daysRemaining * 10) / 10; return rounded % 1 === 0 ? rounded : rounded.toFixed(1); })() : '—'}
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
                     {burnRate?.burn1dUSD != null ? `at ${usdFormatter.format(burnRate.burn1dUSD)}/day` : 'Waiting for data'}
