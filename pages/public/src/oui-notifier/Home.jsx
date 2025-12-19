@@ -106,7 +106,23 @@ export default function HomePage() {
     if (savedEmail) setEmail(savedEmail);
 
     const params = new URLSearchParams(window.location.search);
-    const uuid = params.get("uuid");
+    let uuid = params.get("uuid");
+
+    // If no UUID in URL, check localStorage for a stored session
+    if (!uuid) {
+      const storedUuid = localStorage.getItem("ouiNotifierUuid");
+      if (storedUuid) {
+        uuid = storedUuid;
+        // Update URL with UUID for shareable links
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set("uuid", uuid);
+        window.history.replaceState({}, "", newUrl.toString());
+      }
+    } else {
+      // Store UUID from URL in localStorage for future visits
+      localStorage.setItem("ouiNotifierUuid", uuid);
+    }
+
     if (uuid) {
       setUserUuid(uuid);
       fetchUserData(uuid);
@@ -283,6 +299,9 @@ export default function HomePage() {
     try {
       const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
       if (res.ok) {
+        // Clear stored session data
+        localStorage.removeItem("ouiNotifierUuid");
+        localStorage.removeItem("ouiNotifierEmail");
         window.location.href = "/oui-notifier/?deleted=1";
       } else {
         setSubscriptionError("Failed to delete account. Please try again.");

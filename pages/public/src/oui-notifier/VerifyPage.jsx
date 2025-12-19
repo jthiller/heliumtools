@@ -14,6 +14,10 @@ export default function VerifyPage() {
     const uuid = params.get("uuid");
 
     if (verified === "1") {
+      // Store UUID in localStorage for session persistence across visits
+      if (uuid) {
+        localStorage.setItem("ouiNotifierUuid", uuid);
+      }
       setState({ tone: "success", message: "Your email has been verified. You are now subscribed.", uuid });
       return;
     }
