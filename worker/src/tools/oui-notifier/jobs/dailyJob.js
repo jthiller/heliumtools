@@ -168,7 +168,7 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
   try {
     ouiInfo = await getOuiByEscrow(env, escrow);
     if (!ouiInfo) {
-      console.log(`No OUI found for escrow ${escrow}, skipping burn rate calculation`);
+      console.warn(`No OUI found for escrow ${escrow}, skipping burn rate calculation`);
       return;
     }
 
