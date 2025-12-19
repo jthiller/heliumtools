@@ -15,7 +15,7 @@ export const classNames = (...classes) => classes.filter(Boolean).join(" ");
  * @param {string} key - The key to retrieve
  * @returns {string|null} The value or null if not found or error occurs
  */
-export const safeGetItem = (key) => {
+export const getLocalStorageItem = (key) => {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -28,7 +28,7 @@ export const safeGetItem = (key) => {
  * @param {string} key - The key to set
  * @param {string} value - The value to store
  */
-export const safeSetItem = (key, value) => {
+export const setLocalStorageItem = (key, value) => {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -40,7 +40,7 @@ export const safeSetItem = (key, value) => {
  * Safely remove an item from localStorage
  * @param {string} key - The key to remove
  */
-export const safeRemoveItem = (key) => {
+export const removeLocalStorageItem = (key) => {
   try {
     localStorage.removeItem(key);
   } catch {

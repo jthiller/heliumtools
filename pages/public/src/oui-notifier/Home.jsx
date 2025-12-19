@@ -22,7 +22,7 @@ import {
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
-import { classNames, safeGetItem, safeSetItem, safeRemoveItem } from "../lib/utils.js";
+import { classNames, getLocalStorageItem, setLocalStorageItem, removeLocalStorageItem } from "../lib/utils.js";
 import {
   API_BASE,
   fetchBalanceForOui,
@@ -102,7 +102,7 @@ export default function HomePage() {
   const [editWebhook, setEditWebhook] = useState("");
 
   useEffect(() => {
-    const savedEmail = safeGetItem("ouiNotifierEmail");
+    const savedEmail = getLocalStorageItem("ouiNotifierEmail");
     if (savedEmail) setEmail(savedEmail);
 
     const params = new URLSearchParams(window.location.search);
@@ -110,7 +110,7 @@ export default function HomePage() {
 
     // If no UUID in URL, check localStorage for a stored session
     if (!uuid) {
-      const storedUuid = safeGetItem("ouiNotifierUuid");
+      const storedUuid = getLocalStorageItem("ouiNotifierUuid");
       if (storedUuid) {
         uuid = storedUuid;
         // Update URL with UUID for shareable links
@@ -120,7 +120,7 @@ export default function HomePage() {
       }
     } else {
       // Store UUID from URL in localStorage for future visits
-      safeSetItem("ouiNotifierUuid", uuid);
+      setLocalStorageItem("ouiNotifierUuid", uuid);
     }
 
     if (uuid) {
@@ -147,7 +147,7 @@ export default function HomePage() {
         }
       } else {
         // UUID is no longer valid (user may have been deleted)
-        safeRemoveItem("ouiNotifierUuid");
+        removeLocalStorageItem("ouiNotifierUuid");
         setUserUuid(null);
         // Clean up the URL
         const newUrl = new URL(window.location.href);
@@ -173,7 +173,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (email) safeSetItem("ouiNotifierEmail", email);
+    if (email) setLocalStorageItem("ouiNotifierEmail", email);
   }, [email]);
 
   const matchedOui = useMemo(() => {
@@ -308,8 +308,8 @@ export default function HomePage() {
       const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
       if (res.ok) {
         // Clear stored session data
-        safeRemoveItem("ouiNotifierUuid");
-        safeRemoveItem("ouiNotifierEmail");
+        removeLocalStorageItem("ouiNotifierUuid");
+        removeLocalStorageItem("ouiNotifierEmail");
         window.location.href = "/oui-notifier/?deleted=1";
       } else {
         setSubscriptionError("Failed to delete account. Please try again.");
