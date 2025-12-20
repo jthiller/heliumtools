@@ -1,0 +1,120 @@
+import { ensureOuiTables, getOuiByNumber, getOuiBalanceSeries } from "../services/ouis.js";
+import { computeBurnRates } from "../services/burnRate.js";
+import {
+    WELL_KNOWN_OUIS_URL,
+    DC_TO_USD_RATE,
+    ZERO_BALANCE_DC,
+    BALANCE_HISTORY_DAYS,
+} from "../config.js";
+import { okResponse } from "../responseUtils.js";
+import { safeText } from "../utils.js";
+
+/**
+ * Fetch the well-known OUIs list from GitHub.
+ */
+async function fetchWellKnownOuis() {
+    const res = await fetch(WELL_KNOWN_OUIS_URL, {
+        headers: { accept: "application/json" },
+    });
+    if (!res.ok) {
+        const body = await safeText(res);
+        throw new Error(`Failed to fetch well-known OUIs (${res.status}): ${body}`);
+    }
+    return res.json();
+}
+
+/**
+ * Calculate days remaining until balance reaches zero balance threshold.
+ */
+function calculateDaysRemaining(balanceDC, burnRateDC) {
+    if (!burnRateDC || burnRateDC <= 0) return null;
+
+    const remainingDC = balanceDC - ZERO_BALANCE_DC;
+    if (remainingDC <= 0) return 0;
+
+    return remainingDC / burnRateDC;
+}
+
+/**
+ * Handle GET /all - returns all well-known OUIs with their stats.
+ */
+export async function handleAllOuis(env) {
+    try {
+        await ensureOuiTables(env);
+
+        // Fetch the well-known OUIs list
+        const wellKnownOuis = await fetchWellKnownOuis();
+
+        // Filter to only OUIs with a valid id
+        const validOuis = wellKnownOuis.filter((oui) => oui.id != null);
+
+        const results = [];
+
+        for (const wellKnown of validOuis) {
+            const ouiNumber = wellKnown.id;
+            const name = wellKnown.name || null;
+
+            // Get OUI from local database
+            const org = await getOuiByNumber(env, ouiNumber);
+            if (!org) {
+                // OUI not in our database yet, include with null values
+                results.push({
+                    oui: ouiNumber,
+                    name,
+                    balance_dc: null,
+                    balance_usd: null,
+                    burn_1d_dc: null,
+                    burn_1d_usd: null,
+                    days_remaining: null,
+                    updated_at: null,
+                });
+                continue;
+            }
+
+            // Get balance timeseries for burn rate calculation
+            const series = await getOuiBalanceSeries(env, ouiNumber, BALANCE_HISTORY_DAYS);
+
+            // Compute burn rates
+            const burnRates = computeBurnRates(series);
+
+            // Get current balance from most recent timeseries entry
+            const currentBalance = series.length > 0 ? series[series.length - 1].balance_dc : null;
+
+            // Calculate days remaining
+            const burn1dDC = burnRates.burn1d?.dc ?? null;
+            const daysRemaining = currentBalance != null && burn1dDC != null
+                ? calculateDaysRemaining(currentBalance, burn1dDC)
+                : null;
+
+            // Format days remaining
+            let formattedDaysRemaining = null;
+            if (daysRemaining != null) {
+                formattedDaysRemaining = Number.isInteger(daysRemaining)
+                    ? daysRemaining
+                    : parseFloat(daysRemaining.toFixed(1));
+            }
+
+            results.push({
+                oui: ouiNumber,
+                name,
+                balance_dc: currentBalance != null ? Math.round(currentBalance) : null,
+                balance_usd: currentBalance != null ? currentBalance * DC_TO_USD_RATE : null,
+                burn_1d_dc: burn1dDC != null ? Math.round(burn1dDC) : null,
+                burn_1d_usd: burnRates.burn1d?.usd ?? null,
+                days_remaining: formattedDaysRemaining,
+                updated_at: org.last_synced_at || null,
+            });
+        }
+
+        // Sort by OUI number
+        results.sort((a, b) => a.oui - b.oui);
+
+        return okResponse({
+            ouis: results,
+            fetched_at: new Date().toISOString(),
+        });
+    } catch (err) {
+        console.error("Error in /all", err);
+        return okResponse({ error: `Unable to fetch all OUIs: ${err.message}` }, 500);
+    }
+}
