@@ -104,8 +104,10 @@ export async function handleKnownOuis(env) {
         // Fetch the well-known OUIs list
         const wellKnownOuis = await fetchWellKnownOuis();
 
-        // Filter to only OUIs with a valid id
-        const validOuis = wellKnownOuis.filter((oui) => oui.id != null);
+        // Filter to only OUIs with a valid numeric id
+        const validOuis = wellKnownOuis.filter(
+            (oui) => oui.id != null && Number.isInteger(oui.id)
+        );
 
         // Process all OUIs in parallel for better performance
         const results = await Promise.all(
