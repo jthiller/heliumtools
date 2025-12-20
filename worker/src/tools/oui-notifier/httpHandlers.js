@@ -5,7 +5,7 @@ import { handleBalance } from "./handlers/balance.js";
 import { handleTimeseries } from "./handlers/timeseries.js";
 import { handleUpdateOuis } from "./handlers/updateOuis.js";
 import { handlePreview } from "./handlers/preview.js";
-import { handleAllOuis } from "./handlers/knownOuis.js";
+import { handleKnownOuis } from "./handlers/knownOuis.js";
 import { jsonHeaders } from "./responseUtils.js";
 
 export async function handleRequest(request, env, ctx) {
@@ -37,7 +37,7 @@ export async function handleRequest(request, env, ctx) {
   }
 
   if (request.method === "GET" && pathname === "/known-ouis") {
-    return handleAllOuis(env);
+    return handleKnownOuis(env);
   }
 
   if (request.method === "GET" && pathname === "/ouis") {
