@@ -137,6 +137,47 @@ curl "https://api.heliumtools.org/oui-notifier/ouis"
 
 ---
 
+### `GET /known-ouis`
+Fetch all well-known OUIs with their current balance, burn rate, and days remaining.
+
+This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json), enriched with stats from the local database.
+
+**Example:**
+```bash
+curl "https://api.heliumtools.org/oui-notifier/known-ouis"
+```
+
+**Response:**
+```json
+{
+  "ouis": [
+    {
+      "oui": 1,
+      "name": "Helium Foundation Console",
+      "balance_dc": 892145678900,
+      "balance_usd": 8921456.79,
+      "burn_1d_dc": 5000000,
+      "burn_1d_usd": 50.00,
+      "days_remaining": 120.5
+    },
+    {
+      "oui": 2,
+      "name": "Nova Dev Console",
+      "balance_dc": 12345678,
+      "balance_usd": 123.45,
+      "burn_1d_dc": 100000,
+      "burn_1d_usd": 1.00,
+      "days_remaining": 88.5
+    }
+  ],
+  "fetched_at": "2024-12-05T16:45:00.000Z"
+}
+```
+
+> **Note**: Values may be `null` if the OUI is not yet in the local database or has insufficient balance history.
+
+---
+
 ### `POST /subscribe`
 Subscribe to balance alerts for an escrow account.
 

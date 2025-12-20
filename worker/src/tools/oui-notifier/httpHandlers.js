@@ -5,6 +5,7 @@ import { handleBalance } from "./handlers/balance.js";
 import { handleTimeseries } from "./handlers/timeseries.js";
 import { handleUpdateOuis } from "./handlers/updateOuis.js";
 import { handlePreview } from "./handlers/preview.js";
+import { handleKnownOuis } from "./handlers/knownOuis.js";
 import { jsonHeaders } from "./responseUtils.js";
 
 export async function handleRequest(request, env, ctx) {
@@ -33,6 +34,10 @@ export async function handleRequest(request, env, ctx) {
       status: 200,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  if (request.method === "GET" && pathname === "/known-ouis") {
+    return handleKnownOuis(env);
   }
 
   if (request.method === "GET" && pathname === "/ouis") {
