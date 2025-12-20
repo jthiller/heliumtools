@@ -158,8 +158,7 @@ curl "https://api.heliumtools.org/oui-notifier/known-ouis"
       "balance_usd": 8921456.79,
       "burn_1d_dc": 5000000,
       "burn_1d_usd": 50.00,
-      "days_remaining": 120.5,
-      "updated_at": "2024-12-05T00:00:01.234Z"
+      "days_remaining": 120.5
     },
     {
       "oui": 2,
@@ -168,8 +167,7 @@ curl "https://api.heliumtools.org/oui-notifier/known-ouis"
       "balance_usd": 123.45,
       "burn_1d_dc": 100000,
       "burn_1d_usd": 1.00,
-      "days_remaining": 88.5,
-      "updated_at": "2024-12-05T00:00:01.234Z"
+      "days_remaining": 88.5
     }
   ],
   "fetched_at": "2024-12-05T16:45:00.000Z"

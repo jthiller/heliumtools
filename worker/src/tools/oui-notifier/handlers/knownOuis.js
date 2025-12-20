@@ -54,7 +54,6 @@ async function processOui(env, wellKnown) {
             burn_1d_dc: null,
             burn_1d_usd: null,
             days_remaining: null,
-            updated_at: null,
         };
     }
 
@@ -92,7 +91,6 @@ async function processOui(env, wellKnown) {
         burn_1d_dc: burn1dDC != null ? Math.round(burn1dDC) : null,
         burn_1d_usd: burnRates.burn1d?.usd ?? null,
         days_remaining: formattedDaysRemaining,
-        updated_at: org.last_synced_at || null,
     };
 }
 
