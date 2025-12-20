@@ -87,9 +87,9 @@ async function processOui(env, wellKnown) {
         oui: ouiNumber,
         name,
         balance_dc: roundedBalanceDC,
-        balance_usd: roundedBalanceDC != null ? roundedBalanceDC * DC_TO_USD_RATE : null,
+        balance_usd: roundedBalanceDC != null ? parseFloat((roundedBalanceDC * DC_TO_USD_RATE).toFixed(2)) : null,
         burn_1d_dc: burn1dDC != null ? Math.round(burn1dDC) : null,
-        burn_1d_usd: burnRates.burn1d?.usd ?? null,
+        burn_1d_usd: burnRates.burn1d?.usd != null ? parseFloat(burnRates.burn1d.usd.toFixed(2)) : null,
         days_remaining: formattedDaysRemaining,
     };
 }
