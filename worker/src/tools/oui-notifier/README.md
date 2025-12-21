@@ -138,9 +138,9 @@ curl "https://api.heliumtools.org/oui-notifier/ouis"
 ---
 
 ### `GET /known-ouis`
-Fetch all well-known OUIs with their current balance, burn rate, and days remaining.
+Fetch well-known OUIs that have **less than 7 days** of estimated run time remaining.
 
-This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json), enriched with stats from the local database.
+This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json), enriched with stats from the local database, filtered to those approaching zero balance, and **sorted by days remaining (lowest first)**.
 
 **Example:**
 ```bash

@@ -114,11 +114,16 @@ export async function handleKnownOuis(env) {
             validOuis.map((wellKnown) => processOui(env, wellKnown))
         );
 
-        // Sort by OUI number
-        results.sort((a, b) => a.oui - b.oui);
+        // Filter to only include OUIs with less than 7 days remaining
+        const lowBalanceOuis = results.filter(
+            (r) => r.days_remaining !== null && r.days_remaining < 7
+        );
+
+        // Sort by days remaining (lowest first)
+        lowBalanceOuis.sort((a, b) => (a.days_remaining || 0) - (b.days_remaining || 0));
 
         return okResponse({
-            ouis: results,
+            ouis: lowBalanceOuis,
             fetched_at: new Date().toISOString(),
         });
     } catch (err) {
