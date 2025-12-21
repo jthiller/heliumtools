@@ -138,9 +138,9 @@ curl "https://api.heliumtools.org/oui-notifier/ouis"
 ---
 
 ### `GET /known-ouis`
-Fetch all well-known OUIs with their current balance, burn rate, and days remaining.
+Fetch well-known OUIs that have **active DC burn** in the last 24 hours.
 
-This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json), enriched with stats from the local database.
+This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json) that have a non-zero 1-day burn rate, enriched with stats from the local database.
 
 **Example:**
 ```bash

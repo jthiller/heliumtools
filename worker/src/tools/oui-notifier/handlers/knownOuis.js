@@ -114,11 +114,16 @@ export async function handleKnownOuis(env) {
             validOuis.map((wellKnown) => processOui(env, wellKnown))
         );
 
+        // Filter to only include OUIs with DC burn in the last 24h
+        const activeOuis = results.filter(
+            (r) => r.burn_1d_dc !== null && r.burn_1d_dc > 0
+        );
+
         // Sort by OUI number
-        results.sort((a, b) => a.oui - b.oui);
+        activeOuis.sort((a, b) => a.oui - b.oui);
 
         return okResponse({
-            ouis: results,
+            ouis: activeOuis,
             fetched_at: new Date().toISOString(),
         });
     } catch (err) {
