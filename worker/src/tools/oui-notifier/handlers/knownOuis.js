@@ -36,7 +36,7 @@ async function fetchWellKnownOuis(env) {
     }
     const fresh = await res.json();
 
-    // Store in KV cache (non-blocking)
+    // Store in KV cache (best-effort, errors are logged but don't fail the request)
     if (env.KV) {
         try {
             await env.KV.put(KV_CACHE_KEY, JSON.stringify(fresh), { expirationTtl: KV_CACHE_TTL });

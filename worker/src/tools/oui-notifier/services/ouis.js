@@ -186,16 +186,16 @@ export async function getOuisByNumbers(env, ouiNumbers) {
  * Batch fetch recent balance records for multiple OUIs.
  * @param {object} env - Worker environment
  * @param {number[]} ouiNumbers - Array of OUI numbers
- * @param {number} days - Number of days of history (default 2)
- * @returns {Promise<object[]>} Array of balance records grouped by OUI
+ * @param {number} lookbackDays - Number of days to look back (time range filter, not record limit)
+ * @returns {Promise<object[]>} Array of balance records sorted by OUI and date ascending
  */
-export async function getRecentBalancesForOuis(env, ouiNumbers, days = 2) {
+export async function getRecentBalancesForOuis(env, ouiNumbers, lookbackDays = 2) {
   if (!ouiNumbers?.length) return [];
-  if (!Number.isFinite(days) || days <= 0) return [];
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) return [];
 
   const placeholders = ouiNumbers.map(() => '?').join(',');
   const cutoff = new Date();
-  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  cutoff.setUTCDate(cutoff.getUTCDate() - lookbackDays);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const { results } = await env.DB.prepare(
