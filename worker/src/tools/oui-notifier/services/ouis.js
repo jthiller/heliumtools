@@ -191,6 +191,8 @@ export async function getOuisByNumbers(env, ouiNumbers) {
  */
 export async function getRecentBalancesForOuis(env, ouiNumbers, days = 2) {
   if (!ouiNumbers?.length) return [];
+  if (!Number.isFinite(days) || days <= 0) return [];
+
   const placeholders = ouiNumbers.map(() => '?').join(',');
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - days);
@@ -200,7 +202,7 @@ export async function getRecentBalancesForOuis(env, ouiNumbers, days = 2) {
     `SELECT oui, date, balance_dc, fetched_at
      FROM oui_balances 
      WHERE oui IN (${placeholders}) AND date >= ?
-     ORDER BY oui, date DESC`
+     ORDER BY oui, date ASC`
   ).bind(...ouiNumbers, cutoffDate).all();
   return results || [];
 }

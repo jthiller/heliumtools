@@ -4,6 +4,7 @@ import {
     WELL_KNOWN_OUIS_URL,
     DC_TO_USD_RATE,
     ZERO_BALANCE_DC,
+    BURN_RATE_DAYS,
 } from "../config.js";
 import { okResponse } from "../responseUtils.js";
 import { safeText } from "../utils.js";
@@ -133,23 +134,19 @@ export async function handleKnownOuis(env) {
         // Batch fetch all OUI data and balances (2 queries instead of 36)
         const [allOrgs, allBalances] = await Promise.all([
             getOuisByNumbers(env, ouiNumbers),
-            getRecentBalancesForOuis(env, ouiNumbers, 2),
+            getRecentBalancesForOuis(env, ouiNumbers, BURN_RATE_DAYS),
         ]);
 
         // Index org data by OUI number
         const orgsByOui = new Map(allOrgs.map((org) => [org.oui, org]));
 
-        // Group balances by OUI and sort ascending by date
+        // Group balances by OUI (already sorted ascending by date from query)
         const balancesByOui = new Map();
         for (const balance of allBalances) {
             if (!balancesByOui.has(balance.oui)) {
                 balancesByOui.set(balance.oui, []);
             }
             balancesByOui.get(balance.oui).push(balance);
-        }
-        // Sort each OUI's balances ascending by date
-        for (const [oui, balances] of balancesByOui) {
-            balances.sort((a, b) => a.date.localeCompare(b.date));
         }
 
         // Process all OUIs

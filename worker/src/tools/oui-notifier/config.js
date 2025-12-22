@@ -5,6 +5,8 @@ export const ZERO_BALANCE_DC = 3500000; // $35 worth of DC (DC are always whole 
 export const OUI_API_URL = "https://entities.nft.helium.io/v2/oui/all";
 export const WELL_KNOWN_OUIS_URL = "https://raw.githubusercontent.com/helium/well-known/refs/heads/main/lists/ouis.json";
 export const BALANCE_HISTORY_DAYS = 30;
+// Short lookback for burn rate calculation in /known-ouis (only needs 2 data points)
+export const BURN_RATE_DAYS = 2;
 // Avoid Cloudflare subrequest limits when seeding balances; we fetch at most this many per update call.
 export const MAX_BALANCE_FETCH_PER_UPDATE = 40;
 
