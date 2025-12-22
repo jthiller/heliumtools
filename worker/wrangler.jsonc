@@ -18,6 +18,12 @@
             "database_id": "ee41a4ee-4152-4f57-b999-5ae75b01597c"
         }
     ],
+    "kv_namespaces": [
+        {
+            "binding": "KV",
+            "id": "aea1fbf2cf5e4d64970043dc302dcc03"
+        }
+    ],
     // Production Environment
     "env": {
         "production": {
@@ -37,6 +43,12 @@
                     "binding": "DB",
                     "database_name": "heliumtools-prod",
                     "database_id": "1e3f5692-f1ee-461d-ad40-2f357ffc5ddf"
+                }
+            ],
+            "kv_namespaces": [
+                {
+                    "binding": "KV",
+                    "id": "338f0cc920654b268ca54f11f3c86580"
                 }
             ],
             "name": "heliumtools"
