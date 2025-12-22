@@ -76,6 +76,13 @@ export async function handleDeleteSubscription(request, env) {
         return new Response("Unauthorized", { status: 403, headers: jsonHeaders });
     }
 
+    // Delete related balances first (legacy table, safe to remove)
+    // Wrapped in try-catch so deletion succeeds even if table is dropped
+    try {
+        await env.DB.prepare("DELETE FROM balances WHERE subscription_id = ?").bind(id).run();
+    } catch (e) {
+        // Legacy table may not exist; ignore errors
+    }
     await env.DB.prepare("DELETE FROM subscriptions WHERE id = ?").bind(id).run();
 
     return new Response("Subscription deleted", { status: 200, headers: jsonHeaders });
@@ -141,6 +148,17 @@ export async function handleDeleteUser(request, env) {
         return new Response("User not found", { status: 404, headers: jsonHeaders });
     }
 
+    // Delete related balances first (legacy table, safe to remove)
+    // Wrapped in try-catch so deletion succeeds even if table is dropped
+    try {
+        await env.DB.prepare(
+            "DELETE FROM balances WHERE subscription_id IN (SELECT id FROM subscriptions WHERE user_id = ?)"
+        )
+            .bind(user.id)
+            .run();
+    } catch (e) {
+        // Legacy table may not exist; ignore errors
+    }
     await env.DB.prepare("DELETE FROM subscriptions WHERE user_id = ?")
         .bind(user.id)
         .run();
