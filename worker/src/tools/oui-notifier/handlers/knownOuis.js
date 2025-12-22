@@ -1,18 +1,32 @@
-import { ensureOuiTables, getOuiByNumber, getOuiBalanceSeries } from "../services/ouis.js";
+import { getOuisByNumbers, getRecentBalancesForOuis } from "../services/ouis.js";
 import { computeBurnRates } from "../services/burnRate.js";
 import {
     WELL_KNOWN_OUIS_URL,
     DC_TO_USD_RATE,
     ZERO_BALANCE_DC,
-    BALANCE_HISTORY_DAYS,
+    BURN_RATE_DAYS,
 } from "../config.js";
 import { okResponse } from "../responseUtils.js";
 import { safeText } from "../utils.js";
 
+const KV_CACHE_KEY = "well-known-ouis";
+const KV_CACHE_TTL = 3600; // 1 hour
+
 /**
- * Fetch the well-known OUIs list from GitHub.
+ * Fetch the well-known OUIs list from GitHub, with KV caching.
  */
-async function fetchWellKnownOuis() {
+async function fetchWellKnownOuis(env) {
+    // Try KV cache first
+    if (env.KV) {
+        try {
+            const cached = await env.KV.get(KV_CACHE_KEY, "json");
+            if (cached) return cached;
+        } catch (err) {
+            console.error("KV cache read failed", err);
+        }
+    }
+
+    // Fetch from GitHub
     const res = await fetch(WELL_KNOWN_OUIS_URL, {
         headers: { accept: "application/json" },
     });
@@ -20,7 +34,18 @@ async function fetchWellKnownOuis() {
         const body = await safeText(res);
         throw new Error(`Failed to fetch well-known OUIs (${res.status}): ${body}`);
     }
-    return res.json();
+    const fresh = await res.json();
+
+    // Store in KV cache (best-effort, errors are logged but don't fail the request)
+    if (env.KV) {
+        try {
+            await env.KV.put(KV_CACHE_KEY, JSON.stringify(fresh), { expirationTtl: KV_CACHE_TTL });
+        } catch (err) {
+            console.error("KV cache write failed", err);
+        }
+    }
+
+    return fresh;
 }
 
 /**
@@ -36,16 +61,13 @@ function calculateDaysRemaining(balanceDC, burnRateDC) {
 }
 
 /**
- * Process a single OUI and return its stats.
+ * Process OUI data and compute stats.
  */
-async function processOui(env, wellKnown) {
+function processOuiData(wellKnown, orgData, balanceSeries) {
     const ouiNumber = wellKnown.id;
     const name = wellKnown.name || null;
 
-    // Get OUI from local database
-    const org = await getOuiByNumber(env, ouiNumber);
-    if (!org) {
-        // OUI not in our database yet, include with null values
+    if (!orgData) {
         return {
             oui: ouiNumber,
             name,
@@ -57,14 +79,13 @@ async function processOui(env, wellKnown) {
         };
     }
 
-    // Get balance timeseries for burn rate calculation
-    const series = await getOuiBalanceSeries(env, ouiNumber, BALANCE_HISTORY_DAYS);
+    // Compute burn rates from balance series
+    const burnRates = computeBurnRates(balanceSeries);
 
-    // Compute burn rates
-    const burnRates = computeBurnRates(series);
-
-    // Get current balance from most recent timeseries entry
-    const currentBalance = series.length > 0 ? series[series.length - 1].balance_dc : null;
+    // Get current balance from most recent entry
+    const currentBalance = balanceSeries.length > 0
+        ? balanceSeries[balanceSeries.length - 1].balance_dc
+        : null;
 
     // Calculate days remaining
     const burn1dDC = burnRates.burn1d?.dc ?? null;
@@ -80,7 +101,7 @@ async function processOui(env, wellKnown) {
             : parseFloat(daysRemaining.toFixed(1));
     }
 
-    // Round balance_dc and compute balance_usd from rounded value for consistency
+    // Round balance_dc and compute balance_usd from rounded value
     const roundedBalanceDC = currentBalance != null ? Math.round(currentBalance) : null;
 
     return {
@@ -95,24 +116,45 @@ async function processOui(env, wellKnown) {
 }
 
 /**
- * Handle GET /known-ouis - returns all well-known OUIs with their stats.
+ * Handle GET /known-ouis - returns well-known OUIs with active burn.
+ * 
+ * Read-only endpoint - no database mutations.
  */
 export async function handleKnownOuis(env) {
     try {
-        await ensureOuiTables(env);
-
-        // Fetch the well-known OUIs list
-        const wellKnownOuis = await fetchWellKnownOuis();
+        // Fetch the well-known OUIs list (cached in KV)
+        const wellKnownOuis = await fetchWellKnownOuis(env);
 
         // Filter to only OUIs with a valid numeric id
         const validOuis = wellKnownOuis.filter(
             (oui) => oui.id != null && Number.isInteger(oui.id)
         );
+        const ouiNumbers = validOuis.map((o) => o.id);
 
-        // Process all OUIs in parallel for better performance
-        const results = await Promise.all(
-            validOuis.map((wellKnown) => processOui(env, wellKnown))
-        );
+        // Batch fetch all OUI data and balances (2 queries instead of 36)
+        const [allOrgs, allBalances] = await Promise.all([
+            getOuisByNumbers(env, ouiNumbers),
+            getRecentBalancesForOuis(env, ouiNumbers, BURN_RATE_DAYS),
+        ]);
+
+        // Index org data by OUI number
+        const orgsByOui = new Map(allOrgs.map((org) => [org.oui, org]));
+
+        // Group balances by OUI (already sorted ascending by date from query)
+        const balancesByOui = new Map();
+        for (const balance of allBalances) {
+            if (!balancesByOui.has(balance.oui)) {
+                balancesByOui.set(balance.oui, []);
+            }
+            balancesByOui.get(balance.oui).push(balance);
+        }
+
+        // Process all OUIs
+        const results = validOuis.map((wellKnown) => {
+            const orgData = orgsByOui.get(wellKnown.id);
+            const balanceSeries = balancesByOui.get(wellKnown.id) || [];
+            return processOuiData(wellKnown, orgData, balanceSeries);
+        });
 
         // Filter to only include OUIs with DC burn in the last 24h
         const activeOuis = results.filter(

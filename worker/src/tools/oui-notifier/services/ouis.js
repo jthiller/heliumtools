@@ -165,3 +165,45 @@ export async function getOuiBalanceSeries(env, oui, days = 30) {
   // Reverse to ascending order for chart friendliness.
   return results.slice().reverse();
 }
+
+/**
+ * Batch fetch multiple OUIs by their numbers.
+ * @param {object} env - Worker environment
+ * @param {number[]} ouiNumbers - Array of OUI numbers to fetch
+ * @returns {Promise<object[]>} Array of OUI records
+ */
+export async function getOuisByNumbers(env, ouiNumbers) {
+  if (!ouiNumbers?.length) return [];
+  const placeholders = ouiNumbers.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT oui, owner, payer, escrow, delegate_keys, locked, last_synced_at
+     FROM ouis WHERE oui IN (${placeholders})`
+  ).bind(...ouiNumbers).all();
+  return results || [];
+}
+
+/**
+ * Batch fetch recent balance records for multiple OUIs.
+ * @param {object} env - Worker environment
+ * @param {number[]} ouiNumbers - Array of OUI numbers
+ * @param {number} lookbackDays - Number of days to look back (time range filter, not record limit)
+ * @returns {Promise<object[]>} Array of balance records sorted by OUI and date ascending
+ */
+export async function getRecentBalancesForOuis(env, ouiNumbers, lookbackDays = 2) {
+  if (!ouiNumbers?.length) return [];
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) return [];
+
+  const placeholders = ouiNumbers.map(() => '?').join(',');
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - lookbackDays);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+
+  const { results } = await env.DB.prepare(
+    `SELECT oui, date, balance_dc, fetched_at
+     FROM oui_balances 
+     WHERE oui IN (${placeholders}) AND date >= ?
+     ORDER BY oui, date ASC`
+  ).bind(...ouiNumbers, cutoffDate).all();
+  return results || [];
+}
+
