@@ -156,9 +156,10 @@ export async function handleKnownOuis(env) {
             return processOuiData(wellKnown, orgData, balanceSeries);
         });
 
-        // Filter to only include OUIs with DC burn in the last 24h
+        // Filter to only include OUIs with active burn and <= 14 days remaining
         const activeOuis = results.filter(
-            (r) => r.burn_1d_dc !== null && r.burn_1d_dc > 0
+            (r) => r.burn_1d_dc !== null && r.burn_1d_dc > 0 &&
+                r.days_remaining !== null && r.days_remaining <= 14
         );
 
         // Sort by OUI number
