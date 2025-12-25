@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, BanknotesIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 
 const features = [
@@ -15,6 +15,14 @@ const features = [
     href: "/l1-migration",
     icon: ArrowPathIcon,
     badge: null,
+  },
+  {
+    name: "Buy Data Credits",
+    description:
+      "Resolve an OUI, check escrow balance, and purchase Data Credits via Coinbase Onramp with automatic delegation to the payer key.",
+    href: "/dc-purchase",
+    icon: BanknotesIcon,
+    badge: "Beta",
   },
 ];
 

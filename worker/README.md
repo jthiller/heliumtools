@@ -36,3 +36,6 @@ The worker uses the following environment variables (configured in `wrangler.tom
 -   `APP_NAME`: Name of the application.
 -   `RESEND_API_KEY`: API key for Resend (email service).
 -   `SOLANA_RPC_URL`: URL for Solana RPC node.
+-   `COINBASE_CDP_API_KEY`, `COINBASE_CDP_API_SECRET`, `COINBASE_ONRAMP_WEBHOOK_SECRET`, `COINBASE_ONRAMP_REDIRECT_BASE_URL`, `COINBASE_ONRAMP_PROJECT_ID`: Coinbase Onramp configuration for Data Credit purchases.
+-   `TREASURY_PUBLIC_KEY`: Solana address that receives USDC and executes swaps/mints for Data Credit purchases.
+-   `DC_PURCHASE_MAX_USD`: Optional cap per order (default 1000) for Coinbase guest checkout creation.
