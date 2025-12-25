@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Header from "../components/Header.jsx";
 import { resolveOui, createDcOrder } from "../lib/dcPurchaseApi.js";
 
@@ -18,33 +18,57 @@ export default function DcPurchaseTool() {
   const [ouiInput, setOuiInput] = useState("");
   const [usd, setUsd] = useState("50");
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [resolved, setResolved] = useState(null);
+  const debounceRef = useRef(null);
 
   const canCreate = useMemo(() => resolved && Number(usd) >= 5, [resolved, usd]);
 
-  async function handleResolve() {
-    setError(null);
-    try {
-      const ouiNumber = Number(ouiInput);
-      if (!Number.isInteger(ouiNumber)) throw new Error("Enter a valid OUI number");
-      setLoading(true);
-      const data = await resolveOui(ouiNumber);
-      setResolved(data);
-    } catch (err) {
-      setResolved(null);
-      setError(err.message || "Unable to resolve OUI");
-    } finally {
-      setLoading(false);
+  // Auto-resolve OUI when input changes (debounced)
+  useEffect(() => {
+    // Clear any pending debounce
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
     }
-  }
+
+    const ouiNumber = Number(ouiInput);
+
+    // Reset if empty or invalid
+    if (!ouiInput || !Number.isInteger(ouiNumber) || ouiNumber <= 0) {
+      setResolved(null);
+      setError(null);
+      return;
+    }
+
+    // Debounce the API call by 400ms
+    debounceRef.current = setTimeout(async () => {
+      setError(null);
+      setResolving(true);
+      try {
+        const data = await resolveOui(ouiNumber);
+        setResolved(data);
+      } catch (err) {
+        setResolved(null);
+        setError(err.message || "Unable to resolve OUI");
+      } finally {
+        setResolving(false);
+      }
+    }, 400);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [ouiInput]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!resolved) return;
     setError(null);
-    setLoading(true);
+    setSubmitting(true);
     try {
       const payload = { oui: resolved.oui, usd, email: email || undefined };
       const res = await createDcOrder(payload);
@@ -52,9 +76,11 @@ export default function DcPurchaseTool() {
     } catch (err) {
       setError(err.message || "Unable to start checkout");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
+
+  const loading = resolving || submitting;
 
   return (
     <div className="min-h-screen bg-white">
@@ -64,7 +90,7 @@ export default function DcPurchaseTool() {
           <p className="text-sm font-mono uppercase tracking-widest text-sky-600 mb-2">Data Credits</p>
           <h1 className="text-3xl font-bold text-slate-900 mb-3">Buy Data Credits</h1>
           <p className="text-slate-600 max-w-2xl">
-            Resolve an OUI, review its payer and escrow accounts, then continue to Coinbase Onramp guest checkout to fund and
+            Enter an OUI to look up its payer and escrow accounts, then continue to Coinbase Onramp guest checkout to fund and
             delegate Data Credits.
           </p>
         </div>
@@ -73,22 +99,19 @@ export default function DcPurchaseTool() {
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="block text-sm font-medium text-slate-800">OUI</label>
-              <div className="mt-1 flex gap-3">
+              <div className="mt-1 relative">
                 <input
                   type="number"
                   value={ouiInput}
                   onChange={(e) => setOuiInput(e.target.value)}
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
                   placeholder="Enter OUI number"
                 />
-                <button
-                  type="button"
-                  onClick={handleResolve}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                  disabled={loading}
-                >
-                  Resolve
-                </button>
+                {resolving && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="animate-spin h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full"></div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -137,7 +160,7 @@ export default function DcPurchaseTool() {
               disabled={!canCreate || loading}
               className="w-full rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
-              Continue to Coinbase checkout
+              {submitting ? "Starting checkout..." : "Continue to Coinbase checkout"}
             </button>
           </form>
         </div>
