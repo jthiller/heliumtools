@@ -46,7 +46,8 @@ export default function OrderStatus() {
         if (!active) return;
         setOrder(data);
         errorCount = 0; // Reset on success
-        if (data.status === "complete") {
+        // Stop polling on terminal states
+        if (data.status === "complete" || data.errorCode) {
           clearInterval(interval);
         }
       } catch (err) {

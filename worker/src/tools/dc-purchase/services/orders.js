@@ -31,12 +31,31 @@ export async function createOrder(env, { oui, payer, escrow, usd, email, partner
   return id;
 }
 
+// Whitelist of valid columns for dynamic UPDATE to prevent SQL injection
+const ALLOWED_EXTRA_COLUMNS = new Set([
+  "coinbase_transaction_id",
+  "usdc_amount_received",
+  "usdc_signature",
+  "hnt_amount_received",
+  "jupiter_quote_json",
+  "swap_tx_sig",
+  "mint_tx_sigs",
+  "delegate_tx_sig",
+  "dc_delegated",
+  "error_code",
+  "error_message",
+]);
+
 export async function updateOrderStatus(env, id, status, extra = {}) {
   const updatedAt = nowIso();
   const setParts = ["status = ?", "updated_at = ?"];
   const values = [status, updatedAt];
 
   Object.entries(extra).forEach(([key, val]) => {
+    if (!ALLOWED_EXTRA_COLUMNS.has(key)) {
+      console.warn(`updateOrderStatus: ignoring unknown column '${key}'`);
+      return;
+    }
     setParts.push(`${key} = ?`);
     values.push(val);
   });

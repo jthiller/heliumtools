@@ -43,9 +43,19 @@ export async function handleCoinbaseWebhook(request, env, ctx) {
   await recordEvent(env, order.id, "COINBASE_EVENT", payload);
 
   if (typeof status === "string" && status.toLowerCase() === "completed") {
+    // Validate usdcAmount is a valid number before storing
+    let validatedUsdcAmount = null;
+    if (usdcAmount != null) {
+      const parsed = Number(usdcAmount);
+      if (!Number.isNaN(parsed) && parsed >= 0) {
+        validatedUsdcAmount = String(parsed);
+      } else {
+        console.warn(`Invalid usdcAmount received: ${usdcAmount}`);
+      }
+    }
     await updateOrderStatus(env, order.id, "payment_confirmed", {
       coinbase_transaction_id: txId || null,
-      usdc_amount_received: usdcAmount ? String(usdcAmount) : null,
+      usdc_amount_received: validatedUsdcAmount,
     });
     await triggerProcess(env, ctx, order.id);
   }
