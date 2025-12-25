@@ -115,6 +115,14 @@ export default function OrderStatus() {
             </div>
           )}
 
+          {order?.errorMessage && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+              <div className="font-medium">Order Error</div>
+              <div>{order.errorMessage}</div>
+              {order.errorCode && <div className="text-xs text-rose-600 mt-1">Code: {order.errorCode}</div>}
+            </div>
+          )}
+
           {order?.txs && (
             <div className="space-y-2 text-xs text-slate-600">
               {order.txs.usdcSig && <div>USDC Receipt: {order.txs.usdcSig}</div>}

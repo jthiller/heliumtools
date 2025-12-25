@@ -8,32 +8,34 @@ export async function handleDcPurchaseRequest(request, env, ctx) {
   const url = new URL(request.url);
   const pathname = url.pathname.replace(/^\/dc-purchase/, "") || "/";
 
+  // Note: CORS allows all origins intentionally - this is a public API
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Coinbase-Signature", 
+        "Access-Control-Allow-Headers": "Content-Type, Coinbase-Signature",
       },
     });
   }
 
-  if (pathname.startsWith("/api/dc-purchase/oui/")) {
-    const ouiStr = pathname.split("/api/dc-purchase/oui/")[1];
+  // Routes: pathname has /dc-purchase stripped, so we match relative paths
+  if (pathname.startsWith("/oui/")) {
+    const ouiStr = pathname.split("/oui/")[1];
     return handleResolveOui(request, env, ouiStr);
   }
 
-  if (pathname === "/api/dc-purchase/orders" && request.method === "POST") {
+  if (pathname === "/orders" && request.method === "POST") {
     return handleCreateOrder(request, env, ctx);
   }
 
-  if (pathname.startsWith("/api/dc-purchase/orders/") && request.method === "GET") {
-    const orderId = pathname.split("/api/dc-purchase/orders/")[1];
+  if (pathname.startsWith("/orders/") && request.method === "GET") {
+    const orderId = pathname.split("/orders/")[1];
     return handleGetOrder(orderId, env);
   }
 
-  if (pathname === "/api/dc-purchase/webhooks/coinbase" && request.method === "POST") {
+  if (pathname === "/webhooks/coinbase" && request.method === "POST") {
     return handleCoinbaseWebhook(request, env, ctx);
   }
 

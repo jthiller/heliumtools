@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS dc_purchase_events (
   created_at TEXT NOT NULL,
   type TEXT NOT NULL,
   payload TEXT,
-  FOREIGN KEY (order_id) REFERENCES dc_purchase_orders(id)
+  FOREIGN KEY (order_id) REFERENCES dc_purchase_orders(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_dc_events_order_created_at ON dc_purchase_events(order_id, created_at);
