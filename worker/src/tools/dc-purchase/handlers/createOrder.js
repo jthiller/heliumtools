@@ -73,8 +73,11 @@ export async function handleCreateOrder(request, env, ctx) {
   }
 
   const parsedUsd = Number(usd);
-  if (!usd || Number.isNaN(parsedUsd) || parsedUsd <= 0) {
+  if (!usd) {
     return jsonResponse({ error: "USD amount required" }, 400);
+  }
+  if (Number.isNaN(parsedUsd) || parsedUsd <= 0) {
+    return jsonResponse({ error: "Invalid USD amount" }, 400);
   }
   if (parsedUsd < 5) {
     return jsonResponse({ error: "Minimum purchase is $5" }, 400);
@@ -99,13 +102,16 @@ export async function handleCreateOrder(request, env, ctx) {
     partnerRef,
   });
 
-  const checkoutUrl =
-    (await createCoinbaseSession(env, {
-      fiatAmount: usd,
-      partnerUserRef: partnerRef,
-      clientIp: getClientIp(request),
-      redirectUrl: buildRedirectUrl(env, orderId),
-    })) || buildRedirectUrl(env, orderId);
+  const coinbaseSessionUrl = await createCoinbaseSession(env, {
+    fiatAmount: usd,
+    partnerUserRef: partnerRef,
+    clientIp: getClientIp(request),
+    redirectUrl: buildRedirectUrl(env, orderId),
+  });
+  if (!coinbaseSessionUrl) {
+    console.warn(`Coinbase session creation failed for order ${orderId}, falling back to redirect URL`);
+  }
+  const checkoutUrl = coinbaseSessionUrl || buildRedirectUrl(env, orderId);
 
   await updateOrderStatus(env, orderId, "onramp_started", {});
 

@@ -4,7 +4,7 @@ import { recordEvent } from "../services/events.js";
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
   });
 }
 
@@ -36,12 +36,13 @@ export async function handleCoinbaseWebhook(request, env, ctx) {
     .bind(partnerRef)
     .first();
   if (!order) {
-    return json({ ok: true });
+    console.warn(`Coinbase webhook received for unknown partnerRef: ${partnerRef}`);
+    return json({ error: "order not found" }, 404);
   }
 
   await recordEvent(env, order.id, "COINBASE_EVENT", payload);
 
-  if (status && status.toLowerCase() === "completed") {
+  if (typeof status === "string" && status.toLowerCase() === "completed") {
     await updateOrderStatus(env, order.id, "payment_confirmed", {
       coinbase_transaction_id: txId || null,
       usdc_amount_received: usdcAmount ? String(usdcAmount) : null,

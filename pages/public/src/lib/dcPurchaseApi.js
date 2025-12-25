@@ -3,6 +3,10 @@ export const DC_API_BASE = import.meta.env.DEV
   : "https://api.heliumtools.org/dc-purchase";
 
 async function parseJson(res) {
+  const contentType = res.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    return null;
+  }
   try {
     return await res.json();
   } catch (err) {

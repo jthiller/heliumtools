@@ -1,6 +1,8 @@
 import { updateOrderStatus, getOrder } from "./orders.js";
 import { recordEvent } from "./events.js";
 
+const PROCESSING_DELAY_MS = 50;
+
 async function simulateDelay(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -12,32 +14,35 @@ export async function enqueueProcess(env, orderId) {
 
 export async function processOrder(env, orderId) {
   const order = await getOrder(env, orderId);
-  if (!order) return;
+  if (!order) {
+    console.warn(`processOrder: order not found for orderId=${orderId}`);
+    return;
+  }
 
   try {
     if (order.status === "payment_confirmed") {
       await updateOrderStatus(env, orderId, "usdc_verified", { usdc_amount_received: order.usdc_amount_received || order.usd_requested });
       await recordEvent(env, orderId, "ONCHAIN_EVENT", { stage: "usdc_verified" });
-      await simulateDelay(50);
+      await simulateDelay(PROCESSING_DELAY_MS);
       return processOrder(env, orderId);
     }
 
     if (order.status === "usdc_verified") {
       await updateOrderStatus(env, orderId, "swapping", { hnt_amount_received: order.hnt_amount_received || null });
       await recordEvent(env, orderId, "ONCHAIN_EVENT", { stage: "swapping" });
-      await simulateDelay(50);
+      await simulateDelay(PROCESSING_DELAY_MS);
       return processOrder(env, orderId);
     }
 
     if (order.status === "swapping") {
       await updateOrderStatus(env, orderId, "minting_dc", { swap_tx_sig: order.swap_tx_sig || null });
-      await simulateDelay(50);
+      await simulateDelay(PROCESSING_DELAY_MS);
       return processOrder(env, orderId);
     }
 
     if (order.status === "minting_dc") {
       await updateOrderStatus(env, orderId, "delegating", { mint_tx_sigs: order.mint_tx_sigs || JSON.stringify([]) });
-      await simulateDelay(50);
+      await simulateDelay(PROCESSING_DELAY_MS);
       return processOrder(env, orderId);
     }
 

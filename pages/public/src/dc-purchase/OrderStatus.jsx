@@ -36,22 +36,32 @@ export default function OrderStatus() {
   useEffect(() => {
     let active = true;
     let interval;
-    async function load(initial = false) {
+    let errorCount = 0;
+    const MAX_ERRORS = 5;
+    const POLL_INTERVAL = 4000;
+
+    async function load() {
       try {
         const data = await fetchOrder(orderId);
         if (!active) return;
         setOrder(data);
+        errorCount = 0; // Reset on success
         if (data.status === "complete") {
           clearInterval(interval);
         }
       } catch (err) {
         if (!active) return;
+        errorCount++;
         setError(err.message || "Unable to load order");
+        if (errorCount >= MAX_ERRORS) {
+          clearInterval(interval);
+          setError("Unable to load order. Please refresh the page to try again.");
+        }
       }
     }
 
-    load(true);
-    interval = setInterval(load, 4000);
+    load();
+    interval = setInterval(load, POLL_INTERVAL);
     return () => {
       active = false;
       clearInterval(interval);
