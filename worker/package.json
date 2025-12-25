@@ -7,14 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
-  "dependencies": {
-    "@helium/data-credits-sdk": "0.1.12",
-    "@helium/helium-sub-daos-sdk": "0.1.9",
-    "@helium/spl-utils": "0.11.6",
-    "@solana/web3.js": "1.98.4",
-    "resend": "4.1.0",
-    "uuid": "11.1.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "wrangler": "^3.0.0"
   }

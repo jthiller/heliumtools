@@ -22,6 +22,7 @@ const features = [
       "Resolve an OUI, check escrow balance, and purchase Data Credits via Coinbase Onramp with automatic delegation to the payer key.",
     href: "/dc-purchase",
     icon: BanknotesIcon,
+    // Intentionally marked Beta - feature is functional but awaiting production testing
     badge: "Beta",
   },
 ];

@@ -1,11 +1,11 @@
-import { v4 as uuidv4 } from "uuid";
+// Cloudflare Workers provides crypto.randomUUID() natively
 
 function nowIso() {
   return new Date().toISOString();
 }
 
 export async function recordEvent(env, orderId, type, payload = {}) {
-  const id = uuidv4();
+  const id = crypto.randomUUID();
   const createdAt = nowIso();
   await env.DB.prepare(
     `INSERT INTO dc_purchase_events (id, order_id, created_at, type, payload)

@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+// Cloudflare Workers provides crypto.randomUUID() natively
 import { getOuiByNumber } from "../../oui-notifier/services/ouis.js";
 import { enqueueProcess } from "./process.js";
 import { recordEvent } from "./events.js";
@@ -18,7 +18,7 @@ export async function resolveOui(env, ouiNumber) {
 }
 
 export async function createOrder(env, { oui, payer, escrow, usd, email, partnerRef }) {
-  const id = uuidv4();
+  const id = crypto.randomUUID();
   const createdAt = nowIso();
   const status = "created";
   await env.DB.prepare(
