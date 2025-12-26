@@ -1,4 +1,5 @@
 import { resolveOui, createOrder, updateOrderStatus } from "../services/orders.js";
+import { generateCoinbaseJwt } from "../lib/coinbaseJwt.js";
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -20,42 +21,121 @@ function buildRedirectUrl(env, orderId) {
   return `${base}/${orderId}`;
 }
 
-async function createCoinbaseSession(env, { fiatAmount, partnerUserRef, clientIp, redirectUrl }) {
+async function createCoinbaseSession(env, { fiatAmount, partnerUserRef, clientIp, redirectUrl, destinationAddress }) {
   const apiKey = env.COINBASE_CDP_API_KEY;
   const apiSecret = env.COINBASE_CDP_API_SECRET;
-  const projectId = env.COINBASE_ONRAMP_PROJECT_ID || env.COINBASE_ONRAMP_APP_ID;
-  if (!apiKey || !apiSecret) return null;
-  const body = {
-    projectId,
-    destinationWallets: [
+
+  if (!apiKey || !apiSecret) {
+    console.error("Missing COINBASE_CDP_API_KEY or COINBASE_CDP_API_SECRET");
+    return null;
+  }
+
+  if (!destinationAddress) {
+    console.error("Missing destinationAddress (TREASURY_PUBLIC_KEY)");
+    return null;
+  }
+
+  // Step 1: Generate session token via CDP API
+  const tokenRequestBody = {
+    addresses: [
       {
-        address: env.TREASURY_PUBLIC_KEY,
-        assets: ["USDC"],
+        address: destinationAddress,
         blockchains: ["solana"],
       },
     ],
-    partnerUserRef,
-    presetFiatAmount: fiatAmount,
-    fiatCurrency: "USD",
-    redirectUrl,
+    assets: ["USDC"],
   };
-  const headers = {
-    "Content-Type": "application/json",
-    "CB-ACCESS-KEY": apiKey,
-    "CB-ACCESS-SIGN": apiSecret,
-  };
-  if (clientIp) headers["CB-CLIENT-IP"] = clientIp;
+
+  // CDP API requires clientIp and rejects private IPs
+  // Use a public test IP (RFC 5737) for local development
+  let effectiveClientIp = clientIp;
+  if (!effectiveClientIp ||
+    effectiveClientIp === '127.0.0.1' ||
+    effectiveClientIp === 'localhost' ||
+    effectiveClientIp === '::1' ||
+    effectiveClientIp.startsWith('10.') ||
+    effectiveClientIp.startsWith('192.168.') ||
+    effectiveClientIp.startsWith('172.16.') ||
+    effectiveClientIp.startsWith('172.17.') ||
+    effectiveClientIp.startsWith('172.18.') ||
+    effectiveClientIp.startsWith('172.19.') ||
+    effectiveClientIp.startsWith('172.2') ||
+    effectiveClientIp.startsWith('172.3')) {
+    // Use RFC 5737 test IP for development
+    effectiveClientIp = '192.0.2.1';
+    console.log('Using test public IP for development:', effectiveClientIp);
+  }
+  tokenRequestBody.clientIp = effectiveClientIp;
+
   try {
-    const res = await fetch("https://api.coinbase.com/onramp/v2/sessions", {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
+    // Generate JWT for authentication
+    const requestHost = "api.developer.coinbase.com";
+    const requestPath = "/onramp/v1/token";
+
+    let jwt;
+    try {
+      console.log("Generating JWT for Coinbase API...");
+      jwt = await generateCoinbaseJwt(apiKey, apiSecret, "POST", requestHost, requestPath);
+      console.log("JWT generated successfully, length:", jwt?.length);
+    } catch (jwtErr) {
+      console.error("JWT generation failed:", jwtErr.message, jwtErr.stack);
       return null;
     }
-    const data = await res.json();
-    return data?.session?.url || data?.session?.onrampUrl || null;
+
+    console.log("Requesting Coinbase session token with:", JSON.stringify({ addresses: tokenRequestBody.addresses, assets: tokenRequestBody.assets }));
+
+    const tokenRes = await fetch(`https://${requestHost}${requestPath}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${jwt}`,
+      },
+      body: JSON.stringify(tokenRequestBody),
+    });
+
+    if (!tokenRes.ok) {
+      const errorBody = await tokenRes.text();
+      console.error(`Coinbase token creation failed: ${tokenRes.status} ${tokenRes.statusText}`, errorBody);
+      return null;
+    }
+
+    const tokenData = await tokenRes.json();
+    const sessionToken = tokenData?.token;
+
+    if (!sessionToken) {
+      console.error("No session token in Coinbase response:", tokenData);
+      return null;
+    }
+
+    console.log("Coinbase session token obtained successfully");
+
+    // Step 2: Build the onramp URL with session token and parameters
+    // Use sandbox URL for development/testing, production URL for live
+    const useSandbox = env.COINBASE_SANDBOX === 'true';
+    const payBaseUrl = useSandbox
+      ? "https://pay-sandbox.coinbase.com/buy/select-asset"
+      : "https://pay.coinbase.com/buy/select-asset";
+
+    if (useSandbox) {
+      console.log("Using Coinbase sandbox mode");
+    }
+
+    const onrampUrl = new URL(payBaseUrl);
+    onrampUrl.searchParams.set("sessionToken", sessionToken);
+    onrampUrl.searchParams.set("defaultNetwork", "solana");
+    onrampUrl.searchParams.set("defaultAsset", "USDC");
+    if (fiatAmount) {
+      onrampUrl.searchParams.set("presetFiatAmount", String(fiatAmount));
+    }
+    if (partnerUserRef) {
+      onrampUrl.searchParams.set("partnerUserRef", partnerUserRef);
+    }
+    if (redirectUrl) {
+      onrampUrl.searchParams.set("redirectUrl", redirectUrl);
+    }
+
+    console.log("Coinbase onramp URL generated:", onrampUrl.toString());
+    return onrampUrl.toString();
   } catch (err) {
     console.error("coinbase session error", err);
     return null;
@@ -107,6 +187,7 @@ export async function handleCreateOrder(request, env, ctx) {
     partnerUserRef: partnerRef,
     clientIp: getClientIp(request),
     redirectUrl: buildRedirectUrl(env, orderId),
+    destinationAddress: env.TREASURY_PUBLIC_KEY,
   });
   if (!coinbaseSessionUrl) {
     console.warn(`Coinbase session creation failed for order ${orderId}, falling back to redirect URL`);
