@@ -117,13 +117,19 @@ export default function DcPurchaseTool() {
 
             {resolved && (
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 space-y-2">
-                <InfoRow label="Payer" value={resolved.payer} />
-                <InfoRow label="Escrow" value={resolved.escrow} />
+                <InfoRow label="Payer Key" value={resolved.payer} />
+                <InfoRow label="Escrow Account" value={resolved.escrow} />
                 <InfoRow
                   label="Escrow DC Balance"
-                  value={resolved.escrowDcBalance ? `${resolved.escrowDcBalance} DC` : "Unknown"}
+                  value={
+                    resolved.escrowDcBalance
+                      ? `${Number(resolved.escrowDcBalance).toLocaleString()} DC (${new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                      }).format(Number(resolved.escrowDcBalance) / 100000)})`
+                      : "Unknown"
+                  }
                 />
-                <InfoRow label="Last Updated" value={resolved.balanceLastUpdated || "Unknown"} />
               </div>
             )}
 

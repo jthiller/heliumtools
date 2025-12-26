@@ -1,5 +1,5 @@
 export const DC_API_BASE = import.meta.env.DEV
-  ? "/dc-purchase"
+  ? "/api/dc-purchase"
   : "https://api.heliumtools.org/dc-purchase";
 
 async function parseJson(res) {
