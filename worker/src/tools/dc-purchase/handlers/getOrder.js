@@ -29,7 +29,8 @@ export async function handleGetOrder(orderId, env) {
         mintSigs,
         delegateSig: order.delegate_tx_sig,
       },
-      error: order.error_code ? { code: order.error_code, message: order.error_message } : null,
+      errorCode: order.error_code || null,
+      errorMessage: order.error_message || null,
       updatedAt: order.updated_at,
     }),
     {

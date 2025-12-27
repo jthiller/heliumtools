@@ -211,6 +211,27 @@ export default function OrderStatus() {
                 </p>
               </div>
             </div>
+            {/* Progress amounts row */}
+            {(order?.hntAmountReceived || order?.dcDelegated) && (
+              <div className="bg-white p-4 sm:grid sm:grid-cols-2 sm:gap-4">
+                <div className="mb-4 sm:mb-0">
+                  <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">HNT Received</p>
+                  <p className="text-sm text-slate-900 font-medium">
+                    {order?.hntAmountReceived
+                      ? `${(Number(order.hntAmountReceived) / 1e8).toFixed(4)} HNT`
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">DC Minted</p>
+                  <p className="text-sm text-slate-900 font-medium">
+                    {order?.dcDelegated
+                      ? dcFormatter.format(order.dcDelegated)
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="bg-white p-4 overflow-hidden">
               <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Payer Key</p>
               <div className="flex items-start gap-2">
