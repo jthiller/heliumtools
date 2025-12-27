@@ -19,7 +19,7 @@ const DEFAULT_RPC_URL = 'https://api.mainnet-beta.solana.com';
 
 /**
  * Load the treasury keypair from environment variable.
- * Supports both base64 and base58 encoded keypairs.
+ * Supports: JSON array [n,n,...], base64, and base58 encoded keypairs.
  * 
  * @param {object} env - Environment bindings
  * @returns {Keypair} Solana keypair
@@ -30,19 +30,34 @@ export function getTreasuryKeypair(env) {
         throw new Error('TREASURY_PRIVATE_KEY environment variable not set');
     }
 
+    const trimmed = privateKeyStr.trim();
+
+    // Try JSON array first (from solana-keygen, like [1,2,3,...64 numbers])
+    if (trimmed.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed) && parsed.length === 64) {
+                const decoded = Uint8Array.from(parsed);
+                return Keypair.fromSecretKey(decoded);
+            }
+        } catch (e) {
+            // Not valid JSON array
+        }
+    }
+
+    // Try base64 (more common for full 64-byte keypairs)
     try {
-        // Try base64 first (more common for full 64-byte keypairs)
-        const decoded = Uint8Array.from(atob(privateKeyStr), c => c.charCodeAt(0));
+        const decoded = Uint8Array.from(atob(trimmed), c => c.charCodeAt(0));
         if (decoded.length === 64) {
             return Keypair.fromSecretKey(decoded);
         }
     } catch (e) {
-        // Not base64, try base58
+        // Not base64
     }
 
+    // Try base58 (common for CLI-generated keys)
     try {
-        // Try base58 (common for CLI-generated keys)
-        const decoded = bs58.decode(privateKeyStr);
+        const decoded = bs58.decode(trimmed);
         if (decoded.length === 64) {
             return Keypair.fromSecretKey(decoded);
         }
@@ -50,7 +65,7 @@ export function getTreasuryKeypair(env) {
         // Not base58 either
     }
 
-    throw new Error('Invalid TREASURY_PRIVATE_KEY format. Expected base64 or base58 encoded 64-byte keypair.');
+    throw new Error('Invalid TREASURY_PRIVATE_KEY format. Expected JSON array [n,...], base64, or base58 encoded 64-byte keypair.');
 }
 
 /**
@@ -66,6 +81,7 @@ export function getConnection(env) {
 
 /**
  * Send and confirm a transaction with retries.
+ * IMPORTANT: Checks transaction status before retrying to prevent double-sends.
  * 
  * @param {Connection} connection - Solana connection
  * @param {Transaction} transaction - Transaction to send
@@ -76,6 +92,7 @@ export function getConnection(env) {
 export async function sendAndConfirmTransaction(connection, transaction, signers, options = {}) {
     const { maxRetries = 3 } = options;
     let lastError;
+    let lastSignature;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
@@ -96,11 +113,45 @@ export async function sendAndConfirmTransaction(connection, transaction, signers
             lastError = err;
             console.warn(`Transaction attempt ${attempt + 1} failed:`, err.message);
 
-            // If it's a blockhash expiry or timeout, retry
+            // Extract signature from error if available
+            const signatureMatch = err.message?.match(/Signature ([A-Za-z0-9]{87,88})/);
+            if (signatureMatch) {
+                lastSignature = signatureMatch[1];
+            }
+
+            // If it's a blockhash expiry or timeout, check if tx actually succeeded
             if (err.message?.includes('block height exceeded') ||
                 err.message?.includes('Blockhash not found') ||
                 err.message?.includes('timeout')) {
-                continue;
+
+                // If we have a signature, check if the transaction actually went through
+                if (lastSignature) {
+                    try {
+                        console.log(`Checking if transaction ${lastSignature} succeeded...`);
+                        const status = await connection.getSignatureStatus(lastSignature, {
+                            searchTransactionHistory: true
+                        });
+
+                        // Transaction succeeded! Return the signature.
+                        if (status?.value?.confirmationStatus && !status.value.err) {
+                            console.log(`Transaction ${lastSignature} actually succeeded with status: ${status.value.confirmationStatus}`);
+                            return lastSignature;
+                        }
+
+                        // Transaction failed on-chain
+                        if (status?.value?.err) {
+                            throw new Error(`Transaction failed on-chain: ${JSON.stringify(status.value.err)}`);
+                        }
+                    } catch (statusErr) {
+                        console.warn(`Failed to check transaction status:`, statusErr.message);
+                    }
+                }
+
+                // Only retry if we're not on the last attempt
+                if (attempt < maxRetries - 1) {
+                    console.log(`Retrying transaction (attempt ${attempt + 2}/${maxRetries})...`);
+                    continue;
+                }
             }
 
             // For other errors, throw immediately

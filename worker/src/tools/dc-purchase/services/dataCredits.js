@@ -1,6 +1,8 @@
 /**
  * Helium Data Credits program interactions.
  * Handles minting DC from HNT and delegating DC to OUI escrow accounts.
+ * 
+ * Uses the Pyth Push Oracle HNT price feed which is continuously updated.
  */
 
 import {
@@ -8,16 +10,13 @@ import {
     Transaction,
     TransactionInstruction,
     SystemProgram,
-    SYSVAR_RENT_PUBKEY
 } from '@solana/web3.js';
 import {
     DATA_CREDITS_PROGRAM_ID,
     HELIUM_SUB_DAOS_PROGRAM_ID,
     HNT_MINT,
     DC_MINT,
-    DAO_ADDRESS,
-    IOT_SUB_DAO,
-    HNT_PRICE_ORACLE,
+    IOT_MINT,
     HNT_DECIMALS
 } from '../lib/constants.js';
 import {
@@ -25,7 +24,7 @@ import {
     getConnection,
     sendAndConfirmTransaction,
     getTokenBalance,
-    getAssociatedTokenAddress
+    getAssociatedTokenAddress,
 } from './solana.js';
 
 // Token Program IDs
@@ -33,15 +32,44 @@ const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const CIRCUIT_BREAKER_PROGRAM_ID = new PublicKey('circAbx64bbsscPbQzZAUvuXpHqrCe6fLMzc2uKXz9g');
 
+// Pyth Push Oracle HNT/USD price feed account (continuously updated by Pyth)
+// From: https://github.com/helium/helium-program-library/blob/master/packages/spl-utils/src/constants.ts
+const HNT_PYTH_PRICE_FEED = new PublicKey('4DdmDswskDxXGpwHrXUfn2CNUm9rt21ac79GHNTN3J33');
+
 /**
- * SHA-256 hash of a string (for router_key hashing).
- * Matches the hash_name function in Helium programs.
+ * Convert a string to Uint8Array.
+ */
+function stringToBytes(str) {
+    return new TextEncoder().encode(str);
+}
+
+/**
+ * SHA-256 hash of a string.
  */
 async function hashName(name) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(name);
+    const data = stringToBytes(name);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     return new Uint8Array(hashBuffer);
+}
+
+/**
+ * Write a 64-bit unsigned integer in little-endian.
+ */
+function writeUint64LE(arr, value, offset) {
+    const bigVal = BigInt(value);
+    for (let i = 0; i < 8; i++) {
+        arr[offset + i] = Number((bigVal >> BigInt(i * 8)) & 0xFFn);
+    }
+}
+
+/**
+ * Write a 32-bit unsigned integer in little-endian.
+ */
+function writeUint32LE(arr, value, offset) {
+    arr[offset] = value & 0xFF;
+    arr[offset + 1] = (value >> 8) & 0xFF;
+    arr[offset + 2] = (value >> 16) & 0xFF;
+    arr[offset + 3] = (value >> 24) & 0xFF;
 }
 
 /**
@@ -49,7 +77,7 @@ async function hashName(name) {
  */
 function getDataCreditsPda(dcMint) {
     const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('dc'), dcMint.toBuffer()],
+        [stringToBytes('dc'), dcMint.toBuffer()],
         new PublicKey(DATA_CREDITS_PROGRAM_ID)
     );
     return pda;
@@ -60,8 +88,32 @@ function getDataCreditsPda(dcMint) {
  */
 function getCircuitBreakerPda(dcMint) {
     const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('mint_windowed_breaker'), dcMint.toBuffer()],
+        [stringToBytes('mint_windowed_breaker'), dcMint.toBuffer()],
         CIRCUIT_BREAKER_PROGRAM_ID
+    );
+    return pda;
+}
+
+/**
+ * Derive the DAO PDA from HNT mint.
+ * DAO = ["dao", HNT_MINT] via HELIUM_SUB_DAOS_PROGRAM
+ */
+function getDaoPda(hntMint) {
+    const [pda] = PublicKey.findProgramAddressSync(
+        [stringToBytes('dao'), hntMint.toBuffer()],
+        new PublicKey(HELIUM_SUB_DAOS_PROGRAM_ID)
+    );
+    return pda;
+}
+
+/**
+ * Derive the SubDAO PDA from IOT mint.
+ * SubDAO = ["sub_dao", IOT_MINT] via HELIUM_SUB_DAOS_PROGRAM
+ */
+function getSubDaoPda(iotMint) {
+    const [pda] = PublicKey.findProgramAddressSync(
+        [stringToBytes('sub_dao'), iotMint.toBuffer()],
+        new PublicKey(HELIUM_SUB_DAOS_PROGRAM_ID)
     );
     return pda;
 }
@@ -73,7 +125,7 @@ async function getDelegatedDataCreditsPda(subDao, routerKey) {
     const nameHash = await hashName(routerKey);
     const [pda] = PublicKey.findProgramAddressSync(
         [
-            Buffer.from('delegated_data_credits'),
+            stringToBytes('delegated_data_credits'),
             subDao.toBuffer(),
             nameHash
         ],
@@ -87,7 +139,7 @@ async function getDelegatedDataCreditsPda(subDao, routerKey) {
  */
 function getEscrowAccountPda(delegatedDataCredits) {
     const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('escrow_dc_account'), delegatedDataCredits.toBuffer()],
+        [stringToBytes('escrow_dc_account'), delegatedDataCredits.toBuffer()],
         new PublicKey(DATA_CREDITS_PROGRAM_ID)
     );
     return pda;
@@ -95,7 +147,9 @@ function getEscrowAccountPda(delegatedDataCredits) {
 
 /**
  * Mint Data Credits by burning HNT.
- * Uses the Helium price oracle to determine conversion rate.
+ * 
+ * Uses the Pyth Push Oracle HNT/USD price feed which is continuously
+ * updated by Pyth, so no need to post price updates ourselves.
  * 
  * @param {object} env - Environment bindings
  * @param {bigint} hntAmount - Amount of HNT to burn (in smallest units)
@@ -118,29 +172,30 @@ export async function mintDataCredits(env, hntAmount) {
     const initialDcBalance = await getTokenBalance(connection, dcAta);
 
     console.log(`Minting DC from ${Number(hntAmount) / Math.pow(10, HNT_DECIMALS)} HNT`);
+    console.log(`Using Pyth Push Oracle price feed: ${HNT_PYTH_PRICE_FEED.toBase58()}`);
 
     // Build mint_data_credits_v0 instruction
-    // Instruction discriminator for mint_data_credits_v0
-    const discriminator = Buffer.from([0xd9, 0x24, 0xa5, 0x7d, 0x88, 0x5e, 0xf5, 0x45]);
+    // Discriminator: SHA256("global:mint_data_credits_v0")[0..8]
+    const discriminator = new Uint8Array([0x4e, 0x6d, 0xa9, 0x84, 0x90, 0x5e, 0xdd, 0x39]);
 
-    // MintDataCreditsArgsV0 { hnt_amount: Option<u64>, dc_amount: Option<u64> }
-    // We specify hnt_amount, not dc_amount
-    const argsBuffer = Buffer.alloc(18);
-    argsBuffer.writeUInt8(1, 0); // Some(hnt_amount)
-    argsBuffer.writeBigUInt64LE(BigInt(hntAmount), 1);
-    argsBuffer.writeUInt8(0, 9); // None for dc_amount
+    const argsBuffer = new Uint8Array(18);
+    argsBuffer[0] = 1; // Some(hnt_amount)
+    writeUint64LE(argsBuffer, hntAmount, 1);
+    argsBuffer[9] = 0; // None for dc_amount
 
-    const instructionData = Buffer.concat([discriminator, argsBuffer]);
+    const instructionData = new Uint8Array(discriminator.length + argsBuffer.length);
+    instructionData.set(discriminator, 0);
+    instructionData.set(argsBuffer, discriminator.length);
 
     const instruction = new TransactionInstruction({
         programId: new PublicKey(DATA_CREDITS_PROGRAM_ID),
         keys: [
             { pubkey: dataCredits, isSigner: false, isWritable: false },
-            { pubkey: new PublicKey(HNT_PRICE_ORACLE), isSigner: false, isWritable: false },
-            { pubkey: hntAta, isSigner: false, isWritable: true }, // burner
-            { pubkey: dcAta, isSigner: false, isWritable: true }, // recipient_token_account
-            { pubkey: keypair.publicKey, isSigner: false, isWritable: false }, // recipient
-            { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, // owner
+            { pubkey: HNT_PYTH_PRICE_FEED, isSigner: false, isWritable: false }, // Pyth push oracle price feed
+            { pubkey: hntAta, isSigner: false, isWritable: true },
+            { pubkey: dcAta, isSigner: false, isWritable: true },
+            { pubkey: keypair.publicKey, isSigner: false, isWritable: false },
+            { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
             { pubkey: hntMint, isSigner: false, isWritable: true },
             { pubkey: dcMint, isSigner: false, isWritable: true },
             { pubkey: circuitBreaker, isSigner: false, isWritable: true },
@@ -178,16 +233,20 @@ export async function mintDataCredits(env, hntAmount) {
  * 
  * @param {object} env - Environment bindings
  * @param {bigint} dcAmount - Amount of DC to delegate
- * @param {string} routerKey - The OUI's payer/router key (used to derive escrow PDA)
+ * @param {string} routerKey - The OUI's payer/router key
  * @returns {Promise<{ signature: string, escrowBalance: bigint }>} Delegation result
  */
 export async function delegateDataCredits(env, dcAmount, routerKey) {
     const keypair = getTreasuryKeypair(env);
     const connection = getConnection(env);
 
+    const hntMint = new PublicKey(HNT_MINT);
     const dcMint = new PublicKey(DC_MINT);
-    const dao = new PublicKey(DAO_ADDRESS);
-    const subDao = new PublicKey(IOT_SUB_DAO);
+    const iotMint = new PublicKey(IOT_MINT);
+
+    // Derive DAO and SubDAO PDAs
+    const dao = getDaoPda(hntMint);
+    const subDao = getSubDaoPda(iotMint);
     const dataCredits = getDataCreditsPda(dcMint);
 
     // Get delegated data credits PDA and escrow account
@@ -199,18 +258,18 @@ export async function delegateDataCredits(env, dcAmount, routerKey) {
 
     console.log(`Delegating ${dcAmount} DC to router: ${routerKey}`);
 
-    // Build delegate_data_credits_v0 instruction
-    // Instruction discriminator for delegate_data_credits_v0
-    const discriminator = Buffer.from([0x4a, 0xb1, 0x7b, 0x2e, 0x9b, 0xc8, 0x1e, 0x42]);
+    // Discriminator: SHA256("global:delegate_data_credits_v0")[0..8]
+    const discriminator = new Uint8Array([0x9a, 0x38, 0xe2, 0x80, 0xa2, 0x73, 0xe2, 0x05]);
 
-    // DelegateDataCreditsArgsV0 { amount: u64, router_key: String }
-    const routerKeyBytes = new TextEncoder().encode(routerKey);
-    const argsBuffer = Buffer.alloc(8 + 4 + routerKeyBytes.length);
-    argsBuffer.writeBigUInt64LE(BigInt(dcAmount), 0);
-    argsBuffer.writeUInt32LE(routerKeyBytes.length, 8);
-    routerKeyBytes.forEach((b, i) => argsBuffer.writeUInt8(b, 12 + i));
+    const routerKeyBytes = stringToBytes(routerKey);
+    const argsBuffer = new Uint8Array(8 + 4 + routerKeyBytes.length);
+    writeUint64LE(argsBuffer, dcAmount, 0);
+    writeUint32LE(argsBuffer, routerKeyBytes.length, 8);
+    argsBuffer.set(routerKeyBytes, 12);
 
-    const instructionData = Buffer.concat([discriminator, argsBuffer]);
+    const instructionData = new Uint8Array(discriminator.length + argsBuffer.length);
+    instructionData.set(discriminator, 0);
+    instructionData.set(argsBuffer, discriminator.length);
 
     const instruction = new TransactionInstruction({
         programId: new PublicKey(DATA_CREDITS_PROGRAM_ID),
@@ -220,10 +279,10 @@ export async function delegateDataCredits(env, dcAmount, routerKey) {
             { pubkey: dcMint, isSigner: false, isWritable: false },
             { pubkey: dao, isSigner: false, isWritable: false },
             { pubkey: subDao, isSigner: false, isWritable: false },
-            { pubkey: keypair.publicKey, isSigner: true, isWritable: false }, // owner
-            { pubkey: dcAta, isSigner: false, isWritable: true }, // from_account
+            { pubkey: keypair.publicKey, isSigner: true, isWritable: false },
+            { pubkey: dcAta, isSigner: false, isWritable: true },
             { pubkey: escrowAccount, isSigner: false, isWritable: true },
-            { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, // payer
+            { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
             { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
             { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
             { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
@@ -248,14 +307,11 @@ export async function delegateDataCredits(env, dcAmount, routerKey) {
 
 /**
  * Get the current DC balance in an OUI's escrow account.
- * 
- * @param {object} env - Environment bindings
- * @param {string} routerKey - The OUI's payer/router key
- * @returns {Promise<bigint>} Escrow DC balance
  */
 export async function getOuiEscrowBalance(env, routerKey) {
     const connection = getConnection(env);
-    const subDao = new PublicKey(IOT_SUB_DAO);
+    const iotMint = new PublicKey(IOT_MINT);
+    const subDao = getSubDaoPda(iotMint);
 
     const delegatedDataCredits = await getDelegatedDataCreditsPda(subDao, routerKey);
     const escrowAccount = getEscrowAccountPda(delegatedDataCredits);
