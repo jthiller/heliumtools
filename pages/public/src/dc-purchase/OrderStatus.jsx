@@ -238,10 +238,12 @@ export default function OrderStatus() {
                 {order?.payer ? (
                   <>
                     <code
-                      className="flex-1 min-w-0 text-sm text-slate-700 truncate"
+                      className="flex-1 min-w-0 text-sm text-slate-700"
                       title={order.payer}
                     >
-                      {order.payer}
+                      <MiddleEllipsis>
+                        <span>{order.payer}</span>
+                      </MiddleEllipsis>
                     </code>
                     <CopyButton text={order.payer} />
                   </>
@@ -259,7 +261,11 @@ export default function OrderStatus() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <code className="min-w-0 truncate flex-1" title={order.escrow}>{order.escrow}</code>
+                  <code className="min-w-0 flex-1" title={order.escrow}>
+                    <MiddleEllipsis>
+                      <span>{order.escrow}</span>
+                    </MiddleEllipsis>
+                  </code>
                   <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
                 </a>
               ) : (
