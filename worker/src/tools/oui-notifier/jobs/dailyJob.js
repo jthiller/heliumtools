@@ -193,8 +193,9 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
   const burn30dDC = burnRates.burn30d?.dc ?? 0;
   const usd = balanceDC * DC_TO_USD_RATE;
 
-  // Use 30-day average for days remaining calculation (more stable)
-  const burnForDaysRemaining = burn30dDC > 0 ? burn30dDC : burn1dDC;
+  // Use whichever burn rate is higher (more conservative — alerts sooner
+  // when burn is accelerating, which is when alerts matter most)
+  const burnForDaysRemaining = Math.max(burn30dDC, burn1dDC);
   let daysRemaining = null;
   if (burnForDaysRemaining > 0) {
     const effectiveBalance = Math.max(balanceDC - ZERO_BALANCE_DC, 0);

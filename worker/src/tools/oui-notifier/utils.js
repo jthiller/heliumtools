@@ -23,8 +23,8 @@ export async function safeText(res) {
 }
 
 export function pickThreshold(daysRemaining, lastNotifiedLevel) {
-  if (daysRemaining <= 1 && lastNotifiedLevel < 1) return 1;
-  if (daysRemaining <= 7 && lastNotifiedLevel < 7) return 7;
-  if (daysRemaining <= 14 && lastNotifiedLevel < 14) return 14;
+  if (daysRemaining <= 1  && (lastNotifiedLevel === 0 || lastNotifiedLevel > 1))  return 1;
+  if (daysRemaining <= 7  && (lastNotifiedLevel === 0 || lastNotifiedLevel > 7))  return 7;
+  if (daysRemaining <= 14 && (lastNotifiedLevel === 0 || lastNotifiedLevel > 14)) return 14;
   return null;
 }
