@@ -1,12 +1,6 @@
 import { updateOrderStatus, triggerProcess } from "../services/orders.js";
 import { recordEvent } from "../services/events.js";
-
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-  });
-}
+import { jsonResponse as json } from "../../../lib/response.js";
 
 /**
  * Parse the X-Hook0-Signature header.

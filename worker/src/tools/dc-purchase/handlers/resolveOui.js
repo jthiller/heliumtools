@@ -1,21 +1,16 @@
 import { getOuiByNumber } from "../../oui-notifier/services/ouis.js";
 import { fetchEscrowBalanceDC } from "../../oui-notifier/services/solana.js";
+import { jsonResponse } from "../../../lib/response.js";
 
 export async function handleResolveOui(_request, env, ouiStr) {
   const oui = Number(ouiStr);
   if (!Number.isInteger(oui)) {
-    return new Response(JSON.stringify({ error: "Invalid OUI" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    });
+    return jsonResponse({ error: "Invalid OUI" }, 400);
   }
 
   const record = await getOuiByNumber(env, oui);
   if (!record) {
-    return new Response(JSON.stringify({ error: "OUI not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    });
+    return jsonResponse({ error: "OUI not found" }, 404);
   }
 
   // Fetch live balance from Solana RPC
@@ -29,16 +24,10 @@ export async function handleResolveOui(_request, env, ouiStr) {
     }
   }
 
-  return new Response(
-    JSON.stringify({
-      oui: record.oui,
-      payer: record.payer,
-      escrow: record.escrow,
-      escrowDcBalance,
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    }
-  );
+  return jsonResponse({
+    oui: record.oui,
+    payer: record.payer,
+    escrow: record.escrow,
+    escrowDcBalance,
+  });
 }

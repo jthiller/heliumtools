@@ -1,12 +1,6 @@
 import { resolveOui, createOrder, updateOrderStatus } from "../services/orders.js";
 import { generateCoinbaseJwt } from "../lib/coinbaseJwt.js";
-
-function jsonResponse(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-  });
-}
+import { jsonResponse } from "../../../lib/response.js";
 
 function buildPartnerRef(orderId) {
   return `dc_${orderId}`.slice(0, 48);

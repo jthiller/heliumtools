@@ -3,11 +3,10 @@ import {
   ArrowPathIcon,
   BellAlertIcon,
   EnvelopeIcon,
-  ClipboardDocumentIcon,
-  CheckIcon,
   TrashIcon,
   PencilIcon,
   XMarkIcon,
+  CheckIcon,
   ArrowRightIcon,
 } from "@heroicons/react/24/outline";
 import {
@@ -20,23 +19,16 @@ import {
   CartesianGrid,
 } from "recharts";
 import Header from "../components/Header.jsx";
+import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
-import { classNames, getLocalStorageItem, setLocalStorageItem, removeLocalStorageItem } from "../lib/utils.js";
+import { classNames, usdFormatter, numberFormatter, getLocalStorageItem, setLocalStorageItem, removeLocalStorageItem } from "../lib/utils.js";
 import {
   API_BASE,
   fetchBalanceForOui,
   fetchOuiIndex,
   subscribeToAlerts,
 } from "../lib/api.js";
-
-const numberFormatter = new Intl.NumberFormat("en-US");
-const usdFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2,
-  roundingMode: "floor",
-});
 
 // Tailwind color values for chart (matches slate and sky palettes)
 const CHART_COLORS = {
@@ -45,35 +37,6 @@ const CHART_COLORS = {
   tickText: "#94a3b8",    // slate-400
   tooltipBorder: "#e2e8f0", // slate-200
 };
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-      title="Copy to clipboard"
-    >
-      {copied ? (
-        <CheckIcon className="h-4 w-4 text-emerald-500" />
-      ) : (
-        <ClipboardDocumentIcon className="h-4 w-4" />
-      )}
-    </button>
-  );
-}
 
 // Standard input class for consistency
 const inputClassName = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";

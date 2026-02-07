@@ -9,7 +9,7 @@ async function parseJson(res) {
   }
   try {
     return await res.json();
-  } catch (err) {
+  } catch {
     return null;
   }
 }

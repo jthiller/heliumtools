@@ -5,21 +5,13 @@ import {
   ExclamationTriangleIcon,
   ArrowPathIcon,
   ArrowRightIcon,
-  ClipboardDocumentIcon,
-  CheckIcon,
 } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
+import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
+import { usdFormatter, numberFormatter } from "../lib/utils.js";
 import { fetchOrder } from "../lib/dcPurchaseApi.js";
-
-const usdFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2,
-});
-
-const dcFormatter = new Intl.NumberFormat("en-US");
 
 const STATUS_FLOW = [
   { key: "onramp_started", label: "Checkout Started" },
@@ -30,36 +22,6 @@ const STATUS_FLOW = [
   { key: "delegating", label: "Delegating to OUI" },
   { key: "complete", label: "Complete" },
 ];
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-      title="Copy to clipboard"
-      aria-label="Copy to clipboard"
-    >
-      {copied ? (
-        <CheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-      ) : (
-        <ClipboardDocumentIcon className="h-3.5 w-3.5" />
-      )}
-    </button>
-  );
-}
 
 function StatusStep({ statusKey, label, activeStatus, hasError }) {
   const activeIndex = STATUS_FLOW.findIndex((s) => s.key === activeStatus);
@@ -163,7 +125,7 @@ export default function OrderStatus() {
                 <CheckCircleIcon className="h-8 w-8 text-emerald-600 shrink-0" />
                 <div>
                   <p className="text-lg font-bold text-emerald-900 mb-1">
-                    {dcFormatter.format(order.dcDelegated)} Data Credits Delivered
+                    {numberFormatter.format(order.dcDelegated)} Data Credits Delivered
                   </p>
                   <p className="text-sm text-emerald-700">
                     Your Data Credits have been delegated to OUI {order.oui}.
@@ -201,7 +163,7 @@ export default function OrderStatus() {
                 <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Order ID</p>
                 <div className="flex items-center gap-2">
                   <code className="text-sm text-slate-700 truncate">{orderId}</code>
-                  <CopyButton text={orderId} />
+                  <CopyButton text={orderId} size="h-3.5 w-3.5" />
                 </div>
               </div>
               <div>
@@ -226,7 +188,7 @@ export default function OrderStatus() {
                   <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">DC Minted</p>
                   <p className="text-sm text-slate-900 font-medium">
                     {order?.dcDelegated
-                      ? dcFormatter.format(order.dcDelegated)
+                      ? numberFormatter.format(order.dcDelegated)
                       : "—"}
                   </p>
                 </div>
@@ -245,7 +207,7 @@ export default function OrderStatus() {
                         <span>{order.payer}</span>
                       </MiddleEllipsis>
                     </code>
-                    <CopyButton text={order.payer} />
+                    <CopyButton text={order.payer} size="h-3.5 w-3.5" />
                   </>
                 ) : (
                   <span className="text-sm text-slate-400">—</span>

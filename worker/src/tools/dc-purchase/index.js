@@ -3,6 +3,7 @@ import { handleCreateOrder } from "./handlers/createOrder.js";
 import { handleGetOrder } from "./handlers/getOrder.js";
 import { handleCoinbaseWebhook } from "./handlers/coinbaseWebhook.js";
 import { runReconciliation } from "./services/reconciliation.js";
+import { corsHeaders } from "../../lib/response.js";
 
 export async function handleDcPurchaseRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -10,14 +11,7 @@ export async function handleDcPurchaseRequest(request, env, ctx) {
 
   // Note: CORS allows all origins intentionally - this is a public API
   if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Coinbase-Signature",
-      },
-    });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   // Routes: pathname has /dc-purchase stripped, so we match relative paths

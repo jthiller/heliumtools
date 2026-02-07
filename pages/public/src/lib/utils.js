@@ -5,6 +5,16 @@
  */
 export const classNames = (...classes) => classes.filter(Boolean).join(" ");
 
+/** Format as USD currency (e.g. "$1,234.56") */
+export const usdFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
+});
+
+/** Format plain numbers with commas (e.g. "1,234,567") */
+export const numberFormatter = new Intl.NumberFormat("en-US");
+
 /**
  * Safe localStorage helpers to handle private browsing mode
  * where localStorage may throw exceptions

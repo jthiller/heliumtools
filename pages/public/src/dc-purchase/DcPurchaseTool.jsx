@@ -3,51 +3,13 @@ import {
   ArrowPathIcon,
   ArrowRightIcon,
   CreditCardIcon,
-  ClipboardDocumentIcon,
-  CheckIcon,
 } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
+import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
+import { usdFormatter, numberFormatter } from "../lib/utils.js";
 import { resolveOui, createDcOrder } from "../lib/dcPurchaseApi.js";
-
-const usdFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2,
-});
-
-const dcFormatter = new Intl.NumberFormat("en-US");
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-      title="Copy to clipboard"
-      aria-label="Copy to clipboard"
-    >
-      {copied ? (
-        <CheckIcon className="h-4 w-4 text-emerald-500" />
-      ) : (
-        <ClipboardDocumentIcon className="h-4 w-4" />
-      )}
-    </button>
-  );
-}
 
 export default function DcPurchaseTool() {
   const [ouiInput, setOuiInput] = useState("");
@@ -247,7 +209,7 @@ export default function DcPurchaseTool() {
                   </p>
                   <p className="text-sm text-slate-500">
                     {resolved.escrowDcBalance
-                      ? `${dcFormatter.format(resolved.escrowDcBalance)} DC`
+                      ? `${numberFormatter.format(resolved.escrowDcBalance)} DC`
                       : "Unknown balance"}
                   </p>
                 </div>
