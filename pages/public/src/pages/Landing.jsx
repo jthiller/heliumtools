@@ -22,8 +22,8 @@ const features = [
       "Resolve an OUI, check escrow balance, and purchase Data Credits via Coinbase Onramp with automatic delegation to the payer key.",
     href: "/dc-purchase",
     icon: BanknotesIcon,
-    // Intentionally marked Beta - feature is functional but awaiting production testing
-    badge: "Beta",
+    badge: "Coming Soon",
+    disabled: true,
   },
 ];
 
@@ -50,31 +50,49 @@ export default function Landing() {
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => {
             const Icon = feature.icon;
+            const Wrapper = feature.disabled ? "div" : "a";
+            const wrapperProps = feature.disabled
+              ? {}
+              : { href: feature.href };
             return (
-              <a
+              <Wrapper
                 key={feature.name}
-                href={feature.href}
-                className="group relative flex flex-col rounded-xl border border-slate-200 bg-white p-6 transition hover:border-slate-300 hover:shadow-md"
+                {...wrapperProps}
+                className={`group relative flex flex-col rounded-xl border p-6 transition ${
+                  feature.disabled
+                    ? "border-slate-200 bg-slate-50 opacity-60 cursor-default"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-md"
+                }`}
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg transition ${
+                    feature.disabled
+                      ? "bg-slate-100 text-slate-400"
+                      : "bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white"
+                  }`}>
                     <Icon className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-base font-semibold text-slate-900">{feature.name}</span>
+                    <span className={`text-base font-semibold ${feature.disabled ? "text-slate-400" : "text-slate-900"}`}>{feature.name}</span>
                     {feature.badge && (
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+                        feature.disabled
+                          ? "bg-slate-100 text-slate-500 ring-slate-200"
+                          : "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                      }`}>
                         {feature.badge}
                       </span>
                     )}
                   </div>
                 </div>
-                <p className="text-sm text-slate-600 leading-relaxed flex-1">{feature.description}</p>
-                <div className="mt-4 flex items-center gap-1 text-sm font-medium text-sky-600 group-hover:text-sky-500">
-                  <span>Open tool</span>
-                  <ArrowRightIcon className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden="true" />
-                </div>
-              </a>
+                <p className={`text-sm leading-relaxed flex-1 ${feature.disabled ? "text-slate-400" : "text-slate-600"}`}>{feature.description}</p>
+                {!feature.disabled && (
+                  <div className="mt-4 flex items-center gap-1 text-sm font-medium text-sky-600 group-hover:text-sky-500">
+                    <span>Open tool</span>
+                    <ArrowRightIcon className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden="true" />
+                  </div>
+                )}
+              </Wrapper>
             );
           })}
         </div>
