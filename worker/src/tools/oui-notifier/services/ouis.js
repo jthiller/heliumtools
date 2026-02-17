@@ -76,33 +76,33 @@ export async function upsertOuis(env, orgs, syncedAtIso) {
   if (!orgs?.length) return;
   const createdAtIso = syncedAtIso;
 
-  for (const org of orgs) {
-    try {
-      await env.DB.prepare(
-        `INSERT INTO ouis (oui, owner, payer, escrow, delegate_keys, locked, created_at, last_synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(oui) DO UPDATE SET
-           owner = excluded.owner,
-           payer = excluded.payer,
-           escrow = excluded.escrow,
-           delegate_keys = excluded.delegate_keys,
-           locked = excluded.locked,
-           last_synced_at = excluded.last_synced_at`
-      )
-        .bind(
-          org.oui,
-          org.owner,
-          org.payer,
-          org.escrow,
-          JSON.stringify(org.delegate_keys || []),
-          org.locked ? 1 : 0,
-          createdAtIso,
-          syncedAtIso
-        )
-        .run();
-    } catch (err) {
-      console.error(`Failed to upsert OUI ${org.oui}`, err);
-    }
+  const statements = orgs.map((org) =>
+    env.DB.prepare(
+      `INSERT INTO ouis (oui, owner, payer, escrow, delegate_keys, locked, created_at, last_synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(oui) DO UPDATE SET
+         owner = excluded.owner,
+         payer = excluded.payer,
+         escrow = excluded.escrow,
+         delegate_keys = excluded.delegate_keys,
+         locked = excluded.locked,
+         last_synced_at = excluded.last_synced_at`
+    ).bind(
+      org.oui,
+      org.owner,
+      org.payer,
+      org.escrow,
+      JSON.stringify(org.delegate_keys || []),
+      org.locked ? 1 : 0,
+      createdAtIso,
+      syncedAtIso
+    )
+  );
+
+  try {
+    await env.DB.batch(statements);
+  } catch (err) {
+    console.error("Failed to batch upsert OUIs", err);
   }
 }
 
@@ -150,7 +150,6 @@ export async function listOuis(env) {
 }
 
 export async function getOuiBalanceSeries(env, oui, days = 30) {
-  await ensureOuiTables(env);
   const { results } = await env.DB.prepare(
     `SELECT date, balance_dc, fetched_at
      FROM oui_balances
