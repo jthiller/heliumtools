@@ -76,14 +76,13 @@ export default function HomePage() {
       const storedUuid = getLocalStorageItem("ouiNotifierUuid");
       if (storedUuid) {
         uuid = storedUuid;
-        // Update URL with UUID for shareable links
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set("uuid", uuid);
-        window.history.replaceState({}, "", newUrl.toString());
       }
     } else {
-      // Store UUID from URL in localStorage for future visits
+      // Store UUID from URL in localStorage for future visits, then strip from URL
       setLocalStorageItem("ouiNotifierUuid", uuid);
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("uuid");
+      window.history.replaceState({}, "", cleanUrl.toString());
     }
 
     if (uuid) {
@@ -170,6 +169,8 @@ export default function HomePage() {
           setBurnRate({
             burn1dDC: payload.burn_rate.burn_1d_dc,
             burn1dUSD: payload.burn_rate.burn_1d_usd,
+            burn30dDC: payload.burn_rate.burn_30d_dc,
+            burn30dUSD: payload.burn_rate.burn_30d_usd,
           });
         } else {
           setBurnRate(null);
@@ -190,8 +191,11 @@ export default function HomePage() {
   }, [ouiInput, matchedOui]);
 
   const daysRemaining = useMemo(() => {
-    if (balance?.usd != null && burnRate?.burn1dUSD > 0) {
-      return Math.max(0, (balance.usd - 35) / burnRate.burn1dUSD);
+    if (balance?.usd != null && burnRate) {
+      const effectiveBurn = Math.max(burnRate.burn30dUSD || 0, burnRate.burn1dUSD || 0);
+      if (effectiveBurn > 0) {
+        return Math.max(0, (balance.usd - 35) / effectiveBurn);
+      }
     }
     return null;
   }, [balance, burnRate]);
@@ -268,7 +272,7 @@ export default function HomePage() {
     if (!confirm("Delete your account and all subscriptions?")) return;
     setSubscriptionError("");
     try {
-      const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE" });
+      const res = await fetch(`${API_BASE}/api/user/${userUuid}`, { method: "DELETE", headers: { "X-User-Uuid": userUuid } });
       if (res.ok) {
         // Clear stored session data
         removeLocalStorageItem("ouiNotifierUuid");
@@ -345,7 +349,7 @@ export default function HomePage() {
                     {daysRemaining !== null ? (() => { const rounded = Math.round(daysRemaining * 10) / 10; return rounded % 1 === 0 ? rounded : rounded.toFixed(1); })() : '—'}
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
-                    {burnRate?.burn1dUSD != null ? `at ${usdFormatter.format(burnRate.burn1dUSD)}/day` : 'Waiting for data'}
+                    {burnRate ? `at ${usdFormatter.format(Math.max(burnRate.burn30dUSD || 0, burnRate.burn1dUSD || 0))}/day` : 'Waiting for data'}
                   </p>
                 </div>
               </div>
