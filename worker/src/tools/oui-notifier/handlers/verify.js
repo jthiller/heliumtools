@@ -34,7 +34,9 @@ export async function handleVerify(request, env) {
         if (redirectParam) {
             try {
                 const candidate = new URL(redirectParam);
-                if (candidate.protocol === "http:" || candidate.protocol === "https:") {
+                const allowed = new URL(redirectBase);
+                // Only allow redirects to the same origin to prevent open redirect attacks
+                if (candidate.origin === allowed.origin) {
                     redirectBase = candidate.toString();
                 }
             } catch {

@@ -49,12 +49,7 @@ async function createCoinbaseSession(env, { fiatAmount, partnerUserRef, clientIp
     effectiveClientIp === '::1' ||
     effectiveClientIp.startsWith('10.') ||
     effectiveClientIp.startsWith('192.168.') ||
-    effectiveClientIp.startsWith('172.16.') ||
-    effectiveClientIp.startsWith('172.17.') ||
-    effectiveClientIp.startsWith('172.18.') ||
-    effectiveClientIp.startsWith('172.19.') ||
-    effectiveClientIp.startsWith('172.2') ||
-    effectiveClientIp.startsWith('172.3')) {
+    /^172\.(1[6-9]|2\d|3[01])\./.test(effectiveClientIp)) {
     // Use RFC 5737 test IP for development
     effectiveClientIp = '192.0.2.1';
     console.log('Using test public IP for development:', effectiveClientIp);

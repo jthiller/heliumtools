@@ -1,5 +1,6 @@
 import { getOuiByEscrow } from "../services/ouis.js";
 import { jsonHeaders } from "../responseUtils.js";
+import { validateWebhookUrl } from "../utils.js";
 
 export async function handleGetUser(request, env) {
     const url = new URL(request.url);
@@ -34,12 +35,7 @@ export async function handleGetUser(request, env) {
     );
 
     return new Response(JSON.stringify({ user, subscriptions }), {
-        headers: {
-            "content-type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type,X-User-Uuid",
-        },
+        headers: jsonHeaders,
     });
 }
 
@@ -123,10 +119,19 @@ export async function handleUpdateSubscription(request, env) {
 
     const { label, webhook_url } = await request.json();
 
+    let validatedWebhookUrl = null;
+    if (webhook_url) {
+        const { url, error } = validateWebhookUrl(webhook_url);
+        if (error) {
+            return new Response(error, { status: 400, headers: jsonHeaders });
+        }
+        validatedWebhookUrl = url;
+    }
+
     await env.DB.prepare(
         "UPDATE subscriptions SET label = ?, webhook_url = ? WHERE id = ?"
     )
-        .bind(label || null, webhook_url || null, id)
+        .bind(label || null, validatedWebhookUrl, id)
         .run();
 
     return new Response("Subscription updated", { status: 200, headers: jsonHeaders });
@@ -135,9 +140,15 @@ export async function handleUpdateSubscription(request, env) {
 export async function handleDeleteUser(request, env) {
     const url = new URL(request.url);
     const uuid = url.pathname.split("/").pop();
+    const headerUuid = request.headers.get("X-User-Uuid");
 
     if (!uuid) {
         return new Response("Missing UUID", { status: 400, headers: jsonHeaders });
+    }
+
+    // Require UUID in both path and header to prevent CSRF via URL-only auth
+    if (!headerUuid || headerUuid !== uuid) {
+        return new Response("Unauthorized", { status: 401, headers: jsonHeaders });
     }
 
     const user = await env.DB.prepare("SELECT id FROM users WHERE uuid = ?")
