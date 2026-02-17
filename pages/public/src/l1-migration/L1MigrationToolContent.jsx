@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import axios from 'axios';
 import { useAsyncCallback } from 'react-async-hook';
 import { bulkSendRawTransactions } from '@helium/spl-utils';
 import { Connection, PublicKey } from '@solana/web3.js';
@@ -44,29 +43,27 @@ export const L1MigrationToolContent = () => {
         loading: loadingInflate,
     } = useAsyncCallback(async (wallet) => {
         setStatus(null);
-        try {
-            async function getTxs() {
-                return (await axios.get(`${MIGRATION_SERVICE_URL}/migrate/${wallet.toBase58()}?limit=1000`)).data;
-            }
-            const txs = (await getTxs()).transactions;
-            if (!txs || txs.length === 0) {
-                setStatus({ tone: 'info', message: "No transactions found to migrate." });
-                return true;
-            }
-
-            const txBuffers = txs.map((tx) => Buffer.from(tx, 'base64'));
-            await bulkSendRawTransactions(connection, txBuffers);
-
-            const txs2 = (await getTxs()).transactions;
-            if (txs2.length !== 0) {
-                throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
-            }
-
-            setStatus({ tone: 'success', message: "Migration successful!" });
-            return true;
-        } catch (e) {
-            throw e;
+        async function getTxs() {
+            const res = await fetch(`${MIGRATION_SERVICE_URL}/migrate/${wallet.toBase58()}?limit=1000`);
+            if (!res.ok) throw new Error(`Migration service error: ${res.status}`);
+            return res.json();
         }
+        const txs = (await getTxs()).transactions;
+        if (!txs || txs.length === 0) {
+            setStatus({ tone: 'info', message: "No transactions found to migrate." });
+            return true;
+        }
+
+        const txBuffers = txs.map((tx) => Buffer.from(tx, 'base64'));
+        await bulkSendRawTransactions(connection, txBuffers);
+
+        const txs2 = (await getTxs()).transactions;
+        if (txs2.length !== 0) {
+            throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
+        }
+
+        setStatus({ tone: 'success', message: "Migration successful!" });
+        return true;
     });
 
     // Determine the banner to show

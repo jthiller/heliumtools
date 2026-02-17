@@ -199,21 +199,3 @@ export async function processOrder(env, orderId) {
   console.warn(`processOrder: max iterations reached for orderId=${orderId}`);
 }
 
-/**
- * Resume processing for a specific order.
- * Can be called to retry after a failed step.
- */
-export async function resumeOrder(env, orderId) {
-  const order = await getOrder(env, orderId);
-  if (!order) {
-    throw new Error(`Order not found: ${orderId}`);
-  }
-
-  // Clear error state before resuming
-  await updateOrderStatus(env, orderId, order.status, {
-    error_code: null,
-    error_message: null,
-  });
-
-  return processOrder(env, orderId);
-}

@@ -1,5 +1,3 @@
-import { HeartIcon } from "@heroicons/react/24/outline";
-
 export default function Header() {
   return (
     <header className="bg-white border-b border-slate-200">
@@ -13,15 +11,6 @@ export default function Header() {
             <p className="text-xs text-slate-500">Operator utilities</p>
           </div>
         </a>
-        <nav className="flex items-center gap-4 text-sm font-medium text-slate-600">
-          <a
-            className="inline-flex items-center gap-1.5 hover:text-slate-900 transition-colors"
-            href="/donate"
-          >
-            <HeartIcon className="h-4 w-4" aria-hidden="true" />
-            Donate
-          </a>
-        </nav>
       </div>
     </header>
   );

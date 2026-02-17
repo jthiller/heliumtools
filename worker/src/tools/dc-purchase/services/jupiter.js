@@ -234,16 +234,3 @@ export async function executeSwapWithRetry(env, usdcAmount, options = {}) {
     throw new Error(`Swap failed after ${maxRetries} attempts: ${lastError?.message}`);
 }
 
-/**
- * Get expected HNT output for a given USDC amount.
- * Useful for UI display before executing the swap.
- * 
- * @param {object} env - Environment bindings  
- * @param {number} usdcAmount - USDC amount in human-readable format
- * @returns {Promise<number>} Expected HNT amount (human-readable)
- */
-export async function getExpectedHntOutput(env, usdcAmount) {
-    const amountInSmallestUnits = Math.floor(usdcAmount * Math.pow(10, USDC_DECIMALS));
-    const quote = await getSwapQuote(env, USDC_MINT, HNT_MINT, amountInSmallestUnits);
-    return Number(quote.outAmount) / 1e8; // Convert from smallest units to HNT
-}

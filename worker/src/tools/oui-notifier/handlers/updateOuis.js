@@ -8,7 +8,7 @@ import {
 } from "../services/ouis.js";
 import { fetchEscrowBalanceDC } from "../services/solana.js";
 import { MAX_BALANCE_FETCH_PER_UPDATE } from "../config.js";
-import { okResponse } from "../responseUtils.js";
+import { jsonResponse } from "../../../lib/response.js";
 
 export async function handleUpdateOuis(env, targetOui) {
     const startedAt = new Date().toISOString();
@@ -19,7 +19,7 @@ export async function handleUpdateOuis(env, targetOui) {
         // If a specific OUI is requested, refresh just that one (metadata + balance).
         if (targetOui != null) {
             if (!Number.isInteger(targetOui) || targetOui < 0) {
-                return okResponse({ error: "Invalid OUI" }, 400);
+                return jsonResponse({ error: "Invalid OUI" }, 400);
             }
 
             let org = await getOuiByNumber(env, targetOui);
@@ -27,19 +27,19 @@ export async function handleUpdateOuis(env, targetOui) {
                 const all = await fetchAllOuisFromApi();
                 org = all.find((o) => o.oui === targetOui);
                 if (!org) {
-                    return okResponse({ error: "OUI not found" }, 404);
+                    return jsonResponse({ error: "OUI not found" }, 404);
                 }
                 await upsertOuis(env, [org], startedAt);
             }
 
             if (!org.escrow) {
-                return okResponse({ error: "OUI missing escrow" }, 400);
+                return jsonResponse({ error: "OUI missing escrow" }, 400);
             }
 
             try {
                 const balanceDC = await fetchEscrowBalanceDC(env, org.escrow);
                 await recordOuiBalance(env, org, balanceDC, todayDate, startedAt);
-                return okResponse({
+                return jsonResponse({
                     ok: true,
                     updated: true,
                     oui: targetOui,
@@ -49,7 +49,7 @@ export async function handleUpdateOuis(env, targetOui) {
                 });
             } catch (err) {
                 console.error(`Failed to fetch/store balance for OUI ${targetOui} (${org.escrow})`, err);
-                return okResponse({ error: "Unable to update balance for OUI" }, 500);
+                return jsonResponse({ error: "Unable to update balance for OUI" }, 500);
             }
         }
 
@@ -83,7 +83,7 @@ export async function handleUpdateOuis(env, targetOui) {
             }
         }
 
-        return okResponse({
+        return jsonResponse({
             ok: true,
             fetched: orgs.length,
             new: newCount,
@@ -93,6 +93,6 @@ export async function handleUpdateOuis(env, targetOui) {
         });
     } catch (err) {
         console.error("Error in /update-ouis", err);
-        return okResponse({ error: "Unable to update OUI index" }, 500);
+        return jsonResponse({ error: "Unable to update OUI index" }, 500);
     }
 }

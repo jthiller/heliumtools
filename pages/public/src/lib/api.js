@@ -2,7 +2,7 @@ export const API_BASE = import.meta.env.DEV
   ? "/api/oui-notifier"
   : "https://api.heliumtools.org/oui-notifier";
 
-async function parseJson(res) {
+export async function parseJson(res) {
   const contentType = res.headers.get("Content-Type") || "";
   if (!contentType.includes("application/json")) return null;
   try {

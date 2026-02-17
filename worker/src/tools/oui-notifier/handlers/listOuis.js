@@ -1,5 +1,5 @@
 import { listOuis } from "../services/ouis.js";
-import { okResponse } from "../responseUtils.js";
+import { jsonResponse } from "../../../lib/response.js";
 
 export async function handleListOuis(env) {
     try {
@@ -21,9 +21,9 @@ export async function handleListOuis(env) {
                 last_synced_at: org.last_synced_at,
             };
         });
-        return okResponse({ orgs: parsed });
+        return jsonResponse({ orgs: parsed });
     } catch (err) {
         console.error("Error in /ouis", err);
-        return okResponse({ error: "Unable to load OUIs" }, 500);
+        return jsonResponse({ error: "Unable to load OUIs" }, 500);
     }
 }

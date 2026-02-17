@@ -1,5 +1,5 @@
 import { getOuiByNumber, getOuiBalanceSeries } from "../services/ouis.js";
-import { okResponse } from "../responseUtils.js";
+import { jsonResponse } from "../../../lib/response.js";
 
 export async function handleTimeseries(url, env) {
     const ouiParam = url.searchParams.get("oui");
@@ -8,20 +8,20 @@ export async function handleTimeseries(url, env) {
     const days = daysParam ? Number(daysParam) : 30;
 
     if (!Number.isInteger(oui)) {
-        return okResponse({ error: "Invalid OUI" }, 400);
+        return jsonResponse({ error: "Invalid OUI" }, 400);
     }
     if (!Number.isFinite(days) || days <= 0) {
-        return okResponse({ error: "Invalid days" }, 400);
+        return jsonResponse({ error: "Invalid days" }, 400);
     }
 
     try {
         const org = await getOuiByNumber(env, oui);
         if (!org) {
-            return okResponse({ error: "OUI not found" }, 404);
+            return jsonResponse({ error: "OUI not found" }, 404);
         }
 
         const series = await getOuiBalanceSeries(env, oui, days);
-        return okResponse({
+        return jsonResponse({
             oui,
             escrow: org.escrow,
             days,
@@ -33,6 +33,6 @@ export async function handleTimeseries(url, env) {
         });
     } catch (err) {
         console.error("Error in /timeseries", err);
-        return okResponse({ error: "Unable to fetch timeseries" }, 500);
+        return jsonResponse({ error: "Unable to fetch timeseries" }, 500);
     }
 }

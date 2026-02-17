@@ -25,7 +25,8 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 ### Environments
 - **Dev**: D1 `heliumtools-dev`, email from `alerts-dev@heliumtools.org`
 - **Production**: D1 `heliumtools-prod`, email from `alerts@heliumtools.org`, routes to `api.heliumtools.org`
-- Secrets (`RESEND_API_KEY`, `SOLANA_RPC_URL`) set via `wrangler secret put`
+- Secrets (`RESEND_API_KEY`, `SOLANA_RPC_URL`) set via `wrangler secret put` — **never commit or log these values**
+- **Solana RPC**: Helius staked endpoint (Business plan, 200 RPS limit). Batch rate constants tuned in `worker/src/tools/oui-notifier/services/solana.js`
 
 ## Common Commands
 
@@ -65,6 +66,5 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 
 ## Deployment
 
-- **`main` branch auto-deploys to production**
-- Worker: Cloudflare Workers
-- Pages: Cloudflare Pages
+- **Pages**: Cloudflare Pages — auto-deploys from `main` branch
+- **Worker**: Cloudflare Workers — requires manual deploy: `cd worker && wrangler deploy --env production`

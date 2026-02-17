@@ -18,11 +18,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
-      "/api/dc-purchase": {
-        target: process.env.VITE_API_TARGET || "http://localhost:8787",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/dc-purchase/, "/dc-purchase"),
-      },
       "/oui-notifier/api": {
         target: process.env.VITE_API_TARGET || "http://localhost:8787",
         changeOrigin: true,

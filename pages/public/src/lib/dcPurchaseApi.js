@@ -1,18 +1,8 @@
+import { parseJson } from "./api.js";
+
 export const DC_API_BASE = import.meta.env.DEV
   ? "/api/dc-purchase"
   : "https://api.heliumtools.org/dc-purchase";
-
-async function parseJson(res) {
-  const contentType = res.headers.get("Content-Type") || "";
-  if (!contentType.includes("application/json")) {
-    return null;
-  }
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
 
 export async function resolveOui(oui) {
   const res = await fetch(`${DC_API_BASE}/oui/${oui}`);
