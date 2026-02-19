@@ -54,7 +54,10 @@ export async function handleRequest(request, env, ctx) {
 
   if (request.method === "POST" && pathname.startsWith("/update-ouis")) {
     const authHeader = request.headers.get("Authorization");
-    if (!env.ADMIN_TOKEN || authHeader !== `Bearer ${env.ADMIN_TOKEN}`) {
+    if (!env.ADMIN_TOKEN) {
+      return new Response("Service unavailable", { status: 503 });
+    }
+    if (authHeader !== `Bearer ${env.ADMIN_TOKEN}`) {
       return new Response("Unauthorized", { status: 401 });
     }
     const match = pathname.match(/^\/update-ouis\/(\d+)\/?$/);
