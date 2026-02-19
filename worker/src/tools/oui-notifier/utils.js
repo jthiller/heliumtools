@@ -22,6 +22,42 @@ export async function safeText(res) {
   }
 }
 
+/**
+ * Validate a webhook URL: must be http(s) and not point to private/reserved IP ranges.
+ * Returns the validated URL string, or null with an error message.
+ */
+export function validateWebhookUrl(urlString) {
+  let u;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return { url: null, error: "Webhook URL is not a valid URL." };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { url: null, error: "Webhook URL must be HTTP or HTTPS." };
+  }
+  const host = u.hostname.toLowerCase();
+  const isPrivateIPv4 = (ip) =>
+    /^127\./.test(ip) ||
+    /^10\./.test(ip) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ||
+    /^192\.168\./.test(ip) ||
+    /^169\.254\./.test(ip) ||
+    /^0\./.test(ip);
+  if (
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    host === "[::1]" ||
+    isPrivateIPv4(host) ||
+    /^fe[89ab][0-9a-f]*:/i.test(host) ||
+    /^f[cd][0-9a-f]{2}:/i.test(host) ||
+    (/^::ffff:/i.test(host) && isPrivateIPv4(host.substring(7)))
+  ) {
+    return { url: null, error: "Webhook URL must not point to a private or reserved address." };
+  }
+  return { url: u.toString(), error: null };
+}
+
 export function pickThreshold(daysRemaining, lastNotifiedLevel) {
   if (daysRemaining <= 1  && (lastNotifiedLevel === 0 || lastNotifiedLevel > 1))  return 1;
   if (daysRemaining <= 7  && (lastNotifiedLevel === 0 || lastNotifiedLevel > 7))  return 7;

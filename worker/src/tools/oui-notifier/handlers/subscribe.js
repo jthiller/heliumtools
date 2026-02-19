@@ -1,4 +1,4 @@
-import { isValidEmail, isLikelyBase58 } from "../utils.js";
+import { isValidEmail, isLikelyBase58, validateWebhookUrl } from "../utils.js";
 import { sendEmail } from "../services/email.js";
 import { verifyEmailTemplate } from "../templates/verify.js";
 import { jsonHeaders } from "../responseUtils.js";
@@ -35,30 +35,11 @@ export async function handleSubscribe(request, env) {
 
         let webhookUrl = null;
         if (webhookUrlRaw) {
-            try {
-                const u = new URL(webhookUrlRaw);
-                if (u.protocol !== "http:" && u.protocol !== "https:") {
-                    return new Response("Webhook URL must be HTTP or HTTPS.", { status: 400, headers: textHeaders });
-                }
-                // Block private/reserved IP ranges to prevent SSRF
-                const host = u.hostname.toLowerCase();
-                if (
-                    host === "localhost" ||
-                    host.endsWith(".local") ||
-                    host === "[::1]" ||
-                    /^127\./.test(host) ||
-                    /^10\./.test(host) ||
-                    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-                    /^192\.168\./.test(host) ||
-                    /^169\.254\./.test(host) ||
-                    /^0\./.test(host)
-                ) {
-                    return new Response("Webhook URL must not point to a private or reserved address.", { status: 400, headers: textHeaders });
-                }
-                webhookUrl = u.toString();
-            } catch {
-                return new Response("Webhook URL is not a valid URL.", { status: 400, headers: textHeaders });
+            const { url, error } = validateWebhookUrl(webhookUrlRaw);
+            if (error) {
+                return new Response(error, { status: 400, headers: textHeaders });
             }
+            webhookUrl = url;
         }
 
         const nowIso = new Date().toISOString();

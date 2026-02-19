@@ -5,12 +5,11 @@
  */
 export const classNames = (...classes) => classes.filter(Boolean).join(" ");
 
-/** Format as USD currency (e.g. "$1,234.56"), floored to avoid over-reporting */
+/** Format as USD currency (e.g. "$1,234.56") */
 export const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2,
-  roundingMode: "floor",
 });
 
 /** Format plain numbers with commas (e.g. "1,234,567") */

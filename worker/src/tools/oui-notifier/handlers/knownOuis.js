@@ -6,7 +6,7 @@ import {
     ZERO_BALANCE_DC,
     BURN_RATE_DAYS,
 } from "../config.js";
-import { okResponse } from "../responseUtils.js";
+import { jsonResponse } from "../../../lib/response.js";
 import { safeText } from "../utils.js";
 
 const KV_CACHE_KEY = "well-known-ouis";
@@ -87,10 +87,12 @@ function processOuiData(wellKnown, orgData, balanceSeries) {
         ? balanceSeries[balanceSeries.length - 1].balance_dc
         : null;
 
-    // Calculate days remaining
+    // Calculate days remaining using conservative (higher) burn rate
     const burn1dDC = burnRates.burn1d?.dc ?? null;
-    const daysRemaining = currentBalance != null && burn1dDC != null
-        ? calculateDaysRemaining(currentBalance, burn1dDC)
+    const burn30dDC = burnRates.burn30d?.dc ?? null;
+    const burnForDaysRemaining = Math.max(burn30dDC ?? 0, burn1dDC ?? 0) || null;
+    const daysRemaining = currentBalance != null && burnForDaysRemaining != null
+        ? calculateDaysRemaining(currentBalance, burnForDaysRemaining)
         : null;
 
     // Format days remaining
@@ -165,12 +167,12 @@ export async function handleKnownOuis(env) {
         // Sort by OUI number
         activeOuis.sort((a, b) => a.oui - b.oui);
 
-        return okResponse({
+        return jsonResponse({
             ouis: activeOuis,
             fetched_at: new Date().toISOString(),
         });
     } catch (err) {
         console.error("Error in /known-ouis", err);
-        return okResponse({ error: `Unable to fetch known OUIs: ${err.message}` }, 500);
+        return jsonResponse({ error: `Unable to fetch known OUIs: ${err.message}` }, 500);
     }
 }

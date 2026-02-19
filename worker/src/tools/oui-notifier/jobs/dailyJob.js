@@ -39,9 +39,6 @@ export async function runDailyJob(env) {
   try {
     await ensureOuiTables(env);
 
-    // Ensure the last_webhook_date column exists (migration may not have run)
-    await ensureWebhookDateColumn(env);
-
     // Step 1: Sync all OUIs and record balances (runs every 6 hours)
     // Use batched RPC fetch to avoid Cloudflare subrequest limits
     const escrowBalanceCache = new Map();
@@ -253,22 +250,22 @@ async function processSubscription(env, sub, escrowBalanceCache, todayDate, now)
 
   // --- STEP 6: Send THRESHOLD EMAIL (when threshold is crossed) ---
   if (burnForDaysRemaining <= 0) {
-    // No burn data, update balance and skip email
+    // No burn data, update balance and notification level (preserves top-up reset)
     await env.DB.prepare(
-      "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+      "UPDATE subscriptions SET last_balance_dc = ?, last_notified_level = ? WHERE id = ?"
     )
-      .bind(balanceDC, subId)
+      .bind(balanceDC, newLastNotifiedLevel, subId)
       .run();
     return;
   }
 
   const threshold = pickThreshold(daysRemaining, newLastNotifiedLevel);
   if (!threshold) {
-    // No threshold crossed, just update balance
+    // No threshold crossed, update balance and notification level (preserves top-up reset)
     await env.DB.prepare(
-      "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+      "UPDATE subscriptions SET last_balance_dc = ?, last_notified_level = ? WHERE id = ?"
     )
-      .bind(balanceDC, subId)
+      .bind(balanceDC, newLastNotifiedLevel, subId)
       .run();
     return;
   }
@@ -326,33 +323,19 @@ ${env.APP_BASE_URL || ""}
     } else {
       console.error(`Email sending failed for subscription ${subId}`);
       await env.DB.prepare(
-        "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+        "UPDATE subscriptions SET last_balance_dc = ?, last_notified_level = ? WHERE id = ?"
       )
-        .bind(balanceDC, subId)
+        .bind(balanceDC, newLastNotifiedLevel, subId)
         .run();
     }
   } catch (e) {
     console.error(`Error sending email for subscription ${subId}`, e);
     await env.DB.prepare(
-      "UPDATE subscriptions SET last_balance_dc = ? WHERE id = ?"
+      "UPDATE subscriptions SET last_balance_dc = ?, last_notified_level = ? WHERE id = ?"
     )
-      .bind(balanceDC, subId)
+      .bind(balanceDC, newLastNotifiedLevel, subId)
       .run();
   }
 }
 
-/**
- * Ensure the last_webhook_date column exists (handles case where migration hasn't run)
- */
-async function ensureWebhookDateColumn(env) {
-  try {
-    // Try to add the column - will fail silently if it already exists
-    await env.DB.prepare(
-      "ALTER TABLE subscriptions ADD COLUMN last_webhook_date TEXT"
-    ).run();
-    console.log("Added last_webhook_date column to subscriptions table");
-  } catch (err) {
-    // Column likely already exists, which is fine
-  }
-}
 

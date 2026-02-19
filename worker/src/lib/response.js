@@ -10,10 +10,3 @@ export function jsonResponse(body, status = 200) {
     headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 }
-
-export function textResponse(body, status = 200) {
-  return new Response(body, {
-    status,
-    headers: { "Content-Type": "text/plain", ...corsHeaders },
-  });
-}

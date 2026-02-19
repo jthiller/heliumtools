@@ -1,5 +1,4 @@
 import {
-    ensureOuiTables,
     getOuiByNumber,
     getOuiByEscrow,
     getOuiBalanceSeries,
@@ -12,31 +11,30 @@ import {
     ZERO_BALANCE_USD,
     BALANCE_HISTORY_DAYS,
 } from "../config.js";
-import { okResponse } from "../responseUtils.js";
+import { jsonResponse } from "../../../lib/response.js";
 
 export async function handleBalance(url, env) {
     const ouiParam = url.searchParams.get("oui");
     const escrowParam = url.searchParams.get("escrow");
     try {
-        await ensureOuiTables(env);
         let targetEscrow = escrowParam;
         let oui = ouiParam ? Number(ouiParam) : null;
         let org = null;
 
         if (ouiParam && (!Number.isInteger(oui) || oui < 0)) {
-            return okResponse({ error: "Invalid OUI" }, 400);
+            return jsonResponse({ error: "Invalid OUI" }, 400);
         }
 
         if (!targetEscrow && Number.isInteger(oui)) {
             org = await getOuiByNumber(env, oui);
             if (!org) {
-                return okResponse({ error: "OUI not found" }, 404);
+                return jsonResponse({ error: "OUI not found" }, 404);
             }
             targetEscrow = org.escrow;
         }
 
         if (!targetEscrow) {
-            return okResponse({ error: "escrow or oui is required" }, 400);
+            return jsonResponse({ error: "escrow or oui is required" }, 400);
         }
 
         if (!org) {
@@ -61,7 +59,7 @@ export async function handleBalance(url, env) {
         // Compute burn rates from timeseries
         const burnRates = computeBurnRates(series);
 
-        return okResponse({
+        return jsonResponse({
             oui,
             escrow: targetEscrow,
             balance_dc: balanceDC,
@@ -82,7 +80,7 @@ export async function handleBalance(url, env) {
         });
     } catch (err) {
         console.error("Error in /balance", err);
-        return okResponse({ error: `Unable to fetch balance: ${err.message}` }, 500);
+        return jsonResponse({ error: `Unable to fetch balance: ${err.message}` }, 500);
     }
 }
 
