@@ -213,14 +213,14 @@ export async function claimRewardsForToken(
     "set_current_rewards_wrapper_v1"
   );
 
-  const setRewardsIxs = oracleRewards.map((oracleReward, idx) => {
+  const setRewardsIxs = oracleRewards.map((oracleReward) => {
     const oracleKey = new PublicKey(oracleReward.oracleKey);
-    const args = encodeSetRewardsArgs(idx, oracleReward.currentRewards);
+    const args = encodeSetRewardsArgs(oracleReward.oracleIndex, oracleReward.currentRewards);
 
     return new TransactionInstruction({
       programId: REWARDS_ORACLE_PID,
       keys: [
-        { pubkey: oracleKey, isSigner: true, isWritable: true },
+        { pubkey: oracleKey, isSigner: true, isWritable: false },
         { pubkey: lazyDistributor, isSigner: false, isWritable: false },
         { pubkey: recipient, isSigner: false, isWritable: true },
         { pubkey: keyToAssetPk, isSigner: false, isWritable: false },
@@ -248,16 +248,12 @@ export async function claimRewardsForToken(
     const proof = assetProof.proof || [];
     const trimmedProof = proof.slice(0, Math.max(0, proof.length - canopyDepth));
 
-    dataHash = Buffer.from(
-      asset.compression.data_hash.startsWith("0x")
-        ? asset.compression.data_hash.slice(2)
-        : bs58.decode(asset.compression.data_hash)
-    );
-    creatorHash = Buffer.from(
-      asset.compression.creator_hash.startsWith("0x")
-        ? asset.compression.creator_hash.slice(2)
-        : bs58.decode(asset.compression.creator_hash)
-    );
+    dataHash = asset.compression.data_hash.startsWith("0x")
+      ? Buffer.from(asset.compression.data_hash.slice(2), "hex")
+      : Buffer.from(bs58.decode(asset.compression.data_hash));
+    creatorHash = asset.compression.creator_hash.startsWith("0x")
+      ? Buffer.from(asset.compression.creator_hash.slice(2), "hex")
+      : Buffer.from(bs58.decode(asset.compression.creator_hash));
     root = Buffer.from(bs58.decode(assetProof.root));
     leafIndex = asset.compression.leaf_id;
     proofAccounts = trimmedProof.map((p) => ({

@@ -59,8 +59,15 @@ export async function handleRewards(url, env, request) {
           cooldownHours: MAX_CLAIMS_PER_HOTSPOT_HOURS,
         };
       } catch {
-        // Legacy format (plain timestamp) — still on cooldown but no claim details
-        lastClaim = { claimedAt: lastClaimRaw, claims: [], cooldownHours: MAX_CLAIMS_PER_HOTSPOT_HOURS };
+        // Legacy format (plain timestamp or date string) — normalize to ISO
+        let claimedAt = lastClaimRaw;
+        if (/^\d+$/.test(lastClaimRaw)) {
+          const numeric = Number(lastClaimRaw);
+          const ms = lastClaimRaw.length <= 10 ? numeric * 1000 : numeric;
+          const date = new Date(ms);
+          if (!Number.isNaN(date.getTime())) claimedAt = date.toISOString();
+        }
+        lastClaim = { claimedAt, claims: [], cooldownHours: MAX_CLAIMS_PER_HOTSPOT_HOURS };
       }
     }
 

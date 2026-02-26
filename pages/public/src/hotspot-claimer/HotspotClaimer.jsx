@@ -547,7 +547,7 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
               if (fresh.lastClaim) setLastClaim(fresh.lastClaim);
             }
           } catch {}
-        }, 20000);
+        }, 10000);
       }
     } catch (err) {
       setClaimError(err.message);
@@ -938,7 +938,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
       if (result.success) {
         setClaimStates((prev) => ({ ...prev, [entityKey]: "claimed" }));
 
-        // Refresh rewards after 20s to reflect the claim on-chain
+        // Refresh rewards after delay to reflect the claim on-chain
         setTimeout(async () => {
           try {
             const fresh = await fetchRewards(entityKey);
@@ -946,7 +946,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
               setWalletRewards((prev) => ({ ...prev, [entityKey]: fresh.rewards }));
             }
           } catch {}
-        }, 20000);
+        }, 10000);
       } else {
         // API returned success:false with per-token claim errors
         const errorMsg = result.claims
@@ -959,7 +959,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
       return result;
     } catch (err) {
       const msg = err.message || "Claim failed";
-      const isRateLimit = /rate|too many|429|cooldown|recently/i.test(msg);
+      const isRateLimit = /rate|too many|429|cooldown|recently|daily.*limit|limit.*reached/i.test(msg);
       setClaimErrors((prev) => ({ ...prev, [entityKey]: msg }));
       setClaimStates((prev) => ({
         ...prev,

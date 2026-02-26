@@ -3,7 +3,7 @@
  */
 export function isValidEntityKey(key) {
   if (!key || typeof key !== "string") return false;
-  if (key.length < 20 || key.length > 600) return false;
+  if (key.length < 20 || key.length > 500) return false;
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(key);
 }
 

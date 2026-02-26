@@ -45,12 +45,12 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
 
   const ld = parseLazyDistributor(ldData);
 
-  // Query each oracle for lifetime rewards
+  // Query each oracle for lifetime rewards, preserving original index
   const oracleRewards = await Promise.all(
-    ld.oracles.map(async (o) => {
+    ld.oracles.map(async (o, index) => {
       try {
         const rewards = await queryOracle(o.url, assetId);
-        return { oracleKey: o.oracle, currentRewards: rewards };
+        return { oracleKey: o.oracle, currentRewards: rewards, oracleIndex: index };
       } catch {
         return null;
       }
@@ -115,6 +115,7 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
     oracleRewards: validRewards.map((r) => ({
       oracleKey: r.oracleKey.toBase58(),
       currentRewards: r.currentRewards,
+      oracleIndex: r.oracleIndex,
     })),
     lazyDistributor: lazyDistPDA.toBase58(),
     recipientKey: recipientPDA.toBase58(),
