@@ -22,12 +22,14 @@ const inputClassName =
   "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
 
 function isValidEntityKey(key) {
-  if (!key || key.length < 20) return false;
+  if (!key || typeof key !== "string") return false;
+  if (key.length < 20 || key.length > 500) return false;
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(key);
 }
 
 function isValidWalletAddress(addr) {
-  if (!addr || addr.length < 32 || addr.length > 44) return false;
+  if (!addr || typeof addr !== "string") return false;
+  if (addr.length < 32 || addr.length > 44) return false;
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(addr);
 }
 
@@ -620,12 +622,16 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
 // ─── Wallet Mode Components ───────────────────────────────────────────────────
 
 const REWARD_BATCH_SIZE = 10;
-const TOKEN_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
+const DEFAULT_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
+
+function getTokenDecimals(rewards, tokenKey) {
+  return rewards?.[tokenKey]?.decimals ?? DEFAULT_DECIMALS[tokenKey] ?? 6;
+}
 
 function getTokenAmount(rewards, tokenKey) {
   const r = rewards?.[tokenKey];
   if (!r || !r.pending || r.pending === "0") return 0;
-  return Number(r.pending) / Math.pow(10, TOKEN_DECIMALS[tokenKey] || 6);
+  return Number(r.pending) / Math.pow(10, getTokenDecimals(rewards, tokenKey));
 }
 
 function isHotspotClaimable(rewards) {
@@ -644,7 +650,7 @@ function WalletRewardCells({ entityKey, walletRewards, rewardsLoading }) {
             <Spinner className="h-3 w-3 text-slate-300 ml-auto" />
           ) : (
             <span className={`text-xs font-mono ${getTokenAmount(rewards, token) > 0 ? "text-slate-900" : "text-slate-300"}`}>
-              {rewards ? formatTokenAmount(rewards[token]?.pending, token === "hnt" ? 8 : 6) : "—"}
+              {rewards ? formatTokenAmount(rewards[token]?.pending, getTokenDecimals(rewards, token)) : "—"}
             </span>
           )}
         </td>
@@ -1211,9 +1217,9 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                     <div className="mt-2"><Spinner className="h-3 w-3 text-slate-300" /></div>
                   ) : rewards ? (
                     <div className="mt-2 flex gap-4 text-xs font-mono">
-                      {iot > 0 && <span className="text-slate-700">IOT <span className="font-semibold">{formatTokenAmount(rewards.iot?.pending, 6)}</span></span>}
-                      {mobile > 0 && <span className="text-slate-700">MOBILE <span className="font-semibold">{formatTokenAmount(rewards.mobile?.pending, 6)}</span></span>}
-                      {hnt > 0 && <span className="text-slate-700">HNT <span className="font-semibold">{formatTokenAmount(rewards.hnt?.pending, 8)}</span></span>}
+                      {iot > 0 && <span className="text-slate-700">IOT <span className="font-semibold">{formatTokenAmount(rewards.iot?.pending, getTokenDecimals(rewards, "iot"))}</span></span>}
+                      {mobile > 0 && <span className="text-slate-700">MOBILE <span className="font-semibold">{formatTokenAmount(rewards.mobile?.pending, getTokenDecimals(rewards, "mobile"))}</span></span>}
+                      {hnt > 0 && <span className="text-slate-700">HNT <span className="font-semibold">{formatTokenAmount(rewards.hnt?.pending, getTokenDecimals(rewards, "hnt"))}</span></span>}
                       {iot === 0 && mobile === 0 && hnt === 0 && <span className="text-slate-300">No rewards</span>}
                     </div>
                   ) : null}

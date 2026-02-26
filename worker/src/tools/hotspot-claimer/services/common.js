@@ -76,6 +76,7 @@ export function deriveOracleSigner() {
  * Returns a Buffer, or null if the account doesn't exist.
  */
 export async function fetchAccount(env, pubkey) {
+  if (!env.SOLANA_RPC_URL) throw new Error("SOLANA_RPC_URL is not configured");
   const address = pubkey instanceof PublicKey ? pubkey.toBase58() : pubkey;
   const response = await fetch(env.SOLANA_RPC_URL, {
     method: "POST",
@@ -96,6 +97,7 @@ export async function fetchAccount(env, pubkey) {
  * Fetch asset metadata via DAS API (Helius getAsset).
  */
 export async function fetchAsset(env, assetId) {
+  if (!env.SOLANA_RPC_URL) throw new Error("SOLANA_RPC_URL is not configured");
   const id = assetId instanceof PublicKey ? assetId.toBase58() : assetId;
   const resp = await fetch(env.SOLANA_RPC_URL, {
     method: "POST",

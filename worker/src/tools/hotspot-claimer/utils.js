@@ -8,6 +8,15 @@ export function isValidEntityKey(key) {
 }
 
 /**
+ * Validate a Solana wallet address (base58, 32-44 chars).
+ */
+export function isValidWalletAddress(addr) {
+  if (!addr || typeof addr !== "string") return false;
+  if (addr.length < 32 || addr.length > 44) return false;
+  return /^[1-9A-HJ-NP-Za-km-z]+$/.test(addr);
+}
+
+/**
  * Get today's date string in UTC (YYYY-MM-DD).
  */
 export function todayUTC() {

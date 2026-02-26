@@ -92,6 +92,26 @@ async function fetchEntityApiMetadata(keyToAssetKey) {
 }
 
 /**
+ * Extract network type and location info from Entity API data.
+ * Shared between single-hotspot and wallet lookups.
+ */
+export function extractEntityApiInfo(entityData) {
+  const networksAttr = entityData.attributes?.find(
+    (a) => a.trait_type === "networks"
+  );
+  const networks = networksAttr?.value || [];
+  const network = networks[0] || null;
+
+  const info =
+    entityData.hotspot_infos?.[network] ||
+    entityData.hotspot_infos?.iot ||
+    entityData.hotspot_infos?.mobile ||
+    {};
+
+  return { network, info };
+}
+
+/**
  * Extract hotspot info by merging Entity API and DAS metadata.
  * Entity API is authoritative for name, network, location, image.
  * DAS is authoritative for owner and compression info.
@@ -102,19 +122,7 @@ function extractHotspotInfo(asset, entityApiData) {
 
   // Entity API provides authoritative metadata
   if (entityApiData) {
-    // Network type from attributes
-    const networksAttr = entityApiData.attributes?.find(
-      (a) => a.trait_type === "networks"
-    );
-    const networks = networksAttr?.value || [];
-    const network = networks[0] || null;
-
-    // Location from hotspot_infos (keyed by network)
-    const info =
-      entityApiData.hotspot_infos?.[network] ||
-      entityApiData.hotspot_infos?.iot ||
-      entityApiData.hotspot_infos?.mobile ||
-      {};
+    const { network, info } = extractEntityApiInfo(entityApiData);
 
     return {
       owner,

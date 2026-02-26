@@ -5,16 +5,8 @@ import {
   MAX_RECIPIENT_INITS_PER_DAY,
   ENTITY_API_BASE,
 } from "../config.js";
-import { todayUTC } from "../utils.js";
-
-/**
- * Validate a Solana wallet address (base58, 32-44 chars).
- */
-function isValidWalletAddress(addr) {
-  if (!addr || typeof addr !== "string") return false;
-  if (addr.length < 32 || addr.length > 44) return false;
-  return /^[1-9A-HJ-NP-Za-km-z]+$/.test(addr);
-}
+import { isValidWalletAddress, todayUTC } from "../utils.js";
+import { extractEntityApiInfo } from "../services/entity.js";
 
 /**
  * GET /wallet?address=<solana-wallet>
@@ -59,17 +51,7 @@ export async function handleWallet(url, env, request) {
 
     // Map hotspots to the shape the frontend needs
     const hotspots = (data.hotspots || []).map((h) => {
-      const networksAttr = h.attributes?.find(
-        (a) => a.trait_type === "networks"
-      );
-      const networks = networksAttr?.value || [];
-      const network = networks[0] || null;
-
-      const info =
-        h.hotspot_infos?.[network] ||
-        h.hotspot_infos?.iot ||
-        h.hotspot_infos?.mobile ||
-        {};
+      const { network, info } = extractEntityApiInfo(h);
 
       return {
         entityKey: h.entity_key_str,

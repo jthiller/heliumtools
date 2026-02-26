@@ -1,16 +1,8 @@
+import { parseJson } from "./api.js";
+
 export const API_BASE = import.meta.env.DEV
   ? "/api/hotspot-claimer"
   : "https://api.heliumtools.org/hotspot-claimer";
-
-async function parseJson(res) {
-  const contentType = res.headers.get("Content-Type") || "";
-  if (!contentType.includes("application/json")) return null;
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
 
 export async function lookupHotspot(entityKey) {
   const query = new URLSearchParams({ entityKey });
