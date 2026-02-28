@@ -203,6 +203,21 @@ export async function handleClaim(request, env) {
       await recordClaim(env, entityKey, claims);
     }
 
+    console.log(JSON.stringify({
+      event: "claim",
+      entityKey,
+      owner: hotspot.owner,
+      network: hotspot.network,
+      name: hotspot.name,
+      success: anySuccess,
+      tokens: claims.map((c) => ({
+        token: c.token,
+        amount: c.amount || null,
+        tx: c.txSignature || null,
+        error: c.error || null,
+      })),
+    }));
+
     return jsonResponse({
       success: anySuccess,
       claims,

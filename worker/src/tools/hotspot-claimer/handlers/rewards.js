@@ -71,6 +71,17 @@ export async function handleRewards(url, env, request) {
       }
     }
 
+    console.log(JSON.stringify({
+      event: "reward_lookup",
+      entityKey,
+      owner: hotspot.owner,
+      network: hotspot.network,
+      name: hotspot.name,
+      iot: rewards.iot?.pending || "0",
+      mobile: rewards.mobile?.pending || "0",
+      hnt: rewards.hnt?.pending || "0",
+    }));
+
     return jsonResponse({
       ...hotspot,
       rewards,

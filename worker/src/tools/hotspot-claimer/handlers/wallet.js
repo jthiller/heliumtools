@@ -71,6 +71,12 @@ export async function handleWallet(url, env, request) {
     const initsToday = parseInt((await env.KV.get(initKey)) || "0", 10);
     const initsAvailable = initsToday < MAX_RECIPIENT_INITS_PER_DAY;
 
+    console.log(JSON.stringify({
+      event: "wallet_lookup",
+      wallet: address,
+      hotspots_count: hotspots.length,
+    }));
+
     return jsonResponse({
       owner: address,
       hotspots,
