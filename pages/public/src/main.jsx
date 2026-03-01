@@ -5,6 +5,7 @@ import Landing from "./pages/Landing.jsx";
 import L1MigrationTool from "./l1-migration/L1MigrationTool.jsx";
 import DcPurchaseTool from "./dc-purchase/DcPurchaseTool.jsx";
 import OrderStatus from "./dc-purchase/OrderStatus.jsx";
+import HotspotClaimer from "./hotspot-claimer/HotspotClaimer.jsx";
 import "../fonts/inter.css";
 import "./index.css";
 
@@ -16,6 +17,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route path="/l1-migration" element={<L1MigrationTool />} />
         <Route path="/dc-purchase" element={<DcPurchaseTool />} />
         <Route path="/dc-purchase/order/:orderId" element={<OrderStatus />} />
+        <Route path="/hotspot-claimer" element={<HotspotClaimer />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

@@ -6,6 +6,7 @@ import {
   handleDcPurchaseRequest,
   runDcPurchaseScheduled,
 } from "./tools/dc-purchase/index.js";
+import { handleHotspotClaimerRequest } from "./tools/hotspot-claimer/index.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -26,6 +27,13 @@ export default {
         subUrl.pathname = pathname.replace(/^\/dc-purchase/, "") || "/";
         const subRequest = new Request(subUrl.toString(), request);
         return await handleDcPurchaseRequest(subRequest, env, ctx);
+      }
+
+      if (pathname.startsWith("/hotspot-claimer/")) {
+        const subUrl = new URL(request.url);
+        subUrl.pathname = pathname.replace(/^\/hotspot-claimer/, "") || "/";
+        const subRequest = new Request(subUrl.toString(), request);
+        return await handleHotspotClaimerRequest(subRequest, env, ctx);
       }
 
       return new Response("Not found", { status: 404 });
