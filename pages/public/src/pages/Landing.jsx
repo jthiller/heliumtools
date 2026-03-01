@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, BanknotesIcon, BoltIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, BanknotesIcon, BoltIcon, MapPinIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 
 const sections = [
@@ -34,6 +34,14 @@ const sections = [
           "Look up any Hotspot or wallet, view pending IOT, MOBILE, and HNT rewards, and issue claim transactions to the designated recipient.",
         href: "/hotspot-claimer",
         icon: BoltIcon,
+        badge: "New",
+      },
+      {
+        name: "Hotspot Map",
+        description:
+          "Plot Helium IoT and Mobile hotspot locations on an interactive map. Search by entity keys or wallet address.",
+        href: "/hotspot-map",
+        icon: MapPinIcon,
         badge: "New",
       },
       {
