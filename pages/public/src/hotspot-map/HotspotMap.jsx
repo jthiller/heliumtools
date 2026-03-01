@@ -12,7 +12,6 @@ import {
   ClipboardDocumentIcon,
   ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/outline";
-import Header from "../components/Header.jsx";
 import { resolveLocations, fetchWalletHotspots } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
 
@@ -31,6 +30,9 @@ const INITIAL_VIEW = {
 };
 
 const RESOLVE_CHUNK_SIZE = 500;
+
+const INPUT_CLASS =
+  "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
 
 // -- Validation --
 
@@ -266,12 +268,13 @@ function DetailCard({ hotspot, onClose }) {
   );
 }
 
-function MapTooltip({ hotspot, x, y }) {
+function MapTooltip({ hotspot, tooltipRef, initialPos }) {
   if (!hotspot) return null;
   return (
     <div
+      ref={tooltipRef}
       className="pointer-events-none absolute z-50 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg"
-      style={{ left: x + 12, top: y - 12 }}
+      style={{ left: initialPos.x + 12, top: initialPos.y - 12 }}
     >
       <div className="flex items-center gap-2">
         <p className="text-sm font-medium text-slate-900">
@@ -441,14 +444,15 @@ export default function HotspotMap() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState(null);
   const [selectedHotspot, setSelectedHotspot] = useState(null);
-  const [hoverInfo, setHoverInfo] = useState(null);
+  const [hoveredHotspot, setHoveredHotspot] = useState(null);
+  const hoverPosRef = useRef({ x: 0, y: 0 });
+  const tooltipRef = useRef(null);
   const [networkFilter, setNetworkFilter] = useState("all");
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [walletResults, setWalletResults] = useState(null);
   const [walletSelected, setWalletSelected] = useState(new Set());
   const [walletLabel, setWalletLabel] = useState("");
   const walletCountRef = useRef(0);
-  const deckRef = useRef(null);
 
   const displayHotspots = useMemo(() => {
     if (networkFilter === "all") return hotspots;
@@ -461,8 +465,11 @@ export default function HotspotMap() {
   );
 
   const stats = useMemo(() => {
-    const iot = hotspots.filter((h) => h.network === "iot").length;
-    const mobile = hotspots.filter((h) => h.network === "mobile").length;
+    let iot = 0, mobile = 0;
+    for (const h of hotspots) {
+      if (h.network === "iot") iot++;
+      else if (h.network === "mobile") mobile++;
+    }
     return { iot, mobile, total: hotspots.length };
   }, [hotspots]);
 
@@ -693,14 +700,18 @@ export default function HotspotMap() {
 
   const onHover = useCallback((info) => {
     if (info.object) {
-      setHoverInfo({ hotspot: info.object, x: info.x, y: info.y });
+      hoverPosRef.current = { x: info.x, y: info.y };
+      // Update position via DOM ref to avoid re-render on every mouse move
+      if (tooltipRef.current) {
+        tooltipRef.current.style.left = `${info.x + 12}px`;
+        tooltipRef.current.style.top = `${info.y - 12}px`;
+      }
+      // Only trigger re-render when the hovered object changes
+      setHoveredHotspot((prev) => (prev === info.object ? prev : info.object));
     } else {
-      setHoverInfo(null);
+      setHoveredHotspot(null);
     }
   }, []);
-
-  const inputClassName =
-    "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
 
   const hasHotspots = hotspots.length > 0;
 
@@ -747,7 +758,6 @@ export default function HotspotMap() {
       <div className="flex-1 relative overflow-hidden">
         {/* Map fills entire area */}
         <DeckGL
-          ref={deckRef}
           viewState={viewState}
           onViewStateChange={({ viewState: vs }) => setViewState(vs)}
           layers={layers}
@@ -761,11 +771,11 @@ export default function HotspotMap() {
         </DeckGL>
 
         {/* Hover tooltip */}
-        {hoverInfo && (
+        {hoveredHotspot && (
           <MapTooltip
-            hotspot={hoverInfo.hotspot}
-            x={hoverInfo.x}
-            y={hoverInfo.y}
+            hotspot={hoveredHotspot}
+            tooltipRef={tooltipRef}
+            initialPos={hoverPosRef.current}
           />
         )}
 
@@ -796,7 +806,7 @@ export default function HotspotMap() {
                       <textarea
                         value={keysInput}
                         onChange={(e) => setKeysInput(e.target.value)}
-                        className={`${inputClassName} resize-none font-mono text-xs`}
+                        className={`${INPUT_CLASS} resize-none font-mono text-xs`}
                         rows={3}
                         placeholder={"112DN41Qw6YACUSc2q57vKH...\n143cUvMpimEbKHyjBXMDLWZ...\n11hbFBz7v4V8hfjoPT5dQrS..."}
                         disabled={resolving}
@@ -833,7 +843,7 @@ export default function HotspotMap() {
                         type="text"
                         value={walletInput}
                         onChange={(e) => setWalletInput(e.target.value)}
-                        className={`${inputClassName} font-mono text-xs`}
+                        className={`${INPUT_CLASS} font-mono text-xs`}
                         placeholder="Af2uuGb4bis8KrfbDoyZevHPoQDBf4vNBNVyG5XfW2m"
                         disabled={walletLoading || resolving}
                         onKeyDown={(e) => {
@@ -928,7 +938,7 @@ export default function HotspotMap() {
               <div className="flex-1 overflow-y-auto max-h-[340px]">
                 {displayHotspots.map((hotspot) => (
                   <HotspotListRow
-                    key={hotspot.entityKey}
+                    key={hotspotId(hotspot)}
                     hotspot={hotspot}
                     isSelected={selectedHotspot === hotspot.entityKey}
                     onClick={() => flyToHotspot(hotspot)}

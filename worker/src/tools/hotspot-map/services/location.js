@@ -1,18 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { RPC_BATCH_SIZE } from "../config.js";
+import { titleCase } from "../utils.js";
 import { deriveIotInfoPDA, deriveMobileInfoPDA, hashEntityKey } from "./pda.js";
-
-/**
- * Title-case a kebab-case hotspot name.
- * "spare-pewter-toad" → "Spare Pewter Toad"
- */
-function titleCase(name) {
-  if (!name) return null;
-  return name
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
 
 /**
  * Batch fetch asset names from DAS using getAssetBatch.

@@ -1,16 +1,9 @@
 import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../hotspot-claimer/services/rateLimit.js";
+import { isValidWalletAddress } from "../../hotspot-claimer/utils.js";
 import { MAX_WALLET_LOOKUPS_PER_MINUTE } from "../config.js";
 import { getWalletHotspots } from "../services/walletLookup.js";
 import { resolveNetworks } from "../services/location.js";
-
-const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
-
-function isValidWalletAddress(addr) {
-  if (!addr || typeof addr !== "string") return false;
-  if (addr.length < 32 || addr.length > 44) return false;
-  return BASE58_RE.test(addr);
-}
 
 /**
  * GET /wallet?address=<solana-address>

@@ -1,15 +1,8 @@
 import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../hotspot-claimer/services/rateLimit.js";
+import { isValidEntityKey } from "../../hotspot-claimer/utils.js";
 import { MAX_RESOLVE_PER_MINUTE, MAX_ENTITY_KEYS_PER_REQUEST } from "../config.js";
 import { resolveLocations } from "../services/location.js";
-
-const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
-
-function isValidEntityKey(key) {
-  if (!key || typeof key !== "string") return false;
-  if (key.length < 20 || key.length > 500) return false;
-  return BASE58_RE.test(key);
-}
 
 /**
  * POST /resolve

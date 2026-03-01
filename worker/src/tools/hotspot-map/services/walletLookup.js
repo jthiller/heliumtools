@@ -1,17 +1,7 @@
+import { titleCase } from "../utils.js";
+
 const MAX_PAGES = 5;
 const PAGE_SIZE = 1000;
-
-/**
- * Title-case a kebab-case hotspot name.
- * "spare-pewter-toad" → "Spare Pewter Toad"
- */
-function titleCase(name) {
-  if (!name) return null;
-  return name
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
 
 /**
  * Fetch all Helium hotspot NFTs owned by a wallet using DAS getAssetsByOwner.
