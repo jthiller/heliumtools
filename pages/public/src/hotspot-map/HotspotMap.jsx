@@ -915,6 +915,13 @@ export default function HotspotMap() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                     Hotspots
                   </span>
+                  <button
+                    onClick={() => fitBounds(hotspots.filter((h) => h.coords))}
+                    className="text-[10px] text-slate-400 hover:text-slate-600 transition"
+                    title="Fit map to all Hotspots"
+                  >
+                    Fit all
+                  </button>
                   <div className="flex items-center gap-1 ml-auto">
                     {[
                       { key: "all", label: `All ${stats.total}` },
