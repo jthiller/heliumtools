@@ -597,8 +597,7 @@ export default function HotspotMap() {
       }
 
       // Populate preview instead of resolving immediately
-      walletCountRef.current += 1;
-      const defaultLabel = `Wallet ${walletCountRef.current}`;
+      const defaultLabel = `Wallet ${walletCountRef.current + 1}`;
       setWalletLabel(defaultLabel);
       setWalletResults(result.hotspots);
 
@@ -619,6 +618,7 @@ export default function HotspotMap() {
   const handleAddToMap = useCallback(async () => {
     if (!walletResults || walletSelected.size === 0) return;
 
+    walletCountRef.current += 1;
     const selectedItems = walletResults.filter((h) => walletSelected.has(hotspotId(h)));
     const entityKeys = [...new Set(selectedItems.map((h) => h.entityKey))];
     const nameMap = new Map(selectedItems.map((h) => [h.entityKey, h.name]));
