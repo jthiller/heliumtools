@@ -185,17 +185,49 @@ function parseMobileInfo(data) {
   offset += 8;
 
   // device_type enum
-  const DEVICE_TYPES = ["cbrs", "wifiIndoor", "wifiOutdoor"];
+  const DEVICE_TYPES = ["cbrs", "wifiIndoor", "wifiOutdoor", "wifiDataOnly"];
   const deviceTypeIndex = data.readUInt8(offset);
   const deviceType = DEVICE_TYPES[deviceTypeIndex] || `unknown(${deviceTypeIndex})`;
+  offset += 1;
+
+  // deployment_info: Option<MobileDeploymentInfoV0>
+  let elevation = null;
+  let gain = null;
+  let azimuth = null;
+  let mechanicalDownTilt = null;
+  let electricalDownTilt = null;
+
+  if (offset < data.length) {
+    const deployTag = data.readUInt8(offset);
+    offset += 1;
+    if (deployTag === 1 && offset < data.length) {
+      const variant = data.readUInt8(offset);
+      offset += 1;
+      if (variant === 0 && offset + 14 <= data.length) {
+        // WifiInfoV0: antenna(u32), elevation(i32), azimuth(u16),
+        //             mechanical_down_tilt(u16), electrical_down_tilt(u16)
+        offset += 4; // antenna — skip
+        elevation = data.readInt32LE(offset);
+        offset += 4;
+        azimuth = data.readUInt16LE(offset);
+        offset += 2;
+        mechanicalDownTilt = data.readUInt16LE(offset);
+        offset += 2;
+        electricalDownTilt = data.readUInt16LE(offset);
+      }
+    }
+  }
 
   return {
     network: "mobile",
     location,
-    elevation: null,
-    gain: null,
+    elevation,
+    gain,
     asset,
     deviceType,
+    azimuth,
+    mechanicalDownTilt,
+    electricalDownTilt,
   };
 }
 

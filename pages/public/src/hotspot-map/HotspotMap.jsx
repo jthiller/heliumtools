@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import MapGL, { NavigationControl } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
-import { ScatterplotLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, PolygonLayer } from "@deck.gl/layers";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   MagnifyingGlassIcon,
@@ -34,6 +34,40 @@ const RESOLVE_CHUNK_SIZE = 500;
 
 const INPUT_CLASS =
   "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
+
+const COVERAGE_RADIUS_FT = 300;
+const COVERAGE_RADIUS_M = COVERAGE_RADIUS_FT * 0.3048;
+const COVERAGE_ARC_DEG = 120;
+
+/**
+ * Build a sector polygon (fan shape) in [lng, lat] coords.
+ * azimuthDeg: center direction in degrees (0 = north, clockwise).
+ * Returns array of [lng, lat] forming a closed polygon.
+ */
+function buildSectorPolygon(lat, lng, radiusM, azimuthDeg, arcDeg, steps = 24) {
+  const toRad = Math.PI / 180;
+  const R = 6371000; // Earth radius in meters
+  const startBearing = azimuthDeg - arcDeg / 2;
+  const points = [[lng, lat]]; // center
+  for (let i = 0; i <= steps; i++) {
+    const bearing = (startBearing + (arcDeg * i) / steps) * toRad;
+    const lat1 = lat * toRad;
+    const lng1 = lng * toRad;
+    const d = radiusM / R;
+    const lat2 = Math.asin(
+      Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(bearing)
+    );
+    const lng2 =
+      lng1 +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(d) * Math.cos(lat1),
+        Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+      );
+    points.push([lng2 / toRad, lat2 / toRad]);
+  }
+  points.push([lng, lat]); // close
+  return points;
+}
 
 // -- Validation --
 
@@ -173,24 +207,93 @@ function HotspotListRow({ hotspot, isSelected, onClick }) {
   );
 }
 
-function DetailCard({ hotspot, onClose }) {
+function HotspotDetail({ hotspot }) {
   const [copied, setCopied] = useState(false);
-  if (!hotspot) return null;
-  const hasCoords = !!hotspot.coords;
-  const h3Hex = hotspot.location
-    ? BigInt(hotspot.location).toString(16)
+
+  return (
+    <div className="px-4 py-3 space-y-3">
+      {/* Name + badges */}
+      <div className="flex items-center gap-2 min-w-0">
+        <h3 className="text-sm font-semibold text-slate-900 truncate">
+          {hotspot.name || truncateKey(hotspot.entityKey, 8)}
+        </h3>
+        <NetworkBadge network={hotspot.network} />
+        <LabelBadge label={hotspot.label} />
+      </div>
+
+      {/* Entity key — single row */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-slate-400 shrink-0">Key</span>
+        <div className="flex-1 min-w-0">
+          <MiddleEllipsis>
+            <span className="text-xs font-mono text-slate-600" title={hotspot.entityKey}>{hotspot.entityKey}</span>
+          </MiddleEllipsis>
+        </div>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(hotspot.entityKey);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          className="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+          title="Copy entity key"
+        >
+          {copied
+            ? <ClipboardDocumentCheckIcon className="h-3.5 w-3.5 text-emerald-500" />
+            : <ClipboardDocumentIcon className="h-3.5 w-3.5" />
+          }
+        </button>
+      </div>
+
+      {/* Status row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        {hotspot.elevation != null && (
+          <span>Elevation: <strong className="text-slate-700">{hotspot.elevation}m</strong></span>
+        )}
+        {hotspot.gain != null && (
+          <span>Gain: <strong className="text-slate-700">{(hotspot.gain / 10).toFixed(1)} dBi</strong></span>
+        )}
+        {hotspot.azimuth != null && (
+          <span>Azimuth: <strong className="text-slate-700">{hotspot.azimuth}°</strong></span>
+        )}
+        {hotspot.mechanicalDownTilt != null && hotspot.mechanicalDownTilt !== 0 && (
+          <span>Mech. tilt: <strong className="text-slate-700">{hotspot.mechanicalDownTilt}°</strong></span>
+        )}
+        {hotspot.electricalDownTilt != null && hotspot.electricalDownTilt !== 0 && (
+          <span>Elec. tilt: <strong className="text-slate-700">{hotspot.electricalDownTilt}°</strong></span>
+        )}
+        {hotspot.deviceType && (
+          <span className="text-slate-400">{hotspot.deviceType}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailCard({ hotspots, onClose }) {
+  if (!hotspots || hotspots.length === 0) return null;
+  const primary = hotspots[0];
+  const hasCoords = !!primary.coords;
+  const h3Hex = primary.location
+    ? BigInt(primary.location).toString(16)
     : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden">
-      {/* Header */}
+    <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden max-h-[60vh] overflow-y-auto">
+      {/* Shared location header */}
       <div className="flex items-start justify-between px-4 py-3 border-b border-slate-100">
-        <div className="flex items-center gap-2 min-w-0">
-          <h3 className="text-sm font-semibold text-slate-900 truncate">
-            {hotspot.name || truncateKey(hotspot.entityKey, 8)}
-          </h3>
-          <NetworkBadge network={hotspot.network} />
-          <LabelBadge label={hotspot.label} />
+        <div className="space-y-1.5">
+          {hasCoords && (
+            <div className="flex items-center gap-2">
+              <MapPinIcon className="h-4 w-4 text-slate-400 shrink-0" />
+              <p className="text-sm font-mono text-slate-900">
+                {primary.coords[0].toFixed(4)},  {primary.coords[1].toFixed(4)}
+              </p>
+            </div>
+          )}
+          {h3Hex && (
+            <p className="text-[10px] font-mono text-slate-400 ml-6">{h3Hex}</p>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -200,73 +303,12 @@ function DetailCard({ hotspot, onClose }) {
         </button>
       </div>
 
-      {/* Details */}
-      <div className="px-4 py-3 space-y-3">
-        {hasCoords && (
-          <div className="flex items-start gap-2.5">
-            <MapPinIcon className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs text-slate-500">Coordinates</p>
-              <p className="text-sm font-mono text-slate-900">
-                {hotspot.coords[0].toFixed(4)},  {hotspot.coords[1].toFixed(4)}
-              </p>
-            </div>
-          </div>
-        )}
-        {h3Hex && (
-          <div className="flex items-start gap-2.5">
-            <svg className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="8" cy="8" r="6" />
-            </svg>
-            <div>
-              <p className="text-xs text-slate-500">H3 Index (res 12)</p>
-              <p className="text-sm font-mono text-slate-900">{h3Hex}</p>
-            </div>
-          </div>
-        )}
-        <div className="flex items-start gap-2.5">
-          <svg className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M4 8h8M8 4v8" strokeLinecap="round" />
-          </svg>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-slate-500">Entity Key</p>
-            <div className="flex items-center gap-1.5">
-              <div className="flex-1 min-w-0">
-                <MiddleEllipsis>
-                  <span className="text-sm font-mono text-slate-900" title={hotspot.entityKey}>{hotspot.entityKey}</span>
-                </MiddleEllipsis>
-              </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(hotspot.entityKey);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
-                title="Copy entity key"
-              >
-                {copied
-                  ? <ClipboardDocumentCheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-                  : <ClipboardDocumentIcon className="h-3.5 w-3.5" />
-                }
-              </button>
-            </div>
-          </div>
+      {/* Per-Hotspot sections */}
+      {hotspots.map((h, i) => (
+        <div key={hotspotId(h)} className={i > 0 ? "border-t border-slate-100" : ""}>
+          <HotspotDetail hotspot={h} />
         </div>
-
-        {/* Status row */}
-        <div className="flex items-center gap-4 pt-1 text-xs text-slate-500">
-          {hotspot.elevation != null && (
-            <span>Elevation: <strong className="text-slate-700">{hotspot.elevation}m</strong></span>
-          )}
-          {hotspot.gain != null && (
-            <span>Gain: <strong className="text-slate-700">{(hotspot.gain / 10).toFixed(1)} dBi</strong></span>
-          )}
-          {hotspot.deviceType && (
-            <span className="text-slate-400">{hotspot.deviceType}</span>
-          )}
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -457,6 +499,14 @@ export default function HotspotMap() {
   const [walletLabel, setWalletLabel] = useState("");
   const walletCountRef = useRef(0);
 
+  // Pulse animation for selected Hotspot (~30fps)
+  const [pulseT, setPulseT] = useState(0);
+  useEffect(() => {
+    if (!selectedHotspot) return;
+    const interval = setInterval(() => setPulseT(Date.now()), 33);
+    return () => clearInterval(interval);
+  }, [selectedHotspot]);
+
   const displayHotspots = useMemo(() => {
     if (networkFilter === "all") return hotspots;
     return hotspots.filter((h) => h.network === networkFilter);
@@ -476,10 +526,14 @@ export default function HotspotMap() {
     return { iot, mobile, total: hotspots.length };
   }, [hotspots]);
 
-  const selectedHotspotData = useMemo(
-    () => hotspots.find((h) => h.entityKey === selectedHotspot) || null,
-    [hotspots, selectedHotspot]
-  );
+  // All Hotspots sharing the same H3 location as the selected one
+  const selectedGroup = useMemo(() => {
+    if (!selectedHotspot) return [];
+    const primary = hotspots.find((h) => h.entityKey === selectedHotspot);
+    if (!primary) return [];
+    if (!primary.location) return [primary];
+    return hotspots.filter((h) => h.location === primary.location);
+  }, [hotspots, selectedHotspot]);
 
   // Fit map to Hotspot bounds
   const fitBounds = useCallback((hotspotsWithCoords) => {
@@ -530,6 +584,9 @@ export default function HotspotMap() {
               elevation: h.elevation,
               gain: h.gain,
               deviceType: h.deviceType,
+              azimuth: h.azimuth,
+              mechanicalDownTilt: h.mechanicalDownTilt,
+              electricalDownTilt: h.electricalDownTilt,
               location: h.location,
               coords,
               name: nameMap?.get(h.entityKey) || h.name || null,
@@ -665,21 +722,60 @@ export default function HotspotMap() {
     setViewState(INITIAL_VIEW);
   }, []);
 
-  // Deck.gl layer
-  const layers = useMemo(
-    () => [
+  // Deck.gl layers
+  const selectedEntityKeys = useMemo(
+    () => new Set(selectedGroup.map((h) => h.entityKey)),
+    [selectedGroup]
+  );
+
+  const selectedData = useMemo(
+    () => mappableHotspots.filter((d) => selectedEntityKeys.has(d.entityKey)),
+    [mappableHotspots, selectedEntityKeys]
+  );
+
+  // Coverage sector geometry — only recomputed when selection changes, not every frame
+  const sectorData = useMemo(
+    () =>
+      selectedData
+        .filter((d) => d.deviceType === "wifiOutdoor" && d.azimuth != null && d.coords)
+        .map((h) => ({
+          polygon: buildSectorPolygon(h.coords[0], h.coords[1], COVERAGE_RADIUS_M, h.azimuth, COVERAGE_ARC_DEG),
+          primary: h.entityKey === selectedHotspot,
+        })),
+    [selectedData, selectedHotspot]
+  );
+
+  // Static layers — only rebuilt when data or selection changes
+  const staticLayers = useMemo(() => {
+    const result = [];
+
+    // Coverage sectors
+    if (sectorData.length > 0) {
+      result.push(
+        new PolygonLayer({
+          id: "coverage",
+          data: sectorData,
+          getPolygon: (d) => d.polygon,
+          getFillColor: (d) => d.primary ? [139, 92, 246, 60] : [139, 92, 246, 20],
+          getLineColor: (d) => d.primary ? [139, 92, 246, 140] : [139, 92, 246, 60],
+          lineWidthMinPixels: 1,
+          filled: true,
+          stroked: true,
+        })
+      );
+    }
+
+    // Main Hotspot dots
+    result.push(
       new ScatterplotLayer({
         id: "hotspots",
         data: mappableHotspots,
         getPosition: (d) => [d.coords[1], d.coords[0]],
         getFillColor: (d) =>
-          d.entityKey === selectedHotspot
-            ? [14, 165, 233]
-            : d.network === "iot"
-              ? IOT_COLOR
-              : MOBILE_COLOR,
-        getLineColor: [255, 255, 255],
-        getRadius: (d) => (d.entityKey === selectedHotspot ? 8 : 5),
+          d.network === "iot" ? IOT_COLOR : MOBILE_COLOR,
+        getLineColor: (d) =>
+          selectedEntityKeys.has(d.entityKey) ? [255, 255, 255] : [255, 255, 255, 180],
+        getRadius: (d) => (selectedEntityKeys.has(d.entityKey) ? 7 : 5),
         radiusMinPixels: 4,
         radiusMaxPixels: 12,
         lineWidthMinPixels: 1.5,
@@ -693,12 +789,42 @@ export default function HotspotMap() {
           }
         },
         updateTriggers: {
-          getFillColor: [selectedHotspot],
-          getRadius: [selectedHotspot],
+          getLineColor: [selectedEntityKeys],
+          getRadius: [selectedEntityKeys],
         },
+      })
+    );
+
+    return result;
+  }, [mappableHotspots, selectedEntityKeys, sectorData]);
+
+  // Pulse layer — rebuilt every frame (~30fps), kept separate from static layers
+  const pulse = selectedHotspot ? (pulseT % 1500) / 1500 : 0;
+  const pulseLayer = useMemo(() => {
+    if (selectedData.length === 0) return [];
+    const opacity = Math.round(160 * (1 - pulse));
+    const color = selectedData[0].network === "iot"
+      ? [16, 185, 129, opacity]
+      : [139, 92, 246, opacity];
+    return [
+      new ScatterplotLayer({
+        id: "pulse",
+        data: selectedData,
+        getPosition: (d) => [d.coords[1], d.coords[0]],
+        getFillColor: [0, 0, 0, 0],
+        getLineColor: color,
+        getRadius: 6 + 18 * pulse,
+        radiusUnits: "pixels",
+        lineWidthMinPixels: 2,
+        stroked: true,
+        filled: false,
       }),
-    ],
-    [mappableHotspots, selectedHotspot]
+    ];
+  }, [selectedData, pulse]);
+
+  const layers = useMemo(
+    () => [...pulseLayer, ...staticLayers],
+    [pulseLayer, staticLayers]
   );
 
   const onHover = useCallback((info) => {
@@ -785,17 +911,17 @@ export default function HotspotMap() {
         {/* Floating sidebar panels */}
         <div className="absolute top-4 left-4 bottom-4 w-[380px] flex flex-col gap-3 pointer-events-none z-10">
           {/* Detail card (when Hotspot selected) */}
-          {selectedHotspotData && (
+          {selectedGroup.length > 0 && (
             <div className="pointer-events-auto">
               <DetailCard
-                hotspot={selectedHotspotData}
+                hotspots={selectedGroup}
                 onClose={() => setSelectedHotspot(null)}
               />
             </div>
           )}
 
           {/* Input Panel (when no Hotspot selected and no wallet preview) */}
-          {!selectedHotspotData && !walletResults && (
+          {selectedGroup.length === 0 && !walletResults && (
             <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden">
               <div className="px-4 pt-3 pb-4 space-y-3">
                 <TabToggle mode={mode} onChange={setMode} />
@@ -887,7 +1013,7 @@ export default function HotspotMap() {
           )}
 
           {/* Wallet Preview Panel */}
-          {walletResults && !selectedHotspotData && (
+          {walletResults && selectedGroup.length === 0 && (
             <WalletPreview
               results={walletResults}
               selected={walletSelected}
