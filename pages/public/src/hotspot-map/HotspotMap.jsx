@@ -12,6 +12,7 @@ import {
   ClipboardDocumentIcon,
   ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/outline";
+import MiddleEllipsis from "react-middle-ellipsis";
 import { resolveLocations, fetchWalletHotspots } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
 
@@ -230,9 +231,11 @@ function DetailCard({ hotspot, onClose }) {
           <div className="flex-1 min-w-0">
             <p className="text-xs text-slate-500">Entity Key</p>
             <div className="flex items-center gap-1.5">
-              <p className="text-sm font-mono text-slate-900 break-all">
-                {truncateKey(hotspot.entityKey, 16)}
-              </p>
+              <div className="flex-1 min-w-0">
+                <MiddleEllipsis>
+                  <span className="text-sm font-mono text-slate-900" title={hotspot.entityKey}>{hotspot.entityKey}</span>
+                </MiddleEllipsis>
+              </div>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(hotspot.entityKey);
