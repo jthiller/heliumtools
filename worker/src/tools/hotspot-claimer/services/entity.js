@@ -97,7 +97,7 @@ async function fetchEntityApiMetadata(keyToAssetKey) {
  */
 export function extractEntityApiInfo(entityData) {
   const networksAttr = entityData.attributes?.find(
-    (a) => a.trait_type === "networks"
+    (a) => a?.trait_type === "networks"
   );
   const networks = networksAttr?.value || [];
   const network = networks[0] || null;
