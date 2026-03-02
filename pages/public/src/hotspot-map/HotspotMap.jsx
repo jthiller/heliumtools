@@ -279,7 +279,7 @@ function DetailCard({ hotspots, onClose }) {
     : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden max-h-[60vh] overflow-y-auto">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden max-h-[40vh] md:max-h-[60vh] overflow-y-auto">
       {/* Shared location header */}
       <div className="flex items-start justify-between px-4 py-3 border-b border-slate-100">
         <div className="space-y-1.5">
@@ -499,6 +499,18 @@ export default function HotspotMap() {
   const [walletLabel, setWalletLabel] = useState("");
   const walletCountRef = useRef(0);
 
+  // Mobile responsive state
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mql.matches);
+    const handler = (e) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
   // Pulse animation for selected Hotspot (~30fps)
   const [pulseT, setPulseT] = useState(0);
   useEffect(() => {
@@ -610,6 +622,7 @@ export default function HotspotMap() {
       } finally {
         setResolving(false);
         setProgress({ done: 0, total: 0 });
+        setMobileExpanded(false);
       }
     },
     [fitBounds]
@@ -697,6 +710,7 @@ export default function HotspotMap() {
 
   const flyToHotspot = useCallback((hotspot) => {
     setSelectedHotspot(hotspot.entityKey);
+    setMobileExpanded(true);
     if (hotspot.coords) {
       setViewState((prev) => ({
         ...prev,
@@ -720,6 +734,7 @@ export default function HotspotMap() {
     walletCountRef.current = 0;
     setNetworkFilter("all");
     setViewState(INITIAL_VIEW);
+    setMobileExpanded(false);
   }, []);
 
   // Deck.gl layers
@@ -786,6 +801,7 @@ export default function HotspotMap() {
         onClick: (info) => {
           if (info.object) {
             setSelectedHotspot(info.object.entityKey);
+            setMobileExpanded(true);
           }
         },
         updateTriggers: {
@@ -848,19 +864,19 @@ export default function HotspotMap() {
     <div className="flex flex-col h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center justify-between px-6 py-4">
-          <a href="/" className="flex items-center gap-3 text-slate-900 hover:text-slate-700">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white">
+        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4">
+          <a href="/" className="flex items-center gap-2 md:gap-3 text-slate-900 hover:text-slate-700">
+            <div className="flex h-8 w-8 md:h-9 md:w-9 items-center justify-center rounded-lg bg-slate-900 text-xs md:text-sm font-semibold text-white">
               HT
             </div>
             <div className="leading-tight">
-              <p className="text-base font-semibold">Helium Tools</p>
-              <p className="text-xs text-slate-500">Operator utilities</p>
+              <p className="text-sm md:text-base font-semibold">Helium Tools</p>
+              <p className="text-xs text-slate-500 hidden md:block">Operator utilities</p>
             </div>
           </a>
           <div className="flex items-center gap-4">
             {hasHotspots && (
-              <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   {stats.iot} IoT
@@ -869,7 +885,7 @@ export default function HotspotMap() {
                   <span className="h-2 w-2 rounded-full bg-violet-500" />
                   {stats.mobile} Mobile
                 </span>
-                <span className="font-semibold text-slate-900">
+                <span className="font-semibold text-slate-900 hidden md:inline">
                   {stats.total} hotspots
                 </span>
               </div>
@@ -895,12 +911,12 @@ export default function HotspotMap() {
           getCursor={({ isHovering }) => (isHovering ? "pointer" : "grab")}
         >
           <MapGL mapStyle={BASEMAP_STYLE}>
-            <NavigationControl position="top-right" />
+            <NavigationControl position={isMobile ? "top-left" : "top-right"} />
           </MapGL>
         </DeckGL>
 
-        {/* Hover tooltip */}
-        {hoveredHotspot && (
+        {/* Hover tooltip (desktop only — no hover on touch) */}
+        {!isMobile && hoveredHotspot && (
           <MapTooltip
             hotspot={hoveredHotspot}
             tooltipRef={tooltipRef}
@@ -908,112 +924,114 @@ export default function HotspotMap() {
           />
         )}
 
-        {/* Floating sidebar panels */}
-        <div className="absolute top-4 left-4 bottom-4 w-[380px] flex flex-col gap-3 pointer-events-none z-10">
-          {/* Detail card (when Hotspot selected) */}
-          {selectedGroup.length > 0 && (
-            <div className="pointer-events-auto">
-              <DetailCard
-                hotspots={selectedGroup}
-                onClose={() => setSelectedHotspot(null)}
-              />
-            </div>
-          )}
+        {/* === Shared panel sections (used by both desktop + mobile) === */}
+        {(() => {
+          const detailPanel = selectedGroup.length > 0 && (
+            <DetailCard
+              hotspots={selectedGroup}
+              onClose={() => setSelectedHotspot(null)}
+            />
+          );
 
-          {/* Input Panel (when no Hotspot selected and no wallet preview) */}
-          {selectedGroup.length === 0 && !walletResults && (
-            <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden">
-              <div className="px-4 pt-3 pb-4 space-y-3">
-                <TabToggle mode={mode} onChange={setMode} />
+          const showInput = selectedGroup.length === 0 && !walletResults;
 
-                {mode === "keys" && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1.5">
-                        Paste entity keys, one per line
-                      </label>
-                      <textarea
-                        value={keysInput}
-                        onChange={(e) => setKeysInput(e.target.value)}
-                        className={`${INPUT_CLASS} resize-none font-mono text-xs`}
-                        rows={3}
-                        placeholder={"112DN41Qw6YACUSc2q57vKH...\n143cUvMpimEbKHyjBXMDLWZ...\n11hbFBz7v4V8hfjoPT5dQrS..."}
-                        disabled={resolving}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleLoadKeys}
-                        disabled={resolving || !keysInput.trim()}
-                        className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {resolving ? <Spinner /> : null}
-                        Load Hotspots
-                      </button>
-                      {hasHotspots && (
-                        <button
-                          onClick={handleClear}
-                          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
+          const inputContent = showInput && (
+            <div className="px-4 pt-3 pb-4 space-y-3">
+              <TabToggle mode={mode} onChange={setMode} />
 
-                {mode === "wallet" && !walletResults && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1.5">
-                        Solana wallet address
-                      </label>
-                      <input
-                        type="text"
-                        value={walletInput}
-                        onChange={(e) => setWalletInput(e.target.value)}
-                        className={`${INPUT_CLASS} font-mono text-xs`}
-                        placeholder="Af2uuGb4bis8KrfbDoyZevHPoQDBf4vNBNVyG5XfW2m"
-                        disabled={walletLoading || resolving}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !walletLoading && !resolving) {
-                            handleLookupWallet();
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleLookupWallet}
-                        disabled={walletLoading || resolving || !walletInput.trim()}
-                        className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {walletLoading ? <Spinner /> : <MagnifyingGlassIcon className="h-4 w-4" />}
-                        {walletLoading ? "Looking up..." : "Search Wallet"}
-                      </button>
-                      {hasHotspots && (
-                        <button
-                          onClick={handleClear}
-                          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {error && (
-                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                    {error}
+              {mode === "keys" && (
+                <>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1.5">
+                      Paste entity keys, one per line
+                    </label>
+                    <textarea
+                      value={keysInput}
+                      onChange={(e) => setKeysInput(e.target.value)}
+                      className={`${INPUT_CLASS} resize-none font-mono text-xs`}
+                      rows={3}
+                      placeholder={"112DN41Qw6YACUSc2q57vKH...\n143cUvMpimEbKHyjBXMDLWZ...\n11hbFBz7v4V8hfjoPT5dQrS..."}
+                      disabled={resolving}
+                    />
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleLoadKeys}
+                      disabled={resolving || !keysInput.trim()}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {resolving ? <Spinner /> : null}
+                      Load Hotspots
+                    </button>
+                    {hasHotspots && (
+                      <button
+                        onClick={handleClear}
+                        className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
 
-          {/* Wallet Preview Panel */}
-          {walletResults && selectedGroup.length === 0 && (
+              {mode === "wallet" && !walletResults && (
+                <>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1.5">
+                      Solana wallet address
+                    </label>
+                    <input
+                      type="text"
+                      value={walletInput}
+                      onChange={(e) => setWalletInput(e.target.value)}
+                      className={`${INPUT_CLASS} font-mono text-xs`}
+                      placeholder="Af2uuGb4bis8KrfbDoyZevHPoQDBf4vNBNVyG5XfW2m"
+                      disabled={walletLoading || resolving}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !walletLoading && !resolving) {
+                          handleLookupWallet();
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleLookupWallet}
+                      disabled={walletLoading || resolving || !walletInput.trim()}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {walletLoading ? <Spinner /> : <MagnifyingGlassIcon className="h-4 w-4" />}
+                      {walletLoading ? "Looking up..." : "Search Wallet"}
+                    </button>
+                    {hasHotspots && (
+                      <button
+                        onClick={handleClear}
+                        className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {error && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {error}
+                </div>
+              )}
+            </div>
+          );
+
+          // Desktop input panel wraps content in a card
+          const inputPanel = showInput && (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden">
+              {inputContent}
+            </div>
+          );
+
+          const walletPreviewPanel = walletResults && selectedGroup.length === 0 && (
             <WalletPreview
               results={walletResults}
               selected={walletSelected}
@@ -1025,17 +1043,16 @@ export default function HotspotMap() {
               existingIds={existingHotspotIds}
               resolving={resolving}
             />
-          )}
+          );
 
-          {/* Results Panel */}
-          {(hasHotspots || progress.total > 0) && (
-            <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden flex flex-col min-h-0">
-              {/* Progress bar */}
+          const showResults = hasHotspots || progress.total > 0;
+
+          const resultsContent = showResults && (
+            <>
               {progress.total > 0 && (
                 <ProgressBar done={progress.done} total={progress.total} />
               )}
 
-              {/* Filter header */}
               {hasHotspots && (
                 <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
@@ -1069,21 +1086,125 @@ export default function HotspotMap() {
                   </div>
                 </div>
               )}
+            </>
+          );
 
-              {/* Hotspot list */}
-              <div className="flex-1 overflow-y-auto max-h-[340px]">
-                {displayHotspots.map((hotspot) => (
-                  <HotspotListRow
-                    key={hotspotId(hotspot)}
-                    hotspot={hotspot}
-                    isSelected={selectedHotspot === hotspot.entityKey}
-                    onClick={() => flyToHotspot(hotspot)}
-                  />
-                ))}
-              </div>
+          const resultsListContent = showResults && (
+            <div className="flex-1 overflow-y-auto max-h-[35vh] md:max-h-[340px]">
+              {displayHotspots.map((hotspot) => (
+                <HotspotListRow
+                  key={hotspotId(hotspot)}
+                  hotspot={hotspot}
+                  isSelected={selectedHotspot === hotspot.entityKey}
+                  onClick={() => flyToHotspot(hotspot)}
+                />
+              ))}
             </div>
-          )}
-        </div>
+          );
+
+          const resultsPanel = showResults && (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden flex flex-col min-h-0">
+              {resultsContent}
+              {resultsListContent}
+            </div>
+          );
+
+          return (
+            <>
+              {/* Desktop floating sidebar — unchanged layout */}
+              <div className="hidden md:flex absolute top-4 left-4 bottom-4 w-[380px] flex-col gap-3 pointer-events-none z-10">
+                {detailPanel && <div className="pointer-events-auto">{detailPanel}</div>}
+                {inputPanel && <div className="pointer-events-auto">{inputPanel}</div>}
+                {walletPreviewPanel && <div className="pointer-events-auto">{walletPreviewPanel}</div>}
+                {resultsPanel && <div className="pointer-events-auto">{resultsPanel}</div>}
+              </div>
+
+              {/* Mobile bottom sheet */}
+              <div className="md:hidden absolute bottom-0 left-0 right-0 z-10 pointer-events-auto">
+                <div className="bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+                  {/* Handle bar */}
+                  <div
+                    onClick={() => {
+                      if (hasHotspots || selectedGroup.length > 0 || walletResults) {
+                        setMobileExpanded((v) => !v);
+                      }
+                    }}
+                    className="flex justify-center py-2 cursor-pointer"
+                  >
+                    <div className="w-9 h-1 rounded-full bg-slate-300" />
+                  </div>
+
+                  {/* Collapsed summary (Hotspots loaded, sheet collapsed, no detail) */}
+                  {!mobileExpanded && hasHotspots && selectedGroup.length === 0 && !walletResults && (
+                    <div
+                      onClick={() => setMobileExpanded(true)}
+                      className="px-4 pb-3 flex items-center gap-2"
+                    >
+                      <span className="text-sm font-semibold text-emerald-600">
+                        {hotspots.length} Hotspot{hotspots.length !== 1 ? "s" : ""}
+                      </span>
+                      <span className="text-xs text-slate-400">Tap to expand</span>
+                    </div>
+                  )}
+
+                  {/* Expanded / active content */}
+                  {(mobileExpanded || !hasHotspots || selectedGroup.length > 0 || walletResults) && (() => {
+                    // Detail view with back button
+                    if (selectedGroup.length > 0) {
+                      return (
+                        <div className="max-h-[50vh] overflow-y-auto">
+                          <div className="flex items-center justify-between px-4 pb-2">
+                            <button
+                              onClick={() => setSelectedHotspot(null)}
+                              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700 transition"
+                            >
+                              <ArrowLeftIcon className="h-3.5 w-3.5" />
+                              Back to list
+                            </button>
+                            <NetworkBadge network={selectedGroup[0]?.network} />
+                          </div>
+                          <div className="border-t border-slate-100">
+                            {selectedGroup.map((h, i) => (
+                              <div key={hotspotId(h)} className={i > 0 ? "border-t border-slate-100" : ""}>
+                                <HotspotDetail hotspot={h} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Wallet preview — render directly (WalletPreview has its own card styling)
+                    if (walletResults) {
+                      return (
+                        <div className="max-h-[50vh] overflow-hidden [&>div]:border-0 [&>div]:shadow-none [&>div]:rounded-none">
+                          {walletPreviewPanel}
+                        </div>
+                      );
+                    }
+
+                    // Input state (no Hotspots loaded yet)
+                    if (!hasHotspots) {
+                      return inputContent;
+                    }
+
+                    // Expanded results list
+                    if (mobileExpanded) {
+                      return (
+                        <div className="max-h-[50vh] overflow-hidden flex flex-col">
+                          {resultsContent}
+                          <div className="flex-1 overflow-y-auto">{resultsListContent}</div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
+                </div>
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );
