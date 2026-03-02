@@ -87,6 +87,49 @@ function isValidWalletAddress(addr) {
   return BASE58_RE.test(trimmed);
 }
 
+// -- Merge dual-network Hotspots by entity key --
+
+function networkDetailsFor(h) {
+  return {
+    elevation: h.elevation,
+    gain: h.gain,
+    azimuth: h.azimuth,
+    mechanicalDownTilt: h.mechanicalDownTilt,
+    electricalDownTilt: h.electricalDownTilt,
+    deviceType: h.deviceType,
+  };
+}
+
+function mergeByEntityKey(items) {
+  const map = new Map();
+  for (const h of items) {
+    const existing = map.get(h.entityKey);
+    if (existing) {
+      if (h.network && !existing.networks.includes(h.network)) {
+        existing.networks.push(h.network);
+      }
+      if (h.network) {
+        existing.networkDetails[h.network] = networkDetailsFor(h);
+      }
+      if (!existing.coords && h.coords) {
+        existing.coords = h.coords;
+        existing.location = h.location;
+      }
+    } else {
+      map.set(h.entityKey, {
+        entityKey: h.entityKey,
+        networks: [h.network].filter(Boolean),
+        networkDetails: h.network ? { [h.network]: networkDetailsFor(h) } : {},
+        location: h.location,
+        coords: h.coords,
+        name: h.name,
+        label: h.label,
+      });
+    }
+  }
+  return [...map.values()];
+}
+
 // -- Utilities --
 
 function Spinner({ className = "h-4 w-4" }) {
@@ -98,22 +141,22 @@ function Spinner({ className = "h-4 w-4" }) {
   );
 }
 
-function NetworkBadge({ network }) {
-  if (network === "iot") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100">
-        IoT
-      </span>
-    );
-  }
-  if (network === "mobile") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 ring-1 ring-violet-100">
-        Mobile
-      </span>
-    );
-  }
-  return null;
+function NetworkBadge({ networks }) {
+  const list = Array.isArray(networks) ? networks : networks ? [networks] : [];
+  return (
+    <>
+      {list.includes("iot") && (
+        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100">
+          IoT
+        </span>
+      )}
+      {list.includes("mobile") && (
+        <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 ring-1 ring-violet-100">
+          Mobile
+        </span>
+      )}
+    </>
+  );
 }
 
 function LabelBadge({ label }) {
@@ -126,7 +169,7 @@ function LabelBadge({ label }) {
 }
 
 function hotspotId(h) {
-  return `${h.entityKey}:${h.network || "unknown"}`;
+  return h.entityKey;
 }
 
 function truncateKey(key, chars = 4) {
@@ -191,7 +234,7 @@ function HotspotListRow({ hotspot, isSelected, onClick }) {
           <span className={`text-sm font-medium truncate ${hasLocation ? "text-slate-900" : "text-slate-400"}`}>
             {hotspot.name || "Unknown Hotspot"}
           </span>
-          <NetworkBadge network={hotspot.network} />
+          <NetworkBadge networks={hotspot.networks} />
           <LabelBadge label={hotspot.label} />
         </div>
         <p className={`text-xs mt-0.5 ${hasLocation ? "text-slate-400" : "text-slate-300 italic"}`}>
@@ -217,7 +260,7 @@ function HotspotDetail({ hotspot }) {
         <h3 className="text-sm font-semibold text-slate-900 truncate">
           {hotspot.name || truncateKey(hotspot.entityKey, 8)}
         </h3>
-        <NetworkBadge network={hotspot.network} />
+        <NetworkBadge networks={hotspot.networks} />
         <LabelBadge label={hotspot.label} />
       </div>
 
@@ -245,27 +288,46 @@ function HotspotDetail({ hotspot }) {
         </button>
       </div>
 
-      {/* Status row */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-        {hotspot.elevation != null && (
-          <span>Elevation: <strong className="text-slate-700">{hotspot.elevation}m</strong></span>
-        )}
-        {hotspot.gain != null && (
-          <span>Gain: <strong className="text-slate-700">{(hotspot.gain / 10).toFixed(1)} dBi</strong></span>
-        )}
-        {hotspot.azimuth != null && (
-          <span>Azimuth: <strong className="text-slate-700">{hotspot.azimuth}°</strong></span>
-        )}
-        {hotspot.mechanicalDownTilt != null && hotspot.mechanicalDownTilt !== 0 && (
-          <span>Mech. tilt: <strong className="text-slate-700">{hotspot.mechanicalDownTilt}°</strong></span>
-        )}
-        {hotspot.electricalDownTilt != null && hotspot.electricalDownTilt !== 0 && (
-          <span>Elec. tilt: <strong className="text-slate-700">{hotspot.electricalDownTilt}°</strong></span>
-        )}
-        {hotspot.deviceType && (
-          <span className="text-slate-400">{hotspot.deviceType}</span>
-        )}
-      </div>
+      {/* Per-network metadata sections */}
+      {hotspot.networks.map((net) => {
+        const d = hotspot.networkDetails[net];
+        if (!d) return null;
+        const hasAnyMeta =
+          d.elevation != null ||
+          d.gain != null ||
+          d.azimuth != null ||
+          (d.mechanicalDownTilt != null && d.mechanicalDownTilt !== 0) ||
+          (d.electricalDownTilt != null && d.electricalDownTilt !== 0) ||
+          d.deviceType;
+        if (!hasAnyMeta) return null;
+        return (
+          <div key={net} className="space-y-1.5">
+            {hotspot.networks.length > 1 && (
+              <NetworkBadge networks={[net]} />
+            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+              {d.elevation != null && (
+                <span>Elevation: <strong className="text-slate-700">{d.elevation}m</strong></span>
+              )}
+              {d.gain != null && (
+                <span>Gain: <strong className="text-slate-700">{(d.gain / 10).toFixed(1)} dBi</strong></span>
+              )}
+              {d.azimuth != null && (
+                <span>Azimuth: <strong className="text-slate-700">{d.azimuth}°</strong></span>
+              )}
+              {d.mechanicalDownTilt != null && d.mechanicalDownTilt !== 0 && (
+                <span>Mech. tilt: <strong className="text-slate-700">{d.mechanicalDownTilt}°</strong></span>
+              )}
+              {d.electricalDownTilt != null && d.electricalDownTilt !== 0 && (
+                <span>Elec. tilt: <strong className="text-slate-700">{d.electricalDownTilt}°</strong></span>
+              )}
+              {d.deviceType && (
+                <span className="text-slate-400">{d.deviceType}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -325,7 +387,7 @@ function MapTooltip({ hotspot, tooltipRef, initialPos }) {
         <p className="text-sm font-medium text-slate-900">
           {hotspot.name || truncateKey(hotspot.entityKey, 8)}
         </p>
-        <NetworkBadge network={hotspot.network} />
+        <NetworkBadge networks={hotspot.networks} />
         <LabelBadge label={hotspot.label} />
       </div>
       {hotspot.coords && (
@@ -361,7 +423,7 @@ function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
           <span className={`text-sm font-medium truncate ${isOnMap ? "text-slate-400" : "text-slate-900"}`}>
             {item.name || "Unknown Hotspot"}
           </span>
-          <NetworkBadge network={item.network} />
+          <NetworkBadge networks={item.networks} />
           {isOnMap && (
             <span className="text-[10px] text-slate-400 italic">Already on map</span>
           )}
@@ -375,9 +437,12 @@ function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
 }
 
 function WalletPreview({ results, selected, onSelectedChange, label, onLabelChange, onAdd, onBack, existingIds, resolving }) {
-  const iotCount = results.filter((h) => h.network === "iot").length;
-  const mobileCount = results.filter((h) => h.network === "mobile").length;
-  const selectableCount = results.filter((h) => !existingIds.has(hotspotId(h))).length;
+  let iotCount = 0, mobileCount = 0, selectableCount = 0;
+  for (const h of results) {
+    if (h.networks.includes("iot")) iotCount++;
+    if (h.networks.includes("mobile")) mobileCount++;
+    if (!existingIds.has(hotspotId(h))) selectableCount++;
+  }
   const selectedCount = selected.size;
 
   const handleSelectAll = () => {
@@ -521,7 +586,7 @@ export default function HotspotMap() {
 
   const displayHotspots = useMemo(() => {
     if (networkFilter === "all") return hotspots;
-    return hotspots.filter((h) => h.network === networkFilter);
+    return hotspots.filter((h) => h.networks.includes(networkFilter));
   }, [hotspots, networkFilter]);
 
   const mappableHotspots = useMemo(
@@ -532,8 +597,8 @@ export default function HotspotMap() {
   const stats = useMemo(() => {
     let iot = 0, mobile = 0;
     for (const h of hotspots) {
-      if (h.network === "iot") iot++;
-      else if (h.network === "mobile") mobile++;
+      if (h.networks.includes("iot")) iot++;
+      if (h.networks.includes("mobile")) mobile++;
     }
     return { iot, mobile, total: hotspots.length };
   }, [hotspots]);
@@ -608,14 +673,16 @@ export default function HotspotMap() {
           setProgress({ done: Math.min(i + chunk.length, entityKeys.length), total: entityKeys.length });
         }
 
+        const merged = mergeByEntityKey(allHotspots);
+
         setHotspots((prev) => {
           const existing = new Set(prev.map((h) => hotspotId(h)));
-          const newOnes = allHotspots.filter((h) => !existing.has(hotspotId(h)));
+          const newOnes = merged.filter((h) => !existing.has(hotspotId(h)));
           return [...prev, ...newOnes];
         });
 
-        if (allHotspots.some((h) => h.coords)) {
-          fitBounds(allHotspots.filter((h) => h.coords));
+        if (merged.some((h) => h.coords)) {
+          fitBounds(merged.filter((h) => h.coords));
         }
       } catch (err) {
         setError(err.message);
@@ -666,14 +733,17 @@ export default function HotspotMap() {
         return;
       }
 
+      // Merge dual-network entries before preview
+      const merged = mergeByEntityKey(result.hotspots);
+
       // Populate preview instead of resolving immediately
       const defaultLabel = `Wallet ${walletCountRef.current + 1}`;
       setWalletLabel(defaultLabel);
-      setWalletResults(result.hotspots);
+      setWalletResults(merged);
 
       // Pre-select all Hotspots that aren't already on the map
       const preSelected = new Set(
-        result.hotspots
+        merged
           .filter((h) => !existingHotspotIds.has(hotspotId(h)))
           .map((h) => hotspotId(h))
       );
@@ -751,12 +821,15 @@ export default function HotspotMap() {
   // Coverage sector geometry — only recomputed when selection changes, not every frame
   const sectorData = useMemo(
     () =>
-      selectedData
-        .filter((d) => d.deviceType === "wifiOutdoor" && d.azimuth != null && d.coords)
-        .map((h) => ({
-          polygon: buildSectorPolygon(h.coords[0], h.coords[1], COVERAGE_RADIUS_M, h.azimuth, COVERAGE_ARC_DEG),
-          primary: h.entityKey === selectedHotspot,
-        })),
+      selectedData.flatMap((h) => {
+        if (!h.coords) return [];
+        return Object.values(h.networkDetails)
+          .filter((d) => d.deviceType === "wifiOutdoor" && d.azimuth != null)
+          .map((d) => ({
+            polygon: buildSectorPolygon(h.coords[0], h.coords[1], COVERAGE_RADIUS_M, d.azimuth, COVERAGE_ARC_DEG),
+            primary: h.entityKey === selectedHotspot,
+          }));
+      }),
     [selectedData, selectedHotspot]
   );
 
@@ -787,7 +860,7 @@ export default function HotspotMap() {
         data: mappableHotspots,
         getPosition: (d) => [d.coords[1], d.coords[0]],
         getFillColor: (d) =>
-          d.network === "iot" ? IOT_COLOR : MOBILE_COLOR,
+          d.networks.includes("iot") ? IOT_COLOR : MOBILE_COLOR,
         getLineColor: (d) =>
           selectedEntityKeys.has(d.entityKey) ? [255, 255, 255] : [255, 255, 255, 180],
         getRadius: (d) => (selectedEntityKeys.has(d.entityKey) ? 7 : 5),
@@ -819,7 +892,7 @@ export default function HotspotMap() {
   const pulseLayer = useMemo(() => {
     if (selectedData.length === 0) return [];
     const opacity = Math.round(160 * (1 - pulse));
-    const color = selectedData[0].network === "iot"
+    const color = selectedData[0].networks.includes("iot")
       ? [16, 185, 129, opacity]
       : [139, 92, 246, opacity];
     return [
@@ -1161,7 +1234,7 @@ export default function HotspotMap() {
                               <ArrowLeftIcon className="h-3.5 w-3.5" />
                               Back to list
                             </button>
-                            <NetworkBadge network={selectedGroup[0]?.network} />
+                            <NetworkBadge networks={selectedGroup[0]?.networks} />
                           </div>
                           <div className="border-t border-slate-100">
                             {selectedGroup.map((h, i) => (
