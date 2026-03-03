@@ -5,12 +5,14 @@
  * Falls back to plain base64url when CompressionStream is unavailable.
  */
 
+const CHUNK_SIZE = 0x8000;
+
 function toBase64Url(bytes) {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const chunks = [];
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK_SIZE)));
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(chunks.join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function fromBase64Url(str) {
@@ -47,12 +49,16 @@ export async function encodeKeys(keys) {
   const raw = new TextEncoder().encode(keys.join("\n"));
 
   if (typeof CompressionStream !== "undefined") {
-    const cs = new CompressionStream("deflate-raw");
-    const writer = cs.writable.getWriter();
-    writer.write(raw);
-    writer.close();
-    const compressed = await streamToBytes(cs.readable);
-    return toBase64Url(compressed);
+    try {
+      const cs = new CompressionStream("deflate-raw");
+      const writer = cs.writable.getWriter();
+      await writer.write(raw);
+      await writer.close();
+      const compressed = await streamToBytes(cs.readable);
+      return toBase64Url(compressed);
+    } catch {
+      // Fallback: if compression fails, use uncompressed base64url
+    }
   }
 
   return toBase64Url(raw);
@@ -65,8 +71,8 @@ export async function decodeKeys(encoded) {
     try {
       const ds = new DecompressionStream("deflate-raw");
       const writer = ds.writable.getWriter();
-      writer.write(bytes);
-      writer.close();
+      await writer.write(bytes);
+      await writer.close();
       const decompressed = await streamToBytes(ds.readable);
       const text = new TextDecoder().decode(decompressed);
       return text.split("\n").filter(Boolean);
