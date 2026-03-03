@@ -13,7 +13,7 @@ import {
   ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/outline";
 import MiddleEllipsis from "react-middle-ellipsis";
-import { resolveLocations, fetchWalletHotspots } from "../lib/hotspotMapApi.js";
+import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
 
 const BASEMAP_STYLE =
@@ -38,6 +38,16 @@ const INPUT_CLASS =
 const COVERAGE_RADIUS_FT = 300;
 const COVERAGE_RADIUS_M = COVERAGE_RADIUS_FT * 0.3048;
 const COVERAGE_ARC_DEG = 120;
+
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+function formatDate(iso) {
+  return dateFormatter.format(new Date(iso));
+}
 
 /**
  * Build a sector polygon (fan shape) in [lng, lat] coords.
@@ -252,6 +262,15 @@ function HotspotListRow({ hotspot, isSelected, onClick }) {
 
 function HotspotDetail({ hotspot }) {
   const [copied, setCopied] = useState(false);
+  const [dates, setDates] = useState(null);
+
+  useEffect(() => {
+    let stale = false;
+    fetchEntityDates(hotspot.entityKey)
+      .then((d) => { if (!stale) setDates(d); })
+      .catch(() => {});
+    return () => { stale = true; };
+  }, [hotspot.entityKey]);
 
   return (
     <div className="px-4 py-3 space-y-3">
@@ -299,7 +318,7 @@ function HotspotDetail({ hotspot }) {
           (d.mechanicalDownTilt != null && d.mechanicalDownTilt !== 0) ||
           (d.electricalDownTilt != null && d.electricalDownTilt !== 0) ||
           d.deviceType;
-        if (!hasAnyMeta) return null;
+        if (!hasAnyMeta && !dates?.[net]) return null;
         return (
           <div key={net} className="space-y-1.5">
             {hotspot.networks.length > 1 && (
@@ -323,6 +342,9 @@ function HotspotDetail({ hotspot }) {
               )}
               {d.deviceType && (
                 <span className="text-slate-400">{d.deviceType}</span>
+              )}
+              {dates?.[net] && (
+                <span>Onboarded: <strong className="text-slate-700">{formatDate(dates[net])}</strong></span>
               )}
             </div>
           </div>
@@ -403,10 +425,12 @@ function MapTooltip({ hotspot, tooltipRef, initialPos }) {
 }
 
 function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
+  const noLocation = item.networks.length === 0;
+  const disabled = isOnMap || noLocation;
   return (
     <label
       className={`flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-100 transition ${
-        isOnMap
+        disabled
           ? "opacity-50 cursor-default"
           : "cursor-pointer hover:bg-slate-50"
       }`}
@@ -414,18 +438,21 @@ function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
       <input
         type="checkbox"
         checked={isChecked}
-        disabled={isOnMap}
+        disabled={disabled}
         onChange={onToggle}
         className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500/20 disabled:opacity-40"
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={`text-sm font-medium truncate ${isOnMap ? "text-slate-400" : "text-slate-900"}`}>
+          <span className={`text-sm font-medium truncate ${disabled ? "text-slate-400" : "text-slate-900"}`}>
             {item.name || "Unknown Hotspot"}
           </span>
           <NetworkBadge networks={item.networks} />
           {isOnMap && (
             <span className="text-[10px] text-slate-400 italic">Already on map</span>
+          )}
+          {noLocation && (
+            <span className="text-[10px] text-amber-600 italic">No Location</span>
           )}
         </div>
       </div>
@@ -438,16 +465,17 @@ function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
 
 function WalletPreview({ results, selected, onSelectedChange, label, onLabelChange, onAdd, onBack, existingIds, resolving }) {
   let iotCount = 0, mobileCount = 0, selectableCount = 0;
+  const isSelectable = (h) => !existingIds.has(hotspotId(h)) && h.networks.length > 0;
   for (const h of results) {
     if (h.networks.includes("iot")) iotCount++;
     if (h.networks.includes("mobile")) mobileCount++;
-    if (!existingIds.has(hotspotId(h))) selectableCount++;
+    if (isSelectable(h)) selectableCount++;
   }
   const selectedCount = selected.size;
 
   const handleSelectAll = () => {
     const allSelectable = new Set(
-      results.filter((h) => !existingIds.has(hotspotId(h))).map((h) => hotspotId(h))
+      results.filter(isSelectable).map((h) => hotspotId(h))
     );
     onSelectedChange(allSelectable);
   };
@@ -741,10 +769,10 @@ export default function HotspotMap() {
       setWalletLabel(defaultLabel);
       setWalletResults(merged);
 
-      // Pre-select all Hotspots that aren't already on the map
+      // Pre-select all Hotspots that aren't already on the map and have a location
       const preSelected = new Set(
         merged
-          .filter((h) => !existingHotspotIds.has(hotspotId(h)))
+          .filter((h) => !existingHotspotIds.has(hotspotId(h)) && h.networks.length > 0)
           .map((h) => hotspotId(h))
       );
       setWalletSelected(preSelected);
