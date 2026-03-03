@@ -4,12 +4,12 @@ import { titleCase } from "../utils.js";
 import { deriveIotInfoPDA, deriveMobileInfoPDA, hashEntityKey } from "./pda.js";
 
 /**
- * Batch fetch asset names from DAS using getAssetBatch.
- * Returns a Map<assetBase58, name>.
+ * Batch fetch asset metadata from DAS using getAssetBatch.
+ * Returns a Map<assetBase58, { name, owner }>.
  */
-async function batchGetAssetNames(env, assetPubkeys) {
-  const names = new Map();
-  if (assetPubkeys.length === 0) return names;
+async function batchGetAssetMetadata(env, assetPubkeys) {
+  const metadata = new Map();
+  if (assetPubkeys.length === 0) return metadata;
 
   const DAS_BATCH_SIZE = 100;
   const ids = assetPubkeys.map((pk) =>
@@ -32,17 +32,20 @@ async function batchGetAssetNames(env, assetPubkeys) {
       const json = await response.json();
       if (json.result) {
         for (const asset of json.result) {
-          if (asset?.id && asset?.content?.metadata?.name) {
-            names.set(asset.id, titleCase(asset.content.metadata.name));
+          if (asset?.id) {
+            metadata.set(asset.id, {
+              name: asset.content?.metadata?.name ? titleCase(asset.content.metadata.name) : null,
+              owner: asset.ownership?.owner || null,
+            });
           }
         }
       }
     } catch {
-      // Non-critical — names are optional, continue without them
+      // Non-critical — metadata is optional, continue without it
     }
   }
 
-  return names;
+  return metadata;
 }
 
 /**
@@ -306,12 +309,14 @@ export async function resolveLocations(env, entityKeys) {
     }
   }
 
-  // 4. Batch fetch names from DAS using asset pubkeys
+  // 4. Batch fetch names + owner from DAS using asset pubkeys
   const assetPubkeys = hotspots.map((h) => h.asset).filter(Boolean);
-  const nameMap = await batchGetAssetNames(env, assetPubkeys);
+  const metaMap = await batchGetAssetMetadata(env, assetPubkeys);
 
   for (const h of hotspots) {
-    h.name = h.asset ? nameMap.get(h.asset) || null : null;
+    const meta = h.asset ? metaMap.get(h.asset) : null;
+    h.name = meta?.name || null;
+    h.owner = meta?.owner || null;
     delete h.asset;
   }
 

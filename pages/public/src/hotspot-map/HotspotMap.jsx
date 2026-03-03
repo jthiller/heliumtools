@@ -125,6 +125,9 @@ function mergeByEntityKey(items) {
         existing.coords = h.coords;
         existing.location = h.location;
       }
+      if (!existing.owner && h.owner) {
+        existing.owner = h.owner;
+      }
     } else {
       map.set(h.entityKey, {
         entityKey: h.entityKey,
@@ -133,6 +136,7 @@ function mergeByEntityKey(items) {
         location: h.location,
         coords: h.coords,
         name: h.name,
+        owner: h.owner,
         label: h.label,
       });
     }
@@ -260,8 +264,35 @@ function HotspotListRow({ hotspot, isSelected, onClick }) {
   );
 }
 
-function HotspotDetail({ hotspot }) {
+function CopyableRow({ label, value }) {
   const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-slate-400 shrink-0">{label}</span>
+      <div className="flex-1 min-w-0">
+        <MiddleEllipsis>
+          <span className="text-xs font-mono text-slate-600" title={value}>{value}</span>
+        </MiddleEllipsis>
+      </div>
+      <button
+        onClick={() => {
+          navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        className="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+        title={`Copy ${label.toLowerCase()}`}
+      >
+        {copied
+          ? <ClipboardDocumentCheckIcon className="h-3.5 w-3.5 text-emerald-500" />
+          : <ClipboardDocumentIcon className="h-3.5 w-3.5" />
+        }
+      </button>
+    </div>
+  );
+}
+
+function HotspotDetail({ hotspot }) {
   const [dates, setDates] = useState(null);
 
   useEffect(() => {
@@ -283,29 +314,8 @@ function HotspotDetail({ hotspot }) {
         <LabelBadge label={hotspot.label} />
       </div>
 
-      {/* Entity key — single row */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-slate-400 shrink-0">Key</span>
-        <div className="flex-1 min-w-0">
-          <MiddleEllipsis>
-            <span className="text-xs font-mono text-slate-600" title={hotspot.entityKey}>{hotspot.entityKey}</span>
-          </MiddleEllipsis>
-        </div>
-        <button
-          onClick={() => {
-            navigator.clipboard.writeText(hotspot.entityKey);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          }}
-          className="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
-          title="Copy entity key"
-        >
-          {copied
-            ? <ClipboardDocumentCheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-            : <ClipboardDocumentIcon className="h-3.5 w-3.5" />
-          }
-        </button>
-      </div>
+      <CopyableRow label="Key" value={hotspot.entityKey} />
+      {hotspot.owner && <CopyableRow label="Owner" value={hotspot.owner} />}
 
       {/* Per-network metadata sections */}
       {hotspot.networks.map((net) => {
@@ -695,6 +705,7 @@ export default function HotspotMap() {
               location: h.location,
               coords,
               name: nameMap?.get(h.entityKey) || h.name || null,
+              owner: h.owner || null,
               label,
             });
           }
