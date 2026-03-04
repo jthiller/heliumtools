@@ -779,6 +779,22 @@ export default function HotspotMap() {
     })();
   }, [setSearchParams, resolveKeys]);
 
+  // Precompute share URL whenever hotspots change (so clipboard write can be synchronous)
+  const [shareUrl, setShareUrl] = useState(null);
+  useEffect(() => {
+    if (hotspots.length === 0) {
+      setShareUrl(null);
+      return;
+    }
+    let cancelled = false;
+    encodeKeys(hotspots.map((h) => h.entityKey)).then((encoded) => {
+      if (!cancelled) {
+        setShareUrl(`${window.location.origin}/hotspot-map?keys=${encoded}`);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [hotspots]);
+
   // Auto-reset share state after feedback
   useEffect(() => {
     if (shareState === "idle") return;
@@ -786,18 +802,12 @@ export default function HotspotMap() {
     return () => clearTimeout(id);
   }, [shareState]);
 
-  // Share button handler
-  const handleShare = useCallback(async () => {
-    if (hotspots.length === 0) return;
-    try {
-      const encoded = await encodeKeys(hotspots.map((h) => h.entityKey));
-      const url = `${window.location.origin}/hotspot-map?keys=${encoded}`;
-      await navigator.clipboard.writeText(url);
-      setShareState(url.length > 2000 ? "warning" : "copied");
-    } catch {
-      setError("Failed to copy share link.");
-    }
-  }, [hotspots]);
+  // Share button handler — no async work before clipboard write
+  const handleShare = useCallback(() => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setShareState(shareUrl.length > 2000 ? "warning" : "copied");
+  }, [shareUrl]);
 
   const existingHotspotIds = useMemo(
     () => new Set(hotspots.map((h) => hotspotId(h))),

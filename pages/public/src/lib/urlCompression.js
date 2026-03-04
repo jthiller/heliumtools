@@ -52,9 +52,10 @@ export async function encodeKeys(keys) {
     try {
       const cs = new CompressionStream("deflate-raw");
       const writer = cs.writable.getWriter();
-      await writer.write(raw);
-      await writer.close();
-      const compressed = await streamToBytes(cs.readable);
+      const readPromise = streamToBytes(cs.readable);
+      writer.write(raw);
+      writer.close();
+      const compressed = await readPromise;
       return toBase64Url(compressed);
     } catch {
       // Fallback: if compression fails, use uncompressed base64url
@@ -71,9 +72,10 @@ export async function decodeKeys(encoded) {
     try {
       const ds = new DecompressionStream("deflate-raw");
       const writer = ds.writable.getWriter();
-      await writer.write(bytes);
-      await writer.close();
-      const decompressed = await streamToBytes(ds.readable);
+      const readPromise = streamToBytes(ds.readable);
+      writer.write(bytes);
+      writer.close();
+      const decompressed = await readPromise;
       const text = new TextDecoder().decode(decompressed);
       return text.split("\n").filter(Boolean);
     } catch {
