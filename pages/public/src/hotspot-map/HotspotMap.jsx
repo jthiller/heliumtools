@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import MapGL, { NavigationControl } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
 import { ScatterplotLayer, PolygonLayer } from "@deck.gl/layers";
@@ -11,10 +12,12 @@ import {
   ArrowLeftIcon,
   ClipboardDocumentIcon,
   ClipboardDocumentCheckIcon,
+  LinkIcon,
 } from "@heroicons/react/24/outline";
 import MiddleEllipsis from "react-middle-ellipsis";
 import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
+import { encodeKeys, decodeKeys } from "../lib/urlCompression.js";
 
 const BASEMAP_STYLE =
   "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -602,6 +605,10 @@ export default function HotspotMap() {
   const [walletLabel, setWalletLabel] = useState("");
   const walletCountRef = useRef(0);
 
+  // Share URL state
+  const [, setSearchParams] = useSearchParams();
+  const [shareState, setShareState] = useState("idle"); // "idle" | "copied" | "warning"
+
   // Mobile responsive state
   const [isMobile, setIsMobile] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState(false);
@@ -747,6 +754,60 @@ export default function HotspotMap() {
     }
     resolveKeys(valid);
   }, [keysInput, resolveKeys]);
+
+  // Load shared keys from URL on mount
+  useEffect(() => {
+    const encoded = new URLSearchParams(window.location.search).get("keys");
+    if (!encoded) return;
+
+    // Strip the param from URL without adding a history entry
+    setSearchParams({}, { replace: true });
+
+    (async () => {
+      try {
+        const decoded = await decodeKeys(encoded);
+        const valid = decoded.filter(isValidEntityKey);
+        if (valid.length === 0) {
+          setError("Shared link contained no valid entity keys.");
+          return;
+        }
+        setKeysInput(valid.join("\n"));
+        resolveKeys(valid);
+      } catch {
+        setError("Failed to decode shared link.");
+      }
+    })();
+  }, [setSearchParams, resolveKeys]);
+
+  // Precompute share URL whenever hotspots change (so clipboard write can be synchronous)
+  const [shareUrl, setShareUrl] = useState(null);
+  useEffect(() => {
+    if (hotspots.length === 0) {
+      setShareUrl(null);
+      return;
+    }
+    let cancelled = false;
+    encodeKeys(hotspots.map((h) => h.entityKey)).then((encoded) => {
+      if (!cancelled) {
+        setShareUrl(`${window.location.origin}/hotspot-map?keys=${encoded}`);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [hotspots]);
+
+  // Auto-reset share state after feedback
+  useEffect(() => {
+    if (shareState === "idle") return;
+    const id = setTimeout(() => setShareState("idle"), 3000);
+    return () => clearTimeout(id);
+  }, [shareState]);
+
+  // Share button handler — no async work before clipboard write
+  const handleShare = useCallback(() => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setShareState(shareUrl.length > 2000 ? "warning" : "copied");
+  }, [shareUrl]);
 
   const existingHotspotIds = useMemo(
     () => new Set(hotspots.map((h) => hotspotId(h))),
@@ -1177,6 +1238,18 @@ export default function HotspotMap() {
                   >
                     Fit all
                   </button>
+                  <button
+                    onClick={handleShare}
+                    className={`flex items-center gap-1 text-[10px] transition ${
+                      shareState === "copied"
+                        ? "text-emerald-600"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                    title="Copy shareable link"
+                  >
+                    <LinkIcon className="h-3 w-3" />
+                    {shareState === "copied" ? "Copied!" : "Share"}
+                  </button>
                   <div className="flex items-center gap-1 ml-auto">
                     {[
                       { key: "all", label: `All ${stats.total}` },
@@ -1196,6 +1269,12 @@ export default function HotspotMap() {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {shareState === "warning" && (
+                <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-700">
+                  Link copied but is very long — may not work with all sharing tools.
                 </div>
               )}
             </>
