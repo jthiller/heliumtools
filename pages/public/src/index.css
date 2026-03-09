@@ -6,53 +6,53 @@
   color-scheme: light dark;
 
   /* Surface */
-  --color-surface: #FAFAF8;
-  --color-surface-raised: #FFFFFF;
-  --color-surface-inset: #F5F5F4;
+  --color-surface: 250 250 248;
+  --color-surface-raised: 255 255 255;
+  --color-surface-inset: 245 245 244;
 
   /* Borders */
-  --color-border: #E7E5E4;
-  --color-border-muted: #F5F5F4;
+  --color-border: 231 229 228;
+  --color-border-muted: 245 245 244;
 
   /* Content */
-  --color-content: #1C1917;
-  --color-content-secondary: #78716C;
-  --color-content-tertiary: #A8A29E;
+  --color-content: 28 25 23;
+  --color-content-secondary: 120 113 108;
+  --color-content-tertiary: 168 162 158;
 
   /* Accent */
-  --color-accent: #0E7490;
-  --color-accent-text: #0E7490;
+  --color-accent: 14 116 144;
+  --color-accent-text: 14 116 144;
   --color-accent-surface: #ECFEFF;
 
   /* Network */
-  --color-iot: #059669;
-  --color-mobile: #7C3AED;
+  --color-iot: 5 150 105;
+  --color-mobile: 124 58 237;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     /* Surface */
-    --color-surface: #161618;
-    --color-surface-raised: #1E1E22;
-    --color-surface-inset: #262629;
+    --color-surface: 22 22 24;
+    --color-surface-raised: 30 30 34;
+    --color-surface-inset: 38 38 41;
 
     /* Borders */
-    --color-border: #2E2E33;
-    --color-border-muted: #232327;
+    --color-border: 46 46 51;
+    --color-border-muted: 35 35 39;
 
     /* Content */
-    --color-content: #F0EDEA;
-    --color-content-secondary: #9B97A2;
-    --color-content-tertiary: #6E6A75;
+    --color-content: 240 237 234;
+    --color-content-secondary: 155 151 162;
+    --color-content-tertiary: 110 106 117;
 
     /* Accent */
-    --color-accent: #0E7490;
-    --color-accent-text: #22D3EE;
-    --color-accent-surface: rgba(14, 116, 144, 0.15);
+    --color-accent: 14 116 144;
+    --color-accent-text: 34 211 238;
+    --color-accent-surface: rgb(14 116 144 / 0.15);
 
     /* Network */
-    --color-iot: #34D399;
-    --color-mobile: #A78BFA;
+    --color-iot: 52 211 153;
+    --color-mobile: 167 139 250;
   }
 }
 

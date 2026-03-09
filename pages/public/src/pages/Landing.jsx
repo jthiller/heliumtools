@@ -119,11 +119,11 @@ export default function Landing() {
       <div className="relative h-[280px] sm:h-[300px] lg:h-[328px] overflow-hidden">
         <ShaderDithering className="absolute inset-0 w-full h-full" />
         <div className="relative flex h-full flex-col justify-center gap-4 px-4 sm:px-6 lg:px-12 max-w-3xl">
-          <p className="font-mono text-[13px] font-medium uppercase tracking-[0.08em] text-accent opacity-80">
+          <p className="font-mono text-[13px] font-medium uppercase tracking-[0.08em] text-cyan-300">
             Open-source operator tools
           </p>
           <h1 className="font-display text-4xl sm:text-5xl lg:text-[52px] font-bold text-white tracking-[-0.03em] leading-[1.08]">
-            Keep Helium{"\n"}running smoothly.
+            Keep Helium running&nbsp;smoothly.
           </h1>
           <p className="text-lg text-white/90 max-w-lg leading-7">
             Monitor escrow balances, claim rewards, map your Hotspot fleet, and

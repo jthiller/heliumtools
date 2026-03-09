@@ -31,17 +31,20 @@ import {
 } from "../lib/api.js";
 import useDarkMode from "../lib/useDarkMode.js";
 
-// Read CSS custom properties for Recharts (which needs hex values)
+// Read CSS custom properties (stored as RGB channels) for Recharts (needs hex)
 function getChartColors() {
   const style = getComputedStyle(document.documentElement);
-  const v = (name) => style.getPropertyValue(name).trim();
+  const hex = (name) => {
+    const [r, g, b] = style.getPropertyValue(name).trim().split(/\s+/).map(Number);
+    return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+  };
   return {
-    stroke: v("--color-accent-text"),
-    grid: v("--color-border"),
-    tickText: v("--color-content-tertiary"),
-    tooltipBorder: v("--color-border"),
-    tooltipBg: v("--color-surface-raised"),
-    tooltipText: v("--color-content"),
+    stroke: hex("--color-accent-text"),
+    grid: hex("--color-border"),
+    tickText: hex("--color-content-tertiary"),
+    tooltipBorder: hex("--color-border"),
+    tooltipBg: hex("--color-surface-raised"),
+    tooltipText: hex("--color-content"),
   };
 }
 

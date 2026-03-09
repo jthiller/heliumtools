@@ -1,6 +1,9 @@
 import defaultTheme from "tailwindcss/defaultTheme";
 import forms from "@tailwindcss/forms";
 
+/** Wrap a CSS custom property so Tailwind can inject <alpha-value>. */
+const rgb = (v) => `rgb(var(${v}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -19,26 +22,26 @@ export default {
       },
       colors: {
         surface: {
-          DEFAULT: "var(--color-surface)",
-          raised: "var(--color-surface-raised)",
-          inset: "var(--color-surface-inset)",
+          DEFAULT: rgb("--color-surface"),
+          raised: rgb("--color-surface-raised"),
+          inset: rgb("--color-surface-inset"),
         },
         border: {
-          DEFAULT: "var(--color-border)",
-          muted: "var(--color-border-muted)",
+          DEFAULT: rgb("--color-border"),
+          muted: rgb("--color-border-muted"),
         },
         content: {
-          DEFAULT: "var(--color-content)",
-          secondary: "var(--color-content-secondary)",
-          tertiary: "var(--color-content-tertiary)",
+          DEFAULT: rgb("--color-content"),
+          secondary: rgb("--color-content-secondary"),
+          tertiary: rgb("--color-content-tertiary"),
         },
         accent: {
-          DEFAULT: "var(--color-accent)",
-          text: "var(--color-accent-text)",
+          DEFAULT: rgb("--color-accent"),
+          text: rgb("--color-accent-text"),
           surface: "var(--color-accent-surface)",
         },
-        iot: "var(--color-iot)",
-        mobile: "var(--color-mobile)",
+        iot: rgb("--color-iot"),
+        mobile: rgb("--color-mobile"),
       },
       boxShadow: {
         soft: "0 10px 30px rgba(15, 23, 42, 0.08)",

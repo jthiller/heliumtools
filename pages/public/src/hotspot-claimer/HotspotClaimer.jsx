@@ -1347,6 +1347,9 @@ export default function HotspotClaimer() {
             Look up a Hotspot or wallet, view pending rewards, and issue
             permissionless claim transactions.
           </p>
+          <p className="text-xs text-content-tertiary mt-1">
+            This tool is provided for demonstration purposes. Rate limits are applied.
+          </p>
         </div>
 
         <TabToggle mode={mode} onChange={setMode} />
