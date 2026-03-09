@@ -17,6 +17,7 @@
     "@helium/address": "5.0.4",
     "@helium/spl-utils": "0.11.6",
     "@heroicons/react": "2.2.0",
+    "@paper-design/shaders-react": "^0.0.71",
     "@solana/web3.js": "1.98.4",
     "h3-js": "^4.4.0",
     "maplibre-gl": "^4.7.1",

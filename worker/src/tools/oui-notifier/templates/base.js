@@ -2,7 +2,7 @@
 export function baseEmailTemplate(content, managementUrl) {
   const footer = managementUrl
     ? `<div class="footer">
-        <a href="${managementUrl}" style="color: #0ea5e9; text-decoration: none; font-weight: 500;">Manage subscription</a>
+        <a href="${managementUrl}" style="color: #0E7490; text-decoration: none; font-weight: 500;">Manage subscription</a>
       </div>`
     : "";
 

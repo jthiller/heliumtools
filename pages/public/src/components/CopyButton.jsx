@@ -18,7 +18,7 @@ export default function CopyButton({ text, size = "h-4 w-4" }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+      className="inline-flex items-center text-content-tertiary hover:text-content-secondary transition-colors"
       title="Copy to clipboard"
       aria-label="Copy to clipboard"
     >

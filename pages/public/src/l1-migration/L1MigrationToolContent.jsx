@@ -76,14 +76,14 @@ export const L1MigrationToolContent = () => {
 
             {/* Input Section */}
             <div>
-                <label htmlFor="wallet" className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2 block">
+                <label htmlFor="wallet" className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-2 block">
                     Wallet Address
                 </label>
                 <input
                     type="text"
                     name="wallet"
                     id="wallet"
-                    className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                    className="block w-full rounded-lg border border-border bg-surface-inset px-4 py-3 text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     placeholder="Enter Helium or Solana address..."
                     value={wallet}
                     onChange={(e) => setWallet(e.target.value)}
@@ -91,25 +91,25 @@ export const L1MigrationToolContent = () => {
             </div>
 
             {/* Address Display */}
-            <div className="grid gap-px bg-slate-200 rounded-xl overflow-hidden">
-                <div className="bg-white p-4">
-                    <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Helium Address</p>
-                    <p className="font-mono text-sm text-slate-900 break-all">{heliumWallet?.b58 || '—'}</p>
+            <div className="grid gap-px bg-border rounded-xl overflow-hidden">
+                <div className="bg-surface-raised p-4">
+                    <p className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-1">Helium Address</p>
+                    <p className="font-mono text-sm text-content break-all">{heliumWallet?.b58 || '—'}</p>
                 </div>
-                <div className="bg-white p-4">
-                    <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Solana Address</p>
+                <div className="bg-surface-raised p-4">
+                    <p className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-1">Solana Address</p>
                     {solanaWallet ? (
                         <a
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 font-mono text-sm text-sky-600 hover:text-sky-500 break-all"
+                            className="inline-flex items-center gap-1 font-mono text-sm text-accent-text hover:opacity-80 break-all"
                             href={`https://explorer.solana.com/address/${solanaWallet.toBase58()}`}
                         >
                             {solanaWallet.toBase58()}
                             <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
                         </a>
                     ) : (
-                        <p className="font-mono text-sm text-slate-400">—</p>
+                        <p className="font-mono text-sm text-content-tertiary">—</p>
                     )}
                 </div>
             </div>
@@ -118,7 +118,7 @@ export const L1MigrationToolContent = () => {
             <button
                 disabled={!solanaWallet || loadingInflate}
                 onClick={() => executeInflate(solanaWallet)}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {loadingInflate ? 'Submitting...' : 'Seed Wallet'}
             </button>

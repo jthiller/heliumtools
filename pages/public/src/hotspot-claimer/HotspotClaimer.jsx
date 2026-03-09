@@ -19,7 +19,7 @@ import {
 } from "../lib/hotspotClaimerApi.js";
 
 const inputClassName =
-  "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
+  "block w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
 
 function isValidEntityKey(key) {
   if (!key || typeof key !== "string") return false;
@@ -60,8 +60,8 @@ function NetworkBadge({ network }) {
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
         isIot
-          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
-          : "bg-violet-50 text-violet-700 ring-1 ring-violet-100"
+          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-800/50"
+          : "bg-violet-50 text-violet-700 ring-1 ring-violet-100 dark:bg-violet-950/40 dark:text-violet-400 dark:ring-violet-800/50"
       }`}
     >
       {isIot ? (
@@ -93,7 +93,7 @@ function formatTokenAmount(raw, decimals) {
 
 function TabToggle({ mode, onChange }) {
   return (
-    <div className="flex rounded-lg bg-slate-100 p-1 mb-6">
+    <div className="flex rounded-lg bg-surface-inset p-1 mb-6">
       {[
         { key: "hotspot", label: "Hotspot" },
         { key: "wallet", label: "Wallet" },
@@ -103,8 +103,8 @@ function TabToggle({ mode, onChange }) {
           onClick={() => onChange(tab.key)}
           className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition ${
             mode === tab.key
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-surface-raised text-content shadow-sm"
+              : "text-content-secondary hover:text-content"
           }`}
         >
           {tab.label}
@@ -123,27 +123,27 @@ function RewardRow({ tokenKey, reward, initsAvailable }) {
 
   return (
     <div className="flex items-center justify-between py-2">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="text-sm font-medium text-content-secondary">{label}</span>
       <div className="flex items-center gap-2">
         <span
           className={`text-sm font-mono ${
-            hasPending ? "text-slate-900" : "text-slate-400"
+            hasPending ? "text-content" : "text-content-tertiary"
           }`}
         >
           {amount}
         </span>
         {hasPending && !reward.claimable && reward.reason === "no_ata" && (
-          <span className="text-xs text-amber-600 bg-amber-50 rounded px-1.5 py-0.5">
+          <span className="text-xs text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40 rounded px-1.5 py-0.5">
             No token account
           </span>
         )}
         {hasPending && reward.claimable && reward.recipientExists === false && !initsAvailable && (
-          <span className="text-xs text-sky-600 bg-sky-50 rounded px-1.5 py-0.5">
+          <span className="text-xs text-accent-text bg-accent-surface dark:text-sky-400 dark:bg-sky-950/40 rounded px-1.5 py-0.5">
             Needs setup
           </span>
         )}
         {hasPending && reward.claimable && (reward.recipientExists !== false || initsAvailable) && (
-          <span className="text-xs text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5">
+          <span className="text-xs text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40 rounded px-1.5 py-0.5">
             Claimable
           </span>
         )}
@@ -156,10 +156,10 @@ function ClaimResult({ claim }) {
   if (claim.error) {
     return (
       <div className="flex items-start gap-2 py-2 text-sm">
-        <ExclamationTriangleIcon className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+        <ExclamationTriangleIcon className="h-4 w-4 text-rose-500 dark:text-rose-400 mt-0.5 shrink-0" />
         <div>
-          <span className="font-medium text-slate-700">{claim.token}</span>
-          <span className="text-red-600 ml-2">{claim.error}</span>
+          <span className="font-medium text-content-secondary">{claim.token}</span>
+          <span className="text-rose-600 dark:text-rose-400 ml-2">{claim.error}</span>
         </div>
       </div>
     );
@@ -170,8 +170,8 @@ function ClaimResult({ claim }) {
       <CheckCircleIcon className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between">
-          <span className="font-medium text-slate-700">{claim.token}</span>
-          <span className="font-mono text-slate-900">
+          <span className="font-medium text-content-secondary">{claim.token}</span>
+          <span className="font-mono text-content">
             {formatTokenAmount(claim.amount, claim.decimals || 6)}
           </span>
         </div>
@@ -180,7 +180,7 @@ function ClaimResult({ claim }) {
             href={claim.explorerUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-0.5 text-xs text-sky-600 hover:text-sky-500 font-mono"
+            className="inline-flex items-center gap-0.5 text-xs text-accent-text hover:opacity-80 font-mono"
           >
             {truncateAddress(claim.txSignature)}
             <ArrowTopRightOnSquareIcon className="h-3 w-3" />
@@ -198,11 +198,11 @@ function LastClaimCard({ lastClaim }) {
   if (successClaims.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 mt-4">
-      <h3 className="text-sm font-semibold text-slate-900 mb-1">
+    <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+      <h3 className="text-sm font-semibold text-content mb-1">
         Recent Claim
       </h3>
-      <p className="text-xs text-slate-500 mb-3">
+      <p className="text-xs text-content-secondary mb-3">
         {claimedAt.toLocaleString()} — next claim in{" "}
         {Math.max(
           0,
@@ -213,7 +213,7 @@ function LastClaimCard({ lastClaim }) {
           )
         )}h
       </p>
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-border-muted">
         {successClaims.map((claim, i) => (
           <ClaimResult key={i} claim={claim} />
         ))}
@@ -234,8 +234,8 @@ function RewardsCard({
 }) {
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 mt-4">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+      <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+        <div className="flex items-center gap-2 text-sm text-content-secondary">
           <Spinner />
           Querying oracles for pending rewards...
         </div>
@@ -248,11 +248,11 @@ function RewardsCard({
   const anyClaimable = Object.values(rewards).some((r) => r.claimable);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 mt-4">
-      <h3 className="text-sm font-semibold text-slate-900 mb-3">
+    <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+      <h3 className="text-sm font-semibold text-content mb-3">
         Pending Rewards
       </h3>
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-border-muted">
         {Object.entries(rewards).map(([key, reward]) => (
           <RewardRow key={key} tokenKey={key} reward={reward} initsAvailable={initsAvailable} />
         ))}
@@ -261,14 +261,14 @@ function RewardsCard({
       {anyClaimable && !claimResult && !initsAvailable && Object.values(rewards).some(
         (r) => r.claimable && r.recipientExists === false
       ) && (
-        <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2.5">
+        <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5">
           Some rewards require a one-time on-chain setup before claim transactions can be issued here.
           The Hotspot owner can set this up by claiming once via the{" "}
           <a
             href="https://wallet.helium.com/"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-amber-800"
+            className="underline hover:opacity-80"
           >
             Helium wallet app
           </a>.
@@ -283,7 +283,7 @@ function RewardsCard({
         <button
           onClick={onClaim}
           disabled={claiming}
-          className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
         >
           {claiming ? (
             <>
@@ -297,11 +297,11 @@ function RewardsCard({
       )}
 
       {claimResult && (
-        <div className="mt-4 pt-4 border-t border-slate-200">
-          <h4 className="text-sm font-semibold text-slate-900 mb-2">
+        <div className="mt-4 pt-4 border-t border-border">
+          <h4 className="text-sm font-semibold text-content mb-2">
             {claimResult.success ? "Claim Submitted" : "Claim Results"}
           </h4>
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-border-muted">
             {claimResult.claims.map((claim, i) => (
               <ClaimResult key={i} claim={claim} />
             ))}
@@ -310,7 +310,7 @@ function RewardsCard({
       )}
 
       {claimError && !claimResult && (
-        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/40 dark:text-rose-300">
           {claimError}
         </div>
       )}
@@ -320,9 +320,9 @@ function RewardsCard({
           (r) => r.pending && r.pending !== "0" && r.reason === "no_ata"
         );
         return (
-          <div className="mt-3 text-xs text-slate-500 space-y-1.5">
+          <div className="mt-3 text-xs text-content-secondary space-y-1.5">
             {hasNoAta && (
-              <p className="text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2.5">
+              <p className="text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5">
                 The reward recipient does not have a token account for one or more reward types.
                 The owner must create the token account before claim transactions can be issued.
               </p>
@@ -344,7 +344,7 @@ function SolanaAddress({ address }) {
         href={`https://orbmarkets.io/address/${address}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-mono text-sky-600 hover:text-sky-500 truncate"
+        className="font-mono text-accent-text hover:opacity-80 truncate"
       >
         {truncateAddress(address)}
       </a>
@@ -359,13 +359,13 @@ function HotspotCard({ hotspot, destination, rewardsLoaded, onNavigateToWallet }
   const recipientAddress = hasCustomRecipient ? destination : hotspot.owner;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6">
+    <div className="rounded-xl border border-border bg-surface-raised p-6">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-slate-900 truncate">
+          <h3 className="text-base font-semibold text-content truncate">
             {hotspot.name || "Unknown"}
           </h3>
-          <p className="text-xs text-slate-500 font-mono mt-0.5 truncate">
+          <p className="text-xs text-content-secondary font-mono mt-0.5 truncate">
             Asset: {truncateAddress(hotspot.assetId)}
           </p>
         </div>
@@ -374,13 +374,13 @@ function HotspotCard({ hotspot, destination, rewardsLoaded, onNavigateToWallet }
 
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <div className="flex items-start gap-2">
-          <WalletIcon className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+          <WalletIcon className="h-4 w-4 text-content-tertiary mt-0.5 shrink-0" />
           <div className="min-w-0">
-            <dt className="text-xs text-slate-500">Owner</dt>
+            <dt className="text-xs text-content-secondary">Owner</dt>
             <dd className="flex items-center gap-1 min-w-0">
               <button
                 onClick={() => onNavigateToWallet(hotspot.owner)}
-                className="font-mono text-sky-600 hover:text-sky-500 hover:underline truncate"
+                className="font-mono text-accent-text hover:opacity-80 hover:underline truncate"
                 title="View wallet Hotspots"
               >
                 {truncateAddress(hotspot.owner)}
@@ -390,35 +390,35 @@ function HotspotCard({ hotspot, destination, rewardsLoaded, onNavigateToWallet }
           </div>
         </div>
         <div className="flex items-start gap-2">
-          <WalletIcon className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+          <WalletIcon className="h-4 w-4 text-content-tertiary mt-0.5 shrink-0" />
           <div className="min-w-0">
-            <dt className="text-xs text-slate-500">Rewards Recipient</dt>
+            <dt className="text-xs text-content-secondary">Rewards Recipient</dt>
             {rewardsLoaded ? (
               <dd className="flex items-center gap-1 min-w-0">
                 <a
                   href={`https://orbmarkets.io/address/${recipientAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-mono text-sky-600 hover:text-sky-500 truncate"
+                  className="font-mono text-accent-text hover:opacity-80 truncate"
                 >
                   {truncateAddress(recipientAddress)}
                 </a>
                 <CopyButton text={recipientAddress} size="h-3.5 w-3.5" />
                 {!hasCustomRecipient && (
-                  <span className="text-xs text-slate-400 font-sans">(owner)</span>
+                  <span className="text-xs text-content-tertiary font-sans">(owner)</span>
                 )}
               </dd>
             ) : (
-              <dd className="text-slate-400 text-xs">Loading...</dd>
+              <dd className="text-content-tertiary text-xs">Loading...</dd>
             )}
           </div>
         </div>
         {locationParts.length > 0 && (
           <div className="flex items-start gap-2">
-            <MapPinIcon className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+            <MapPinIcon className="h-4 w-4 text-content-tertiary mt-0.5 shrink-0" />
             <div className="min-w-0">
-              <dt className="text-xs text-slate-500">Location</dt>
-              <dd className="text-slate-900 truncate">
+              <dt className="text-xs text-content-secondary">Location</dt>
+              <dd className="text-content truncate">
                 {locationParts.join(", ")}
               </dd>
             </div>
@@ -567,7 +567,7 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
       <div className="mb-6">
         <label
           htmlFor="entityKey"
-          className="block text-sm font-medium text-slate-700 mb-1.5"
+          className="block text-sm font-medium text-content-secondary mb-1.5"
         >
           Hotspot Entity Key
         </label>
@@ -582,14 +582,14 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
           />
           {loading && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              <Spinner className="h-4 w-4 text-slate-400" />
+              <Spinner className="h-4 w-4 text-content-tertiary" />
             </div>
           )}
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 mb-6">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/40 dark:text-rose-300 mb-6">
           {error}
         </div>
       )}
@@ -647,9 +647,9 @@ function WalletRewardCells({ entityKey, walletRewards, rewardsLoading }) {
       {["iot", "mobile", "hnt"].map((token) => (
         <td key={token} className="py-3 text-right">
           {loading ? (
-            <Spinner className="h-3 w-3 text-slate-300 ml-auto" />
+            <Spinner className="h-3 w-3 text-content-tertiary ml-auto" />
           ) : (
-            <span className={`text-xs font-mono ${getTokenAmount(rewards, token) > 0 ? "text-slate-900" : "text-slate-300"}`}>
+            <span className={`text-xs font-mono ${getTokenAmount(rewards, token) > 0 ? "text-content" : "text-content-tertiary"}`}>
               {rewards ? formatTokenAmount(rewards[token]?.pending, getTokenDecimals(rewards, token)) : "—"}
             </span>
           )}
@@ -668,7 +668,7 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
   return (
     <Tag className={className}>
       {claimState === "claiming" && (
-        <span className="inline-flex items-center gap-1 text-xs text-sky-600">
+        <span className="inline-flex items-center gap-1 text-xs text-accent-text">
           <Spinner className="h-3 w-3" /> Claiming...
         </span>
       )}
@@ -685,7 +685,7 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
                 href={txClaim.explorerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block text-xs text-sky-600 hover:text-sky-500 font-mono mt-0.5"
+                className="block text-xs text-accent-text hover:opacity-80 font-mono mt-0.5"
               >
                 {truncateAddress(txClaim.txSignature)}
               </a>
@@ -695,18 +695,18 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
       })()}
       {claimState === "error" && (
         <div className="text-right max-w-[180px] ml-auto">
-          <span className="inline-flex items-center gap-1 text-xs text-red-600">
+          <span className="inline-flex items-center gap-1 text-xs text-rose-600 dark:text-rose-400">
             <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" /> Failed
           </span>
           {claimErrors[entityKey] && (
-            <p className="text-xs text-red-500 mt-0.5 truncate" title={claimErrors[entityKey]}>
+            <p className="text-xs text-rose-500 dark:text-rose-400 mt-0.5 truncate" title={claimErrors[entityKey]}>
               {claimErrors[entityKey]}
             </p>
           )}
         </div>
       )}
       {claimState === "cooldown" && (
-        <span className="text-xs text-slate-400">On Cooldown</span>
+        <span className="text-xs text-content-tertiary">On Cooldown</span>
       )}
       {claimState === "rate_limited" && (
         <div className="text-right max-w-[180px] ml-auto">
@@ -722,13 +722,13 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
         <button
           onClick={() => onClaim(entityKey)}
           disabled={claimAllActive}
-          className="text-xs font-medium text-sky-600 hover:text-sky-500 disabled:opacity-50"
+          className="text-xs font-medium text-accent-text hover:opacity-80 disabled:opacity-50"
         >
           Claim
         </button>
       )}
       {!claimState && !claimable && walletRewards[entityKey] && (
-        <span className="text-xs text-slate-300">—</span>
+        <span className="text-xs text-content-tertiary">—</span>
       )}
     </Tag>
   );
@@ -756,8 +756,8 @@ function WalletClaimSummary({ claimResults, claimErrors, claimStates }) {
   if (successClaims.length === 0 && totalErrors === 0) return null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 mt-4">
-      <h3 className="text-sm font-semibold text-slate-900 mb-3">
+    <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+      <h3 className="text-sm font-semibold text-content mb-3">
         Claim Results
         {successClaims.length > 0 && (
           <span className="text-emerald-600 font-normal ml-2">
@@ -765,12 +765,12 @@ function WalletClaimSummary({ claimResults, claimErrors, claimStates }) {
           </span>
         )}
         {totalErrors > 0 && (
-          <span className="text-red-600 font-normal ml-2">
+          <span className="text-rose-600 dark:text-rose-400 font-normal ml-2">
             {totalErrors} failed
           </span>
         )}
       </h3>
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-border-muted">
         {successClaims.map((claim, i) => (
           <ClaimResult key={`s-${i}`} claim={claim} />
         ))}
@@ -779,9 +779,9 @@ function WalletClaimSummary({ claimResults, claimErrors, claimStates }) {
         ))}
         {thrownErrors.map((err, i) => (
           <div key={`e-${i}`} className="flex items-start gap-2 py-2 text-sm">
-            <ExclamationTriangleIcon className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            <ExclamationTriangleIcon className="h-4 w-4 text-rose-500 dark:text-rose-400 mt-0.5 shrink-0" />
             <div>
-              <span className="text-red-600">{err.error}</span>
+              <span className="text-rose-600 dark:text-rose-400">{err.error}</span>
             </div>
           </div>
         ))}
@@ -1032,7 +1032,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
       <div className="mb-6">
         <label
           htmlFor="walletAddr"
-          className="block text-sm font-medium text-slate-700 mb-1.5"
+          className="block text-sm font-medium text-content-secondary mb-1.5"
         >
           Wallet Address
         </label>
@@ -1047,41 +1047,41 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           />
           {loading && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              <Spinner className="h-4 w-4 text-slate-400" />
+              <Spinner className="h-4 w-4 text-content-tertiary" />
             </div>
           )}
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 mb-6">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/40 dark:text-rose-300 mb-6">
           {error}
         </div>
       )}
 
       {/* Hotspot List */}
       {hotspots.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <div className="rounded-xl border border-border bg-surface-raised overflow-hidden">
           {/* Header */}
-          <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-4 border-b border-border-muted flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">
+              <h3 className="text-sm font-semibold text-content">
                 {hotspotsCount} Hotspot{hotspotsCount !== 1 ? "s" : ""}
               </h3>
               {rewardsLoading && (
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-content-secondary mt-0.5">
                   Loading rewards {rewardsProgress.loaded}/{rewardsProgress.total}...
                 </p>
               )}
             </div>
             {claimAllActive && (
               <div className="flex items-center gap-3">
-                <span className="text-xs text-sky-600">
+                <span className="text-xs text-accent-text">
                   Claiming {claimAllProgress.current} of {claimAllProgress.total} Hotspots...
                 </span>
                 <button
                   onClick={handleStopClaimAll}
-                  className="text-xs text-red-600 hover:text-red-500 font-medium"
+                  className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-500 dark:text-rose-400 font-medium"
                 >
                   Stop
                 </button>
@@ -1093,7 +1093,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wider">
+                <tr className="border-b border-border-muted text-xs text-content-secondary uppercase tracking-wider">
                   <th className="px-6 py-2.5 font-medium">Hotspot</th>
                   <th className="px-0 py-2.5 font-medium">Entity Key</th>
                   <th className="px-0 py-2.5 font-medium text-right">IOT</th>
@@ -1104,17 +1104,17 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
               </thead>
               <tbody>
                 {hotspots.map((h) => (
-                  <tr key={h.entityKey} className="border-b border-slate-50 last:border-0">
+                  <tr key={h.entityKey} className="border-b border-border-muted last:border-0">
                     <td className="px-6 py-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium text-slate-900 truncate max-w-[200px]">
+                          <span className="text-sm font-medium text-content truncate max-w-[200px]">
                             {h.name || "Unknown"}
                           </span>
                           <NetworkBadge network={h.network} />
                         </div>
                         {[h.city, h.state, h.country].filter(Boolean).length > 0 && (
-                          <p className="text-xs text-slate-500 truncate mt-0.5">
+                          <p className="text-xs text-content-secondary truncate mt-0.5">
                             {[h.city, h.state, h.country].filter(Boolean).join(", ")}
                           </p>
                         )}
@@ -1124,7 +1124,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => onNavigateToHotspot(h.entityKey)}
-                          className="font-mono text-xs text-sky-600 hover:text-sky-500 hover:underline"
+                          className="font-mono text-xs text-accent-text hover:opacity-80 hover:underline"
                           title="View Hotspot details"
                         >
                           {truncateAddress(h.entityKey)}
@@ -1149,17 +1149,17 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
               {/* Totals row */}
               {!rewardsLoading && Object.keys(walletRewards).length > 0 && (
                 <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50">
-                    <td className="px-6 py-3 text-sm font-semibold text-slate-900" colSpan={2}>
+                  <tr className="border-t border-border bg-surface-inset">
+                    <td className="px-6 py-3 text-sm font-semibold text-content" colSpan={2}>
                       Total
                     </td>
-                    <td className="py-3 text-right text-xs font-mono font-semibold text-slate-900">
+                    <td className="py-3 text-right text-xs font-mono font-semibold text-content">
                       {totals.iot > 0 ? totals.iot.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0"}
                     </td>
-                    <td className="py-3 text-right text-xs font-mono font-semibold text-slate-900">
+                    <td className="py-3 text-right text-xs font-mono font-semibold text-content">
                       {totals.mobile > 0 ? totals.mobile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0"}
                     </td>
-                    <td className="py-3 text-right text-xs font-mono font-semibold text-slate-900">
+                    <td className="py-3 text-right text-xs font-mono font-semibold text-content">
                       {totals.hnt > 0 ? totals.hnt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0"}
                     </td>
                     <td className="py-3 pr-6"></td>
@@ -1170,7 +1170,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           </div>
 
           {/* Mobile card list (hidden on desktop) */}
-          <div className="md:hidden divide-y divide-slate-100">
+          <div className="md:hidden divide-y divide-border-muted">
             {hotspots.map((h) => {
               const rewards = walletRewards[h.entityKey];
               const loading = !rewards && rewardsLoading;
@@ -1182,13 +1182,13 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-slate-900 truncate">
+                        <span className="text-sm font-medium text-content truncate">
                           {h.name || "Unknown"}
                         </span>
                         <NetworkBadge network={h.network} />
                       </div>
                       {[h.city, h.state, h.country].filter(Boolean).length > 0 && (
-                        <p className="text-xs text-slate-500 truncate mt-0.5">
+                        <p className="text-xs text-content-secondary truncate mt-0.5">
                           {[h.city, h.state, h.country].filter(Boolean).join(", ")}
                         </p>
                       )}
@@ -1207,20 +1207,20 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                   <div className="mt-2 flex items-center gap-3">
                     <button
                       onClick={() => onNavigateToHotspot(h.entityKey)}
-                      className="font-mono text-xs text-sky-600 hover:text-sky-500 hover:underline"
+                      className="font-mono text-xs text-accent-text hover:opacity-80 hover:underline"
                     >
                       {truncateAddress(h.entityKey)}
                     </button>
                     <CopyButton text={h.entityKey} size="h-3 w-3" />
                   </div>
                   {loading ? (
-                    <div className="mt-2"><Spinner className="h-3 w-3 text-slate-300" /></div>
+                    <div className="mt-2"><Spinner className="h-3 w-3 text-content-tertiary" /></div>
                   ) : rewards ? (
                     <div className="mt-2 flex gap-4 text-xs font-mono">
-                      {iot > 0 && <span className="text-slate-700">IOT <span className="font-semibold">{formatTokenAmount(rewards.iot?.pending, getTokenDecimals(rewards, "iot"))}</span></span>}
-                      {mobile > 0 && <span className="text-slate-700">MOBILE <span className="font-semibold">{formatTokenAmount(rewards.mobile?.pending, getTokenDecimals(rewards, "mobile"))}</span></span>}
-                      {hnt > 0 && <span className="text-slate-700">HNT <span className="font-semibold">{formatTokenAmount(rewards.hnt?.pending, getTokenDecimals(rewards, "hnt"))}</span></span>}
-                      {iot === 0 && mobile === 0 && hnt === 0 && <span className="text-slate-300">No rewards</span>}
+                      {iot > 0 && <span className="text-content-secondary">IOT <span className="font-semibold">{formatTokenAmount(rewards.iot?.pending, getTokenDecimals(rewards, "iot"))}</span></span>}
+                      {mobile > 0 && <span className="text-content-secondary">MOBILE <span className="font-semibold">{formatTokenAmount(rewards.mobile?.pending, getTokenDecimals(rewards, "mobile"))}</span></span>}
+                      {hnt > 0 && <span className="text-content-secondary">HNT <span className="font-semibold">{formatTokenAmount(rewards.hnt?.pending, getTokenDecimals(rewards, "hnt"))}</span></span>}
+                      {iot === 0 && mobile === 0 && hnt === 0 && <span className="text-content-tertiary">No rewards</span>}
                     </div>
                   ) : null}
                 </div>
@@ -1229,9 +1229,9 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
 
             {/* Mobile totals */}
             {!rewardsLoading && Object.keys(walletRewards).length > 0 && (
-              <div className="px-4 py-3 bg-slate-50 flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-900">Total</span>
-                <div className="flex gap-4 text-xs font-mono font-semibold text-slate-900">
+              <div className="px-4 py-3 bg-surface-inset flex items-center justify-between">
+                <span className="text-sm font-semibold text-content">Total</span>
+                <div className="flex gap-4 text-xs font-mono font-semibold text-content">
                   {totals.iot > 0 && <span>IOT {totals.iot.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
                   {totals.mobile > 0 && <span>MOBILE {totals.mobile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
                   {totals.hnt > 0 && <span>HNT {totals.hnt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
@@ -1242,10 +1242,10 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
 
           {/* Claim All button */}
           {anyClaimable && !claimAllActive && (
-            <div className="px-4 sm:px-6 py-4 border-t border-slate-100">
+            <div className="px-4 sm:px-6 py-4 border-t border-border-muted">
               <button
                 onClick={handleClaimAll}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 transition"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 transition"
               >
                 Claim All
               </button>
@@ -1253,8 +1253,8 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           )}
 
           {claimAllActive && (
-            <div className="px-4 sm:px-6 py-4 border-t border-slate-100">
-              <div className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-sky-50 px-4 py-2.5 text-sm text-sky-700">
+            <div className="px-4 sm:px-6 py-4 border-t border-border-muted">
+              <div className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-accent-surface px-4 py-2.5 text-sm text-accent-text">
                 <Spinner className="h-4 w-4" />
                 Claiming {claimAllProgress.current} of {claimAllProgress.total} Hotspots...
               </div>
@@ -1263,7 +1263,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
 
           {claimAllError && (
             <div className="px-4 sm:px-6 pb-4">
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-300">
                 {claimAllError}
               </div>
             </div>
@@ -1333,23 +1333,19 @@ export default function HotspotClaimer() {
   }, [setSearchParams, urlKey]);
 
   return (
-    <div className="min-h-screen bg-white">
-      <Header />
+    <div className="min-h-screen bg-surface">
+      <Header breadcrumb="Reward Claimer" />
       <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
-          <p className="text-sm font-mono uppercase tracking-widest text-sky-600 mb-2">
+          <p className="text-[13px] font-mono font-medium uppercase tracking-[0.08em] text-accent-text mb-2">
             Hotspot Tools
           </p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">
-            Hotspot Reward Claimer
+          <h1 className="text-3xl sm:text-4xl font-display font-bold text-content tracking-[-0.03em] mb-2">
+            Reward Claimer
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-base text-content-secondary">
             Look up a Hotspot or wallet, view pending rewards, and issue
-            permissionless claim transactions. Rewards are sent to the
-            designated recipient.
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            This tool is provided for demonstration purposes. Rate limits are applied.
+            permissionless claim transactions.
           </p>
         </div>
 

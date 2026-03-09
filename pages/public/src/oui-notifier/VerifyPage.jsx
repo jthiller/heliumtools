@@ -42,19 +42,19 @@ export default function VerifyPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-white">
-      <Header />
+    <div className="min-h-screen bg-surface">
+      <Header breadcrumb="OUI Notifier" />
 
       <main className="mx-auto max-w-xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
         {/* Page Header */}
         <div className="mb-8">
-          <p className="text-sm font-mono uppercase tracking-widest text-sky-600 mb-2">
+          <p className="text-[13px] font-mono font-medium uppercase tracking-[0.08em] text-accent-text mb-2">
             OUI Notifier
           </p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">
+          <h1 className="text-3xl sm:text-4xl font-display font-bold text-content tracking-[-0.03em] mb-2">
             Verify Your Email
           </h1>
-          <p className="text-slate-600">
+          <p className="text-content-secondary">
             We verify emails before sending alerts.
           </p>
         </div>
@@ -66,7 +66,7 @@ export default function VerifyPage() {
 
         {/* Action */}
         <a
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           href={state.uuid ? `/oui-notifier/?uuid=${state.uuid}` : "/oui-notifier/"}
         >
           Back to OUI Notifier

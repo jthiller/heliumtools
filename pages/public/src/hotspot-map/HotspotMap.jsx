@@ -19,8 +19,21 @@ import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/
 import { h3ToLatLng } from "../lib/h3.js";
 import { encodeKeys, decodeKeys } from "../lib/urlCompression.js";
 
-const BASEMAP_STYLE =
-  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+
+function useBasemapStyle() {
+  const [style, setStyle] = useState(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches ? BASEMAP_DARK : BASEMAP_LIGHT
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e) => setStyle(e.matches ? BASEMAP_DARK : BASEMAP_LIGHT);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return style;
+}
 
 const IOT_COLOR = [16, 185, 129];
 const MOBILE_COLOR = [139, 92, 246];
@@ -36,7 +49,7 @@ const INITIAL_VIEW = {
 const RESOLVE_CHUNK_SIZE = 500;
 
 const INPUT_CLASS =
-  "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
+  "block w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
 
 const COVERAGE_RADIUS_FT = 300;
 const COVERAGE_RADIUS_M = COVERAGE_RADIUS_FT * 0.3048;
@@ -163,12 +176,12 @@ function NetworkBadge({ networks }) {
   return (
     <>
       {list.includes("iot") && (
-        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100">
+        <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-100 dark:ring-emerald-800/50">
           IoT
         </span>
       )}
       {list.includes("mobile") && (
-        <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 ring-1 ring-violet-100">
+        <span className="inline-flex items-center rounded-full bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-400 ring-1 ring-violet-100 dark:ring-violet-800/50">
           Mobile
         </span>
       )}
@@ -179,7 +192,7 @@ function NetworkBadge({ networks }) {
 function LabelBadge({ label }) {
   if (!label) return null;
   return (
-    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200 max-w-[120px] truncate">
+    <span className="inline-flex items-center rounded-full bg-surface-inset px-2 py-0.5 text-[10px] font-medium text-content-secondary ring-1 ring-border max-w-[120px] truncate">
       {label}
     </span>
   );
@@ -198,7 +211,7 @@ function truncateKey(key, chars = 4) {
 
 function TabToggle({ mode, onChange }) {
   return (
-    <div className="flex rounded-lg bg-slate-100 p-1">
+    <div className="flex rounded-lg bg-surface-inset p-1">
       {[
         { key: "keys", label: "Entity Keys" },
         { key: "wallet", label: "Wallet" },
@@ -208,8 +221,8 @@ function TabToggle({ mode, onChange }) {
           onClick={() => onChange(tab.key)}
           className={`flex-1 rounded-md px-4 py-1.5 text-sm font-medium transition ${
             mode === tab.key
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-surface-raised text-content shadow-sm"
+              : "text-content-secondary hover:text-content"
           }`}
         >
           {tab.label}
@@ -224,13 +237,13 @@ function ProgressBar({ done, total }) {
   const pct = Math.round((done / total) * 100);
   return (
     <div className="flex items-center gap-3 px-4 py-2.5">
-      <div className="flex-1 h-[3px] rounded-full bg-slate-100 overflow-hidden">
+      <div className="flex-1 h-[3px] rounded-full bg-surface-inset overflow-hidden">
         <div
-          className="h-full rounded-full bg-sky-500 transition-all duration-300"
+          className="h-full rounded-full bg-accent transition-all duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs text-slate-400 tabular-nums shrink-0">
+      <span className="text-xs text-content-tertiary tabular-nums shrink-0">
         {done} / {total}
       </span>
     </div>
@@ -242,25 +255,25 @@ function HotspotListRow({ hotspot, isSelected, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-100 transition hover:bg-slate-50 ${
-        isSelected ? "bg-sky-50 border-l-2 border-l-sky-500" : ""
+      className={`w-full text-left flex items-center gap-2.5 px-4 py-2.5 border-b border-border-muted transition hover:bg-surface-inset ${
+        isSelected ? "bg-accent-surface border-l-2 border-l-accent" : ""
       }`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={`text-sm font-medium truncate ${hasLocation ? "text-slate-900" : "text-slate-400"}`}>
+          <span className={`text-sm font-medium truncate ${hasLocation ? "text-content" : "text-content-tertiary"}`}>
             {hotspot.name || "Unknown Hotspot"}
           </span>
           <NetworkBadge networks={hotspot.networks} />
           <LabelBadge label={hotspot.label} />
         </div>
-        <p className={`text-xs mt-0.5 ${hasLocation ? "text-slate-400" : "text-slate-300 italic"}`}>
+        <p className={`text-xs mt-0.5 ${hasLocation ? "text-content-tertiary" : "text-content-tertiary italic"}`}>
           {hasLocation
             ? `${hotspot.coords[0].toFixed(4)},  ${hotspot.coords[1].toFixed(4)}`
             : "No location asserted"}
         </p>
       </div>
-      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+      <span className="text-[10px] text-content-tertiary font-mono shrink-0">
         {truncateKey(hotspot.entityKey)}
       </span>
     </button>
@@ -271,10 +284,10 @@ function CopyableRow({ label, value }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-400 shrink-0">{label}</span>
+      <span className="text-xs text-content-tertiary shrink-0">{label}</span>
       <div className="flex-1 min-w-0">
         <MiddleEllipsis>
-          <span className="text-xs font-mono text-slate-600" title={value}>{value}</span>
+          <span className="text-xs font-mono text-content-secondary" title={value}>{value}</span>
         </MiddleEllipsis>
       </div>
       <button
@@ -283,7 +296,7 @@ function CopyableRow({ label, value }) {
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
         }}
-        className="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+        className="shrink-0 rounded p-1 text-content-tertiary hover:text-content-secondary hover:bg-surface-inset transition"
         title={`Copy ${label.toLowerCase()}`}
       >
         {copied
@@ -310,7 +323,7 @@ function HotspotDetail({ hotspot }) {
     <div className="px-4 py-3 space-y-3">
       {/* Name + badges */}
       <div className="flex items-center gap-2 min-w-0">
-        <h3 className="text-sm font-semibold text-slate-900 truncate">
+        <h3 className="text-sm font-semibold text-content truncate">
           {hotspot.name || truncateKey(hotspot.entityKey, 8)}
         </h3>
         <NetworkBadge networks={hotspot.networks} />
@@ -337,27 +350,27 @@ function HotspotDetail({ hotspot }) {
             {hotspot.networks.length > 1 && (
               <NetworkBadge networks={[net]} />
             )}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-content-secondary">
               {d.elevation != null && (
-                <span>Elevation: <strong className="text-slate-700">{d.elevation}m</strong></span>
+                <span>Elevation: <strong className="text-content-secondary">{d.elevation}m</strong></span>
               )}
               {d.gain != null && (
-                <span>Gain: <strong className="text-slate-700">{(d.gain / 10).toFixed(1)} dBi</strong></span>
+                <span>Gain: <strong className="text-content-secondary">{(d.gain / 10).toFixed(1)} dBi</strong></span>
               )}
               {d.azimuth != null && (
-                <span>Azimuth: <strong className="text-slate-700">{d.azimuth}°</strong></span>
+                <span>Azimuth: <strong className="text-content-secondary">{d.azimuth}°</strong></span>
               )}
               {d.mechanicalDownTilt != null && d.mechanicalDownTilt !== 0 && (
-                <span>Mech. tilt: <strong className="text-slate-700">{d.mechanicalDownTilt}°</strong></span>
+                <span>Mech. tilt: <strong className="text-content-secondary">{d.mechanicalDownTilt}°</strong></span>
               )}
               {d.electricalDownTilt != null && d.electricalDownTilt !== 0 && (
-                <span>Elec. tilt: <strong className="text-slate-700">{d.electricalDownTilt}°</strong></span>
+                <span>Elec. tilt: <strong className="text-content-secondary">{d.electricalDownTilt}°</strong></span>
               )}
               {d.deviceType && (
-                <span className="text-slate-400">{d.deviceType}</span>
+                <span className="text-content-tertiary">{d.deviceType}</span>
               )}
               {dates?.[net] && (
-                <span>Onboarded: <strong className="text-slate-700">{formatDate(dates[net])}</strong></span>
+                <span>Onboarded: <strong className="text-content-secondary">{formatDate(dates[net])}</strong></span>
               )}
             </div>
           </div>
@@ -376,25 +389,25 @@ function DetailCard({ hotspots, onClose }) {
     : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden max-h-[40vh] md:max-h-[60vh] overflow-y-auto">
+    <div className="rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden max-h-[40vh] md:max-h-[60vh] overflow-y-auto">
       {/* Shared location header */}
-      <div className="flex items-start justify-between px-4 py-3 border-b border-slate-100">
+      <div className="flex items-start justify-between px-4 py-3 border-b border-border-muted">
         <div className="space-y-1.5">
           {hasCoords && (
             <div className="flex items-center gap-2">
-              <MapPinIcon className="h-4 w-4 text-slate-400 shrink-0" />
-              <p className="text-sm font-mono text-slate-900">
+              <MapPinIcon className="h-4 w-4 text-content-tertiary shrink-0" />
+              <p className="text-sm font-mono text-content">
                 {primary.coords[0].toFixed(4)},  {primary.coords[1].toFixed(4)}
               </p>
             </div>
           )}
           {h3Hex && (
-            <p className="text-[10px] font-mono text-slate-400 ml-6">{h3Hex}</p>
+            <p className="text-[10px] font-mono text-content-tertiary ml-6">{h3Hex}</p>
           )}
         </div>
         <button
           onClick={onClose}
-          className="shrink-0 rounded-md p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+          className="shrink-0 rounded-md p-1 text-content-tertiary hover:text-content-secondary hover:bg-surface-inset transition"
         >
           <XMarkIcon className="h-4 w-4" />
         </button>
@@ -402,7 +415,7 @@ function DetailCard({ hotspots, onClose }) {
 
       {/* Per-Hotspot sections */}
       {hotspots.map((h, i) => (
-        <div key={hotspotId(h)} className={i > 0 ? "border-t border-slate-100" : ""}>
+        <div key={hotspotId(h)} className={i > 0 ? "border-t border-border-muted" : ""}>
           <HotspotDetail hotspot={h} />
         </div>
       ))}
@@ -415,22 +428,22 @@ function MapTooltip({ hotspot, tooltipRef, initialPos }) {
   return (
     <div
       ref={tooltipRef}
-      className="pointer-events-none absolute z-50 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg"
+      className="pointer-events-none absolute z-50 rounded-lg border border-border bg-surface-raised px-3 py-2 shadow-lg"
       style={{ left: initialPos.x + 12, top: initialPos.y - 12 }}
     >
       <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-slate-900">
+        <p className="text-sm font-medium text-content">
           {hotspot.name || truncateKey(hotspot.entityKey, 8)}
         </p>
         <NetworkBadge networks={hotspot.networks} />
         <LabelBadge label={hotspot.label} />
       </div>
       {hotspot.coords && (
-        <p className="text-xs text-slate-400 mt-0.5 font-mono">
+        <p className="text-xs text-content-tertiary mt-0.5 font-mono">
           {hotspot.coords[0].toFixed(4)}, {hotspot.coords[1].toFixed(4)}
         </p>
       )}
-      <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+      <p className="text-[10px] text-content-tertiary font-mono mt-0.5">
         {truncateKey(hotspot.entityKey, 12)}
       </p>
     </div>
@@ -442,10 +455,10 @@ function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
   const disabled = isOnMap || noLocation;
   return (
     <label
-      className={`flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-100 transition ${
+      className={`flex items-center gap-2.5 px-4 py-2.5 border-b border-border-muted transition ${
         disabled
           ? "opacity-50 cursor-default"
-          : "cursor-pointer hover:bg-slate-50"
+          : "cursor-pointer hover:bg-surface-inset"
       }`}
     >
       <input
@@ -453,23 +466,23 @@ function WalletPreviewRow({ item, isChecked, isOnMap, onToggle }) {
         checked={isChecked}
         disabled={disabled}
         onChange={onToggle}
-        className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500/20 disabled:opacity-40"
+        className="h-4 w-4 rounded border-border text-accent focus:ring-accent/20 disabled:opacity-40"
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={`text-sm font-medium truncate ${disabled ? "text-slate-400" : "text-slate-900"}`}>
+          <span className={`text-sm font-medium truncate ${disabled ? "text-content-tertiary" : "text-content"}`}>
             {item.name || "Unknown Hotspot"}
           </span>
           <NetworkBadge networks={item.networks} />
           {isOnMap && (
-            <span className="text-[10px] text-slate-400 italic">Already on map</span>
+            <span className="text-[10px] text-content-tertiary italic">Already on map</span>
           )}
           {noLocation && (
             <span className="text-[10px] text-amber-600 italic">No Location</span>
           )}
         </div>
       </div>
-      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+      <span className="text-[10px] text-content-tertiary font-mono shrink-0">
         {truncateKey(item.entityKey)}
       </span>
     </label>
@@ -500,10 +513,10 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
   const allSelected = selectedCount === selectableCount && selectableCount > 0;
 
   return (
-    <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden flex flex-col max-h-[480px]">
+    <div className="pointer-events-auto rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden flex flex-col max-h-[480px]">
       {/* Success banner */}
-      <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-50 border-b border-emerald-100">
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 shrink-0">
+      <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-100">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/400 shrink-0">
           <CheckIcon className="h-3.5 w-3.5 text-white" strokeWidth={3} />
         </div>
         <p className="text-sm font-medium text-emerald-800">
@@ -517,15 +530,15 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
       </div>
 
       {/* Label input */}
-      <div className="px-4 py-3 border-b border-slate-100">
-        <label className="block text-xs text-slate-500 mb-1.5">
+      <div className="px-4 py-3 border-b border-border-muted">
+        <label className="block text-xs text-content-secondary mb-1.5">
           Label (optional)
         </label>
         <input
           type="text"
           value={label}
           onChange={(e) => onLabelChange(e.target.value)}
-          className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+          className="block w-full rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
           placeholder="e.g. My Hotspots"
         />
       </div>
@@ -556,24 +569,24 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
       </div>
 
       {/* Footer */}
-      <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50">
+      <div className="flex items-center gap-2 px-4 py-3 border-t border-border-muted bg-surface-inset">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-content-secondary hover:bg-surface-inset transition"
         >
           <ArrowLeftIcon className="h-3.5 w-3.5" />
           Back
         </button>
         <button
           onClick={allSelected ? handleDeselectAll : handleSelectAll}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+          className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-content-secondary hover:bg-surface-inset transition"
         >
           {allSelected ? "Deselect All" : "Select All"}
         </button>
         <button
           onClick={onAdd}
           disabled={selectedCount === 0 || resolving}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {resolving ? <Spinner /> : null}
           {resolving ? "Resolving..." : `Add ${selectedCount} to Map`}
@@ -586,6 +599,7 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
 // -- Main Component --
 
 export default function HotspotMap() {
+  const mapStyle = useBasemapStyle();
   const [mode, setMode] = useState("keys");
   const [keysInput, setKeysInput] = useState("");
   const [walletInput, setWalletInput] = useState("");
@@ -1034,37 +1048,35 @@ export default function HotspotMap() {
   const hasHotspots = hotspots.length > 0;
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
+    <div className="flex flex-col h-screen bg-surface-inset">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 shrink-0">
+      <header className="bg-surface-raised border-b border-border shrink-0">
         <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4">
-          <a href="/" className="flex items-center gap-2 md:gap-3 text-slate-900 hover:text-slate-700">
-            <div className="flex h-8 w-8 md:h-9 md:w-9 items-center justify-center rounded-lg bg-slate-900 text-xs md:text-sm font-semibold text-white">
+          <a href="/" className="flex items-center gap-2 md:gap-3 text-content hover:opacity-80">
+            <div className="flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-xs md:text-sm font-semibold text-white">
               HT
             </div>
-            <div className="leading-tight">
-              <p className="text-sm md:text-base font-semibold">Helium Tools</p>
-              <p className="text-xs text-slate-500 hidden md:block">Operator utilities</p>
-            </div>
+            <span className="font-display text-sm md:text-[17px] font-semibold tracking-[-0.02em]">Helium Tools</span>
+            <span className="text-[13px] text-content-tertiary hidden md:inline">Operator utilities</span>
           </a>
           <div className="flex items-center gap-4">
             {hasHotspots && (
               <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm">
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="h-2 w-2 rounded-full bg-iot" />
                   {stats.iot} IoT
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-violet-500" />
+                  <span className="h-2 w-2 rounded-full bg-mobile" />
                   {stats.mobile} Mobile
                 </span>
-                <span className="font-semibold text-slate-900 hidden md:inline">
+                <span className="font-semibold text-content hidden md:inline">
                   {stats.total} hotspots
                 </span>
               </div>
             )}
             {!hasHotspots && (
-              <span className="text-sm font-semibold text-slate-900">
+              <span className="text-sm font-semibold text-content">
                 Hotspot Map
               </span>
             )}
@@ -1083,7 +1095,7 @@ export default function HotspotMap() {
           controller={true}
           getCursor={({ isHovering }) => (isHovering ? "pointer" : "grab")}
         >
-          <MapGL mapStyle={BASEMAP_STYLE}>
+          <MapGL mapStyle={mapStyle}>
             <NavigationControl position={isMobile ? "top-left" : "top-right"} />
           </MapGL>
         </DeckGL>
@@ -1115,7 +1127,7 @@ export default function HotspotMap() {
               {mode === "keys" && (
                 <>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1.5">
+                    <label className="block text-xs text-content-secondary mb-1.5">
                       Paste entity keys, one per line
                     </label>
                     <textarea
@@ -1131,7 +1143,7 @@ export default function HotspotMap() {
                     <button
                       onClick={handleLoadKeys}
                       disabled={resolving || !keysInput.trim()}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {resolving ? <Spinner /> : null}
                       Load Hotspots
@@ -1139,7 +1151,7 @@ export default function HotspotMap() {
                     {hasHotspots && (
                       <button
                         onClick={handleClear}
-                        className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+                        className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-content-secondary hover:bg-surface-inset transition"
                       >
                         Clear
                       </button>
@@ -1151,7 +1163,7 @@ export default function HotspotMap() {
               {mode === "wallet" && !walletResults && (
                 <>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1.5">
+                    <label className="block text-xs text-content-secondary mb-1.5">
                       Solana wallet address
                     </label>
                     <input
@@ -1172,7 +1184,7 @@ export default function HotspotMap() {
                     <button
                       onClick={handleLookupWallet}
                       disabled={walletLoading || resolving || !walletInput.trim()}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {walletLoading ? <Spinner /> : <MagnifyingGlassIcon className="h-4 w-4" />}
                       {walletLoading ? "Looking up..." : "Search Wallet"}
@@ -1180,7 +1192,7 @@ export default function HotspotMap() {
                     {hasHotspots && (
                       <button
                         onClick={handleClear}
-                        className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+                        className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-content-secondary hover:bg-surface-inset transition"
                       >
                         Clear
                       </button>
@@ -1190,7 +1202,7 @@ export default function HotspotMap() {
               )}
 
               {error && (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/40 dark:text-rose-300">
                   {error}
                 </div>
               )}
@@ -1199,7 +1211,7 @@ export default function HotspotMap() {
 
           // Desktop input panel wraps content in a card
           const inputPanel = showInput && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden">
+            <div className="rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden">
               {inputContent}
             </div>
           );
@@ -1227,13 +1239,13 @@ export default function HotspotMap() {
               )}
 
               {hasHotspots && (
-                <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border-muted">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-content-tertiary">
                     Hotspots
                   </span>
                   <button
                     onClick={() => fitBounds(hotspots.filter((h) => h.coords))}
-                    className="text-[10px] text-slate-400 hover:text-slate-600 transition"
+                    className="text-[10px] text-content-tertiary hover:text-content-secondary transition"
                     title="Fit map to all Hotspots"
                   >
                     Fit all
@@ -1243,7 +1255,7 @@ export default function HotspotMap() {
                     className={`flex items-center gap-1 text-[10px] transition ${
                       shareState === "copied"
                         ? "text-emerald-600"
-                        : "text-slate-400 hover:text-slate-600"
+                        : "text-content-tertiary hover:text-content-secondary"
                     }`}
                     title="Copy shareable link"
                   >
@@ -1261,8 +1273,8 @@ export default function HotspotMap() {
                         onClick={() => setNetworkFilter(f.key)}
                         className={`rounded-full px-2 py-0.5 text-xs font-medium transition ${
                           networkFilter === f.key
-                            ? "bg-slate-900 text-white"
-                            : "text-slate-400 hover:text-slate-600"
+                            ? "bg-accent text-white"
+                            : "text-content-tertiary hover:text-content-secondary"
                         }`}
                       >
                         {f.label}
@@ -1294,7 +1306,7 @@ export default function HotspotMap() {
           );
 
           const resultsPanel = showResults && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-soft overflow-hidden flex flex-col min-h-0">
+            <div className="rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden flex flex-col min-h-0">
               {resultsContent}
               {resultsListContent}
             </div>
@@ -1312,7 +1324,7 @@ export default function HotspotMap() {
 
               {/* Mobile bottom sheet */}
               <div className="md:hidden absolute bottom-0 left-0 right-0 z-10 pointer-events-auto">
-                <div className="bg-white rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+                <div className="bg-surface-raised rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
                   {/* Handle bar */}
                   <div
                     onClick={() => {
@@ -1322,7 +1334,7 @@ export default function HotspotMap() {
                     }}
                     className="flex justify-center py-2 cursor-pointer"
                   >
-                    <div className="w-9 h-1 rounded-full bg-slate-300" />
+                    <div className="w-9 h-1 rounded-full bg-content-tertiary/40" />
                   </div>
 
                   {/* Collapsed summary (Hotspots loaded, sheet collapsed, no detail) */}
@@ -1334,7 +1346,7 @@ export default function HotspotMap() {
                       <span className="text-sm font-semibold text-emerald-600">
                         {hotspots.length} Hotspot{hotspots.length !== 1 ? "s" : ""}
                       </span>
-                      <span className="text-xs text-slate-400">Tap to expand</span>
+                      <span className="text-xs text-content-tertiary">Tap to expand</span>
                     </div>
                   )}
 
@@ -1347,16 +1359,16 @@ export default function HotspotMap() {
                           <div className="flex items-center justify-between px-4 pb-2">
                             <button
                               onClick={() => setSelectedHotspot(null)}
-                              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700 transition"
+                              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-content-secondary hover:text-content-secondary transition"
                             >
                               <ArrowLeftIcon className="h-3.5 w-3.5" />
                               Back to list
                             </button>
                             <NetworkBadge networks={selectedGroup[0]?.networks} />
                           </div>
-                          <div className="border-t border-slate-100">
+                          <div className="border-t border-border-muted">
                             {selectedGroup.map((h, i) => (
-                              <div key={hotspotId(h)} className={i > 0 ? "border-t border-slate-100" : ""}>
+                              <div key={hotspotId(h)} className={i > 0 ? "border-t border-border-muted" : ""}>
                                 <HotspotDetail hotspot={h} />
                               </div>
                             ))}

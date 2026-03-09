@@ -77,19 +77,19 @@ export default function DcPurchaseTool() {
   const loading = resolving || submitting;
 
   return (
-    <div className="min-h-screen bg-white">
-      <Header />
+    <div className="min-h-screen bg-surface">
+      <Header breadcrumb="Buy Data Credits" />
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
         {/* Page Header */}
         <div className="mb-10">
-          <p className="text-sm font-mono uppercase tracking-widest text-sky-600 mb-2">
+          <p className="text-[13px] font-mono font-medium uppercase tracking-[0.08em] text-accent-text mb-2">
             Data Credits
           </p>
-          <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-4">
+          <h1 className="text-3xl sm:text-4xl font-display font-bold text-content tracking-[-0.03em] mb-4">
             Buy Data Credits
           </h1>
-          <p className="text-lg text-slate-600 max-w-xl">
+          <p className="text-lg text-content-secondary max-w-xl">
             Fund your OUI with Data Credits via Coinbase Onramp. Enter your OUI to get started.
           </p>
         </div>
@@ -101,7 +101,7 @@ export default function DcPurchaseTool() {
             <form className="space-y-6" onSubmit={handleSubmit}>
               {/* OUI Input */}
               <div>
-                <label htmlFor="oui" className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2 block">
+                <label htmlFor="oui" className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-2 block">
                   OUI Number
                 </label>
                 <div className="relative">
@@ -111,12 +111,12 @@ export default function DcPurchaseTool() {
                     inputMode="numeric"
                     value={ouiInput}
                     onChange={(e) => setOuiInput(e.target.value)}
-                    className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xl font-semibold text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                    className="block w-full rounded-lg border border-border bg-surface-inset px-4 py-3 text-xl font-semibold text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     placeholder="Enter OUI"
                   />
                   {resolving && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <ArrowPathIcon className="h-5 w-5 animate-spin text-slate-400" />
+                      <ArrowPathIcon className="h-5 w-5 animate-spin text-content-tertiary" />
                     </div>
                   )}
                 </div>
@@ -124,11 +124,11 @@ export default function DcPurchaseTool() {
 
               {/* Amount Input */}
               <div>
-                <label htmlFor="usd" className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2 block">
+                <label htmlFor="usd" className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-2 block">
                   Amount (USD)
                 </label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-slate-500 pointer-events-none">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-content-secondary pointer-events-none">
                     $
                   </span>
                   <input
@@ -138,27 +138,27 @@ export default function DcPurchaseTool() {
                     step="0.01"
                     value={usd}
                     onChange={(e) => setUsd(e.target.value)}
-                    className="block w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-4 py-3 text-xl font-semibold text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                    className="block w-full rounded-lg border border-border bg-surface-inset pl-8 pr-4 py-3 text-xl font-semibold text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     placeholder="50.00"
                   />
                 </div>
-                <p className="text-xs text-slate-500 mt-2">Minimum $5 USD</p>
+                <p className="text-xs text-content-secondary mt-2">Minimum $5 USD</p>
               </div>
 
               {/* Email Input */}
               <div>
-                <label htmlFor="email" className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-2 block">
-                  Email <span className="text-slate-300">(optional)</span>
+                <label htmlFor="email" className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-2 block">
+                  Email <span className="text-content-tertiary">(optional)</span>
                 </label>
                 <input
                   id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                  className="block w-full rounded-lg border border-border bg-surface-raised px-4 py-3 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                   placeholder="you@example.com"
                 />
-                <p className="text-xs text-slate-500 mt-2">Receive a receipt when your order completes</p>
+                <p className="text-xs text-content-secondary mt-2">Receive a receipt when your order completes</p>
               </div>
 
               {error && (
@@ -168,7 +168,7 @@ export default function DcPurchaseTool() {
               <button
                 type="submit"
                 disabled={!canCreate || loading}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <><ArrowPathIcon className="h-4 w-4 animate-spin" /> Starting checkout…</>
@@ -179,7 +179,7 @@ export default function DcPurchaseTool() {
             </form>
 
             {/* Disclaimer */}
-            <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 text-sm text-amber-800">
+            <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 text-sm text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/50 dark:text-amber-300">
               <p className="font-medium mb-1">Important</p>
               <p>
                 You are purchasing USDC, which will be swapped to HNT and then converted to Data Credits.
@@ -195,19 +195,19 @@ export default function DcPurchaseTool() {
               }`}
           >
             {resolved && (
-              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm w-full max-w-full">
+              <div className="rounded-xl border border-border bg-surface-raised overflow-hidden shadow-sm w-full max-w-full">
                 {/* Header + Balance - Always visible */}
                 <div className="px-4 py-4 sm:px-5 sm:py-5">
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-mono uppercase tracking-widest text-sky-600">OUI {resolved.oui}</p>
+                    <p className="text-sm font-mono uppercase tracking-widest text-accent-text">OUI {resolved.oui}</p>
                   </div>
-                  <p className="text-sm font-mono uppercase tracking-widest text-slate-400 mb-1">Current Balance</p>
-                  <p className="text-2xl sm:text-3xl font-bold text-slate-900">
+                  <p className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-1">Current Balance</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-content">
                     {resolved.escrowDcBalance
                       ? usdFormatter.format(Number(resolved.escrowDcBalance) / 100000)
                       : "—"}
                   </p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-content-secondary">
                     {resolved.escrowDcBalance
                       ? `${numberFormatter.format(resolved.escrowDcBalance)} DC`
                       : "Unknown balance"}
@@ -215,13 +215,13 @@ export default function DcPurchaseTool() {
                 </div>
 
                 {/* Compact address rows */}
-                <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5 sm:py-4 space-y-3 overflow-hidden">
+                <div className="border-t border-border-muted bg-surface-inset px-4 py-3 sm:px-5 sm:py-4 space-y-3 overflow-hidden">
                   {/* Payer Key - compact row */}
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <span className="text-xs font-mono uppercase tracking-wider text-slate-400 shrink-0 w-14">Payer</span>
+                    <span className="text-xs font-mono uppercase tracking-wider text-content-tertiary shrink-0 w-14">Payer</span>
                     <div className="flex-1 min-w-0 overflow-hidden">
                       <MiddleEllipsis>
-                        <code className="text-xs text-slate-600" title={resolved.payer}>{resolved.payer}</code>
+                        <code className="text-xs text-content-secondary" title={resolved.payer}>{resolved.payer}</code>
                       </MiddleEllipsis>
                     </div>
                     <CopyButton text={resolved.payer} />
@@ -229,9 +229,9 @@ export default function DcPurchaseTool() {
 
                   {/* Escrow - compact row */}
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <span className="text-xs font-mono uppercase tracking-wider text-slate-400 shrink-0 w-14">Escrow</span>
+                    <span className="text-xs font-mono uppercase tracking-wider text-content-tertiary shrink-0 w-14">Escrow</span>
                     <a
-                      className="flex-1 min-w-0 text-xs text-sky-600 hover:text-sky-500 flex items-center gap-1 overflow-hidden"
+                      className="flex-1 min-w-0 text-xs text-accent-text hover:opacity-80 flex items-center gap-1 overflow-hidden"
                       href={`https://solscan.io/account/${encodeURIComponent(resolved.escrow)}`}
                       target="_blank"
                       rel="noreferrer"

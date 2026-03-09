@@ -9,33 +9,33 @@ import { classNames } from "../lib/utils.js";
 
 const variants = {
     success: {
-        wrapper: "bg-emerald-50 text-emerald-800 border-emerald-200",
-        icon: "text-emerald-600",
+        wrapper: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/50",
+        icon: "text-emerald-600 dark:text-emerald-400",
         Icon: CheckCircleIcon,
     },
     info: {
-        wrapper: "bg-sky-50 text-sky-800 border-sky-200",
-        icon: "text-sky-600",
+        wrapper: "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/50",
+        icon: "text-sky-600 dark:text-sky-400",
         Icon: InformationCircleIcon,
     },
     warning: {
-        wrapper: "bg-amber-50 text-amber-800 border-amber-200",
-        icon: "text-amber-600",
+        wrapper: "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/50",
+        icon: "text-amber-600 dark:text-amber-400",
         Icon: ExclamationTriangleIcon,
     },
     error: {
-        wrapper: "bg-rose-50 text-rose-800 border-rose-200",
-        icon: "text-rose-600",
+        wrapper: "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/50",
+        icon: "text-rose-600 dark:text-rose-400",
         Icon: ExclamationTriangleIcon,
     },
     muted: {
-        wrapper: "bg-slate-50 text-slate-700 border-slate-200",
-        icon: "text-slate-500",
+        wrapper: "bg-surface-inset text-content-secondary border-border",
+        icon: "text-content-tertiary",
         Icon: BellAlertIcon,
     },
     loading: {
-        wrapper: "bg-sky-50 text-sky-800 border-sky-200",
-        icon: "text-sky-600",
+        wrapper: "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/50",
+        icon: "text-sky-600 dark:text-sky-400",
         Icon: ArrowPathIcon,
     },
 };
