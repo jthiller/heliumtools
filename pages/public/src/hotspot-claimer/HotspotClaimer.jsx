@@ -1081,7 +1081,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                 </span>
                 <button
                   onClick={handleStopClaimAll}
-                  className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-500 dark:text-rose-400 font-medium"
+                  className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-500 dark:hover:text-rose-300 font-medium"
                 >
                   Stop
                 </button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowPathIcon,
   BellAlertIcon,
@@ -29,40 +29,29 @@ import {
   fetchOuiIndex,
   subscribeToAlerts,
 } from "../lib/api.js";
+import useDarkMode from "../lib/useDarkMode.js";
 
-// Hook to read CSS custom properties for Recharts (which needs hex values)
-function useChartColors() {
-  const getColors = useCallback(() => {
-    const root = document.documentElement;
-    const style = getComputedStyle(root);
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    return {
-      stroke: style.getPropertyValue("--color-accent-text").trim() || (isDark ? "#22D3EE" : "#0E7490"),
-      grid: style.getPropertyValue("--color-border").trim() || (isDark ? "#2E2E33" : "#E7E5E4"),
-      tickText: style.getPropertyValue("--color-content-tertiary").trim() || (isDark ? "#6E6A75" : "#A8A29E"),
-      tooltipBorder: style.getPropertyValue("--color-border").trim() || (isDark ? "#2E2E33" : "#E7E5E4"),
-      tooltipBg: style.getPropertyValue("--color-surface-raised").trim() || (isDark ? "#1E1E22" : "#FFFFFF"),
-      tooltipText: style.getPropertyValue("--color-content").trim() || (isDark ? "#F0EDEA" : "#1C1917"),
-    };
-  }, []);
-
-  const [colors, setColors] = useState(getColors);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => setColors(getColors());
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [getColors]);
-
-  return colors;
+// Read CSS custom properties for Recharts (which needs hex values)
+function getChartColors() {
+  const style = getComputedStyle(document.documentElement);
+  const v = (name) => style.getPropertyValue(name).trim();
+  return {
+    stroke: v("--color-accent-text"),
+    grid: v("--color-border"),
+    tickText: v("--color-content-tertiary"),
+    tooltipBorder: v("--color-border"),
+    tooltipBg: v("--color-surface-raised"),
+    tooltipText: v("--color-content"),
+  };
 }
 
 // Standard input class for consistency
 const inputClassName = "block w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
 
 export default function HomePage() {
-  const chartColors = useChartColors();
+  const isDark = useDarkMode();
+  // Re-read computed CSS values when theme changes
+  const chartColors = useMemo(getChartColors, [isDark]);
   const [ouis, setOuis] = useState([]);
   const [ouiInput, setOuiInput] = useState("");
   const [payer, setPayer] = useState("");

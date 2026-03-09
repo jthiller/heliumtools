@@ -1,5 +1,7 @@
 import { Dithering } from "@paper-design/shaders-react";
 
+const shaderStyle = { backgroundColor: "#070B0D", width: "100%", height: "100%" };
+
 export default function ShaderDithering({ className = "" }) {
   return (
     <div className={className} aria-hidden="true">
@@ -11,11 +13,7 @@ export default function ShaderDithering({ className = "" }) {
         scale={0.76}
         colorBack="#00000000"
         colorFront="#0D7490"
-        style={{
-          backgroundColor: "#070B0D",
-          width: "100%",
-          height: "100%",
-        }}
+        style={shaderStyle}
       />
     </div>
   );

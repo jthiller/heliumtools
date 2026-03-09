@@ -18,22 +18,10 @@ import MiddleEllipsis from "react-middle-ellipsis";
 import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
 import { encodeKeys, decodeKeys } from "../lib/urlCompression.js";
+import useDarkMode from "../lib/useDarkMode.js";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-
-function useBasemapStyle() {
-  const [style, setStyle] = useState(() =>
-    window.matchMedia("(prefers-color-scheme: dark)").matches ? BASEMAP_DARK : BASEMAP_LIGHT
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e) => setStyle(e.matches ? BASEMAP_DARK : BASEMAP_LIGHT);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-  return style;
-}
 
 const IOT_COLOR = [16, 185, 129];
 const MOBILE_COLOR = [139, 92, 246];
@@ -516,7 +504,7 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
     <div className="pointer-events-auto rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden flex flex-col max-h-[480px]">
       {/* Success banner */}
       <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-100">
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/400 shrink-0">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 dark:bg-emerald-600 shrink-0">
           <CheckIcon className="h-3.5 w-3.5 text-white" strokeWidth={3} />
         </div>
         <p className="text-sm font-medium text-emerald-800">
@@ -599,7 +587,8 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
 // -- Main Component --
 
 export default function HotspotMap() {
-  const mapStyle = useBasemapStyle();
+  const isDark = useDarkMode();
+  const mapStyle = isDark ? BASEMAP_DARK : BASEMAP_LIGHT;
   const [mode, setMode] = useState("keys");
   const [keysInput, setKeysInput] = useState("");
   const [walletInput, setWalletInput] = useState("");
@@ -1359,7 +1348,7 @@ export default function HotspotMap() {
                           <div className="flex items-center justify-between px-4 pb-2">
                             <button
                               onClick={() => setSelectedHotspot(null)}
-                              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-content-secondary hover:text-content-secondary transition"
+                              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-content-secondary hover:text-content transition"
                             >
                               <ArrowLeftIcon className="h-3.5 w-3.5" />
                               Back to list
