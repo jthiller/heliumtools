@@ -2,7 +2,7 @@ import { jsonResponse } from "../../../lib/response.js";
 import { getPendingRewards } from "../services/oracle.js";
 import { checkIpRateLimit } from "../services/rateLimit.js";
 import { MAX_LOOKUPS_PER_MINUTE } from "../config.js";
-import { isValidWalletAddress } from "../utils.js";
+import { isValidWalletAddress, isValidEntityKey } from "../utils.js";
 
 const MAX_BULK_SIZE = 50;
 const CONCURRENCY = 5;
@@ -31,6 +31,10 @@ export async function handleBulkRewards(request, env) {
     return jsonResponse({ error: "Invalid JSON body." }, 400);
   }
 
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return jsonResponse({ error: "Request body must be a JSON object." }, 400);
+  }
+
   const { owner, hotspots } = body;
 
   if (!isValidWalletAddress(owner)) {
@@ -50,16 +54,16 @@ export async function handleBulkRewards(request, env) {
 
   // Validate each Hotspot has required fields
   for (const h of hotspots) {
-    if (!h.entityKey || !h.assetId) {
+    if (!h.assetId || !isValidEntityKey(h.entityKey)) {
       return jsonResponse(
-        { error: "Each Hotspot must have entityKey and assetId." },
+        { error: "Each Hotspot must have a valid entityKey and assetId." },
         400
       );
     }
   }
 
   // Fetch rewards in parallel with bounded concurrency
-  const results = {};
+  const results = Object.create(null);
   const queue = [...hotspots];
 
   async function processNext() {

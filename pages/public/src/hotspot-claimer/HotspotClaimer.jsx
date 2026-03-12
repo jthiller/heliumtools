@@ -973,32 +973,36 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
         setRewardsProgress({ loaded: Math.min(loaded, hotspotList.length), total: hotspotList.length });
       }
 
-      // Retry failed Hotspots individually with concurrency
+      // Retry failed Hotspots individually with bounded concurrency
+      const RETRY_BATCH_SIZE = 10;
       const failedList = hotspotList.filter((h) => failedKeys.has(h.entityKey));
       if (failedList.length > 0 && !isStale()) {
-        const retryResults = await Promise.allSettled(
-          failedList.map(async (h) => {
-            if (isStale()) return null;
-            const result = await fetchRewards(h.entityKey);
-            return { entityKey: h.entityKey, rewards: result.rewards };
-          })
-        );
+        for (let i = 0; i < failedList.length && !isStale(); i += RETRY_BATCH_SIZE) {
+          const batch = failedList.slice(i, i + RETRY_BATCH_SIZE);
+          const retryResults = await Promise.allSettled(
+            batch.map(async (h) => {
+              if (isStale()) return null;
+              const result = await fetchRewards(h.entityKey);
+              return { entityKey: h.entityKey, rewards: result.rewards };
+            })
+          );
 
-        const rewardsUpdate = {};
-        const clearedErrors = [];
-        for (const r of retryResults) {
-          if (r.status === "fulfilled" && r.value?.rewards) {
-            rewardsUpdate[r.value.entityKey] = r.value.rewards;
-            clearedErrors.push(r.value.entityKey);
+          const rewardsUpdate = {};
+          const clearedErrors = [];
+          for (const r of retryResults) {
+            if (r.status === "fulfilled" && r.value?.rewards) {
+              rewardsUpdate[r.value.entityKey] = r.value.rewards;
+              clearedErrors.push(r.value.entityKey);
+            }
           }
-        }
-        if (Object.keys(rewardsUpdate).length > 0) {
-          setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
-          setRewardErrors((prev) => {
-            const next = { ...prev };
-            for (const key of clearedErrors) delete next[key];
-            return next;
-          });
+          if (Object.keys(rewardsUpdate).length > 0) {
+            setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
+            setRewardErrors((prev) => {
+              const next = { ...prev };
+              for (const key of clearedErrors) delete next[key];
+              return next;
+            });
+          }
         }
       }
     } finally {
