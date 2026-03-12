@@ -14,6 +14,7 @@ import CopyButton from "../components/CopyButton.jsx";
 import {
   lookupHotspot,
   fetchRewards,
+  fetchBulkRewards,
   claimRewards,
   fetchWalletHotspots,
 } from "../lib/hotspotClaimerApi.js";
@@ -621,7 +622,8 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
 
 // ─── Wallet Mode Components ───────────────────────────────────────────────────
 
-const REWARD_BATCH_SIZE = 10;
+const BULK_BATCH_SIZE = 50; // Hotspots per bulk request
+const MAX_RETRIES = 3;
 const DEFAULT_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
 
 function getTokenDecimals(rewards, tokenKey) {
@@ -639,9 +641,17 @@ function isHotspotClaimable(rewards) {
   return Object.values(rewards).some((r) => r.claimable && r.pending !== "0");
 }
 
-function WalletRewardCells({ entityKey, walletRewards, rewardsLoading }) {
+function WalletRewardCells({ entityKey, walletRewards, rewardsLoading, rewardErrors }) {
   const rewards = walletRewards[entityKey];
-  const loading = !rewards && rewardsLoading;
+  const error = rewardErrors?.[entityKey];
+  const loading = !rewards && !error && rewardsLoading;
+  if (error) {
+    return (
+      <td colSpan={3} className="py-3 text-right">
+        <span className="text-xs text-rose-500 dark:text-rose-400" title={error}>Failed</span>
+      </td>
+    );
+  }
   return (
     <>
       {["iot", "mobile", "hnt"].map((token) => (
@@ -802,12 +812,14 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
   const [walletRewards, setWalletRewards] = useState({});
   const [rewardsProgress, setRewardsProgress] = useState({ loaded: 0, total: 0 });
   const [rewardsLoading, setRewardsLoading] = useState(false);
+  // Track which entity keys failed to load rewards
+  const [rewardErrors, setRewardErrors] = useState({});
 
-  // Claim state per hotspot: Map<entityKey, "claiming"|"claimed"|"error"|"cooldown"|"rate_limited">
+  // Claim state per Hotspot: Map<entityKey, "claiming"|"claimed"|"error"|"cooldown"|"rate_limited">
   const [claimStates, setClaimStates] = useState({});
-  // Error messages per hotspot: Map<entityKey, string>
+  // Error messages per Hotspot: Map<entityKey, string>
   const [claimErrors, setClaimErrors] = useState({});
-  // Claim results per hotspot: Map<entityKey, claimResult>
+  // Claim results per Hotspot: Map<entityKey, claimResult>
   const [claimResults, setClaimResults] = useState(new Map());
   // Claim All state
   const [claimAllActive, setClaimAllActive] = useState(false);
@@ -836,6 +848,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
         setHotspots([]);
         setHotspotsCount(0);
         setWalletRewards({});
+        setRewardErrors({});
         setRewardsProgress({ loaded: 0, total: 0 });
         setClaimStates({});
         setClaimErrors({});
@@ -853,6 +866,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
       setHotspots([]);
       setHotspotsCount(0);
       setWalletRewards({});
+      setRewardErrors({});
       setRewardsProgress({ loaded: 0, total: 0 });
       setClaimStates({});
       setClaimErrors({});
@@ -890,50 +904,110 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
   }, [walletAddress]);
 
   async function loadRewardsProgressively(hotspotList, expectedAddr) {
+    const isStale = () => expectedAddr !== walletAddress.trim();
+
     setRewardsLoading(true);
+    setRewardErrors({});
     setRewardsProgress({ loaded: 0, total: hotspotList.length });
 
     let loaded = 0;
+    const failedKeys = new Set();
 
-    for (let i = 0; i < hotspotList.length; i += REWARD_BATCH_SIZE) {
-      if (expectedAddr !== walletAddress.trim()) return;
+    try {
+      for (let i = 0; i < hotspotList.length; i += BULK_BATCH_SIZE) {
+        if (isStale()) return;
 
-      const batch = hotspotList.slice(i, i + REWARD_BATCH_SIZE);
-      const results = await Promise.allSettled(
-        batch.map(async (h) => {
+        const batch = hotspotList.slice(i, i + BULK_BATCH_SIZE);
+
+        // Bulk fetch with retry on rate limit
+        let bulkResults = null;
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
-            const result = await fetchRewards(h.entityKey);
-            return { entityKey: h.entityKey, rewards: result.rewards, lastClaim: result.lastClaim };
-          } catch {
-            return { entityKey: h.entityKey, rewards: null };
-          }
-        })
-      );
-
-      if (expectedAddr !== walletAddress.trim()) return;
-
-      setWalletRewards((prev) => {
-        const next = { ...prev };
-        for (const r of results) {
-          if (r.status === "fulfilled" && r.value) {
-            next[r.value.entityKey] = r.value.rewards;
-            // Mark cooldown if applicable
-            if (r.value.lastClaim) {
-              setClaimStates((prevStates) => ({
-                ...prevStates,
-                [r.value.entityKey]: "cooldown",
-              }));
+            bulkResults = await fetchBulkRewards(
+              expectedAddr,
+              batch.map((h) => ({ entityKey: h.entityKey, assetId: h.assetId }))
+            );
+            break;
+          } catch (err) {
+            if (err.rateLimited && attempt < MAX_RETRIES - 1) {
+              const delay = (err.retryAfterSeconds || 30) * 1000 + Math.random() * 5000;
+              await new Promise((r) => setTimeout(r, delay));
+              if (isStale()) return;
+              continue;
             }
+            // Whole batch failed — mark all as errors
+            for (const h of batch) failedKeys.add(h.entityKey);
+            bulkResults = null;
+            break;
           }
         }
-        return next;
-      });
 
-      loaded += batch.length;
-      setRewardsProgress({ loaded: Math.min(loaded, hotspotList.length), total: hotspotList.length });
+        if (isStale()) return;
+
+        if (bulkResults) {
+          const rewardsUpdate = {};
+          const errorsUpdate = {};
+          for (const h of batch) {
+            const r = bulkResults[h.entityKey];
+            if (r?.rewards) {
+              rewardsUpdate[h.entityKey] = r.rewards;
+            } else {
+              errorsUpdate[h.entityKey] = r?.error || "No response";
+              failedKeys.add(h.entityKey);
+            }
+          }
+
+          if (Object.keys(rewardsUpdate).length > 0) {
+            setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
+          }
+          if (Object.keys(errorsUpdate).length > 0) {
+            setRewardErrors((prev) => ({ ...prev, ...errorsUpdate }));
+          }
+        } else {
+          const errorsUpdate = {};
+          for (const h of batch) errorsUpdate[h.entityKey] = "Request failed";
+          setRewardErrors((prev) => ({ ...prev, ...errorsUpdate }));
+        }
+
+        loaded += batch.length;
+        setRewardsProgress({ loaded: Math.min(loaded, hotspotList.length), total: hotspotList.length });
+      }
+
+      // Retry failed Hotspots individually with bounded concurrency
+      const RETRY_BATCH_SIZE = 10;
+      const failedList = hotspotList.filter((h) => failedKeys.has(h.entityKey));
+      if (failedList.length > 0 && !isStale()) {
+        for (let i = 0; i < failedList.length && !isStale(); i += RETRY_BATCH_SIZE) {
+          const batch = failedList.slice(i, i + RETRY_BATCH_SIZE);
+          const retryResults = await Promise.allSettled(
+            batch.map(async (h) => {
+              if (isStale()) return null;
+              const result = await fetchRewards(h.entityKey);
+              return { entityKey: h.entityKey, rewards: result.rewards };
+            })
+          );
+
+          const rewardsUpdate = {};
+          const clearedErrors = [];
+          for (const r of retryResults) {
+            if (r.status === "fulfilled" && r.value?.rewards) {
+              rewardsUpdate[r.value.entityKey] = r.value.rewards;
+              clearedErrors.push(r.value.entityKey);
+            }
+          }
+          if (Object.keys(rewardsUpdate).length > 0) {
+            setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
+            setRewardErrors((prev) => {
+              const next = { ...prev };
+              for (const key of clearedErrors) delete next[key];
+              return next;
+            });
+          }
+        }
+      }
+    } finally {
+      setRewardsLoading(false);
     }
-
-    setRewardsLoading(false);
   }
 
   const handleClaimSingle = useCallback(async (entityKey) => {
@@ -965,7 +1039,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
       return result;
     } catch (err) {
       const msg = err.message || "Claim failed";
-      const isRateLimit = /rate|too many|429|cooldown|recently|daily.*limit|limit.*reached/i.test(msg);
+      const isRateLimit = err.rateLimited || /rate|too many|429|cooldown|recently|daily.*limit|limit.*reached/i.test(msg);
       setClaimErrors((prev) => ({ ...prev, [entityKey]: msg }));
       setClaimStates((prev) => ({
         ...prev,
@@ -1069,10 +1143,26 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                 {hotspotsCount} Hotspot{hotspotsCount !== 1 ? "s" : ""}
               </h3>
               {rewardsLoading && (
-                <p className="text-xs text-content-secondary mt-0.5">
-                  Loading rewards {rewardsProgress.loaded}/{rewardsProgress.total}...
-                </p>
+                <div className="mt-1.5">
+                  <p className="text-xs text-content-secondary mb-1">
+                    Loading rewards {rewardsProgress.loaded}/{rewardsProgress.total}...
+                  </p>
+                  <div className="w-full h-2 bg-border-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-accent rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${rewardsProgress.total ? (rewardsProgress.loaded / rewardsProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
               )}
+              {(() => {
+                const errorCount = Object.keys(rewardErrors).length;
+                return !rewardsLoading && errorCount > 0 && (
+                  <p className="text-xs text-rose-500 dark:text-rose-400 mt-0.5">
+                    {errorCount} Hotspot{errorCount !== 1 ? "s" : ""} failed to load rewards
+                  </p>
+                );
+              })()}
             </div>
             {claimAllActive && (
               <div className="flex items-center gap-3">
@@ -1132,7 +1222,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                         <CopyButton text={h.entityKey} size="h-3 w-3" />
                       </div>
                     </td>
-                    <WalletRewardCells entityKey={h.entityKey} walletRewards={walletRewards} rewardsLoading={rewardsLoading} />
+                    <WalletRewardCells entityKey={h.entityKey} walletRewards={walletRewards} rewardsLoading={rewardsLoading} rewardErrors={rewardErrors} />
                     <WalletActionCell
                       entityKey={h.entityKey}
                       claimStates={claimStates}
@@ -1173,7 +1263,8 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           <div className="md:hidden divide-y divide-border-muted">
             {hotspots.map((h) => {
               const rewards = walletRewards[h.entityKey];
-              const loading = !rewards && rewardsLoading;
+              const hotspotError = rewardErrors[h.entityKey];
+              const loading = !rewards && !hotspotError && rewardsLoading;
               const hnt = rewards ? getTokenAmount(rewards, "hnt") : 0;
               const iot = rewards ? getTokenAmount(rewards, "iot") : 0;
               const mobile = rewards ? getTokenAmount(rewards, "mobile") : 0;
@@ -1215,6 +1306,10 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                   </div>
                   {loading ? (
                     <div className="mt-2"><Spinner className="h-3 w-3 text-content-tertiary" /></div>
+                  ) : hotspotError ? (
+                    <div className="mt-2">
+                      <span className="text-xs text-rose-500 dark:text-rose-400" title={hotspotError}>Failed to load rewards</span>
+                    </div>
                   ) : rewards ? (
                     <div className="mt-2 flex gap-4 text-xs font-mono">
                       {iot > 0 && <span className="text-content-secondary">IOT <span className="font-semibold">{formatTokenAmount(rewards.iot?.pending, getTokenDecimals(rewards, "iot"))}</span></span>}

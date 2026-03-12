@@ -30,6 +30,18 @@ async function checkATAExists(env, owner, mint) {
   return (await fetchAccount(env, ata)) !== null;
 }
 
+function rpcError(tokenConfig, { pending = "0", destination = null, error } = {}) {
+  return {
+    pending,
+    claimable: false,
+    reason: "rpc_error",
+    error,
+    decimals: tokenConfig.decimals,
+    label: tokenConfig.label,
+    destination,
+  };
+}
+
 /**
  * Get pending rewards for a single token type.
  */
@@ -38,7 +50,13 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
   const lazyDistPDA = deriveLazyDistributor(tokenConfig.mint);
 
   // Fetch the lazy distributor account to get oracle URLs
-  const ldData = await fetchAccount(env, lazyDistPDA);
+  let ldData;
+  try {
+    ldData = await fetchAccount(env, lazyDistPDA);
+  } catch (err) {
+    console.error(`Failed to fetch lazy distributor for ${tokenKey}:`, err.message);
+    return rpcError(tokenConfig, { error: err.message });
+  }
   if (!ldData) {
     return { pending: "0", claimable: false, reason: "no_distributor" };
   }
@@ -70,7 +88,13 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
 
   // Fetch the recipient account to see how much has already been claimed
   const recipientPDA = deriveRecipient(lazyDistPDA, assetId);
-  const recipientData = await fetchAccount(env, recipientPDA);
+  let recipientData;
+  try {
+    recipientData = await fetchAccount(env, recipientPDA);
+  } catch (err) {
+    console.error(`Failed to fetch recipient for ${tokenKey}:`, err.message);
+    return rpcError(tokenConfig, { error: err.message });
+  }
   let totalClaimed = 0n;
   let destination = null;
   if (recipientData) {
@@ -93,7 +117,13 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
 
   // Check ATA for the actual reward recipient (destination if set, else owner)
   const ataOwner = destination || owner;
-  const ataExists = await checkATAExists(env, ataOwner, tokenConfig.mint);
+  let ataExists;
+  try {
+    ataExists = await checkATAExists(env, ataOwner, tokenConfig.mint);
+  } catch (err) {
+    console.error(`Failed to check ATA for ${tokenKey}:`, err.message);
+    return rpcError(tokenConfig, { pending: pending.toString(), destination, error: err.message });
+  }
   if (!ataExists) {
     return {
       pending: pending.toString(),
