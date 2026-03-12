@@ -645,16 +645,19 @@ function WalletRewardCells({ entityKey, walletRewards, rewardsLoading, rewardErr
   const rewards = walletRewards[entityKey];
   const error = rewardErrors?.[entityKey];
   const loading = !rewards && !error && rewardsLoading;
+  if (error) {
+    return (
+      <td colSpan={3} className="py-3 text-right">
+        <span className="text-xs text-rose-500 dark:text-rose-400" title={error}>Failed</span>
+      </td>
+    );
+  }
   return (
     <>
-      {["iot", "mobile", "hnt"].map((token, idx) => (
+      {["iot", "mobile", "hnt"].map((token) => (
         <td key={token} className="py-3 text-right">
           {loading ? (
             <Spinner className="h-3 w-3 text-content-tertiary ml-auto" />
-          ) : error ? (
-            idx === 0 ? (
-              <span className="text-xs text-rose-500 dark:text-rose-400" title={error}>Failed</span>
-            ) : null
           ) : (
             <span className={`text-xs font-mono ${getTokenAmount(rewards, token) > 0 ? "text-content" : "text-content-tertiary"}`}>
               {rewards ? formatTokenAmount(rewards[token]?.pending, getTokenDecimals(rewards, token)) : "—"}
@@ -927,7 +930,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
               return { entityKey: h.entityKey, rewards: result.rewards, lastClaim: result.lastClaim, error: null };
             } catch (err) {
               if (err.rateLimited && attempt < MAX_RETRIES) {
-                const delay = (err.retryAfterSeconds || 30) * 1000;
+                const delay = (err.retryAfterSeconds || 30) * 1000 + Math.random() * 5000;
                 await new Promise((r) => setTimeout(r, delay));
                 if (expectedAddr !== walletAddress.trim()) return { entityKey: h.entityKey, rewards: null, error: null };
                 continue;
@@ -940,39 +943,27 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
 
       if (expectedAddr !== walletAddress.trim()) return;
 
-      setWalletRewards((prev) => {
-        const next = { ...prev };
-        for (const r of results) {
-          if (r.status === "fulfilled" && r.value?.rewards) {
-            next[r.value.entityKey] = r.value.rewards;
-          }
-        }
-        return next;
-      });
-
-      // Track errors and cooldowns
-      setRewardErrors((prev) => {
-        const next = { ...prev };
-        for (const r of results) {
-          if (r.status === "fulfilled" && r.value) {
-            if (r.value.error) {
-              next[r.value.entityKey] = r.value.error;
-            } else {
-              delete next[r.value.entityKey];
-            }
-          }
-        }
-        return next;
-      });
-
-      // Mark cooldowns from successful results
+      // Single pass: partition results into rewards, errors, and cooldowns
+      const rewardsUpdate = {};
+      const errorsUpdate = {};
+      const cooldownUpdate = {};
       for (const r of results) {
-        if (r.status === "fulfilled" && r.value?.lastClaim) {
-          setClaimStates((prevStates) => ({
-            ...prevStates,
-            [r.value.entityKey]: "cooldown",
-          }));
-        }
+        if (r.status !== "fulfilled" || !r.value) continue;
+        const { entityKey: key, rewards: rw, error: err, lastClaim } = r.value;
+        if (rw) rewardsUpdate[key] = rw;
+        if (err) errorsUpdate[key] = err;
+        if (lastClaim) cooldownUpdate[key] = "cooldown";
+      }
+
+      setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
+      setRewardErrors((prev) => {
+        const next = { ...prev, ...errorsUpdate };
+        // Clear errors for keys that succeeded
+        for (const key of Object.keys(rewardsUpdate)) delete next[key];
+        return next;
+      });
+      if (Object.keys(cooldownUpdate).length > 0) {
+        setClaimStates((prev) => ({ ...prev, ...cooldownUpdate }));
       }
 
       loaded += batch.length;
@@ -1119,11 +1110,14 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                   Loading rewards {rewardsProgress.loaded}/{rewardsProgress.total}...
                 </p>
               )}
-              {!rewardsLoading && Object.keys(rewardErrors).length > 0 && (
-                <p className="text-xs text-rose-500 dark:text-rose-400 mt-0.5">
-                  {Object.keys(rewardErrors).length} Hotspot{Object.keys(rewardErrors).length !== 1 ? "s" : ""} failed to load rewards
-                </p>
-              )}
+              {(() => {
+                const errorCount = Object.keys(rewardErrors).length;
+                return !rewardsLoading && errorCount > 0 && (
+                  <p className="text-xs text-rose-500 dark:text-rose-400 mt-0.5">
+                    {errorCount} Hotspot{errorCount !== 1 ? "s" : ""} failed to load rewards
+                  </p>
+                );
+              })()}
             </div>
             {claimAllActive && (
               <div className="flex items-center gap-3">
@@ -1224,8 +1218,8 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           <div className="md:hidden divide-y divide-border-muted">
             {hotspots.map((h) => {
               const rewards = walletRewards[h.entityKey];
-              const mobileError = rewardErrors[h.entityKey];
-              const loading = !rewards && !mobileError && rewardsLoading;
+              const hotspotError = rewardErrors[h.entityKey];
+              const loading = !rewards && !hotspotError && rewardsLoading;
               const hnt = rewards ? getTokenAmount(rewards, "hnt") : 0;
               const iot = rewards ? getTokenAmount(rewards, "iot") : 0;
               const mobile = rewards ? getTokenAmount(rewards, "mobile") : 0;
@@ -1267,9 +1261,9 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                   </div>
                   {loading ? (
                     <div className="mt-2"><Spinner className="h-3 w-3 text-content-tertiary" /></div>
-                  ) : mobileError ? (
+                  ) : hotspotError ? (
                     <div className="mt-2">
-                      <span className="text-xs text-rose-500 dark:text-rose-400" title={mobileError}>Failed to load rewards</span>
+                      <span className="text-xs text-rose-500 dark:text-rose-400" title={hotspotError}>Failed to load rewards</span>
                     </div>
                   ) : rewards ? (
                     <div className="mt-2 flex gap-4 text-xs font-mono">
