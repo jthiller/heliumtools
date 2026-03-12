@@ -63,6 +63,7 @@ export async function fetchBulkRewards(owner, hotspots) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ owner, hotspots }),
+    signal: AbortSignal.timeout(60_000),
   });
   const data = await parseJson(res);
   throwIfError(res, data);

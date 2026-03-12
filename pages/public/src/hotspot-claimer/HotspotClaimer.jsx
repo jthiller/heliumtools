@@ -622,7 +622,7 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
 
 // ─── Wallet Mode Components ───────────────────────────────────────────────────
 
-const BULK_BATCH_SIZE = 50; // Hotspots per bulk request
+const BULK_BATCH_SIZE = 25; // Hotspots per bulk request (must match worker MAX_BULK_SIZE)
 const MAX_RETRIES = 3;
 const DEFAULT_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
 

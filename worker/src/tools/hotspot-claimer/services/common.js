@@ -94,6 +94,50 @@ export async function fetchAccount(env, pubkey) {
 }
 
 /**
+ * Fetch multiple accounts in a single RPC call using getMultipleAccounts.
+ * Returns an array of Buffer | null in the same order as the input pubkeys.
+ * Automatically chunks into groups of 100 (Solana's per-call limit).
+ */
+export async function fetchMultipleAccounts(env, pubkeys) {
+  if (!env.SOLANA_RPC_URL) throw new Error("SOLANA_RPC_URL is not configured");
+  if (pubkeys.length === 0) return [];
+
+  const addresses = pubkeys.map((pk) =>
+    pk instanceof PublicKey ? pk.toBase58() : pk
+  );
+
+  const CHUNK_SIZE = 100;
+  const chunks = [];
+  for (let i = 0; i < addresses.length; i += CHUNK_SIZE) {
+    chunks.push(addresses.slice(i, i + CHUNK_SIZE));
+  }
+
+  const chunkResults = await Promise.all(
+    chunks.map(async (chunk) => {
+      const response = await fetch(env.SOLANA_RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getMultipleAccounts",
+          params: [chunk, { encoding: "base64" }],
+        }),
+      });
+      const result = await response.json();
+      if (result.error) {
+        throw new Error(`getMultipleAccounts: ${result.error.message}`);
+      }
+      return (result.result?.value || []).map((v) =>
+        v ? Buffer.from(v.data[0], "base64") : null
+      );
+    })
+  );
+
+  return chunkResults.flat();
+}
+
+/**
  * Fetch asset metadata via DAS API (Helius getAsset).
  */
 export async function fetchAsset(env, assetId) {

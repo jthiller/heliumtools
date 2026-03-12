@@ -5,6 +5,7 @@ import {
   deriveRecipient,
   deriveATA,
   fetchAccount,
+  fetchMultipleAccounts,
   parseLazyDistributor,
   parseRecipient,
 } from "./common.js";
@@ -153,7 +154,7 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
 }
 
 /**
- * Get pending rewards across all token types for a hotspot.
+ * Get pending rewards across all token types for a single Hotspot.
  */
 export async function getPendingRewards(env, assetId, owner) {
   const [iot, mobile, hnt] = await Promise.all(
@@ -168,4 +169,206 @@ export async function getPendingRewards(env, assetId, owner) {
   );
 
   return { iot, mobile, hnt };
+}
+
+// ─── Bulk Rewards (batched RPC) ──────────────────────────────────────────────
+
+const TOKEN_KEYS = ["iot", "mobile", "hnt"];
+
+/**
+ * Compute the median lifetime reward from oracle responses and return
+ * the pending amount after subtracting already-claimed rewards.
+ */
+function computeTokenResult(tokenConfig, oracleResults, recipientData, ataExists, destination) {
+  const validRewards = oracleResults.filter(Boolean);
+  if (validRewards.length === 0) {
+    return { pending: "0", claimable: false, reason: "no_oracle_response", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+  }
+
+  const sorted = validRewards
+    .map((r) => BigInt(r.currentRewards))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const medianLifetime = sorted[Math.floor(sorted.length / 2)];
+
+  let totalClaimed = 0n;
+  if (recipientData) {
+    const recipient = parseRecipient(recipientData);
+    totalClaimed = recipient.totalRewards;
+  }
+
+  const pending = medianLifetime - totalClaimed;
+  if (pending <= 0n) {
+    return { pending: "0", claimable: false, reason: "no_pending", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+  }
+
+  if (!ataExists) {
+    return { pending: pending.toString(), claimable: false, reason: "no_ata", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+  }
+
+  return { pending: pending.toString(), claimable: true, decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+}
+
+/**
+ * Get pending rewards for multiple Hotspots in bulk using batched RPC calls.
+ *
+ * Instead of N×9 individual getAccountInfo calls, this uses:
+ *   1. One getMultipleAccounts for lazy distributors + all recipients
+ *   2. Parallel oracle HTTP queries
+ *   3. One getMultipleAccounts for deduplicated ATA checks
+ *
+ * Returns { [entityKey]: { rewards: { iot, mobile, hnt }, error } }
+ */
+export async function getBulkPendingRewards(env, hotspots, owner) {
+  const results = Object.create(null);
+
+  // ── Phase 1: Derive PDAs and batch-fetch lazy distributors + recipients ──
+
+  const lazyDistPDAs = TOKEN_KEYS.map((tk) =>
+    deriveLazyDistributor(TOKENS[tk].mint)
+  );
+
+  // Recipient PDAs: indexed as [tokenIdx * hotspots.length + hotspotIdx]
+  const recipientPDAs = [];
+  for (const ldPDA of lazyDistPDAs) {
+    for (const h of hotspots) {
+      recipientPDAs.push(deriveRecipient(ldPDA, h.assetId));
+    }
+  }
+
+  // Single batch: 3 lazy distributors + (3 × N) recipients
+  const allPhase1PDAs = [...lazyDistPDAs, ...recipientPDAs];
+  let phase1Data;
+  try {
+    phase1Data = await fetchMultipleAccounts(env, allPhase1PDAs);
+  } catch (err) {
+    // Total RPC failure — return error for all Hotspots
+    for (const h of hotspots) {
+      results[h.entityKey] = { rewards: null, error: err.message || "RPC batch fetch failed" };
+    }
+    return results;
+  }
+
+  // Split results
+  const ldDataByToken = phase1Data.slice(0, 3); // [iot, mobile, hnt]
+  const recipientDataFlat = phase1Data.slice(3); // [token0-hs0, token0-hs1, ..., token2-hsN]
+
+  // Parse lazy distributors
+  const ldParsed = ldDataByToken.map((data, i) => {
+    if (!data) return null;
+    try {
+      return parseLazyDistributor(data);
+    } catch (err) {
+      console.error(`Failed to parse lazy distributor for ${TOKEN_KEYS[i]}:`, err.message);
+      return null;
+    }
+  });
+
+  // Parse recipients and extract destinations
+  // recipientsByTokenAndHotspot[tokenIdx][hotspotIdx] = { data, destination }
+  const recipientsByTokenAndHotspot = TOKEN_KEYS.map((_, tokenIdx) =>
+    hotspots.map((_, hsIdx) => {
+      const data = recipientDataFlat[tokenIdx * hotspots.length + hsIdx];
+      if (!data) return { data: null, destination: null };
+      try {
+        const parsed = parseRecipient(data);
+        return { data, destination: parsed.destination };
+      } catch {
+        return { data: null, destination: null };
+      }
+    })
+  );
+
+  // ── Phase 2: Query oracles in parallel ──
+
+  // oracleResults[tokenIdx][hotspotIdx] = array of { currentRewards } | null
+  const oraclePromises = [];
+  for (let tokenIdx = 0; tokenIdx < TOKEN_KEYS.length; tokenIdx++) {
+    const ld = ldParsed[tokenIdx];
+    for (let hsIdx = 0; hsIdx < hotspots.length; hsIdx++) {
+      if (!ld) {
+        oraclePromises.push(Promise.resolve([]));
+        continue;
+      }
+      const assetId = hotspots[hsIdx].assetId;
+      const perOracle = ld.oracles.map(async (o) => {
+        try {
+          const rewards = await queryOracle(o.url, assetId);
+          return { currentRewards: rewards };
+        } catch {
+          return null;
+        }
+      });
+      oraclePromises.push(Promise.all(perOracle));
+    }
+  }
+  const oracleResultsFlat = await Promise.all(oraclePromises);
+
+  // ── Phase 3: Batch-fetch ATAs ──
+
+  // Collect unique ATA addresses keyed by "owner:mint"
+  const ataMap = new Map(); // key → { pubkey }
+  const ataLookups = []; // [{ tokenIdx, hsIdx, ataKey }]
+
+  for (let tokenIdx = 0; tokenIdx < TOKEN_KEYS.length; tokenIdx++) {
+    const tokenConfig = TOKENS[TOKEN_KEYS[tokenIdx]];
+    for (let hsIdx = 0; hsIdx < hotspots.length; hsIdx++) {
+      const dest = recipientsByTokenAndHotspot[tokenIdx][hsIdx].destination;
+      const ataOwner = dest || owner;
+      const ataKey = `${ataOwner}:${tokenConfig.mint}`;
+      if (!ataMap.has(ataKey)) {
+        ataMap.set(ataKey, deriveATA(new PublicKey(ataOwner), new PublicKey(tokenConfig.mint)));
+      }
+      ataLookups.push({ tokenIdx, hsIdx, ataKey });
+    }
+  }
+
+  const uniqueAtaKeys = [...ataMap.keys()];
+  const uniqueAtaPubkeys = uniqueAtaKeys.map((k) => ataMap.get(k));
+  let ataExistsMap = new Map(); // ataKey → boolean
+
+  try {
+    const ataData = await fetchMultipleAccounts(env, uniqueAtaPubkeys);
+    for (let i = 0; i < uniqueAtaKeys.length; i++) {
+      ataExistsMap.set(uniqueAtaKeys[i], ataData[i] !== null);
+    }
+  } catch (err) {
+    console.error("Failed to batch-fetch ATAs:", err.message);
+    // If ATA check fails, mark all as unknown (not claimable with rpc_error reason)
+    for (const key of uniqueAtaKeys) {
+      ataExistsMap.set(key, false);
+    }
+  }
+
+  // ── Phase 4: Assemble results ──
+
+  for (let hsIdx = 0; hsIdx < hotspots.length; hsIdx++) {
+    const h = hotspots[hsIdx];
+    const rewards = {};
+
+    for (let tokenIdx = 0; tokenIdx < TOKEN_KEYS.length; tokenIdx++) {
+      const tokenKey = TOKEN_KEYS[tokenIdx];
+      const tokenConfig = TOKENS[tokenKey];
+      const ld = ldParsed[tokenIdx];
+      const recipInfo = recipientsByTokenAndHotspot[tokenIdx][hsIdx];
+      const dest = recipInfo.destination;
+
+      if (!ld) {
+        rewards[tokenKey] = { pending: "0", claimable: false, reason: "no_distributor", decimals: tokenConfig.decimals, label: tokenConfig.label, destination: dest };
+        continue;
+      }
+
+      const oracleIdx = tokenIdx * hotspots.length + hsIdx;
+      const oracleResults = oracleResultsFlat[oracleIdx];
+
+      const ataOwner = dest || owner;
+      const ataKey = `${ataOwner}:${tokenConfig.mint}`;
+      const ataExists = ataExistsMap.get(ataKey) || false;
+
+      rewards[tokenKey] = computeTokenResult(tokenConfig, oracleResults, recipInfo.data, ataExists, dest);
+    }
+
+    results[h.entityKey] = { rewards, error: null };
+  }
+
+  return results;
 }

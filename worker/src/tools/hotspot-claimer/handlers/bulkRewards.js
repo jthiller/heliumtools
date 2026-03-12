@@ -1,18 +1,17 @@
 import { jsonResponse } from "../../../lib/response.js";
-import { getPendingRewards } from "../services/oracle.js";
+import { getBulkPendingRewards } from "../services/oracle.js";
 import { checkIpRateLimit } from "../services/rateLimit.js";
 import { MAX_LOOKUPS_PER_MINUTE } from "../config.js";
 import { isValidWalletAddress, isValidEntityKey } from "../utils.js";
 
-const MAX_BULK_SIZE = 50;
-const CONCURRENCY = 5;
+const MAX_BULK_SIZE = 25;
 
 /**
  * POST /wallet/rewards
  * Body: { owner: "<solana-address>", hotspots: [{ entityKey, assetId }, ...] }
  *
  * Fetches pending rewards for multiple Hotspots in a single request.
- * Oracle lookups are done server-side in parallel, bypassing per-request rate limits.
+ * Uses batched RPC calls (getMultipleAccounts) to minimize round-trips.
  * IP is still rate-limited (one check per bulk request).
  */
 export async function handleBulkRewards(request, env) {
@@ -62,30 +61,7 @@ export async function handleBulkRewards(request, env) {
     }
   }
 
-  // Fetch rewards in parallel with bounded concurrency
-  const results = Object.create(null);
-  const queue = [...hotspots];
-
-  async function processNext() {
-    while (queue.length > 0) {
-      const h = queue.shift();
-      try {
-        const rewards = await getPendingRewards(env, h.assetId, owner);
-        results[h.entityKey] = { rewards, error: null };
-      } catch (err) {
-        results[h.entityKey] = {
-          rewards: null,
-          error: err.message || "Failed to fetch rewards",
-        };
-      }
-    }
-  }
-
-  const workers = Array.from(
-    { length: Math.min(CONCURRENCY, hotspots.length) },
-    () => processNext()
-  );
-  await Promise.all(workers);
+  const results = await getBulkPendingRewards(env, hotspots, owner);
 
   return jsonResponse({ results });
 }
