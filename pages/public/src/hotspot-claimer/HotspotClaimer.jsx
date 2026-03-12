@@ -1106,9 +1106,17 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                 {hotspotsCount} Hotspot{hotspotsCount !== 1 ? "s" : ""}
               </h3>
               {rewardsLoading && (
-                <p className="text-xs text-content-secondary mt-0.5">
-                  Loading rewards {rewardsProgress.loaded}/{rewardsProgress.total}...
-                </p>
+                <div className="mt-1.5">
+                  <p className="text-xs text-content-secondary mb-1">
+                    Loading rewards {rewardsProgress.loaded}/{rewardsProgress.total}...
+                  </p>
+                  <div className="w-full h-2 bg-border-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-accent rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${rewardsProgress.total ? (rewardsProgress.loaded / rewardsProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
               )}
               {(() => {
                 const errorCount = Object.keys(rewardErrors).length;
