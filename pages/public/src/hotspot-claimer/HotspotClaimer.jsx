@@ -14,6 +14,7 @@ import CopyButton from "../components/CopyButton.jsx";
 import {
   lookupHotspot,
   fetchRewards,
+  fetchBulkRewards,
   claimRewards,
   fetchWalletHotspots,
 } from "../lib/hotspotClaimerApi.js";
@@ -621,8 +622,7 @@ function HotspotMode({ initialKey, onKeyChange, onNavigateToWallet }) {
 
 // ─── Wallet Mode Components ───────────────────────────────────────────────────
 
-const REWARD_BATCH_SIZE = 10;
-const BATCH_DELAY_MS = 2500; // pace batches to stay under 30 req/min
+const BULK_BATCH_SIZE = 50; // Hotspots per bulk request
 const MAX_RETRIES = 3;
 const DEFAULT_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
 
@@ -815,11 +815,11 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
   // Track which entity keys failed to load rewards
   const [rewardErrors, setRewardErrors] = useState({});
 
-  // Claim state per hotspot: Map<entityKey, "claiming"|"claimed"|"error"|"cooldown"|"rate_limited">
+  // Claim state per Hotspot: Map<entityKey, "claiming"|"claimed"|"error"|"cooldown"|"rate_limited">
   const [claimStates, setClaimStates] = useState({});
-  // Error messages per hotspot: Map<entityKey, string>
+  // Error messages per Hotspot: Map<entityKey, string>
   const [claimErrors, setClaimErrors] = useState({});
-  // Claim results per hotspot: Map<entityKey, claimResult>
+  // Claim results per Hotspot: Map<entityKey, claimResult>
   const [claimResults, setClaimResults] = useState(new Map());
   // Claim All state
   const [claimAllActive, setClaimAllActive] = useState(false);
@@ -904,73 +904,106 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
   }, [walletAddress]);
 
   async function loadRewardsProgressively(hotspotList, expectedAddr) {
+    const isStale = () => expectedAddr !== walletAddress.trim();
+
     setRewardsLoading(true);
     setRewardErrors({});
     setRewardsProgress({ loaded: 0, total: hotspotList.length });
 
     let loaded = 0;
+    const failedKeys = new Set();
 
-    for (let i = 0; i < hotspotList.length; i += REWARD_BATCH_SIZE) {
-      if (expectedAddr !== walletAddress.trim()) return;
+    try {
+      for (let i = 0; i < hotspotList.length; i += BULK_BATCH_SIZE) {
+        if (isStale()) return;
 
-      // Pace batches to stay under rate limit (skip delay for the first batch)
-      if (i > 0) {
-        await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
-        if (expectedAddr !== walletAddress.trim()) return;
-      }
+        const batch = hotspotList.slice(i, i + BULK_BATCH_SIZE);
 
-      const batch = hotspotList.slice(i, i + REWARD_BATCH_SIZE);
+        // Bulk fetch with retry on rate limit
+        let bulkResults = null;
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            bulkResults = await fetchBulkRewards(
+              expectedAddr,
+              batch.map((h) => ({ entityKey: h.entityKey, assetId: h.assetId }))
+            );
+            break;
+          } catch (err) {
+            if (err.rateLimited && attempt < MAX_RETRIES - 1) {
+              const delay = (err.retryAfterSeconds || 30) * 1000 + Math.random() * 5000;
+              await new Promise((r) => setTimeout(r, delay));
+              if (isStale()) return;
+              continue;
+            }
+            // Whole batch failed — mark all as errors
+            for (const h of batch) failedKeys.add(h.entityKey);
+            bulkResults = null;
+            break;
+          }
+        }
 
-      // Fetch with per-item retry on rate limit
-      const results = await Promise.allSettled(
-        batch.map(async (h) => {
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            try {
-              const result = await fetchRewards(h.entityKey);
-              return { entityKey: h.entityKey, rewards: result.rewards, lastClaim: result.lastClaim, error: null };
-            } catch (err) {
-              if (err.rateLimited && attempt < MAX_RETRIES) {
-                const delay = (err.retryAfterSeconds || 30) * 1000 + Math.random() * 5000;
-                await new Promise((r) => setTimeout(r, delay));
-                if (expectedAddr !== walletAddress.trim()) return { entityKey: h.entityKey, rewards: null, error: null };
-                continue;
-              }
-              return { entityKey: h.entityKey, rewards: null, error: err.message || "Failed to load rewards" };
+        if (isStale()) return;
+
+        if (bulkResults) {
+          const rewardsUpdate = {};
+          const errorsUpdate = {};
+          for (const h of batch) {
+            const r = bulkResults[h.entityKey];
+            if (r?.rewards) {
+              rewardsUpdate[h.entityKey] = r.rewards;
+            } else {
+              errorsUpdate[h.entityKey] = r?.error || "No response";
+              failedKeys.add(h.entityKey);
             }
           }
-        })
-      );
 
-      if (expectedAddr !== walletAddress.trim()) return;
+          if (Object.keys(rewardsUpdate).length > 0) {
+            setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
+          }
+          if (Object.keys(errorsUpdate).length > 0) {
+            setRewardErrors((prev) => ({ ...prev, ...errorsUpdate }));
+          }
+        } else {
+          const errorsUpdate = {};
+          for (const h of batch) errorsUpdate[h.entityKey] = "Request failed";
+          setRewardErrors((prev) => ({ ...prev, ...errorsUpdate }));
+        }
 
-      // Single pass: partition results into rewards, errors, and cooldowns
-      const rewardsUpdate = {};
-      const errorsUpdate = {};
-      const cooldownUpdate = {};
-      for (const r of results) {
-        if (r.status !== "fulfilled" || !r.value) continue;
-        const { entityKey: key, rewards: rw, error: err, lastClaim } = r.value;
-        if (rw) rewardsUpdate[key] = rw;
-        if (err) errorsUpdate[key] = err;
-        if (lastClaim) cooldownUpdate[key] = "cooldown";
+        loaded += batch.length;
+        setRewardsProgress({ loaded: Math.min(loaded, hotspotList.length), total: hotspotList.length });
       }
 
-      setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
-      setRewardErrors((prev) => {
-        const next = { ...prev, ...errorsUpdate };
-        // Clear errors for keys that succeeded
-        for (const key of Object.keys(rewardsUpdate)) delete next[key];
-        return next;
-      });
-      if (Object.keys(cooldownUpdate).length > 0) {
-        setClaimStates((prev) => ({ ...prev, ...cooldownUpdate }));
-      }
+      // Retry failed Hotspots individually with concurrency
+      const failedList = hotspotList.filter((h) => failedKeys.has(h.entityKey));
+      if (failedList.length > 0 && !isStale()) {
+        const retryResults = await Promise.allSettled(
+          failedList.map(async (h) => {
+            if (isStale()) return null;
+            const result = await fetchRewards(h.entityKey);
+            return { entityKey: h.entityKey, rewards: result.rewards };
+          })
+        );
 
-      loaded += batch.length;
-      setRewardsProgress({ loaded: Math.min(loaded, hotspotList.length), total: hotspotList.length });
+        const rewardsUpdate = {};
+        const clearedErrors = [];
+        for (const r of retryResults) {
+          if (r.status === "fulfilled" && r.value?.rewards) {
+            rewardsUpdate[r.value.entityKey] = r.value.rewards;
+            clearedErrors.push(r.value.entityKey);
+          }
+        }
+        if (Object.keys(rewardsUpdate).length > 0) {
+          setWalletRewards((prev) => ({ ...prev, ...rewardsUpdate }));
+          setRewardErrors((prev) => {
+            const next = { ...prev };
+            for (const key of clearedErrors) delete next[key];
+            return next;
+          });
+        }
+      }
+    } finally {
+      setRewardsLoading(false);
     }
-
-    setRewardsLoading(false);
   }
 
   const handleClaimSingle = useCallback(async (entityKey) => {

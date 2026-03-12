@@ -58,6 +58,17 @@ export async function claimRewards(entityKey) {
   return data;
 }
 
+export async function fetchBulkRewards(owner, hotspots) {
+  const res = await fetch(`${API_BASE}/wallet/rewards`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner, hotspots }),
+  });
+  const data = await parseJson(res);
+  throwIfError(res, data);
+  return data.results;
+}
+
 export async function fetchWalletHotspots(address) {
   const query = new URLSearchParams({ address });
   const res = await fetch(`${API_BASE}/wallet?${query.toString()}`);
