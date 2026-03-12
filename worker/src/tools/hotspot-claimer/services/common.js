@@ -134,7 +134,11 @@ export async function fetchMultipleAccounts(env, pubkeys) {
     })
   );
 
-  return chunkResults.flat();
+  const results = chunkResults.flat();
+  if (results.length !== pubkeys.length) {
+    throw new Error(`getMultipleAccounts: expected ${pubkeys.length} results, got ${results.length}`);
+  }
+  return results;
 }
 
 /**

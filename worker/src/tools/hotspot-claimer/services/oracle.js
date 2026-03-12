@@ -43,6 +43,16 @@ function rpcError(tokenConfig, { pending = "0", destination = null, error } = {}
   };
 }
 
+const TOKEN_KEYS = Object.keys(TOKENS);
+
+/**
+ * Compute the median of an array of BigInt reward values.
+ */
+function medianBigInt(values) {
+  const sorted = values.slice().sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
 /**
  * Get pending rewards for a single token type.
  */
@@ -82,10 +92,7 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
   }
 
   // Take the median of oracle responses
-  const sorted = validRewards
-    .map((r) => BigInt(r.currentRewards))
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const medianLifetime = sorted[Math.floor(sorted.length / 2)];
+  const medianLifetime = medianBigInt(validRewards.map((r) => BigInt(r.currentRewards)));
 
   // Fetch the recipient account to see how much has already been claimed
   const recipientPDA = deriveRecipient(lazyDistPDA, assetId);
@@ -157,8 +164,8 @@ async function getTokenRewards(env, tokenKey, assetId, owner) {
  * Get pending rewards across all token types for a single Hotspot.
  */
 export async function getPendingRewards(env, assetId, owner) {
-  const [iot, mobile, hnt] = await Promise.all(
-    ["iot", "mobile", "hnt"].map((key) =>
+  const tokenResults = await Promise.all(
+    TOKEN_KEYS.map((key) =>
       getTokenRewards(env, key, assetId, owner).catch((err) => ({
         pending: "0",
         claimable: false,
@@ -168,33 +175,23 @@ export async function getPendingRewards(env, assetId, owner) {
     )
   );
 
-  return { iot, mobile, hnt };
+  const rewards = Object.create(null);
+  TOKEN_KEYS.forEach((key, i) => { rewards[key] = tokenResults[i]; });
+  return rewards;
 }
 
 // ─── Bulk Rewards (batched RPC) ──────────────────────────────────────────────
 
-const TOKEN_KEYS = ["iot", "mobile", "hnt"];
-
 /**
- * Compute the median lifetime reward from oracle responses and return
- * the pending amount after subtracting already-claimed rewards.
+ * Compute pending rewards from oracle responses, claimed amount, and ATA status.
  */
-function computeTokenResult(tokenConfig, oracleResults, recipientData, ataExists, destination) {
+function computeTokenResult(tokenConfig, oracleResults, { totalClaimed = 0n, destination = null }, ataExists) {
   const validRewards = oracleResults.filter(Boolean);
   if (validRewards.length === 0) {
     return { pending: "0", claimable: false, reason: "no_oracle_response", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
   }
 
-  const sorted = validRewards
-    .map((r) => BigInt(r.currentRewards))
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const medianLifetime = sorted[Math.floor(sorted.length / 2)];
-
-  let totalClaimed = 0n;
-  if (recipientData) {
-    const recipient = parseRecipient(recipientData);
-    totalClaimed = recipient.totalRewards;
-  }
+  const medianLifetime = medianBigInt(validRewards.map((r) => BigInt(r.currentRewards)));
 
   const pending = medianLifetime - totalClaimed;
   if (pending <= 0n) {
@@ -263,17 +260,17 @@ export async function getBulkPendingRewards(env, hotspots, owner) {
     }
   });
 
-  // Parse recipients and extract destinations
-  // recipientsByTokenAndHotspot[tokenIdx][hotspotIdx] = { data, destination }
+  // Parse recipients and extract destinations + claimed amounts
+  // recipientsByTokenAndHotspot[tokenIdx][hotspotIdx] = { totalClaimed, destination }
   const recipientsByTokenAndHotspot = TOKEN_KEYS.map((_, tokenIdx) =>
     hotspots.map((_, hsIdx) => {
       const data = recipientDataFlat[tokenIdx * hotspots.length + hsIdx];
-      if (!data) return { data: null, destination: null };
+      if (!data) return { totalClaimed: 0n, destination: null };
       try {
         const parsed = parseRecipient(data);
-        return { data, destination: parsed.destination };
+        return { totalClaimed: parsed.totalRewards, destination: parsed.destination };
       } catch {
-        return { data: null, destination: null };
+        return { totalClaimed: 0n, destination: null };
       }
     })
   );
@@ -306,8 +303,7 @@ export async function getBulkPendingRewards(env, hotspots, owner) {
   // ── Phase 3: Batch-fetch ATAs ──
 
   // Collect unique ATA addresses keyed by "owner:mint"
-  const ataMap = new Map(); // key → { pubkey }
-  const ataLookups = []; // [{ tokenIdx, hsIdx, ataKey }]
+  const ataMap = new Map(); // key → pubkey
 
   for (let tokenIdx = 0; tokenIdx < TOKEN_KEYS.length; tokenIdx++) {
     const tokenConfig = TOKENS[TOKEN_KEYS[tokenIdx]];
@@ -318,13 +314,12 @@ export async function getBulkPendingRewards(env, hotspots, owner) {
       if (!ataMap.has(ataKey)) {
         ataMap.set(ataKey, deriveATA(new PublicKey(ataOwner), new PublicKey(tokenConfig.mint)));
       }
-      ataLookups.push({ tokenIdx, hsIdx, ataKey });
     }
   }
 
   const uniqueAtaKeys = [...ataMap.keys()];
   const uniqueAtaPubkeys = uniqueAtaKeys.map((k) => ataMap.get(k));
-  let ataExistsMap = new Map(); // ataKey → boolean
+  const ataExistsMap = new Map(); // ataKey → boolean
 
   try {
     const ataData = await fetchMultipleAccounts(env, uniqueAtaPubkeys);
@@ -364,7 +359,7 @@ export async function getBulkPendingRewards(env, hotspots, owner) {
       const ataKey = `${ataOwner}:${tokenConfig.mint}`;
       const ataExists = ataExistsMap.get(ataKey) || false;
 
-      rewards[tokenKey] = computeTokenResult(tokenConfig, oracleResults, recipInfo.data, ataExists, dest);
+      rewards[tokenKey] = computeTokenResult(tokenConfig, oracleResults, recipInfo, ataExists);
     }
 
     results[h.entityKey] = { rewards, error: null };
