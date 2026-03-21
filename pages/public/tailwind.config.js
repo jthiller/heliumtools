@@ -50,6 +50,15 @@ export default {
         "grid-slate":
           "radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.2) 1px, transparent 0)",
       },
+      keyframes: {
+        "pulse-once": {
+          "0%": { backgroundColor: "rgb(var(--color-accent) / 0.12)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+      },
+      animation: {
+        "pulse-once": "pulse-once 1.5s ease-out forwards",
+      },
     },
   },
   plugins: [forms],

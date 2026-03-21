@@ -8,40 +8,31 @@ import {
 } from "./tools/dc-purchase/index.js";
 import { handleHotspotClaimerRequest } from "./tools/hotspot-claimer/index.js";
 import { handleHotspotMapRequest } from "./tools/hotspot-map/index.js";
+import { handleMultiGatewayRequest } from "./tools/multi-gateway/index.js";
+
+const routes = [
+  { prefix: "/oui-notifier", handler: handleOuiNotifierRequest },
+  { prefix: "/dc-purchase", handler: handleDcPurchaseRequest },
+  { prefix: "/hotspot-claimer", handler: handleHotspotClaimerRequest },
+  { prefix: "/hotspot-map", handler: handleHotspotMapRequest },
+  { prefix: "/multi-gateway", handler: handleMultiGatewayRequest },
+];
+
+function stripPrefix(request, prefix) {
+  const url = new URL(request.url);
+  url.pathname = url.pathname.slice(prefix.length) || "/";
+  return new Request(url.toString(), request);
+}
 
 export default {
   async fetch(request, env, ctx) {
     try {
-      const url = new URL(request.url);
-      const pathname = url.pathname;
+      const { pathname } = new URL(request.url);
 
-      // Route oui-notifier endpoints
-      if (pathname.startsWith("/oui-notifier/")) {
-        const subUrl = new URL(request.url);
-        subUrl.pathname = pathname.replace(/^\/oui-notifier/, "") || "/";
-        const subRequest = new Request(subUrl.toString(), request);
-        return await handleOuiNotifierRequest(subRequest, env, ctx);
-      }
-
-      if (pathname.startsWith("/dc-purchase/")) {
-        const subUrl = new URL(request.url);
-        subUrl.pathname = pathname.replace(/^\/dc-purchase/, "") || "/";
-        const subRequest = new Request(subUrl.toString(), request);
-        return await handleDcPurchaseRequest(subRequest, env, ctx);
-      }
-
-      if (pathname.startsWith("/hotspot-claimer/")) {
-        const subUrl = new URL(request.url);
-        subUrl.pathname = pathname.replace(/^\/hotspot-claimer/, "") || "/";
-        const subRequest = new Request(subUrl.toString(), request);
-        return await handleHotspotClaimerRequest(subRequest, env, ctx);
-      }
-
-      if (pathname.startsWith("/hotspot-map/")) {
-        const subUrl = new URL(request.url);
-        subUrl.pathname = pathname.replace(/^\/hotspot-map/, "") || "/";
-        const subRequest = new Request(subUrl.toString(), request);
-        return await handleHotspotMapRequest(subRequest, env, ctx);
+      for (const { prefix, handler } of routes) {
+        if (pathname.startsWith(prefix + "/")) {
+          return await handler(stripPrefix(request, prefix), env, ctx);
+        }
       }
 
       return new Response("Not found", { status: 404 });

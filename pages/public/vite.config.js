@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
-
-
 export default defineConfig({
   plugins: [react(), nodePolyfills()],
   base: "/",
@@ -16,12 +14,12 @@ export default defineConfig({
       "/api": {
         target: process.env.VITE_API_TARGET || "http://localhost:8787",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
+        rewrite: (p) => p.replace(/^\/api/, ""),
       },
       "/oui-notifier/api": {
         target: process.env.VITE_API_TARGET || "http://localhost:8787",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/oui-notifier\/api/, "/oui-notifier"),
+        rewrite: (p) => p.replace(/^\/oui-notifier\/api/, "/oui-notifier"),
       },
     },
   },
