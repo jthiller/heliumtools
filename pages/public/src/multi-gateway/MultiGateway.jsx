@@ -120,6 +120,9 @@ function useMultiGateway() {
             break;
 
           case "downlink":
+            if (data.metadata) {
+              setLatestPacket({ mac: data.mac, metadata: data.metadata });
+            }
             setGateways((prev) =>
               prev.map((g) =>
                 g.mac === data.mac
@@ -332,22 +335,27 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
 }
 
 const FRAME_TYPE_LABELS = {
-  JoinRequest: { label: "Join", color: "text-violet-600 dark:text-violet-400" },
-  JoinAccept: { label: "Join Accept", color: "text-violet-600 dark:text-violet-400" },
-  UnconfirmedUp: { label: "Uncnf Up", color: "text-content-secondary" },
-  ConfirmedUp: { label: "Cnf Up", color: "text-sky-600 dark:text-sky-400" },
-  UnconfirmedDown: { label: "Uncnf Down", color: "text-content-tertiary" },
-  ConfirmedDown: { label: "Cnf Down", color: "text-sky-600 dark:text-sky-400" },
-  RejoinRequest: { label: "Rejoin", color: "text-amber-600 dark:text-amber-400" },
-  Proprietary: { label: "Proprietary", color: "text-content-tertiary" },
+  JoinRequest: { label: "Join", title: "Join Request", color: "text-violet-600 dark:text-violet-400" },
+  JoinAccept: { label: "Join Acc", title: "Join Accept", color: "text-violet-600 dark:text-violet-400" },
+  UnconfirmedUp: { label: "Uncnf Up", title: "Unconfirmed Uplink", color: "text-content-secondary" },
+  ConfirmedUp: { label: "Cnf Up", title: "Confirmed Uplink", color: "text-sky-600 dark:text-sky-400" },
+  UnconfirmedDown: { label: "Uncnf Dn", title: "Unconfirmed Downlink", color: "text-content-tertiary" },
+  ConfirmedDown: { label: "Cnf Dn", title: "Confirmed Downlink", color: "text-sky-600 dark:text-sky-400" },
+  RejoinRequest: { label: "Rejoin", title: "Rejoin Request", color: "text-amber-600 dark:text-amber-400" },
+  Proprietary: { label: "Prop", title: "Proprietary", color: "text-content-tertiary" },
 };
 
 function FrameTypeBadge({ frameType }) {
   const info = FRAME_TYPE_LABELS[frameType] || {
     label: frameType || "?",
+    title: frameType || "Unknown",
     color: "text-content-tertiary",
   };
-  return <span className={`text-xs font-medium ${info.color}`}>{info.label}</span>;
+  return (
+    <span className={`text-xs font-medium ${info.color}`} title={info.title}>
+      {info.label}
+    </span>
+  );
 }
 
 function GatewayDetail({ mac, latestPacket, onClose }) {
