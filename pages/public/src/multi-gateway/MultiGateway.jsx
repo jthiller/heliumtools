@@ -310,7 +310,7 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="text-xs text-content-primary">
+                    <span className="text-xs text-content-primary" title={gw.public_key}>
                       {gatewayName(gw.public_key) || truncateString(gw.public_key, 8, 4)}
                     </span>
                     {gw.public_key && <CopyButton text={gw.public_key} />}
