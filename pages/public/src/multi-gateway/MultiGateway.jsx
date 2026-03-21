@@ -221,7 +221,9 @@ function SetupNote() {
           <p className="mt-3 text-content-tertiary">
             A keypair is auto-provisioned on first connection. The gateway will
             connect as a new Hotspot on the network. Each gateway must have a
-            unique MAC address (Gateway EUI).
+            unique Gateway EUI &mdash; check your packet forwarder config and
+            replace the default (<span className="font-mono">AA555A0000000101</span>)
+            with your concentrator&apos;s actual EUI.
           </p>
         </div>
       )}
