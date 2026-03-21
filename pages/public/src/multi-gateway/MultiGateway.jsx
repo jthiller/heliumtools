@@ -256,7 +256,7 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
-              <th className="px-4 py-3">Status</th>
+              <th className="w-8 px-2 py-3"></th>
               <th className="px-4 py-3">Region</th>
               <th className="px-4 py-3">MAC</th>
               <th className="px-4 py-3">Public Key</th>
@@ -275,7 +275,10 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
                   gw.mac === selectedMac ? "bg-surface-inset" : ""
                 }`}
               >
-                <td className="px-4 py-3">
+                <td
+                  className="w-8 px-2 py-3"
+                  title={gw.connected ? "Active" : "Inactive"}
+                >
                   <span
                     className={`inline-block h-2 w-2 rounded-full ${
                       gw.connected

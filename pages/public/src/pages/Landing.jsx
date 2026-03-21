@@ -32,6 +32,15 @@ const sections = [
     description: "Tools for Hotspot owners and operators",
     tools: [
       {
+        name: "Add a Hotspot",
+        description:
+          "Add a LoRaWAN gateway to the Helium network and monitor it in real time. View signal quality, packet activity, and connection status.",
+        href: "/multi-gateway",
+        icon: SignalIcon,
+        iconBg: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
+        badge: "New",
+      },
+      {
         name: "Reward Claimer",
         description:
           "Look up any Hotspot or wallet, view pending IOT, MOBILE, and HNT rewards, and issue permissionless claim transactions.",
@@ -47,15 +56,6 @@ const sections = [
         href: "/hotspot-map",
         icon: MapPinIcon,
         iconBg: "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400",
-        badge: "New",
-      },
-      {
-        name: "Add a Hotspot",
-        description:
-          "Add a LoRaWAN gateway to the Helium network and monitor it in real time. View signal quality, packet activity, and connection status.",
-        href: "/multi-gateway",
-        icon: SignalIcon,
-        iconBg: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
         badge: "New",
       },
       {
