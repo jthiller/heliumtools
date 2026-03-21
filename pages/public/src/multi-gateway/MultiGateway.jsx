@@ -22,9 +22,9 @@ function formatDuration(seconds) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function formatTimeAgo(isoString) {
-  if (!isoString) return "-";
-  const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+function formatTimeAgo(timestampMs) {
+  if (!timestampMs) return "-";
+  const diff = Math.floor((Date.now() - timestampMs) / 1000);
   if (diff < 0) return "just now";
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
