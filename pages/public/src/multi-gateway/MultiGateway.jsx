@@ -5,7 +5,7 @@ import CopyButton from "../components/CopyButton.jsx";
 import {
   fetchGateways,
   fetchGatewayPackets,
-  createEventSource,
+  createEventSources,
 } from "../lib/multiGatewayApi.js";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 
@@ -56,15 +56,19 @@ function useMultiGateway() {
       .catch((err) => console.error("Failed to fetch gateways:", err));
   }, []);
 
-  // SSE connection
+  // SSE connections (one per region)
   useEffect(() => {
-    const es = createEventSource();
-    esRef.current = es;
+    const sources = createEventSources();
+    esRef.current = sources;
 
-    es.onopen = () => setSseStatus("connected");
-    es.onerror = () => setSseStatus("reconnecting");
+    let connectedCount = 0;
+    const handleOpen = () => {
+      connectedCount++;
+      if (connectedCount === sources.length) setSseStatus("connected");
+    };
+    const handleError = () => setSseStatus("reconnecting");
 
-    es.onmessage = (event) => {
+    const handleMessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         switch (data.type) {
@@ -74,7 +78,12 @@ function useMultiGateway() {
               if (exists) {
                 return prev.map((g) =>
                   g.mac === data.mac
-                    ? { ...g, connected: true, connected_seconds: 0 }
+                    ? {
+                        ...g,
+                        connected: true,
+                        connected_seconds: 0,
+                        region: data.region,
+                      }
                     : g,
                 );
               }
@@ -83,6 +92,7 @@ function useMultiGateway() {
                 {
                   mac: data.mac,
                   public_key: "",
+                  region: data.region || "",
                   connected: true,
                   connected_seconds: 0,
                   last_uplink_seconds_ago: null,
@@ -91,10 +101,7 @@ function useMultiGateway() {
                 },
               ];
             });
-            setSummary((s) => ({
-              total: s.total + (gateways.find((g) => g.mac === data.mac) ? 0 : 1),
-              connected: s.connected + 1,
-            }));
+            setSummary((s) => ({ ...s, connected: s.connected + 1 }));
             break;
 
           case "gateway_disconnect":
@@ -138,7 +145,13 @@ function useMultiGateway() {
       }
     };
 
-    return () => es.close();
+    for (const es of sources) {
+      es.onopen = handleOpen;
+      es.onerror = handleError;
+      es.onmessage = handleMessage;
+    }
+
+    return () => sources.forEach((es) => es.close());
   }, []);
 
   return { gateways, summary, sseStatus };
@@ -187,15 +200,8 @@ function SetupNote() {
               <span className="text-content-tertiary">server_address:</span>{" "}
               hotspot.heliumtools.org
             </p>
-            <p>
-              <span className="text-content-tertiary">serv_port_up:</span> 1680
-            </p>
-            <p>
-              <span className="text-content-tertiary">serv_port_down:</span>{" "}
-              1680
-            </p>
-            <p>
-              <span className="text-content-tertiary">region:</span> US915
+            <p className="mt-2 font-sans text-content-tertiary">
+              US915 &mdash; port 1680 &nbsp;|&nbsp; EU868 &mdash; port 1681
             </p>
           </div>
           <p className="mt-3 text-content-tertiary">
@@ -205,6 +211,26 @@ function SetupNote() {
         </div>
       )}
     </div>
+  );
+}
+
+const REGION_COLORS = {
+  US915: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+  EU868: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  AU915: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  AS923_1: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+};
+
+function RegionBadge({ region }) {
+  const colors =
+    REGION_COLORS[region] ||
+    "bg-surface-inset text-content-tertiary";
+  return (
+    <span
+      className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${colors}`}
+    >
+      {region}
+    </span>
   );
 }
 
@@ -226,6 +252,7 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
           <thead>
             <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Region</th>
               <th className="px-4 py-3">MAC</th>
               <th className="px-4 py-3">Public Key</th>
               <th className="px-4 py-3 text-right">Connected</th>
@@ -251,6 +278,9 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
                         : "bg-content-tertiary"
                     }`}
                   />
+                </td>
+                <td className="px-4 py-3">
+                  <RegionBadge region={gw.region} />
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5">
