@@ -13,6 +13,7 @@ import {
   formatTimeAgo,
 } from "../lib/utils.js";
 import animalHash from "angry-purple-tiger";
+import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 
 function gatewayName(publicKey) {
@@ -354,6 +355,30 @@ const FRAME_TYPE_LABELS = {
   Proprietary: { label: "Prop", title: "Proprietary", color: "text-content-tertiary" },
 };
 
+function NetIdCell({ devAddr }) {
+  if (!devAddr) return <span className="text-content-tertiary">-</span>;
+  const result = devAddrToNetId(devAddr);
+  if (!result) return <span className="text-content-tertiary">-</span>;
+  const operator = netIdToOperator(result.netId);
+  return (
+    <span className="text-xs" title={`NetID: ${result.netId}`}>
+      {operator ? (
+        <span className="text-content-primary">{operator}</span>
+      ) : (
+        <a
+          href={`https://michaeldjeffrey.github.io/bit_looker/?net_id=${result.netId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-mono text-accent hover:underline"
+        >
+          {result.netId}
+        </a>
+      )}
+      <span className="ml-1.5 text-[10px] text-content-tertiary">T{result.type}</span>
+    </span>
+  );
+}
+
 function FrameTypeBadge({ frameType }) {
   const info = FRAME_TYPE_LABELS[frameType] || {
     label: frameType || "?",
@@ -367,15 +392,28 @@ function FrameTypeBadge({ frameType }) {
   );
 }
 
+const ALL_FRAME_TYPES = Object.keys(FRAME_TYPE_LABELS);
+
 function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
   const idRef = useRef(0);
   const tagPackets = (arr, isNew) =>
     arr.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: isNew }));
   const [packets, setPackets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [visibleTypes, setVisibleTypes] = useState(() =>
+    Object.fromEntries(ALL_FRAME_TYPES.map((t) => [t, true])),
+  );
+
+  const toggleType = (type) =>
+    setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
+
   const reversedPackets = useMemo(
-    () => [...packets].reverse().slice(0, 50),
-    [packets],
+    () =>
+      [...packets]
+        .reverse()
+        .filter((pkt) => !pkt.frame_type || visibleTypes[pkt.frame_type] !== false)
+        .slice(0, 50),
+    [packets, visibleTypes],
   );
 
   useEffect(() => {
@@ -413,6 +451,29 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-3 border-b border-border px-4 py-2">
+        {ALL_FRAME_TYPES.map((type) => {
+          const info = FRAME_TYPE_LABELS[type];
+          return (
+            <label
+              key={type}
+              className="inline-flex cursor-pointer items-center gap-1.5 text-xs"
+              title={info.title}
+            >
+              <input
+                type="checkbox"
+                checked={visibleTypes[type]}
+                onChange={() => toggleType(type)}
+                className="h-3 w-3 rounded border-border text-accent focus:ring-accent"
+              />
+              <span className={visibleTypes[type] ? info.color : "text-content-tertiary"}>
+                {info.label}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
       {loading ? (
         <div className="p-6 text-center text-sm text-content-tertiary">
           Loading...
@@ -428,6 +489,7 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
               <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
                 <th className="px-4 py-2">Time</th>
                 <th className="px-4 py-2">Type</th>
+                <th className="px-4 py-2">NetID</th>
                 <th className="px-4 py-2">DevAddr</th>
                 <th className="px-4 py-2 text-right">FCnt</th>
                 <th className="px-4 py-2 text-right">FPort</th>
@@ -449,6 +511,9 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
                   </td>
                   <td className="px-4 py-2">
                     <FrameTypeBadge frameType={pkt.frame_type} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <NetIdCell devAddr={pkt.dev_addr} />
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-content-secondary">
                     {pkt.dev_addr || "-"}
@@ -491,7 +556,6 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
 export default function MultiGateway() {
   const { gateways, summary, sseStatus, latestPacket } = useMultiGateway();
   const [selectedMac, setSelectedMac] = useState(null);
-
 
   return (
     <div className="min-h-screen bg-surface">
