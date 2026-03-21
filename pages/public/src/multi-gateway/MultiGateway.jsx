@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import CopyButton from "../components/CopyButton.jsx";
@@ -7,34 +7,12 @@ import {
   fetchGatewayPackets,
   createEventSource,
 } from "../lib/multiGatewayApi.js";
+import {
+  truncateString,
+  formatDuration,
+  formatTimeAgo,
+} from "../lib/utils.js";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatDuration(seconds) {
-  if (seconds == null) return "-";
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-function formatTimeAgo(timestampMs) {
-  if (!timestampMs) return "-";
-  const diff = Math.floor((Date.now() - timestampMs) / 1000);
-  if (diff < 0) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
-}
-
-function truncateKey(key) {
-  if (!key || key.length <= 16) return key || "";
-  return `${key.slice(0, 8)}...${key.slice(-4)}`;
-}
 
 // ---------------------------------------------------------------------------
 // SSE Hook
@@ -206,7 +184,7 @@ function SetupNote() {
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-content-secondary hover:text-content-primary"
       >
-        <span>How to add a Hotspot</span>
+        <span>How to Add a Hotspot</span>
         {open ? (
           <ChevronUpIcon className="h-4 w-4" />
         ) : (
@@ -320,7 +298,7 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5">
                     <span className="font-mono text-xs text-content-secondary">
-                      {truncateKey(gw.public_key)}
+                      {truncateString(gw.public_key, 8, 4)}
                     </span>
                     {gw.public_key && <CopyButton text={gw.public_key} />}
                   </span>
@@ -333,9 +311,7 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
                     : "Offline"}
                 </td>
                 <td className="px-4 py-3 text-right text-content-secondary">
-                  {gw.last_uplink_at
-                    ? `${Math.floor((Date.now() - gw.last_uplink_at) / 1000)}s ago`
-                    : "-"}
+                  {formatTimeAgo(gw.last_uplink_at)}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-xs text-content-secondary">
                   {gw.uplink_count ?? 0}
@@ -352,13 +328,10 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
   );
 }
 
-let packetIdCounter = 0;
-
-function tagPackets(arr, isNew) {
-  return arr.map((pkt) => ({ ...pkt, _id: ++packetIdCounter, _new: isNew }));
-}
-
 function GatewayDetail({ mac, latestPacket, onClose }) {
+  const idRef = useRef(0);
+  const tagPackets = (arr, isNew) =>
+    arr.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: isNew }));
   const [packets, setPackets] = useState([]);
   const [loading, setLoading] = useState(true);
   const reversedPackets = useMemo(

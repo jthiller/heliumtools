@@ -63,13 +63,14 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
   );
   if (packetsMatch && request.method === "GET") {
     const mac = packetsMatch[1];
-    for (const { port } of REGIONS) {
-      const result = await fetchUpstream(
-        `http://${host}:${port}/gateways/${mac}/packets`,
-        headers,
-      );
-      if (result.ok) {
-        return jsonResponse(result.data);
+    const results = await Promise.allSettled(
+      REGIONS.map(({ port }) =>
+        fetchUpstream(`http://${host}:${port}/gateways/${mac}/packets`, headers),
+      ),
+    );
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value.ok) {
+        return jsonResponse(result.value.data);
       }
     }
     return jsonResponse({ error: "Gateway not found" }, 404);
@@ -80,12 +81,15 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
 
     const sources = REGIONS.map(({ port }) =>
-      fetch(`http://${host}:${port}/events`),
+      fetch(`http://${host}:${port}/events`, { headers }),
     );
 
-    // Pipe each upstream SSE stream into the merged output
+    // Pipe each upstream SSE stream into the merged output.
+    // Buffer by SSE event boundary (\n\n) to prevent interleaving
+    // partial events from concurrent streams.
     Promise.allSettled(sources).then(async (results) => {
       const readers = [];
       for (const result of results) {
@@ -95,27 +99,38 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
       }
 
       if (readers.length === 0) {
-        await writer.write(encoder.encode("data: {\"error\":\"No upstream available\"}\n\n"));
+        await writer.write(
+          encoder.encode('data: {"error":"No upstream available"}\n\n'),
+        );
         await writer.close();
         return;
       }
 
-      // Read from all streams concurrently until all close
       await Promise.allSettled(
         readers.map(async (reader) => {
+          let buffer = "";
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            try {
-              await writer.write(value);
-            } catch {
-              break; // client disconnected
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split("\n\n");
+            buffer = events.pop();
+            for (const event of events) {
+              try {
+                await writer.write(encoder.encode(event + "\n\n"));
+              } catch {
+                return;
+              }
             }
           }
         }),
       );
 
-      try { await writer.close(); } catch { /* already closed */ }
+      try {
+        await writer.close();
+      } catch {
+        /* already closed */
+      }
     });
 
     return new Response(readable, {
