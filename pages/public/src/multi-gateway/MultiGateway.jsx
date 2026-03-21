@@ -328,6 +328,25 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
   );
 }
 
+const FRAME_TYPE_LABELS = {
+  JoinRequest: { label: "Join", color: "text-violet-600 dark:text-violet-400" },
+  JoinAccept: { label: "Join Accept", color: "text-violet-600 dark:text-violet-400" },
+  UnconfirmedUp: { label: "Uncnf Up", color: "text-content-secondary" },
+  ConfirmedUp: { label: "Cnf Up", color: "text-sky-600 dark:text-sky-400" },
+  UnconfirmedDown: { label: "Uncnf Down", color: "text-content-tertiary" },
+  ConfirmedDown: { label: "Cnf Down", color: "text-sky-600 dark:text-sky-400" },
+  RejoinRequest: { label: "Rejoin", color: "text-amber-600 dark:text-amber-400" },
+  Proprietary: { label: "Proprietary", color: "text-content-tertiary" },
+};
+
+function FrameTypeBadge({ frameType }) {
+  const info = FRAME_TYPE_LABELS[frameType] || {
+    label: frameType || "?",
+    color: "text-content-tertiary",
+  };
+  return <span className={`text-xs font-medium ${info.color}`}>{info.label}</span>;
+}
+
 function GatewayDetail({ mac, latestPacket, onClose }) {
   const idRef = useRef(0);
   const tagPackets = (arr, isNew) =>
@@ -388,9 +407,13 @@ function GatewayDetail({ mac, latestPacket, onClose }) {
             <thead>
               <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
                 <th className="px-4 py-2">Time</th>
+                <th className="px-4 py-2">Type</th>
+                <th className="px-4 py-2">DevAddr</th>
+                <th className="px-4 py-2 text-right">FCnt</th>
+                <th className="px-4 py-2 text-right">FPort</th>
                 <th className="px-4 py-2 text-right">RSSI</th>
                 <th className="px-4 py-2 text-right">SNR</th>
-                <th className="px-4 py-2 text-right">Freq (MHz)</th>
+                <th className="px-4 py-2 text-right">Freq</th>
                 <th className="px-4 py-2">SF</th>
                 <th className="px-4 py-2 text-right">Size</th>
               </tr>
@@ -404,14 +427,26 @@ function GatewayDetail({ mac, latestPacket, onClose }) {
                   <td className="px-4 py-2 text-xs">
                     {formatTimeAgo(pkt.timestamp)}
                   </td>
+                  <td className="px-4 py-2">
+                    <FrameTypeBadge frameType={pkt.frame_type} />
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs text-content-secondary">
+                    {pkt.dev_addr || "-"}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
+                    {pkt.fcnt ?? "-"}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
+                    {pkt.fport ?? "-"}
+                  </td>
                   <td className="px-4 py-2 text-right font-mono text-xs">
                     {pkt.rssi} dBm
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-xs">
-                    {pkt.snr.toFixed(1)} dB
+                    {pkt.snr?.toFixed(1)} dB
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-xs">
-                    {pkt.frequency.toFixed(1)}
+                    {pkt.frequency?.toFixed(1)}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs">
                     {pkt.spreading_factor}
