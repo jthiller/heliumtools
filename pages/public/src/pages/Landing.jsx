@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import ShaderDithering from "../components/ShaderDithering.jsx";
 
@@ -47,6 +47,15 @@ const sections = [
         href: "/hotspot-map",
         icon: MapPinIcon,
         iconBg: "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400",
+        badge: "New",
+      },
+      {
+        name: "Add a Hotspot",
+        description:
+          "Add a LoRaWAN gateway to the Helium network and monitor it in real time. View signal quality, packet activity, and connection status.",
+        href: "/multi-gateway",
+        icon: SignalIcon,
+        iconBg: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
         badge: "New",
       },
       {

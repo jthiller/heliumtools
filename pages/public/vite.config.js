@@ -23,6 +23,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/oui-notifier\/api/, "/oui-notifier"),
       },
+      "/api/multi-gateway": {
+        target: process.env.VITE_API_TARGET || "http://localhost:8787",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
     },
   },
   build: {

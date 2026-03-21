@@ -8,6 +8,7 @@ import {
 } from "./tools/dc-purchase/index.js";
 import { handleHotspotClaimerRequest } from "./tools/hotspot-claimer/index.js";
 import { handleHotspotMapRequest } from "./tools/hotspot-map/index.js";
+import { handleMultiGatewayRequest } from "./tools/multi-gateway/index.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -42,6 +43,13 @@ export default {
         subUrl.pathname = pathname.replace(/^\/hotspot-map/, "") || "/";
         const subRequest = new Request(subUrl.toString(), request);
         return await handleHotspotMapRequest(subRequest, env, ctx);
+      }
+
+      if (pathname.startsWith("/multi-gateway/")) {
+        const subUrl = new URL(request.url);
+        subUrl.pathname = pathname.replace(/^\/multi-gateway/, "") || "/";
+        const subRequest = new Request(subUrl.toString(), request);
+        return await handleMultiGatewayRequest(subRequest, env, ctx);
       }
 
       return new Response("Not found", { status: 404 });
