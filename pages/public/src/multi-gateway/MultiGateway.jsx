@@ -43,6 +43,7 @@ function truncateKey(key) {
 function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
   const [sseStatus, setSseStatus] = useState("connecting");
+  const [latestPacket, setLatestPacket] = useState(null);
   const [tick, setTick] = useState(0);
 
   // Tick every 5s to keep relative timestamps fresh
@@ -124,6 +125,9 @@ function useMultiGateway() {
             break;
 
           case "uplink":
+            if (data.metadata) {
+              setLatestPacket({ mac: data.mac, metadata: data.metadata });
+            }
             setGateways((prev) =>
               prev.map((g) =>
                 g.mac === data.mac
@@ -174,7 +178,7 @@ function useMultiGateway() {
     };
   }, [gateways]);
 
-  return { gateways, summary, sseStatus };
+  return { gateways, summary, sseStatus, latestPacket };
 }
 
 // ---------------------------------------------------------------------------
@@ -221,12 +225,15 @@ function SetupNote() {
               hotspot.heliumtools.org
             </p>
             <p className="mt-2 font-sans text-content-tertiary">
-              US915 &mdash; port 1680 &nbsp;|&nbsp; EU868 &mdash; port 1681
+              If your gateway region is US915, use port{" "}
+              <span className="font-mono text-content-secondary">1680</span>.
+              For EU868, use port{" "}
+              <span className="font-mono text-content-secondary">1681</span>.
             </p>
           </div>
           <p className="mt-3 text-content-tertiary">
             A keypair is auto-provisioned on first connection. The gateway will
-            appear as a new Hotspot on the network.
+            connect as a new Hotspot on the network.
           </p>
         </div>
       )}
@@ -345,18 +352,37 @@ function GatewayTable({ gateways, selectedMac, onSelect }) {
   );
 }
 
-function GatewayDetail({ mac, onClose }) {
+let packetIdCounter = 0;
+
+function tagPackets(arr, isNew) {
+  return arr.map((pkt) => ({ ...pkt, _id: ++packetIdCounter, _new: isNew }));
+}
+
+function GatewayDetail({ mac, latestPacket, onClose }) {
   const [packets, setPackets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const reversedPackets = useMemo(() => [...packets].reverse(), [packets]);
+  const reversedPackets = useMemo(
+    () => [...packets].reverse().slice(0, 50),
+    [packets],
+  );
 
   useEffect(() => {
     setLoading(true);
     fetchGatewayPackets(mac)
-      .then((data) => setPackets(data))
+      .then((data) => setPackets(tagPackets(data, false)))
       .catch((err) => console.error("Failed to fetch packets:", err))
       .finally(() => setLoading(false));
   }, [mac]);
+
+  // Append new packets from SSE
+  useEffect(() => {
+    if (latestPacket && latestPacket.mac === mac) {
+      setPackets((prev) => {
+        const next = [...prev, ...tagPackets([latestPacket.metadata], true)];
+        return next.length > 50 ? next.slice(-50) : next;
+      });
+    }
+  }, [latestPacket, mac]);
 
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
@@ -397,10 +423,10 @@ function GatewayDetail({ mac, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {reversedPackets.map((pkt, i) => (
+              {reversedPackets.map((pkt) => (
                 <tr
-                  key={i}
-                  className="border-t border-border-muted text-content-secondary"
+                  key={pkt._id}
+                  className={`border-t border-border-muted text-content-secondary ${pkt._new ? "animate-pulse-once" : ""}`}
                 >
                   <td className="px-4 py-2 text-xs">
                     {formatTimeAgo(pkt.timestamp)}
@@ -435,7 +461,7 @@ function GatewayDetail({ mac, onClose }) {
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
-  const { gateways, summary, sseStatus } = useMultiGateway();
+  const { gateways, summary, sseStatus, latestPacket } = useMultiGateway();
   const [selectedMac, setSelectedMac] = useState(null);
 
   return (
@@ -475,6 +501,7 @@ export default function MultiGateway() {
         {selectedMac && (
           <GatewayDetail
             mac={selectedMac}
+            latestPacket={latestPacket}
             onClose={() => setSelectedMac(null)}
           />
         )}
