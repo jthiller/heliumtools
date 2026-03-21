@@ -393,6 +393,7 @@ function FrameTypeBadge({ frameType }) {
 }
 
 const ALL_FRAME_TYPES = Object.keys(FRAME_TYPE_LABELS);
+const MAX_PACKETS = 200;
 
 function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
   const idRef = useRef(0);
@@ -401,7 +402,9 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
   const [packets, setPackets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState(() =>
-    Object.fromEntries(ALL_FRAME_TYPES.map((t) => [t, true])),
+    Object.fromEntries(
+      ALL_FRAME_TYPES.map((t) => [t, t !== "JoinRequest" && t !== "JoinAccept"]),
+    ),
   );
 
   const toggleType = (type) =>
@@ -412,7 +415,7 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
       [...packets]
         .reverse()
         .filter((pkt) => !pkt.frame_type || visibleTypes[pkt.frame_type] !== false)
-        .slice(0, 50),
+        .slice(0, MAX_PACKETS),
     [packets, visibleTypes],
   );
 
@@ -429,7 +432,7 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
     if (latestPacket && latestPacket.mac === mac) {
       setPackets((prev) => {
         const next = [...prev, ...tagPackets([latestPacket.metadata], true)];
-        return next.length > 50 ? next.slice(-50) : next;
+        return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
       });
     }
   }, [latestPacket, mac]);
