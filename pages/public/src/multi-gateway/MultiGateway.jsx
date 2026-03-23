@@ -14,7 +14,15 @@ import {
 } from "../lib/utils.js";
 import animalHash from "angry-purple-tiger";
 import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ChevronUpIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import MapGL, { NavigationControl } from "react-map-gl/maplibre";
+import { DeckGL } from "@deck.gl/react";
+import { ScatterplotLayer } from "@deck.gl/layers";
+import useDarkMode from "../lib/useDarkMode.js";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 function gatewayName(publicKey) {
   if (!publicKey) return null;
@@ -560,12 +568,152 @@ function GatewayDetail({ mac, publicKey, latestPacket, onClose }) {
 }
 
 // ---------------------------------------------------------------------------
+// Map Modal
+// ---------------------------------------------------------------------------
+
+function GatewayMapModal({ gateways, onClose }) {
+  const dark = useDarkMode();
+  const withCoords = useMemo(
+    () => gateways.filter((g) => g.latitude != null && g.longitude != null),
+    [gateways],
+  );
+
+  const [viewState, setViewState] = useState(() => {
+    if (withCoords.length > 0) {
+      const avgLat =
+        withCoords.reduce((s, g) => s + g.latitude, 0) / withCoords.length;
+      const avgLng =
+        withCoords.reduce((s, g) => s + g.longitude, 0) / withCoords.length;
+      return { latitude: avgLat, longitude: avgLng, zoom: 10 };
+    }
+    return { latitude: 39, longitude: -98, zoom: 3 };
+  });
+
+  const flyTo = (lat, lng) =>
+    setViewState((v) => ({ ...v, latitude: lat, longitude: lng, zoom: 14 }));
+
+  const layers = [
+    new ScatterplotLayer({
+      id: "gateways",
+      data: withCoords,
+      getPosition: (d) => [d.longitude, d.latitude],
+      getFillColor: (d) =>
+        d.connected ? [16, 185, 129, 200] : [156, 163, 175, 160],
+      getRadius: 80,
+      radiusMinPixels: 6,
+      radiusMaxPixels: 20,
+      pickable: true,
+    }),
+  ];
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex bg-black/50 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="m-4 flex flex-1 overflow-hidden rounded-2xl border border-border bg-surface-raised shadow-lg lg:m-8">
+        {/* Map */}
+        <div className="relative flex-1">
+          <DeckGL
+            viewState={viewState}
+            onViewStateChange={({ viewState: vs }) => setViewState(vs)}
+            layers={layers}
+            controller={true}
+            getTooltip={({ object }) =>
+              object && `${gatewayName(object.public_key) || object.mac}`
+            }
+          >
+            <MapGL mapStyle={dark ? BASEMAP_DARK : BASEMAP_LIGHT}>
+              <NavigationControl position="top-right" />
+            </MapGL>
+          </DeckGL>
+        </div>
+
+        {/* Sidebar table */}
+        <div className="flex w-80 flex-col border-l border-border">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h3 className="text-sm font-medium text-content-primary">
+              Gateway Locations
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-content-tertiary hover:text-content-secondary"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {gateways.map((gw) => {
+              const name = gatewayName(gw.public_key);
+              const hasCoords =
+                gw.latitude != null && gw.longitude != null;
+              return (
+                <button
+                  key={gw.mac}
+                  onClick={() =>
+                    hasCoords && flyTo(gw.latitude, gw.longitude)
+                  }
+                  className={`w-full border-b border-border-muted px-4 py-2.5 text-left transition-colors ${
+                    hasCoords
+                      ? "hover:bg-surface-inset cursor-pointer"
+                      : "opacity-50"
+                  }`}
+                >
+                  <p className="text-xs font-medium text-content-primary">
+                    {name || gw.mac}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[10px] text-content-tertiary">
+                    {gw.mac}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-content-secondary tabular-nums">
+                    {hasCoords
+                      ? `${gw.latitude.toFixed(5)}, ${gw.longitude.toFixed(5)}${gw.altitude != null ? ` (${gw.altitude}m)` : ""}`
+                      : "No GPS data"}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
   const { gateways, summary, sseStatus, latestPacket } = useMultiGateway();
   const [selectedMac, setSelectedMac] = useState(null);
+  const [showMap, setShowMap] = useState(false);
+
+  // Press M to toggle map (ignore when typing in an input)
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "m" && !e.metaKey && !e.ctrlKey) {
+        const el = document.activeElement;
+        const tag = el?.tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT" && !el?.isContentEditable) {
+          setShowMap((v) => !v);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <div className="min-h-screen bg-surface">
@@ -610,6 +758,13 @@ export default function MultiGateway() {
           />
         )}
       </div>
+
+      {showMap && (
+        <GatewayMapModal
+          gateways={gateways}
+          onClose={() => setShowMap(false)}
+        />
+      )}
     </div>
   );
 }
