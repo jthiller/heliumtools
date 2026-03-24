@@ -560,7 +560,7 @@ function GatewayDetail({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
                 <th className="px-4 py-2">Type</th>
                 <th className="px-4 py-2">NetID</th>
                 <th className="px-4 py-2">DevAddr</th>
-                <th className="px-4 py-2">OUI</th>
+                <th className="px-4 py-2">Helium OUI</th>
                 <th className="px-4 py-2 text-right">FCnt</th>
                 <th className="px-4 py-2 text-right">FPort</th>
                 <th className="px-4 py-2 text-right">RSSI</th>
