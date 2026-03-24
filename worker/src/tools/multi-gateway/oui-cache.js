@@ -83,9 +83,12 @@ async function grpcWebCall(path, body) {
     },
     body,
   });
-  if (!res.ok) return null;
+  // gRPC-web over HTTP/2 — returns 200 with grpc-status header.
+  // Note: fails locally in wrangler dev (Miniflare uses HTTP/1.1),
+  // works in production where Cloudflare negotiates HTTP/2.
+  const grpcStatus = res.headers.get("grpc-status");
+  if (!res.ok && grpcStatus !== "0") return null;
   const buf = new Uint8Array(await res.arrayBuffer());
-  // Skip 5-byte gRPC frame header
   return buf.length > 5 ? buf.subarray(5) : null;
 }
 
@@ -100,9 +103,10 @@ async function fetchOrgList() {
   const ouis = [];
   for (const f of fields) {
     if (f.field === 1 && f.type === "bytes") {
-      // Parse OrgV1 — field 1 is oui (varint)
       const orgFields = parseFields(f.value);
-      const ouiField = orgFields.find((x) => x.field === 1 && x.type === "varint");
+      const ouiField = orgFields.find(
+        (x) => x.field === 1 && x.type === "varint",
+      );
       if (ouiField) ouis.push(ouiField.value);
     }
   }
