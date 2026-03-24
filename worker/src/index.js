@@ -46,6 +46,8 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runOuiNotifierDaily(env));
     ctx.waitUntil(runDcPurchaseScheduled(env, ctx));
-    ctx.waitUntil(refreshOuiCache(env));
+    // OUI data changes infrequently — refresh once daily at midnight UTC
+    const hour = new Date(event.scheduledTime).getUTCHours();
+    if (hour === 0) ctx.waitUntil(refreshOuiCache(env));
   },
 };
