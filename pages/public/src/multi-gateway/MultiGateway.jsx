@@ -84,8 +84,8 @@ function useMultiGateway() {
     return () => clearInterval(id);
   }, []);
 
-  // Initial load — convert API seconds to absolute timestamps
-  useEffect(() => {
+  // Convert API relative-seconds to absolute timestamps
+  const loadGateways = () =>
     fetchGateways()
       .then((data) => {
         const now = Date.now();
@@ -95,18 +95,27 @@ function useMultiGateway() {
             connected_at: g.connected
               ? now - (g.connected_seconds || 0) * 1000
               : null,
-            last_uplink_at: g.last_uplink_seconds_ago != null
-              ? now - g.last_uplink_seconds_ago * 1000
-              : null,
+            last_uplink_at:
+              g.last_uplink_seconds_ago != null
+                ? now - g.last_uplink_seconds_ago * 1000
+                : null,
           })),
         );
       })
       .catch((err) => console.error("Failed to fetch gateways:", err));
+
+  // Initial load
+  useEffect(() => {
+    loadGateways();
   }, []);
 
-  // SSE connection (Worker merges all region streams)
-  useEffect(() => {
+  // SSE connection with visibility-aware reconnect
+  const esRef = useRef(null);
+
+  const connectSse = () => {
+    if (esRef.current) esRef.current.close();
     const es = createEventSource();
+    esRef.current = es;
 
     es.onopen = () => setSseStatus("connected");
     es.onerror = () => setSseStatus("reconnecting");
@@ -190,8 +199,25 @@ function useMultiGateway() {
         // ignore malformed events
       }
     };
+  };
 
-    return () => es.close();
+  // Initial SSE connection
+  useEffect(() => {
+    connectSse();
+    return () => esRef.current?.close();
+  }, []);
+
+  // Reconnect + refresh state when tab becomes visible again
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadGateways();
+        connectSse();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
   // Memoize derived counts so they are only recomputed when gateways changes,
