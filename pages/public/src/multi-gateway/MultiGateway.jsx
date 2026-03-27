@@ -24,6 +24,7 @@ import {
   ArrowUturnUpIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  PlusIcon,
   QuestionMarkCircleIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
@@ -285,7 +286,10 @@ function SetupNote() {
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-content-secondary hover:text-content-primary"
       >
-        <span>How to Add a Hotspot</span>
+        <span className="inline-flex items-center gap-1.5">
+          <PlusIcon className="h-4 w-4" />
+          Add a Hotspot
+        </span>
         {open ? (
           <ChevronUpIcon className="h-4 w-4" />
         ) : (
