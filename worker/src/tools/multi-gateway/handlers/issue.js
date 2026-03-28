@@ -8,7 +8,6 @@ import { PublicKey, ComputeBudgetProgram, Transaction, VersionedTransaction, Tra
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
 import { jsonResponse } from "../../../lib/response.js";
-import { wireToBincode, bincodeToWire } from "../bincode.js";
 
 // ECC Verifier
 const ECC_VERIFIER = new PublicKey("eccSAJM3tq7nQSpQTm8roxv4FPoipCkMsGizW2KBhqZ");
@@ -267,12 +266,11 @@ export async function handleIssueAndOnboard(mac, request, env) {
 
       const vtx = new VersionedTransaction(messageV0);
 
-      // Convert from Solana wire format to Rust bincode format.
-      // Wire uses compact_u16 for array lengths throughout;
-      // bincode uses u64_le for Vec lengths and u32_le for enum variants.
-      const wireBytes = Buffer.from(vtx.serialize());
-      const bincodeTx = wireToBincode(wireBytes);
-      const serializedTx = bincodeTx.toString("hex");
+      // Solana wire format IS the bincode format for VersionedTransaction.
+      // VersionedMessage has custom Serialize that uses short_vec (compact_u16)
+      // matching the wire format exactly. No conversion needed.
+      // (Verified: solana-program/src/message/versions/mod.rs — custom Serialize impl)
+      const serializedTx = Buffer.from(vtx.serialize()).toString("hex");
 
       const verifyRes = await fetch(`${ECC_VERIFIER_URL}/verify`, {
         method: "POST",
@@ -291,9 +289,8 @@ export async function handleIssueAndOnboard(mac, request, env) {
 
       const verifyData = await verifyRes.json();
 
-      // Convert response back from bincode to Solana wire format
-      const signedBincode = Buffer.from(verifyData.transaction, "hex");
-      const signedWire = bincodeToWire(signedBincode);
+      // Response is also in wire format (same as bincode for VersionedTransaction)
+      const signedWire = Buffer.from(verifyData.transaction, "hex");
 
       transactions.push({
         type: "issue",
