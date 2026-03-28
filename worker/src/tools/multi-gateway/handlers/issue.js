@@ -4,10 +4,11 @@
  *
  * Returns serialized transactions (base64) for the frontend wallet to sign.
  */
-import { PublicKey, ComputeBudgetProgram, Transaction, VersionedTransaction, TransactionMessage, TransactionInstruction, SystemProgram, Connection } from "@solana/web3.js";
+import { PublicKey, ComputeBudgetProgram, VersionedTransaction, TransactionMessage, TransactionInstruction, SystemProgram, Connection } from "@solana/web3.js";
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
 import { jsonResponse } from "../../../lib/response.js";
+import { REGIONS } from "../regions.js";
 
 // ECC Verifier
 const ECC_VERIFIER = new PublicKey("eccSAJM3tq7nQSpQTm8roxv4FPoipCkMsGizW2KBhqZ");
@@ -32,25 +33,28 @@ function findPDA(seeds, programId) {
   return PublicKey.findProgramAddressSync(seeds, programId)[0];
 }
 
-const daoKey = () => findPDA([Buffer.from("dao"), HNT_MINT.toBuffer()], SUB_DAOS);
-const iotSubDaoKey = () => findPDA([Buffer.from("sub_dao"), IOT_MINT.toBuffer()], SUB_DAOS);
-const dataOnlyConfigKey = () => findPDA([Buffer.from("data_only_config"), daoKey().toBuffer()], ENTITY_MANAGER);
-const dataOnlyEscrowKey = () => findPDA([Buffer.from("data_only_escrow"), dataOnlyConfigKey().toBuffer()], ENTITY_MANAGER);
-const entityCreatorKey = () => findPDA([Buffer.from("entity_creator"), daoKey().toBuffer()], ENTITY_MANAGER);
-const rewardableEntityConfigKey = () => findPDA([Buffer.from("rewardable_entity_config"), iotSubDaoKey().toBuffer(), Buffer.from("IOT")], ENTITY_MANAGER);
-const dcKey = () => findPDA([Buffer.from("dc"), DC_MINT.toBuffer()], DATA_CREDITS);
+// Static PDAs — derived from constants, computed once at module load
+const DAO_KEY = findPDA([Buffer.from("dao"), HNT_MINT.toBuffer()], SUB_DAOS);
+const IOT_SUB_DAO_KEY = findPDA([Buffer.from("sub_dao"), IOT_MINT.toBuffer()], SUB_DAOS);
+const DATA_ONLY_CONFIG_KEY = findPDA([Buffer.from("data_only_config"), DAO_KEY.toBuffer()], ENTITY_MANAGER);
+const DATA_ONLY_ESCROW_KEY = findPDA([Buffer.from("data_only_escrow"), DATA_ONLY_CONFIG_KEY.toBuffer()], ENTITY_MANAGER);
+const ENTITY_CREATOR_KEY = findPDA([Buffer.from("entity_creator"), DAO_KEY.toBuffer()], ENTITY_MANAGER);
+const REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_entity_config"), IOT_SUB_DAO_KEY.toBuffer(), Buffer.from("IOT")], ENTITY_MANAGER);
+const DC_KEY = findPDA([Buffer.from("dc"), DC_MINT.toBuffer()], DATA_CREDITS);
+const BUBBLEGUM_SIGNER_KEY = findPDA([Buffer.from("collection_cpi")], BUBBLEGUM);
 
 function entityKeyHash(gatewayPubkeyB58) {
   const bytes = bs58.decode(gatewayPubkeyB58);
   return Buffer.from(sha256.arrayBuffer(bytes));
 }
 
+// Dynamic PDAs — depend on runtime arguments
 function keyToAssetKey(gatewayPubkeyB58) {
-  return findPDA([Buffer.from("key_to_asset"), daoKey().toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
+  return findPDA([Buffer.from("key_to_asset"), DAO_KEY.toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
 }
 
 function iotInfoKey(gatewayPubkeyB58) {
-  return findPDA([Buffer.from("iot_info"), rewardableEntityConfigKey().toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
+  return findPDA([Buffer.from("iot_info"), REWARDABLE_ENTITY_CONFIG_KEY.toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
 }
 
 function collectionMetadataKey(collection) {
@@ -63,10 +67,6 @@ function collectionMasterEditionKey(collection) {
 
 function treeAuthorityKey(merkleTree) {
   return findPDA([merkleTree.toBuffer()], BUBBLEGUM);
-}
-
-function bubblegumSignerKey() {
-  return findPDA([Buffer.from("collection_cpi")], BUBBLEGUM);
 }
 
 function ataAddress(owner, mint) {
@@ -98,15 +98,15 @@ function buildIssueInstruction(owner, gatewayPubkeyB58, merkleTree, collection) 
     { pubkey: collection, isSigner: false, isWritable: false },              // collection
     { pubkey: collectionMetadataKey(collection), isSigner: false, isWritable: true }, // collection_metadata
     { pubkey: collectionMasterEditionKey(collection), isSigner: false, isWritable: false }, // collection_master_edition
-    { pubkey: dataOnlyConfigKey(), isSigner: false, isWritable: true },      // data_only_config
-    { pubkey: entityCreatorKey(), isSigner: false, isWritable: false },      // entity_creator
-    { pubkey: daoKey(), isSigner: false, isWritable: false },                // dao
+    { pubkey: DATA_ONLY_CONFIG_KEY, isSigner: false, isWritable: true },      // data_only_config
+    { pubkey: ENTITY_CREATOR_KEY, isSigner: false, isWritable: false },      // entity_creator
+    { pubkey: DAO_KEY, isSigner: false, isWritable: false },                 // dao
     { pubkey: keyToAssetKey(gatewayPubkeyB58), isSigner: false, isWritable: true }, // key_to_asset
     { pubkey: treeAuthorityKey(merkleTree), isSigner: false, isWritable: true }, // tree_authority
     { pubkey: owner, isSigner: false, isWritable: false },                   // recipient
     { pubkey: merkleTree, isSigner: false, isWritable: true },               // merkle_tree
-    { pubkey: dataOnlyEscrowKey(), isSigner: false, isWritable: true },      // data_only_escrow
-    { pubkey: bubblegumSignerKey(), isSigner: false, isWritable: false },    // bubblegum_signer
+    { pubkey: DATA_ONLY_ESCROW_KEY, isSigner: false, isWritable: true },     // data_only_escrow
+    { pubkey: BUBBLEGUM_SIGNER_KEY, isSigner: false, isWritable: false },    // bubblegum_signer
     { pubkey: TOKEN_METADATA, isSigner: false, isWritable: false },          // token_metadata_program
     { pubkey: SPL_NOOP, isSigner: false, isWritable: false },                // log_wrapper
     { pubkey: BUBBLEGUM, isSigner: false, isWritable: false },               // bubblegum_program
@@ -143,13 +143,13 @@ function buildOnboardInstruction(owner, gatewayPubkeyB58, merkleTree, asset, pro
     { pubkey: owner, isSigner: true, isWritable: true },                     // hotspot_owner
     { pubkey: merkleTree, isSigner: false, isWritable: false },              // merkle_tree
     { pubkey: ataAddress(owner, DC_MINT), isSigner: false, isWritable: true }, // dc_burner
-    { pubkey: rewardableEntityConfigKey(), isSigner: false, isWritable: false }, // rewardable_entity_config
-    { pubkey: dataOnlyConfigKey(), isSigner: false, isWritable: false },     // data_only_config
-    { pubkey: daoKey(), isSigner: false, isWritable: false },                // dao
+    { pubkey: REWARDABLE_ENTITY_CONFIG_KEY, isSigner: false, isWritable: false }, // rewardable_entity_config
+    { pubkey: DATA_ONLY_CONFIG_KEY, isSigner: false, isWritable: false },    // data_only_config
+    { pubkey: DAO_KEY, isSigner: false, isWritable: false },                 // dao
     { pubkey: keyToAssetKey(gatewayPubkeyB58), isSigner: false, isWritable: false }, // key_to_asset
-    { pubkey: iotSubDaoKey(), isSigner: false, isWritable: true },           // sub_dao
+    { pubkey: IOT_SUB_DAO_KEY, isSigner: false, isWritable: true },          // sub_dao
     { pubkey: DC_MINT, isSigner: false, isWritable: true },                  // dc_mint
-    { pubkey: dcKey(), isSigner: false, isWritable: false },                 // dc
+    { pubkey: DC_KEY, isSigner: false, isWritable: false },                  // dc
     { pubkey: COMPRESSION, isSigner: false, isWritable: false },             // compression_program
     { pubkey: DATA_CREDITS, isSigner: false, isWritable: false },            // data_credits_program
     { pubkey: SPL_TOKEN, isSigner: false, isWritable: false },               // token_program
@@ -189,34 +189,29 @@ export async function handleIssueAndOnboard(mac, request, env) {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
-  // Get gateway public key and add-gateway txn from upstream
+  // Find gateway across all regions in parallel
   const host = env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
   const apiKey = env.MULTI_GATEWAY_API_KEY;
   const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || apiKey;
-  const REGIONS = [4468, 4469, 4470, 4471, 4472, 4473];
+
+  const probes = await Promise.allSettled(
+    REGIONS.map(({ port }) =>
+      fetch(`http://${host}:${port}/gateways/${mac}`, { headers: { "X-API-Key": apiKey } })
+        .then(async (res) => res.ok ? { port, data: await res.json() } : null)
+    )
+  );
+  const found = probes.find(r => r.status === "fulfilled" && r.value)?.value;
 
   let gatewayPubkey = null;
   let addTxnData = null;
-  for (const port of REGIONS) {
-    try {
-      const res = await fetch(`http://${host}:${port}/gateways/${mac}`, {
-        headers: { "X-API-Key": apiKey },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        gatewayPubkey = data.public_key;
-        // Get the gateway-signed add txn for ECC verification
-        const addRes = await fetch(`http://${host}:${port}/gateways/${mac}/add`, {
-          method: "POST",
-          headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ owner: ownerStr, payer: ownerStr }),
-        });
-        if (addRes.ok) {
-          addTxnData = await addRes.json();
-        }
-        break;
-      }
-    } catch { /* try next */ }
+  if (found) {
+    gatewayPubkey = found.data.public_key;
+    const addRes = await fetch(`http://${host}:${found.port}/gateways/${mac}/add`, {
+      method: "POST",
+      headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ owner: ownerStr, payer: ownerStr }),
+    });
+    if (addRes.ok) addTxnData = await addRes.json();
   }
 
   if (!gatewayPubkey) {
@@ -227,81 +222,68 @@ export async function handleIssueAndOnboard(mac, request, env) {
   }
 
   try {
-    const rpcUrl = env.SOLANA_RPC_URL;
-    const connection = new Connection(rpcUrl);
-
-    // Check if already issued
+    const connection = new Connection(env.SOLANA_RPC_URL);
     const ktaKey = keyToAssetKey(gatewayPubkey);
-    const ktaAccount = await connection.getAccountInfo(ktaKey);
 
-    const transactions = [];
+    // Fetch key-to-asset, config, and blockhash in parallel.
+    // Config and blockhash are only needed if not yet issued, but the
+    // config account is static and the wasted RPC call is worth the latency win.
+    const [ktaAccount, configAccount, { blockhash }] = await Promise.all([
+      connection.getAccountInfo(ktaKey),
+      connection.getAccountInfo(DATA_ONLY_CONFIG_KEY),
+      connection.getLatestBlockhash(),
+    ]);
 
-    if (!ktaAccount) {
-      // Fetch dataOnlyConfig to get merkle tree and collection
-      const configKey = dataOnlyConfigKey();
-      const configAccount = await connection.getAccountInfo(configKey);
-      if (!configAccount) {
-        return jsonResponse({ error: "DataOnlyConfig account not found on-chain" }, 500);
-      }
-
-      // Parse DataOnlyConfigV0 (from Anchor IDL):
-      // discriminator(8) + authority(32) + bumpSeed(1) + collection(32) + merkleTree(32) + ...
-      const configData = configAccount.data;
-      const collection = new PublicKey(configData.slice(8 + 32 + 1, 8 + 32 + 1 + 32));
-      const merkleTree = new PublicKey(configData.slice(8 + 32 + 1 + 32, 8 + 32 + 1 + 64));
-
-      const issueIx = buildIssueInstruction(ownerPubkey, gatewayPubkey, merkleTree, collection);
-      const { blockhash } = await connection.getLatestBlockhash();
-
-      // The ECC verifier expects compute budget instructions before the
-      // entity manager instruction (it skips up to 2 compute budget ixs).
-      const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 });
-      const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 });
-
-      const messageV0 = new TransactionMessage({
-        payerKey: ownerPubkey,
-        recentBlockhash: blockhash,
-        instructions: [computeBudgetIx, computePriceIx, issueIx],
-      }).compileToLegacyMessage();
-
-      const vtx = new VersionedTransaction(messageV0);
-
-      // Solana wire format IS the bincode format for VersionedTransaction.
-      // VersionedMessage has custom Serialize that uses short_vec (compact_u16)
-      // matching the wire format exactly. No conversion needed.
-      // (Verified: solana-program/src/message/versions/mod.rs — custom Serialize impl)
-      const serializedTx = Buffer.from(vtx.serialize()).toString("hex");
-
-      const verifyRes = await fetch(`${ECC_VERIFIER_URL}/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transaction: serializedTx,
-          msg: addTxnData.unsigned_msg,
-          signature: addTxnData.gateway_signature,
-        }),
-      });
-
-      if (!verifyRes.ok) {
-        const errText = await verifyRes.text();
-        return jsonResponse({ error: `ECC verifier failed: ${errText}` }, 500);
-      }
-
-      const verifyData = await verifyRes.json();
-
-      // Response is also in wire format (same as bincode for VersionedTransaction)
-      const signedWire = Buffer.from(verifyData.transaction, "hex");
-
-      transactions.push({
-        type: "issue",
-        transaction: signedWire.toString("base64"),
-      });
+    if (ktaAccount) {
+      return jsonResponse({ gateway: gatewayPubkey, already_issued: true, transactions: [] });
     }
+
+    if (!configAccount) {
+      return jsonResponse({ error: "DataOnlyConfig account not found on-chain" }, 500);
+    }
+
+    // DataOnlyConfigV0 layout: discriminator(8) + authority(32) + bumpSeed(1) + collection(32) + merkleTree(32)
+    const COLLECTION_OFFSET = 8 + 32 + 1;
+    const MERKLE_OFFSET = COLLECTION_OFFSET + 32;
+    const configData = configAccount.data;
+    const collection = new PublicKey(configData.slice(COLLECTION_OFFSET, COLLECTION_OFFSET + 32));
+    const merkleTree = new PublicKey(configData.slice(MERKLE_OFFSET, MERKLE_OFFSET + 32));
+
+    const issueIx = buildIssueInstruction(ownerPubkey, gatewayPubkey, merkleTree, collection);
+    const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 });
+    const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 });
+
+    const message = new TransactionMessage({
+      payerKey: ownerPubkey,
+      recentBlockhash: blockhash,
+      instructions: [computeBudgetIx, computePriceIx, issueIx],
+    }).compileToLegacyMessage();
+
+    const vtx = new VersionedTransaction(message);
+    const serializedTx = Buffer.from(vtx.serialize()).toString("hex");
+
+    const verifyRes = await fetch(`${ECC_VERIFIER_URL}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transaction: serializedTx,
+        msg: addTxnData.unsigned_msg,
+        signature: addTxnData.gateway_signature,
+      }),
+    });
+
+    if (!verifyRes.ok) {
+      const errText = await verifyRes.text();
+      return jsonResponse({ error: `ECC verifier failed: ${errText}` }, 500);
+    }
+
+    const verifyData = await verifyRes.json();
+    const signedWire = Buffer.from(verifyData.transaction, "hex");
 
     return jsonResponse({
       gateway: gatewayPubkey,
-      already_issued: !!ktaAccount,
-      transactions,
+      already_issued: false,
+      transactions: [{ type: "issue", transaction: signedWire.toString("base64") }],
     });
   } catch (err) {
     return jsonResponse({ error: `Failed to build transactions: ${err.message}` }, 500);

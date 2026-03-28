@@ -2,15 +2,7 @@ import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { getOuiCache } from "./oui-cache.js";
 import { handleBatchOnchainStatus } from "./handlers/onchain.js";
 import { handleIssueAndOnboard } from "./handlers/issue.js";
-
-const REGIONS = [
-  { region: "US915", port: 4468 },
-  { region: "EU868", port: 4469 },
-  { region: "AU915", port: 4470 },
-  { region: "AS923_1", port: 4471 },
-  { region: "KR920", port: 4472 },
-  { region: "IN865", port: 4473 },
-];
+import { REGIONS } from "./regions.js";
 
 function getHost(env) {
   return env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
@@ -164,18 +156,19 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
   const addMatch = pathname.match(/^\/gateways\/([A-Fa-f0-9]{16})\/add$/);
   if (addMatch && request.method === "POST") {
     const mac = addMatch[1];
-    for (const { port } of REGIONS) {
-      const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || apiKey;
-      const res = await fetch(`http://${host}:${port}/gateways/${mac}/add`, {
-        method: "POST",
-        headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
-        body: await request.text(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return jsonResponse(data);
-      }
-    }
+    const reqBody = await request.text();
+    const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || apiKey;
+    const addResults = await Promise.allSettled(
+      REGIONS.map(({ port }) =>
+        fetch(`http://${host}:${port}/gateways/${mac}/add`, {
+          method: "POST",
+          headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
+          body: reqBody,
+        }).then(async (res) => res.ok ? await res.json() : null)
+      ),
+    );
+    const addResult = addResults.find(r => r.status === "fulfilled" && r.value)?.value;
+    if (addResult) return jsonResponse(addResult);
     return jsonResponse({ error: "Gateway not found" }, 404);
   }
 

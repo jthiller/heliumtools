@@ -11,7 +11,6 @@ import {
   fetchGatewayPackets,
   fetchOuis,
   checkOnchainStatus,
-  requestAddGatewayTxn,
   requestIssueTxns,
   createEventSource,
 } from "../lib/multiGatewayApi.js";
@@ -916,10 +915,19 @@ function OnboardModal({ mac, publicKey, onClose }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await requestAddGatewayTxn(mac, cliWallet.trim());
-      setTxnData(data);
+      const result = await requestIssueTxns(mac, cliWallet.trim());
+      if (result.already_issued) {
+        setTxnData({ already_issued: true });
+      } else if (result.transactions?.length > 0) {
+        setTxnData({
+          gateway: result.gateway,
+          transaction: result.transactions[0].transaction,
+        });
+      } else {
+        throw new Error("No transactions returned");
+      }
     } catch (err) {
-      console.error("Add gateway failed:", err);
+      console.error("Issue transaction failed:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -1054,7 +1062,7 @@ function OnboardModal({ mac, publicKey, onClose }) {
               disabled={loading || !cliWallet.trim()}
               className="mt-3 w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {loading ? "Generating..." : "Generate Add Transaction"}
+              {loading ? "Generating..." : "Generate Issue Transaction"}
             </button>
           </div>
         )}
@@ -1062,38 +1070,62 @@ function OnboardModal({ mac, publicKey, onClose }) {
         {/* Transaction result */}
         {txnData && (
           <div className="mt-4 space-y-4">
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
-              <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                Transaction signed by gateway
-              </p>
-              <p className="mt-1 text-xs text-content-secondary">
-                Submit using the Helium Wallet CLI.
-              </p>
-            </div>
+            {txnData.already_issued ? (
+              <>
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    Hotspot already issued on-chain!
+                  </p>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="w-full rounded-lg border border-border px-4 py-2 text-sm text-content-secondary hover:bg-surface-inset"
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    Transaction ready for signing
+                  </p>
+                  <p className="mt-1 text-xs text-content-secondary">
+                    This Solana transaction is pre-signed by the ECC verifier. Sign it with your wallet keypair and submit to the network.
+                  </p>
+                </div>
 
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
-                Signed Transaction
-              </p>
-              <div className="mt-2 flex items-start gap-2">
-                <code className="block max-h-24 flex-1 overflow-auto rounded-lg bg-surface-inset p-2 font-mono text-[10px] text-content-secondary break-all">
-                  {txnData.txn}
-                </code>
-                <CopyButton text={txnData.txn} />
-              </div>
-              <p className="mt-2 text-xs text-content-tertiary">
-                <code className="rounded bg-surface-inset px-1.5 py-0.5 text-content-secondary">
-                  helium-wallet hotspots add {"<txn>"}
-                </code>
-              </p>
-            </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                    Serialized Transaction (base64)
+                  </p>
+                  <div className="mt-2 flex items-start gap-2">
+                    <code className="block max-h-24 flex-1 overflow-auto rounded-lg bg-surface-inset p-2 font-mono text-[10px] text-content-secondary break-all">
+                      {txnData.transaction}
+                    </code>
+                    <CopyButton text={txnData.transaction} />
+                  </div>
+                </div>
 
-            <button
-              onClick={onClose}
-              className="w-full rounded-lg border border-border px-4 py-2 text-sm text-content-secondary hover:bg-surface-inset"
-            >
-              Done
-            </button>
+                <div className="rounded-lg bg-surface-inset p-3 text-xs text-content-secondary space-y-1.5">
+                  <p className="font-medium text-content-primary">Sign and submit:</p>
+                  <code className="block whitespace-pre-wrap break-all">
+{`const tx = VersionedTransaction.deserialize(
+  Buffer.from("${truncateString(txnData.transaction, 20, 8)}", "base64")
+);
+tx.sign([yourKeypair]);
+connection.sendTransaction(tx);`}
+                  </code>
+                </div>
+
+                <button
+                  onClick={onClose}
+                  className="w-full rounded-lg border border-border px-4 py-2 text-sm text-content-secondary hover:bg-surface-inset"
+                >
+                  Done
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
