@@ -244,11 +244,11 @@ export async function handleIssueAndOnboard(mac, request, env) {
         return jsonResponse({ error: "DataOnlyConfig account not found on-chain" }, 500);
       }
 
-      // Parse DataOnlyConfigV0: skip 8-byte discriminator
-      // Layout: authority(32) + collection(32) + merkle_tree(32) + ...
+      // Parse DataOnlyConfigV0 (from Anchor IDL):
+      // discriminator(8) + authority(32) + bumpSeed(1) + collection(32) + merkleTree(32) + ...
       const configData = configAccount.data;
-      const collection = new PublicKey(configData.slice(8 + 32, 8 + 64));
-      const merkleTree = new PublicKey(configData.slice(8 + 64, 8 + 96));
+      const collection = new PublicKey(configData.slice(8 + 32 + 1, 8 + 32 + 1 + 32));
+      const merkleTree = new PublicKey(configData.slice(8 + 32 + 1 + 32, 8 + 32 + 1 + 64));
 
       const issueIx = buildIssueInstruction(ownerPubkey, gatewayPubkey, merkleTree, collection);
       const { blockhash } = await connection.getLatestBlockhash();
