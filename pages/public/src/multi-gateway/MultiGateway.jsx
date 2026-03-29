@@ -862,8 +862,8 @@ function GatewayMapModal({ gateways, onClose }) {
 // ---------------------------------------------------------------------------
 
 function OnboardModal({ gateway, onClose }) {
-  const mac = gateway?.mac;
-  const publicKey = gateway?.public_key;
+  if (!gateway) return null;
+  const { mac, public_key: publicKey } = gateway;
   const { connected, publicKey: walletPubkey, sendTransaction } = useWallet();
   const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
@@ -920,18 +920,23 @@ function OnboardModal({ gateway, onClose }) {
     }
   };
 
-  const handleOnboardWithWallet = async () => {
+  const handleOnboardWithWallet = async (overrides) => {
     if (!walletPubkey || !sendTransaction) return;
     setLoading(true);
     setError(null);
     setStep("onboarding");
     try {
+      const effectiveLat = overrides?.lat ?? lat;
+      const effectiveLng = overrides?.lng ?? lng;
+      const effectiveElevation = overrides?.elevation ?? elevation;
+      const effectiveGain = overrides?.gain ?? gain;
+
       const opts = {};
-      if (lat && lng) {
-        opts.location = latLngToCell(parseFloat(lat), parseFloat(lng), 12);
+      if (effectiveLat && effectiveLng) {
+        opts.location = latLngToCell(parseFloat(effectiveLat), parseFloat(effectiveLng), 12);
       }
-      if (elevation) opts.elevation = parseInt(elevation, 10);
-      if (gain) opts.gain = parseInt(gain, 10);
+      if (effectiveElevation) opts.elevation = parseInt(effectiveElevation, 10);
+      if (effectiveGain) opts.gain = parseInt(effectiveGain, 10);
 
       const result = await requestOnboardTxn(mac, walletPubkey.toBase58(), opts);
 
@@ -1114,7 +1119,7 @@ function OnboardModal({ gateway, onClose }) {
                 </button>
 
                 <button
-                  onClick={() => { setLat(""); setLng(""); setElevation(""); handleOnboardWithWallet(); }}
+                  onClick={() => handleOnboardWithWallet({ lat: "", lng: "", elevation: "", gain: "" })}
                   disabled={loading}
                   className="w-full text-xs text-content-tertiary hover:text-content-secondary"
                 >

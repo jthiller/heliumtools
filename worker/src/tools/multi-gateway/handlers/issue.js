@@ -8,7 +8,7 @@ import { PublicKey, ComputeBudgetProgram, VersionedTransaction, TransactionMessa
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
 import { jsonResponse } from "../../../lib/response.js";
-import { REGIONS } from "../regions.js";
+import { findGateway } from "../lib/findGateway.js";
 
 // ECC Verifier
 const ECC_VERIFIER = new PublicKey("eccSAJM3tq7nQSpQTm8roxv4FPoipCkMsGizW2KBhqZ");
@@ -257,37 +257,21 @@ export async function handleIssueAndOnboard(mac, request, env) {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
-  // Find gateway across all regions in parallel
+  const found = await findGateway(mac, env);
+  if (!found) return jsonResponse({ error: "Gateway not found" }, 404);
+
+  const gatewayPubkey = found.data.public_key;
   const host = env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
-  const apiKey = env.MULTI_GATEWAY_API_KEY;
-  const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || apiKey;
-
-  const probes = await Promise.allSettled(
-    REGIONS.map(({ port }) =>
-      fetch(`http://${host}:${port}/gateways/${mac}`, { headers: { "X-API-Key": apiKey } })
-        .then(async (res) => res.ok ? { port, data: await res.json() } : null)
-    )
-  );
-  const found = probes.find(r => r.status === "fulfilled" && r.value)?.value;
-
-  let gatewayPubkey = null;
-  let addTxnData = null;
-  if (found) {
-    gatewayPubkey = found.data.public_key;
-    const addRes = await fetch(`http://${host}:${found.port}/gateways/${mac}/add`, {
-      method: "POST",
-      headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ owner: ownerStr, payer: ownerStr }),
-    });
-    if (addRes.ok) addTxnData = await addRes.json();
-  }
-
-  if (!gatewayPubkey) {
-    return jsonResponse({ error: "Gateway not found" }, 404);
-  }
-  if (!addTxnData) {
+  const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || env.MULTI_GATEWAY_API_KEY;
+  const addRes = await fetch(`http://${host}:${found.port}/gateways/${mac}/add`, {
+    method: "POST",
+    headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ owner: ownerStr, payer: ownerStr }),
+  });
+  if (!addRes.ok) {
     return jsonResponse({ error: "Failed to get gateway add transaction" }, 500);
   }
+  const addTxnData = await addRes.json();
 
   try {
     const connection = new Connection(env.SOLANA_RPC_URL);
@@ -385,52 +369,43 @@ export async function handleOnboard(mac, request, env) {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
-  // Find gateway across all regions in parallel
-  const host = env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
-  const apiKey = env.MULTI_GATEWAY_API_KEY;
-
-  const probes = await Promise.allSettled(
-    REGIONS.map(({ port }) =>
-      fetch(`http://${host}:${port}/gateways/${mac}`, { headers: { "X-API-Key": apiKey } })
-        .then(async (res) => res.ok ? await res.json() : null)
-    )
-  );
-  const found = probes.find(r => r.status === "fulfilled" && r.value)?.value;
+  const found = await findGateway(mac, env);
   if (!found) return jsonResponse({ error: "Gateway not found" }, 404);
 
-  const gatewayPubkey = found.public_key;
+  const gatewayPubkey = found.data.public_key;
 
   try {
     const rpcUrl = env.SOLANA_RPC_URL;
     const connection = new Connection(rpcUrl);
 
-    // Read keyToAsset PDA to find the compressed NFT asset ID
-    // KeyToAssetV0 layout: discriminator(8) + asset(32) + ...
+    // Batch 1: read keyToAsset, iotInfo, and dataOnlyConfig in parallel
     const ktaKey = keyToAssetKey(gatewayPubkey);
-    const ktaAccount = await connection.getAccountInfo(ktaKey);
+    const [ktaAccount, iotInfoAccount, configAccount] = await Promise.all([
+      connection.getAccountInfo(ktaKey),
+      connection.getAccountInfo(iotInfoKey(gatewayPubkey)),
+      connection.getAccountInfo(DATA_ONLY_CONFIG_KEY),
+    ]);
+
     if (!ktaAccount) {
       return jsonResponse({ error: "Gateway not yet issued on-chain. Run issue step first." }, 400);
     }
-    const assetId = new PublicKey(ktaAccount.data.slice(8, 40)).toBase58();
-
-    // Check if already onboarded (iot_info PDA exists)
-    const iotInfo = iotInfoKey(gatewayPubkey);
-    const iotInfoAccount = await connection.getAccountInfo(iotInfo);
     if (iotInfoAccount) {
       return jsonResponse({ gateway: gatewayPubkey, already_onboarded: true });
     }
 
-    // Fetch compressed NFT data and merkle proof from DAS API
-    const [asset, proof, { blockhash }] = await Promise.all([
+    // KeyToAssetV0 layout: discriminator(8) + asset(32) + ...
+    const assetId = new PublicKey(ktaAccount.data.slice(8, 40)).toBase58();
+    const MERKLE_OFFSET = 8 + 32 + 1 + 32;
+    const merkleTree = new PublicKey(configAccount.data.slice(MERKLE_OFFSET, MERKLE_OFFSET + 32));
+
+    // Batch 2: DAS calls, blockhash, and merkle tree account all in parallel
+    const [asset, proof, { blockhash }, treeAccount] = await Promise.all([
       fetchAsset(rpcUrl, assetId),
       fetchAssetProof(rpcUrl, assetId),
       connection.getLatestBlockhash(),
+      connection.getAccountInfo(merkleTree),
     ]);
 
-    const merkleTree = new PublicKey(asset.compression.tree);
-
-    // Get canopy depth from the merkle tree account
-    const treeAccount = await connection.getAccountInfo(merkleTree);
     if (!treeAccount) {
       return jsonResponse({ error: "Merkle tree account not found" }, 500);
     }
