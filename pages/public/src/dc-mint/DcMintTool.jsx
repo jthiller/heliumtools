@@ -20,11 +20,11 @@ const INPUT_CLASS = "w-full rounded-lg border border-border bg-surface-inset px-
 // ---------------------------------------------------------------------------
 
 function ConversionPreview({ hntPrice, inputMode, amount }) {
-  if (!hntPrice || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-    return null;
-  }
+  if (!hntPrice) return null;
 
-  const val = parseFloat(amount);
+  const hasAmount = amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0;
+  const val = hasAmount ? parseFloat(amount) : 0;
+
   let hntVal, dcVal, usdVal;
   if (inputMode === "hnt") {
     hntVal = val;
@@ -37,15 +37,27 @@ function ConversionPreview({ hntPrice, inputMode, amount }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-surface-inset p-3 text-xs space-y-1">
+    <div className="rounded-lg border border-border bg-surface-inset p-3 text-xs space-y-1.5">
       <div className="flex justify-between text-content-secondary">
-        <span>You burn</span>
-        <span className="font-mono">{hntVal < 0.001 ? hntVal.toExponential(2) : hntVal.toFixed(4)} HNT (~${usdVal.toFixed(2)})</span>
+        <span>Exchange rate</span>
+        <span className="font-mono">1 HNT = {hntPrice.dc_per_hnt.toLocaleString()} DC</span>
       </div>
-      <div className="flex justify-between font-medium text-content-primary">
-        <span>You receive</span>
-        <span className="font-mono">{Math.round(dcVal).toLocaleString()} DC</span>
+      <div className="flex justify-between text-content-secondary">
+        <span>HNT price</span>
+        <span className="font-mono">${hntPrice.hnt_usd}</span>
       </div>
+      {hasAmount && (
+        <>
+          <div className="border-t border-border-muted pt-1.5 flex justify-between text-content-secondary">
+            <span>You burn</span>
+            <span className="font-mono">{hntVal < 0.001 ? hntVal.toExponential(2) : hntVal.toFixed(4)} HNT (~${usdVal.toFixed(2)})</span>
+          </div>
+          <div className="flex justify-between font-medium text-content-primary">
+            <span>You receive</span>
+            <span className="font-mono">{Math.round(dcVal).toLocaleString()} DC (~${(dcVal / 100000).toFixed(2)})</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -131,10 +143,13 @@ function MintTab({ hntPrice }) {
 
       {connected && walletPubkey && (
         <>
-          {/* Balance display */}
-          <div className="flex gap-4 text-xs text-content-secondary">
-            <span>HNT: <span className="font-mono">{hntBalance != null ? hntBalance.toFixed(4) : "..."}</span></span>
-            <span>DC: <span className="font-mono">{dcBalance != null ? dcBalance.toLocaleString() : "..."}</span></span>
+          {/* Wallet balance */}
+          <div className="rounded-lg bg-surface-inset px-3 py-2 text-xs">
+            <p className="text-[10px] uppercase tracking-wider text-content-tertiary mb-1">Wallet balance</p>
+            <div className="flex gap-4 text-content-secondary font-mono">
+              <span>{hntBalance != null ? hntBalance.toFixed(4) : "..."} HNT</span>
+              <span>{dcBalance != null ? dcBalance.toLocaleString() : "..."} DC</span>
+            </div>
           </div>
 
           {/* Input mode toggle */}
@@ -177,13 +192,6 @@ function MintTab({ hntPrice }) {
 
           {/* Conversion preview */}
           {hntPrice && <ConversionPreview hntPrice={hntPrice} inputMode={inputMode} amount={amount} />}
-
-          {/* HNT price info */}
-          {hntPrice && (
-            <p className="text-[10px] text-content-tertiary text-center">
-              1 HNT = {hntPrice.dc_per_hnt.toLocaleString()} DC | HNT ${hntPrice.hnt_usd}
-            </p>
-          )}
 
           {/* Recipient (optional) */}
           <div>
@@ -316,7 +324,7 @@ function DelegateTab() {
           {/* OUI details card */}
           {ouiLoading && <p className="text-xs text-content-tertiary">Looking up OUI...</p>}
           {ouiData && (
-            <div className="rounded-lg border border-border bg-surface-inset p-3 text-xs space-y-1">
+            <div className="rounded-lg border border-border bg-surface-inset p-3 text-xs space-y-1.5">
               <div className="flex justify-between">
                 <span className="text-content-tertiary">Payer</span>
                 <span className="font-mono text-content-secondary">{truncateString(ouiData.payer, 8, 4)}</span>
@@ -329,8 +337,11 @@ function DelegateTab() {
               )}
               {ouiData.dc_balance != null && (
                 <div className="flex justify-between">
-                  <span className="text-content-tertiary">Current DC Balance</span>
-                  <span className="font-mono text-content-secondary">{Number(ouiData.dc_balance).toLocaleString()} DC</span>
+                  <span className="text-content-tertiary">Escrow Balance</span>
+                  <span className="font-mono text-content-secondary">
+                    {Number(ouiData.dc_balance).toLocaleString()} DC
+                    <span className="text-content-tertiary ml-1">(~${(Number(ouiData.dc_balance) / 100000).toFixed(2)})</span>
+                  </span>
                 </div>
               )}
             </div>
@@ -349,6 +360,11 @@ function DelegateTab() {
               placeholder="e.g. 100000"
               className={INPUT_CLASS + " mt-1"}
             />
+            {amount && parseInt(amount, 10) > 0 && (
+              <p className="mt-1 text-[10px] text-content-tertiary font-mono">
+                ~${(parseInt(amount, 10) / 100000).toFixed(2)} USD
+              </p>
+            )}
           </div>
 
           {error && <p className="text-sm text-rose-500">{error}</p>}
