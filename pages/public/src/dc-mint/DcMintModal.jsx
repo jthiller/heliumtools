@@ -4,12 +4,10 @@
  */
 import { useState, useEffect } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { VersionedTransaction, PublicKey } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { buildMintTransaction, fetchHntPrice } from "../lib/dcMintApi.js";
-
-const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux");
-const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
+import { HNT_MINT, DC_MINT } from "./constants.js";
 
 export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 100000 }) {
   const { publicKey: walletPubkey, sendTransaction } = useWallet();
@@ -39,7 +37,7 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
   }, [walletPubkey, connection]);
 
   const dcVal = parseInt(amount, 10) || 0;
-  const hntNeeded = hntPrice && dcVal > 0 ? dcVal / hntPrice.dc_per_hnt : null;
+  const hntNeeded = hntPrice && dcVal > 0 && hntPrice.dc_per_hnt > 0 ? dcVal / hntPrice.dc_per_hnt : null;
 
   const handleMint = async () => {
     if (!walletPubkey || !sendTransaction || dcVal <= 0) return;

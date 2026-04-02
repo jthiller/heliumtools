@@ -17,18 +17,20 @@ export async function handlePrice() {
 
     const data = await res.json();
     const priceFeed = data.parsed?.[0]?.price;
-    if (!priceFeed) throw new Error("No price data in response");
+    if (!priceFeed?.price || !priceFeed?.expo) throw new Error("No price data in response");
 
     // Pyth returns price as integer with exponent, e.g. price=542 expo=-2 → $5.42
     const price = Number(priceFeed.price) * 10 ** priceFeed.expo;
-    const confidence = Number(priceFeed.conf) * 10 ** priceFeed.expo;
+    if (price <= 0) throw new Error("Invalid HNT price from oracle");
+
+    const confidence = Number(priceFeed.conf || 0) * 10 ** priceFeed.expo;
 
     return jsonResponse({
       hnt_usd: Math.round(price * 100) / 100,
       confidence: Math.round(confidence * 100) / 100,
       dc_per_hnt: Math.round(price * DC_PER_USD),
       dc_per_usd: DC_PER_USD,
-      timestamp: data.parsed[0].price.publish_time,
+      timestamp: priceFeed.publish_time ?? null,
     });
   } catch (err) {
     return jsonResponse({ error: `Failed to fetch HNT price: ${err.message}` }, 500);

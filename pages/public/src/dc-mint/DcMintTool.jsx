@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { VersionedTransaction, PublicKey } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import Header from "../components/Header.jsx";
 import {
   buildMintTransaction,
@@ -10,9 +10,8 @@ import {
   resolveOui,
 } from "../lib/dcMintApi.js";
 import { truncateString } from "../lib/utils.js";
+import { HNT_MINT, DC_MINT } from "./constants.js";
 
-const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux");
-const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
 const INPUT_CLASS = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 // ---------------------------------------------------------------------------
@@ -33,7 +32,7 @@ function ConversionPreview({ hntPrice, inputMode, amount }) {
   } else {
     dcVal = val;
     usdVal = val / hntPrice.dc_per_usd;
-    hntVal = val / hntPrice.dc_per_hnt;
+    hntVal = hntPrice.dc_per_hnt > 0 ? val / hntPrice.dc_per_hnt : 0;
   }
 
   return (
@@ -66,7 +65,7 @@ function ConversionPreview({ hntPrice, inputMode, amount }) {
 // Mint Tab
 // ---------------------------------------------------------------------------
 
-function MintTab({ hntPrice }) {
+function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalanceChange }) {
   const { connected, publicKey: walletPubkey, sendTransaction } = useWallet();
   const { connection } = useConnection();
 
@@ -76,37 +75,6 @@ function MintTab({ hntPrice }) {
   const [status, setStatus] = useState("idle"); // idle | building | signing | confirming | done | error
   const [error, setError] = useState(null);
   const [txSignature, setTxSignature] = useState(null);
-  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
-
-  // Balances
-  const [hntBalance, setHntBalance] = useState(null);
-  const [dcBalance, setDcBalance] = useState(null);
-  const [hasHntAta, setHasHntAta] = useState(null);
-  const [hasDcAta, setHasDcAta] = useState(null);
-
-  useEffect(() => {
-    if (!connected || !walletPubkey || !connection) return;
-    let cancelled = false;
-    async function fetchBal() {
-      try {
-        const [hntAccounts, dcAccounts] = await Promise.all([
-          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: HNT_MINT }),
-          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT }),
-        ]);
-        if (cancelled) return;
-        const hntAcc = hntAccounts.value[0];
-        setHasHntAta(!!hntAcc);
-        setHntBalance(hntAcc ? Number(hntAcc.account.data.parsed.info.tokenAmount.uiAmount) : 0);
-        const dcAcc = dcAccounts.value[0];
-        setHasDcAta(!!dcAcc);
-        setDcBalance(dcAcc ? Number(dcAcc.account.data.parsed.info.tokenAmount.amount) : 0);
-      } catch {
-        if (!cancelled) { setHntBalance(null); setDcBalance(null); }
-      }
-    }
-    fetchBal();
-    return () => { cancelled = true; };
-  }, [connected, walletPubkey, connection, balanceRefreshKey]);
 
   const handleMint = async () => {
     if (!walletPubkey || !sendTransaction || !amount) return;
@@ -130,7 +98,7 @@ function MintTab({ hntPrice }) {
       await connection.confirmTransaction(sig, "confirmed");
       setTxSignature(sig);
       setStatus("done");
-      setBalanceRefreshKey((k) => k + 1);
+      onBalanceChange?.();
     } catch (err) {
       console.error("Mint failed:", err);
       setError(err.message);
@@ -208,7 +176,7 @@ function MintTab({ hntPrice }) {
               <p className="mt-1 text-[11px] text-content-tertiary font-mono">
                 {inputMode === "hnt"
                   ? `= ${Math.round(parseFloat(amount) * hntPrice.dc_per_hnt).toLocaleString()} DC (~$${(parseFloat(amount) * hntPrice.hnt_usd).toFixed(2)})`
-                  : `= ${(parseFloat(amount) / hntPrice.dc_per_hnt).toFixed(4)} HNT (~$${(parseFloat(amount) / 100000).toFixed(2)})`
+                  : `= ${hntPrice.dc_per_hnt > 0 ? (parseFloat(amount) / hntPrice.dc_per_hnt).toFixed(4) : "?"} HNT (~$${(parseFloat(amount) / 100000).toFixed(2)})`
                 }
               </p>
             )}
@@ -274,7 +242,7 @@ function MintTab({ hntPrice }) {
 // Delegate Tab
 // ---------------------------------------------------------------------------
 
-function DelegateTab() {
+function DelegateTab({ onBalanceChange }) {
   const { connected, publicKey: walletPubkey, sendTransaction } = useWallet();
   const { connection } = useConnection();
 
@@ -289,12 +257,16 @@ function DelegateTab() {
   // Debounced OUI lookup
   useEffect(() => {
     const oui = parseInt(ouiInput, 10);
-    if (!oui || oui <= 0) { setOuiData(null); setOuiLoading(false); return; }
+    if (!oui || isNaN(oui) || oui <= 0) { setOuiData(null); setOuiLoading(false); return; }
     setOuiLoading(true);
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const data = await resolveOui(oui);
-      if (!cancelled) { setOuiData(data); setOuiLoading(false); }
+      try {
+        const data = await resolveOui(oui);
+        if (!cancelled) { setOuiData(data); setOuiLoading(false); }
+      } catch {
+        if (!cancelled) { setOuiData(null); setOuiLoading(false); }
+      }
     }, 500);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [ouiInput]);
@@ -317,6 +289,7 @@ function DelegateTab() {
       await connection.confirmTransaction(sig, "confirmed");
       setTxSignature(sig);
       setStatus("done");
+      onBalanceChange?.();
     } catch (err) {
       console.error("Delegate failed:", err);
       setError(err.message);
@@ -435,8 +408,43 @@ function DelegateTab() {
 // ---------------------------------------------------------------------------
 
 export default function DcMintTool() {
+  const { connected, publicKey: walletPubkey } = useWallet();
+  const { connection } = useConnection();
   const [tab, setTab] = useState("mint"); // "mint" | "delegate"
   const [hntPrice, setHntPrice] = useState(null);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
+
+  // Shared wallet balances — lifted here so tab switching doesn't refetch
+  const [hntBalance, setHntBalance] = useState(null);
+  const [dcBalance, setDcBalance] = useState(null);
+  const [hasHntAta, setHasHntAta] = useState(null);
+  const [hasDcAta, setHasDcAta] = useState(null);
+
+  useEffect(() => {
+    if (!connected || !walletPubkey || !connection) return;
+    let cancelled = false;
+    async function fetchBal() {
+      try {
+        const [hntAccounts, dcAccounts] = await Promise.all([
+          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: HNT_MINT }),
+          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT }),
+        ]);
+        if (cancelled) return;
+        const hntAcc = hntAccounts.value[0];
+        setHasHntAta(!!hntAcc);
+        setHntBalance(hntAcc ? Number(hntAcc.account.data.parsed.info.tokenAmount.uiAmount) : 0);
+        const dcAcc = dcAccounts.value[0];
+        setHasDcAta(!!dcAcc);
+        setDcBalance(dcAcc ? Number(dcAcc.account.data.parsed.info.tokenAmount.amount) : 0);
+      } catch {
+        if (!cancelled) { setHntBalance(null); setDcBalance(null); }
+      }
+    }
+    fetchBal();
+    return () => { cancelled = true; };
+  }, [connected, walletPubkey, connection, balanceRefreshKey]);
+
+  const refreshBalances = useCallback(() => setBalanceRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     const updatePrice = () =>
@@ -484,7 +492,10 @@ export default function DcMintTool() {
         </div>
 
         <div className="mt-6 rounded-2xl border border-border bg-surface-raised p-6">
-          {tab === "mint" ? <MintTab hntPrice={hntPrice} /> : <DelegateTab />}
+          {tab === "mint"
+            ? <MintTab hntPrice={hntPrice} hntBalance={hntBalance} dcBalance={dcBalance}
+                hasHntAta={hasHntAta} hasDcAta={hasDcAta} onBalanceChange={refreshBalances} />
+            : <DelegateTab onBalanceChange={refreshBalances} />}
         </div>
       </main>
     </div>
