@@ -54,7 +54,8 @@ const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/styl
 
 // Onboarding cost constants
 const DC_MINT_PUBKEY = DC_MINT_KEY;
-const ONBOARD_SOL_COST = 0.004;   // ~0.002 SOL per step (rent for accounts)
+const ISSUE_SOL_COST = 0.002;     // SOL for the issue step (account rent)
+const ONBOARD_SOL_COST = 0.004;   // SOL for both steps combined
 const ONBOARD_DC_COST = 100000;   // 100,000 DC ($1) for IoT network registration
 
 
@@ -1318,7 +1319,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 
                     <button
                       onClick={handleIssueWithWallet}
-                      disabled={loading || !balancesLoaded || !solSufficient}
+                      disabled={loading || !balancesLoaded || (solBalance < ISSUE_SOL_COST)}
                       className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                     >
                       {loading ? "Preparing..." : "Create On-Chain Entity"}

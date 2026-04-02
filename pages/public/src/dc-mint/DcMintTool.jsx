@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { VersionedTransaction } from "@solana/web3.js";
@@ -208,7 +208,12 @@ function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalan
           {status === "idle" || status === "error" ? (
             <button
               onClick={handleMint}
-              disabled={!amount || parseFloat(amount) <= 0}
+              disabled={
+                !amount ||
+                (inputMode === "hnt"
+                  ? !Number.isFinite(parseFloat(amount)) || parseFloat(amount) <= 0
+                  : !/^\d+$/.test(amount) || parseInt(amount, 10) <= 0)
+              }
               className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               Mint Data Credits
