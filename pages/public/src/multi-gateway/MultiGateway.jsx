@@ -342,6 +342,14 @@ function SetupNote() {
             replace the default (<span className="font-mono">AA555A0000000101</span>)
             with your concentrator&apos;s actual EUI.
           </p>
+          <p className="mt-3 text-content-tertiary">
+            This is a public demo of{" "}
+            <a href="https://github.com/helium/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">helium/multi-gateway</a>,
+            an open-source aggregator that lets a single server manage many
+            LoRaWAN gateways on the Helium network. You can{" "}
+            <a href="https://docs.helium.com/iot/gateway-fleet-onboarding" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">self-host your own instance</a>{" "}
+            for private fleet management.
+          </p>
         </div>
       )}
     </div>
@@ -1593,6 +1601,13 @@ export default function MultiGateway() {
           />
         )}
       </div>
+
+      <p className="mx-auto max-w-6xl px-4 pb-6 sm:px-6 text-[11px] text-content-tertiary">
+        Built on{" "}
+        <a href="https://github.com/helium/multi-gateway" target="_blank" rel="noopener noreferrer" className="hover:text-content-secondary underline">helium/multi-gateway</a>
+        {" · "}
+        <a href="https://github.com/jthiller/multi-gateway" target="_blank" rel="noopener noreferrer" className="hover:text-content-secondary underline">Source</a>
+      </p>
 
       {showMap && (
         <GatewayMapModal
