@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "rea
 import { useSearchParams } from "react-router-dom";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { VersionedTransaction } from "@solana/web3.js";
+import { VersionedTransaction, PublicKey } from "@solana/web3.js";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import CopyButton from "../components/CopyButton.jsx";
@@ -32,7 +32,9 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   PlusIcon,
+  CheckCircleIcon,
   QuestionMarkCircleIcon,
+  XCircleIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import {
@@ -47,6 +49,11 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+
+// Onboarding cost constants
+const DC_MINT_PUBKEY = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
+const ONBOARD_SOL_COST = 0.004;   // ~0.002 SOL per step (rent for accounts)
+const ONBOARD_DC_COST = 100000;   // 100,000 DC ($1) for IoT network registration
 
 
 /**
@@ -1003,6 +1010,53 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
 }
 
 // ---------------------------------------------------------------------------
+// Onboard Cost Disclosure
+// ---------------------------------------------------------------------------
+
+function OnboardCostCard({ solBalance, dcBalance, solSufficient, dcSufficient, balancesLoaded }) {
+  return (
+    <div className="rounded-lg bg-surface-inset p-3 text-xs space-y-1.5">
+      <p className="font-medium text-content-primary">Onboarding costs</p>
+      <div className="flex justify-between text-content-secondary">
+        <span>Create on-chain entity</span>
+        <span className="font-mono">~0.002 SOL</span>
+      </div>
+      <div className="flex justify-between text-content-secondary">
+        <span>Onboard and assert location</span>
+        <span className="font-mono">~0.002 SOL + 100,000 DC ($1)</span>
+      </div>
+      {balancesLoaded && (
+        <>
+          <div className="border-t border-border-muted pt-1.5 flex justify-between items-center font-medium text-content-primary">
+            <span>Your balance</span>
+            <span className="flex items-center gap-1.5 font-mono">
+              <span className="flex items-center gap-0.5">
+                {solSufficient
+                  ? <CheckCircleIcon className="h-3.5 w-3.5 text-emerald-500" />
+                  : <XCircleIcon className="h-3.5 w-3.5 text-rose-500" />}
+                {solBalance.toFixed(4)} SOL
+              </span>
+              <span className="flex items-center gap-0.5">
+                {dcSufficient
+                  ? <CheckCircleIcon className="h-3.5 w-3.5 text-emerald-500" />
+                  : <XCircleIcon className="h-3.5 w-3.5 text-rose-500" />}
+                {dcBalance.toLocaleString()} DC
+              </span>
+            </span>
+          </div>
+          {!solSufficient && (
+            <p className="text-amber-500">Insufficient SOL. Need ~0.004 SOL for both steps.</p>
+          )}
+          {!dcSufficient && (
+            <p className="text-amber-500">100,000 Data Credits required for full onboard.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Onboard Modal
 // ---------------------------------------------------------------------------
 
@@ -1041,6 +1095,36 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
       })
       .catch(() => {}); // silently fail — user can enter manually
   }, [lat, lng, gateway?.altitude]);
+
+  // Wallet balance checks
+  const [solBalance, setSolBalance] = useState(null);
+  const [dcBalance, setDcBalance] = useState(null);
+
+  useEffect(() => {
+    if (!connected || !walletPubkey || !connection) return;
+    let cancelled = false;
+
+    async function fetchBalances() {
+      try {
+        const [sol, tokenAccounts] = await Promise.all([
+          connection.getBalance(walletPubkey),
+          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT_PUBKEY }),
+        ]);
+        if (cancelled) return;
+        setSolBalance(sol / 1e9);
+        const dcAccount = tokenAccounts.value[0];
+        setDcBalance(dcAccount ? Number(dcAccount.account.data.parsed.info.tokenAmount.amount) : 0);
+      } catch {
+        if (!cancelled) { setSolBalance(null); setDcBalance(null); }
+      }
+    }
+    fetchBalances();
+    return () => { cancelled = true; };
+  }, [connected, walletPubkey, connection]);
+
+  const balancesLoaded = solBalance !== null;
+  const solSufficient = balancesLoaded && solBalance >= ONBOARD_SOL_COST;
+  const dcSufficient = !balancesLoaded || dcBalance >= ONBOARD_DC_COST;
 
   // CLI state
   const [cliWallet, setCliWallet] = useState("");
@@ -1209,14 +1293,21 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
                   <WalletMultiButton />
                 </div>
                 {connected && walletPubkey && (
-                  <div className="mt-3">
+                  <div className="mt-3 space-y-3">
                     <p className="text-xs text-content-secondary">
                       Connected: <span className="font-mono">{truncateString(walletPubkey.toBase58(), 8, 4)}</span>
                     </p>
+
+                    <OnboardCostCard
+                      solBalance={solBalance} dcBalance={dcBalance}
+                      solSufficient={solSufficient} dcSufficient={dcSufficient}
+                      balancesLoaded={balancesLoaded}
+                    />
+
                     <button
                       onClick={handleIssueWithWallet}
-                      disabled={loading}
-                      className="mt-2 w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      disabled={loading || !balancesLoaded || !solSufficient}
+                      className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                     >
                       {loading ? "Preparing..." : "Create On-Chain Entity"}
                     </button>
@@ -1284,7 +1375,8 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 
         {/* ==================== CLI TAB ==================== */}
         {tab === "cli" && !txnData && (
-          <div className="mt-4">
+          <div className="mt-4 space-y-3">
+            <OnboardCostCard />
             <label className="block text-sm font-medium text-content-secondary">
               Wallet Address (Solana)
             </label>
@@ -1299,7 +1391,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
             <button
               onClick={handleGenerateForCli}
               disabled={loading || !cliWallet.trim()}
-              className="mt-3 w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {loading ? "Generating..." : "Generate Issue Transaction"}
             </button>
