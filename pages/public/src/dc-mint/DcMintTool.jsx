@@ -81,6 +81,8 @@ function MintTab({ hntPrice }) {
   // Balances
   const [hntBalance, setHntBalance] = useState(null);
   const [dcBalance, setDcBalance] = useState(null);
+  const [hasHntAta, setHasHntAta] = useState(null);
+  const [hasDcAta, setHasDcAta] = useState(null);
 
   useEffect(() => {
     if (!connected || !walletPubkey || !connection) return;
@@ -93,8 +95,10 @@ function MintTab({ hntPrice }) {
         ]);
         if (cancelled) return;
         const hntAcc = hntAccounts.value[0];
+        setHasHntAta(!!hntAcc);
         setHntBalance(hntAcc ? Number(hntAcc.account.data.parsed.info.tokenAmount.uiAmount) : 0);
         const dcAcc = dcAccounts.value[0];
+        setHasDcAta(!!dcAcc);
         setDcBalance(dcAcc ? Number(dcAcc.account.data.parsed.info.tokenAmount.amount) : 0);
       } catch {
         if (!cancelled) { setHntBalance(null); setDcBalance(null); }
@@ -151,6 +155,18 @@ function MintTab({ hntPrice }) {
               <span>{dcBalance != null ? dcBalance.toLocaleString() : "..."} DC</span>
             </div>
           </div>
+
+          {hasHntAta === false && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5">
+              No HNT token account found. You need HNT in your wallet to mint Data Credits.
+            </p>
+          )}
+
+          {hasDcAta === false && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5">
+              No DC token account yet. One will be created automatically when you mint — this costs a small amount of SOL (~0.002) for account rent.
+            </p>
+          )}
 
           {/* Input mode toggle */}
           <div className="flex gap-1 rounded-lg bg-surface-inset p-1">

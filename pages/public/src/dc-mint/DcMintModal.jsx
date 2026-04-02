@@ -9,6 +9,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import { buildMintTransaction, fetchHntPrice } from "../lib/dcMintApi.js";
 
 const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux");
+const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
 
 export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 100000 }) {
   const { publicKey: walletPubkey, sendTransaction } = useWallet();
@@ -17,6 +18,7 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
   const [amount, setAmount] = useState(defaultDcAmount.toString());
   const [hntPrice, setHntPrice] = useState(null);
   const [hntBalance, setHntBalance] = useState(null);
+  const [hasDcAta, setHasDcAta] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
 
@@ -26,13 +28,14 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
 
   useEffect(() => {
     if (!walletPubkey || !connection) return;
-    connection
-      .getParsedTokenAccountsByOwner(walletPubkey, { mint: HNT_MINT })
-      .then((accounts) => {
-        const acc = accounts.value[0];
-        setHntBalance(acc ? Number(acc.account.data.parsed.info.tokenAmount.uiAmount) : 0);
-      })
-      .catch(() => {});
+    Promise.all([
+      connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: HNT_MINT }),
+      connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT }),
+    ]).then(([hntAccounts, dcAccounts]) => {
+      const hntAcc = hntAccounts.value[0];
+      setHntBalance(hntAcc ? Number(hntAcc.account.data.parsed.info.tokenAmount.uiAmount) : 0);
+      setHasDcAta(!!dcAccounts.value[0]);
+    }).catch(() => {});
   }, [walletPubkey, connection]);
 
   const dcVal = parseInt(amount, 10) || 0;
@@ -99,6 +102,12 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
                 <span className="font-mono">{hntBalance != null ? hntBalance.toFixed(4) : "..."}</span>
               </div>
             </div>
+          )}
+
+          {hasDcAta === false && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5">
+              No DC token account yet. One will be created automatically — costs ~0.002 SOL for account rent.
+            </p>
           )}
 
           {error && <p className="text-sm text-rose-500">{error}</p>}
