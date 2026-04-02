@@ -6,6 +6,7 @@ import { VersionedTransaction, PublicKey } from "@solana/web3.js";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import CopyButton from "../components/CopyButton.jsx";
+import DcMintModal from "../dc-mint/DcMintModal.jsx";
 import {
   fetchGateways,
   fetchGatewayPackets,
@@ -1013,7 +1014,7 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
 // Onboard Cost Disclosure
 // ---------------------------------------------------------------------------
 
-function OnboardCostCard({ solBalance, dcBalance, solSufficient, dcSufficient, balancesLoaded }) {
+function OnboardCostCard({ solBalance, dcBalance, solSufficient, dcSufficient, balancesLoaded, onMintDc }) {
   return (
     <div className="rounded-lg bg-surface-inset p-3 text-xs space-y-1.5">
       <p className="font-medium text-content-primary">Onboarding costs</p>
@@ -1048,7 +1049,14 @@ function OnboardCostCard({ solBalance, dcBalance, solSufficient, dcSufficient, b
             <p className="text-amber-500">Insufficient SOL. Need ~0.004 SOL for both steps.</p>
           )}
           {!dcSufficient && (
-            <p className="text-amber-500">100,000 Data Credits required for full onboard.</p>
+            <div className="text-amber-500 space-y-1">
+              <p>100,000 Data Credits required for full onboard.</p>
+              {onMintDc && (
+                <button onClick={onMintDc} className="text-xs font-medium text-accent hover:underline">
+                  Mint DC from HNT
+                </button>
+              )}
+            </div>
           )}
         </>
       )}
@@ -1120,11 +1128,14 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
     }
     fetchBalances();
     return () => { cancelled = true; };
-  }, [connected, walletPubkey, connection]);
+  }, [connected, walletPubkey, connection, balanceRefreshKey]);
 
   const balancesLoaded = solBalance !== null;
   const solSufficient = balancesLoaded && solBalance >= ONBOARD_SOL_COST;
   const dcSufficient = !balancesLoaded || dcBalance >= ONBOARD_DC_COST;
+
+  const [showDcMintModal, setShowDcMintModal] = useState(false);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
 
   // CLI state
   const [cliWallet, setCliWallet] = useState("");
@@ -1302,6 +1313,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
                       solBalance={solBalance} dcBalance={dcBalance}
                       solSufficient={solSufficient} dcSufficient={dcSufficient}
                       balancesLoaded={balancesLoaded}
+                      onMintDc={() => setShowDcMintModal(true)}
                     />
 
                     <button
@@ -1446,6 +1458,14 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
               </>
             )}
           </div>
+        )}
+
+        {showDcMintModal && (
+          <DcMintModal
+            onClose={() => setShowDcMintModal(false)}
+            onSuccess={() => { setShowDcMintModal(false); setBalanceRefreshKey((k) => k + 1); }}
+            defaultDcAmount={ONBOARD_DC_COST}
+          />
         )}
       </div>
     </div>

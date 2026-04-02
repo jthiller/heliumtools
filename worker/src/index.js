@@ -9,6 +9,7 @@ import {
 import { handleHotspotClaimerRequest } from "./tools/hotspot-claimer/index.js";
 import { handleHotspotMapRequest } from "./tools/hotspot-map/index.js";
 import { handleMultiGatewayRequest } from "./tools/multi-gateway/index.js";
+import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
 
 const routes = [
@@ -17,6 +18,7 @@ const routes = [
   { prefix: "/hotspot-claimer", handler: handleHotspotClaimerRequest },
   { prefix: "/hotspot-map", handler: handleHotspotMapRequest },
   { prefix: "/multi-gateway", handler: handleMultiGatewayRequest },
+  { prefix: "/dc-mint", handler: handleDcMintRequest },
 ];
 
 function stripPrefix(request, prefix) {

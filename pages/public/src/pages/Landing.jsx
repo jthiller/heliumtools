@@ -25,6 +25,15 @@ const sections = [
         badge: "Coming Soon",
         disabled: true,
       },
+      {
+        name: "Mint Data Credits",
+        description:
+          "Convert HNT to Data Credits using your Solana wallet. Mint to your wallet or delegate directly to an OUI.",
+        href: "/dc-mint",
+        icon: BoltIcon,
+        iconBg: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
+        badge: "New",
+      },
     ],
   },
   {
