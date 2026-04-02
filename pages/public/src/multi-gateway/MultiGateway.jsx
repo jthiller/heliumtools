@@ -880,7 +880,7 @@ function GatewayMapModal({ gateways, onClose }) {
 // ---------------------------------------------------------------------------
 
 function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL, setGain,
-  loading, isDark, onSubmit, onSkip, inputClass }) {
+  loading, isDark, onSubmit, onSkip, inputClass, dcSufficient = true, onMintDc }) {
 
   const hasCoords = lat && lng && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng));
   const initLat = hasCoords ? parseFloat(lat) : 37.77;
@@ -993,9 +993,20 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
         </div>
       </div>
 
+      {!dcSufficient && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5 space-y-1">
+          <p>100,000 Data Credits required for this step.</p>
+          {onMintDc && (
+            <button onClick={onMintDc} className="font-medium text-accent hover:underline">
+              Mint DC from HNT
+            </button>
+          )}
+        </div>
+      )}
+
       <button
         onClick={onSubmit}
-        disabled={loading}
+        disabled={loading || !dcSufficient}
         className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
       >
         {loading ? "Preparing..." : "Assert Location"}
@@ -1003,7 +1014,7 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
 
       <button
         onClick={onSkip}
-        disabled={loading}
+        disabled={loading || !dcSufficient}
         className="w-full text-xs text-content-tertiary hover:text-content-secondary"
       >
         Skip location, register without
@@ -1346,6 +1357,8 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
                 onSubmit={handleOnboardWithWallet}
                 onSkip={() => handleOnboardWithWallet({ lat: "", lng: "", elevation: "", gain: "" })}
                 inputClass={inputClass}
+                dcSufficient={dcSufficient}
+                onMintDc={() => setShowDcMintModal(true)}
               />
             )}
 

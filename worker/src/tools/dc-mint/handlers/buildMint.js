@@ -49,7 +49,10 @@ export async function handleBuildMint(request, env) {
     // Borsh Option: None = [0x00] (1 byte), Some(val) = [0x01, ...val_le] (9 bytes)
     const parts = [];
     if (hnt_amount) {
-      const hntLamports = BigInt(Math.round(hnt_amount * 10 ** HNT_DECIMALS));
+      // Decimal-safe conversion: avoid float math by splitting on '.'
+      const [whole, frac = ""] = String(hnt_amount).split(".");
+      const padded = (frac + "00000000").slice(0, HNT_DECIMALS);
+      const hntLamports = BigInt(whole) * BigInt(10 ** HNT_DECIMALS) + BigInt(padded);
       const some = new Uint8Array(9);
       some[0] = 1;
       writeUint64LE(some, hntLamports, 1);
