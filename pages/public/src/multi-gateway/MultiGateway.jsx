@@ -1107,6 +1107,8 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
   // Wallet balance checks
   const [solBalance, setSolBalance] = useState(null);
   const [dcBalance, setDcBalance] = useState(null);
+  const [showDcMintModal, setShowDcMintModal] = useState(false);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!connected || !walletPubkey || !connection) return;
@@ -1133,9 +1135,6 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
   const balancesLoaded = solBalance !== null;
   const solSufficient = balancesLoaded && solBalance >= ONBOARD_SOL_COST;
   const dcSufficient = !balancesLoaded || dcBalance >= ONBOARD_DC_COST;
-
-  const [showDcMintModal, setShowDcMintModal] = useState(false);
-  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
 
   // CLI state
   const [cliWallet, setCliWallet] = useState("");
