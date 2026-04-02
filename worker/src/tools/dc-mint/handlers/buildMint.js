@@ -80,17 +80,23 @@ export async function handleBuildMint(request, env) {
     const connection = new Connection(env.SOLANA_RPC_URL);
 
     // MintDataCreditsArgsV0: Option<u64> hnt_amount + Option<u64> dc_amount
-    const argsBuffer = new Uint8Array(18);
+    // Borsh Option: None = [0x00] (1 byte), Some(val) = [0x01, ...val_le] (9 bytes)
+    const parts = [];
     if (hnt_amount) {
       const hntLamports = BigInt(Math.round(hnt_amount * 10 ** HNT_DECIMALS));
-      argsBuffer[0] = 1; // Some(hnt_amount)
-      writeUint64LE(argsBuffer, hntLamports, 1);
-      argsBuffer[9] = 0; // None for dc_amount
+      const some = new Uint8Array(9);
+      some[0] = 1;
+      writeUint64LE(some, hntLamports, 1);
+      parts.push(some, new Uint8Array([0])); // Some(hnt) + None(dc)
     } else {
-      argsBuffer[0] = 0; // None for hnt_amount
-      argsBuffer[1] = 1; // Some(dc_amount)
-      writeUint64LE(argsBuffer, BigInt(dc_amount), 2);
+      const some = new Uint8Array(9);
+      some[0] = 1;
+      writeUint64LE(some, BigInt(dc_amount), 1);
+      parts.push(new Uint8Array([0]), some); // None(hnt) + Some(dc)
     }
+    const argsBuffer = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let offset = 0;
+    for (const p of parts) { argsBuffer.set(p, offset); offset += p.length; }
 
     const instructionData = new Uint8Array(MINT_DISCRIMINATOR.length + argsBuffer.length);
     instructionData.set(MINT_DISCRIMINATOR, 0);

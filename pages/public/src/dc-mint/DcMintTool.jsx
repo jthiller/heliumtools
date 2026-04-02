@@ -13,6 +13,7 @@ import { truncateString } from "../lib/utils.js";
 
 const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux");
 const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
+const INPUT_CLASS = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 // ---------------------------------------------------------------------------
 // Conversion Preview
@@ -63,6 +64,7 @@ function MintTab({ hntPrice }) {
   const [status, setStatus] = useState("idle"); // idle | building | signing | confirming | done | error
   const [error, setError] = useState(null);
   const [txSignature, setTxSignature] = useState(null);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
 
   // Balances
   const [hntBalance, setHntBalance] = useState(null);
@@ -71,7 +73,7 @@ function MintTab({ hntPrice }) {
   useEffect(() => {
     if (!connected || !walletPubkey || !connection) return;
     let cancelled = false;
-    async function fetch() {
+    async function fetchBal() {
       try {
         const [hntAccounts, dcAccounts] = await Promise.all([
           connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: HNT_MINT }),
@@ -86,9 +88,9 @@ function MintTab({ hntPrice }) {
         if (!cancelled) { setHntBalance(null); setDcBalance(null); }
       }
     }
-    fetch();
+    fetchBal();
     return () => { cancelled = true; };
-  }, [connected, walletPubkey, connection, status === "done"]);
+  }, [connected, walletPubkey, connection, balanceRefreshKey]);
 
   const handleMint = async () => {
     if (!walletPubkey || !sendTransaction || !amount) return;
@@ -112,6 +114,7 @@ function MintTab({ hntPrice }) {
       await connection.confirmTransaction(sig, "confirmed");
       setTxSignature(sig);
       setStatus("done");
+      setBalanceRefreshKey((k) => k + 1);
     } catch (err) {
       console.error("Mint failed:", err);
       setError(err.message);
@@ -119,7 +122,6 @@ function MintTab({ hntPrice }) {
     }
   };
 
-  const inputClass = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
   return (
     <div className="space-y-4">
@@ -169,7 +171,7 @@ function MintTab({ hntPrice }) {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder={inputMode === "hnt" ? "e.g. 0.5" : "e.g. 100000"}
-              className={inputClass + " mt-1"}
+              className={INPUT_CLASS + " mt-1"}
             />
           </div>
 
@@ -193,7 +195,7 @@ function MintTab({ hntPrice }) {
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
               placeholder={truncateString(walletPubkey.toBase58(), 12, 6)}
-              className={inputClass + " mt-1"}
+              className={INPUT_CLASS + " mt-1"}
             />
           </div>
 
@@ -255,14 +257,14 @@ function DelegateTab() {
   // Debounced OUI lookup
   useEffect(() => {
     const oui = parseInt(ouiInput, 10);
-    if (!oui || oui <= 0) { setOuiData(null); return; }
+    if (!oui || oui <= 0) { setOuiData(null); setOuiLoading(false); return; }
     setOuiLoading(true);
+    let cancelled = false;
     const timer = setTimeout(async () => {
       const data = await resolveOui(oui);
-      setOuiData(data);
-      setOuiLoading(false);
+      if (!cancelled) { setOuiData(data); setOuiLoading(false); }
     }, 500);
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [ouiInput]);
 
   const handleDelegate = async () => {
@@ -290,7 +292,6 @@ function DelegateTab() {
     }
   };
 
-  const inputClass = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
   return (
     <div className="space-y-4">
@@ -308,7 +309,7 @@ function DelegateTab() {
               value={ouiInput}
               onChange={(e) => setOuiInput(e.target.value)}
               placeholder="e.g. 1"
-              className={inputClass + " mt-1"}
+              className={INPUT_CLASS + " mt-1"}
             />
           </div>
 
@@ -346,7 +347,7 @@ function DelegateTab() {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="e.g. 100000"
-              className={inputClass + " mt-1"}
+              className={INPUT_CLASS + " mt-1"}
             />
           </div>
 
@@ -398,10 +399,14 @@ export default function DcMintTool() {
   const [hntPrice, setHntPrice] = useState(null);
 
   useEffect(() => {
-    fetchHntPrice().then(setHntPrice).catch(() => {});
-    const interval = setInterval(() => {
-      fetchHntPrice().then(setHntPrice).catch(() => {});
-    }, 30_000);
+    const updatePrice = () =>
+      fetchHntPrice()
+        .then((data) => setHntPrice((prev) =>
+          prev && prev.hnt_usd === data.hnt_usd && prev.dc_per_hnt === data.dc_per_hnt ? prev : data
+        ))
+        .catch(() => {});
+    updatePrice();
+    const interval = setInterval(updatePrice, 30_000);
     return () => clearInterval(interval);
   }, []);
 

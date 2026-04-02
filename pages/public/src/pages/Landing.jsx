@@ -16,6 +16,15 @@ const sections = [
         badge: null,
       },
       {
+        name: "Mint Data Credits",
+        description:
+          "Convert HNT to Data Credits using your Solana wallet. Mint to your wallet or delegate directly to an OUI.",
+        href: "/dc-mint",
+        icon: BoltIcon,
+        iconBg: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
+        badge: "New",
+      },
+      {
         name: "Buy Data Credits",
         description:
           "Resolve an OUI, check escrow balance, and purchase Data Credits via Coinbase Onramp with automatic delegation.",
@@ -24,15 +33,6 @@ const sections = [
         iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
         badge: "Coming Soon",
         disabled: true,
-      },
-      {
-        name: "Mint Data Credits",
-        description:
-          "Convert HNT to Data Credits using your Solana wallet. Mint to your wallet or delegate directly to an OUI.",
-        href: "/dc-mint",
-        icon: BoltIcon,
-        iconBg: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
-        badge: "New",
       },
     ],
   },
