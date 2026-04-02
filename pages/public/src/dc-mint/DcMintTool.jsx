@@ -378,7 +378,7 @@ function DelegateTab({ onBalanceChange }) {
           {status === "idle" || status === "error" ? (
             <button
               onClick={handleDelegate}
-              disabled={!ouiData || !amount || parseInt(amount, 10) <= 0}
+              disabled={!ouiData || !amount || !/^\d+$/.test(amount) || parseInt(amount, 10) <= 0}
               className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               Delegate to OUI {ouiInput}
