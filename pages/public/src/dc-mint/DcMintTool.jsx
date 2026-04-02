@@ -267,6 +267,7 @@ function DelegateTab({ onBalanceChange }) {
   useEffect(() => {
     const oui = parseInt(ouiInput, 10);
     if (!oui || isNaN(oui) || oui <= 0) { setOuiData(null); setOuiLoading(false); return; }
+    setOuiData(null);
     setOuiLoading(true);
     let cancelled = false;
     const timer = setTimeout(async () => {

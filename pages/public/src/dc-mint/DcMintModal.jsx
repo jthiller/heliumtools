@@ -26,14 +26,17 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
 
   useEffect(() => {
     if (!walletPubkey || !connection) return;
+    let cancelled = false;
     Promise.all([
       connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: HNT_MINT }),
       connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT }),
     ]).then(([hntAccounts, dcAccounts]) => {
+      if (cancelled) return;
       const hntAcc = hntAccounts.value[0];
       setHntBalance(hntAcc ? Number(hntAcc.account.data.parsed.info.tokenAmount.uiAmount) : 0);
       setHasDcAta(!!dcAccounts.value[0]);
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, [walletPubkey, connection]);
 
   const isValidDc = /^[1-9]\d*$/.test(amount.trim());

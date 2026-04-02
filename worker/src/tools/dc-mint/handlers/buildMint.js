@@ -49,10 +49,9 @@ export async function handleBuildMint(request, env) {
     // Borsh Option: None = [0x00] (1 byte), Some(val) = [0x01, ...val_le] (9 bytes)
     const parts = [];
     if (hnt_amount) {
-      // Decimal-safe conversion: avoid float math by splitting on '.'
-      const [whole, frac = ""] = String(hnt_amount).split(".");
-      const padded = (frac + "00000000").slice(0, HNT_DECIMALS);
-      const hntLamports = BigInt(whole) * BigInt(10 ** HNT_DECIMALS) + BigInt(padded);
+      // Decimal-safe: toFixed avoids scientific notation for small values
+      const [whole, frac = ""] = hnt_amount.toFixed(HNT_DECIMALS).split(".");
+      const hntLamports = BigInt(whole) * BigInt(10 ** HNT_DECIMALS) + BigInt(frac);
       const some = new Uint8Array(9);
       some[0] = 1;
       writeUint64LE(some, hntLamports, 1);

@@ -53,7 +53,6 @@ const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 // Onboarding cost constants
-const DC_MINT_PUBKEY = DC_MINT_KEY;
 const ISSUE_SOL_COST = 0.002;     // SOL for the issue step (account rent)
 const ONBOARD_SOL_COST = 0.004;   // SOL for both steps combined
 const ONBOARD_DC_COST = 100000;   // 100,000 DC ($1) for IoT network registration
@@ -1131,7 +1130,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
       try {
         const [sol, tokenAccounts] = await Promise.all([
           connection.getBalance(walletPubkey),
-          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT_PUBKEY }),
+          connection.getParsedTokenAccountsByOwner(walletPubkey, { mint: DC_MINT_KEY }),
         ]);
         if (cancelled) return;
         setSolBalance(sol / 1e9);
