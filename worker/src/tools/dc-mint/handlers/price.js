@@ -17,7 +17,7 @@ export async function handlePrice() {
 
     const data = await res.json();
     const priceFeed = data.parsed?.[0]?.price;
-    if (!priceFeed?.price || !priceFeed?.expo) throw new Error("No price data in response");
+    if (priceFeed?.price == null || priceFeed?.expo == null) throw new Error("No price data in response");
 
     // Pyth returns price as integer with exponent, e.g. price=542 expo=-2 → $5.42
     const price = Number(priceFeed.price) * 10 ** priceFeed.expo;

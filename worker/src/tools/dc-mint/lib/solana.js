@@ -6,7 +6,6 @@ import {
   ComputeBudgetProgram,
   VersionedTransaction,
   TransactionMessage,
-  SystemProgram,
 } from "@solana/web3.js";
 import {
   DATA_CREDITS_PROGRAM_ID,

@@ -85,7 +85,11 @@ function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalan
       if (inputMode === "hnt") {
         params.hnt_amount = parseFloat(amount);
       } else {
-        params.dc_amount = parseInt(amount, 10);
+        const dcAmount = parseInt(amount, 10);
+        if (!Number.isInteger(dcAmount) || dcAmount <= 0) {
+          throw new Error("DC amount must be a positive whole number");
+        }
+        params.dc_amount = dcAmount;
       }
       if (recipient.trim()) params.recipient = recipient.trim();
 

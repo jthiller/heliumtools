@@ -1,4 +1,4 @@
-import { corsHeaders } from "../../lib/response.js";
+import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handleBuildMint } from "./handlers/buildMint.js";
 import { handleBuildDelegate } from "./handlers/buildDelegate.js";
 import { handlePrice } from "./handlers/price.js";
@@ -23,5 +23,5 @@ export async function handleDcMintRequest(request, env) {
     return handlePrice();
   }
 
-  return new Response("Not found (dc-mint)", { status: 404 });
+  return jsonResponse({ error: "Not found" }, 404);
 }

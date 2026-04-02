@@ -2,11 +2,12 @@ import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "rea
 import { useSearchParams } from "react-router-dom";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { VersionedTransaction, PublicKey } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import CopyButton from "../components/CopyButton.jsx";
 import DcMintModal from "../dc-mint/DcMintModal.jsx";
+import { DC_MINT as DC_MINT_KEY } from "../dc-mint/constants.js";
 import {
   fetchGateways,
   fetchGatewayPackets,
@@ -52,7 +53,7 @@ const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 // Onboarding cost constants
-const DC_MINT_PUBKEY = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
+const DC_MINT_PUBKEY = DC_MINT_KEY;
 const ONBOARD_SOL_COST = 0.004;   // ~0.002 SOL per step (rent for accounts)
 const ONBOARD_DC_COST = 100000;   // 100,000 DC ($1) for IoT network registration
 

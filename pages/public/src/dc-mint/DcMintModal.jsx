@@ -36,11 +36,12 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
     }).catch(() => {});
   }, [walletPubkey, connection]);
 
-  const dcVal = parseInt(amount, 10) || 0;
+  const isValidDc = /^[1-9]\d*$/.test(amount.trim());
+  const dcVal = isValidDc ? parseInt(amount, 10) : 0;
   const hntNeeded = hntPrice && dcVal > 0 && hntPrice.dc_per_hnt > 0 ? dcVal / hntPrice.dc_per_hnt : null;
 
   const handleMint = async () => {
-    if (!walletPubkey || !sendTransaction || dcVal <= 0) return;
+    if (!walletPubkey || !sendTransaction || !isValidDc) return;
     setError(null);
     setStatus("building");
     try {

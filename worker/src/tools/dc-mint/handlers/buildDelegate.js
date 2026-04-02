@@ -6,7 +6,7 @@ import { PublicKey, TransactionInstruction, SystemProgram, Connection } from "@s
 import { jsonResponse } from "../../../lib/response.js";
 import { getOuiByNumber } from "../../oui-notifier/services/ouis.js";
 import {
-  DATA_CREDITS_PROGRAM, TOKEN_PROGRAM, ASSOCIATED_TOKEN_PROGRAM, SUB_DAOS_PROGRAM,
+  DATA_CREDITS_PROGRAM, TOKEN_PROGRAM, ASSOCIATED_TOKEN_PROGRAM,
   DC_MINT_KEY, DATA_CREDITS_PDA, DAO_PDA, SUB_DAO_PDA,
   ataAddress, writeUint64LE, writeUint32LE, hashName, buildUnsignedTx,
 } from "../lib/solana.js";
@@ -34,13 +34,14 @@ export async function handleBuildDelegate(request, env) {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
-  const ouiData = await getOuiByNumber(env, oui);
-  if (!ouiData?.payer) {
-    return jsonResponse({ error: `OUI ${oui} not found or has no payer key` }, 404);
-  }
-  const routerKey = ouiData.payer;
-
   try {
+    const ouiNum = parseInt(oui, 10);
+    if (!ouiNum || ouiNum <= 0) return jsonResponse({ error: "Invalid OUI number" }, 400);
+    const ouiData = await getOuiByNumber(env, ouiNum);
+    if (!ouiData?.payer) {
+      return jsonResponse({ error: `OUI ${oui} not found or has no payer key` }, 404);
+    }
+    const routerKey = ouiData.payer;
     const connection = new Connection(env.SOLANA_RPC_URL);
 
     const nameHash = await hashName(routerKey);
