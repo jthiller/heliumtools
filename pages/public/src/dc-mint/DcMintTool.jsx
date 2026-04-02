@@ -192,7 +192,7 @@ function MintTab({ hntPrice }) {
             </button>
           </div>
 
-          {/* Amount input */}
+          {/* Amount input with inline conversion hint */}
           <div>
             <label className="block text-xs font-medium text-content-secondary">
               {inputMode === "hnt" ? "HNT to burn" : "DC to mint"}
@@ -204,6 +204,14 @@ function MintTab({ hntPrice }) {
               placeholder={inputMode === "hnt" ? "e.g. 0.5" : "e.g. 100000"}
               className={INPUT_CLASS + " mt-1"}
             />
+            {hntPrice && amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0 && (
+              <p className="mt-1 text-[11px] text-content-tertiary font-mono">
+                {inputMode === "hnt"
+                  ? `= ${Math.round(parseFloat(amount) * hntPrice.dc_per_hnt).toLocaleString()} DC (~$${(parseFloat(amount) * hntPrice.hnt_usd).toFixed(2)})`
+                  : `= ${(parseFloat(amount) / hntPrice.dc_per_hnt).toFixed(4)} HNT (~$${(parseFloat(amount) / 100000).toFixed(2)})`
+                }
+              </p>
+            )}
           </div>
 
           {/* Conversion preview */}
