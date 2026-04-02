@@ -332,12 +332,12 @@ function DelegateTab({ onBalanceChange }) {
                   <span className="font-mono text-content-secondary">{truncateString(ouiData.escrow, 8, 4)}</span>
                 </div>
               )}
-              {ouiData.dc_balance != null && (
+              {ouiData.escrowDcBalance != null && (
                 <div className="flex justify-between">
                   <span className="text-content-tertiary">Escrow Balance</span>
                   <span className="font-mono text-content-secondary">
-                    {Number(ouiData.dc_balance).toLocaleString()} DC
-                    <span className="text-content-tertiary ml-1">(~${(Number(ouiData.dc_balance) / 100000).toFixed(2)})</span>
+                    {Number(ouiData.escrowDcBalance).toLocaleString()} DC
+                    <span className="text-content-tertiary ml-1">(~${(Number(ouiData.escrowDcBalance) / 100000).toFixed(2)})</span>
                   </span>
                 </div>
               )}
