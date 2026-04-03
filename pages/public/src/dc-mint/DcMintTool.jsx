@@ -267,7 +267,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
   const [targetInput, setTargetInput] = useState("");
   const [resolvedTarget, setResolvedTarget] = useState(null);
   const [targetLoading, setTargetLoading] = useState(false);
-  const [inputMode, setInputMode] = useState("dc"); // "dc" | "hnt"
+  const [inputMode, setInputMode] = useState("hnt"); // "hnt" | "dc"
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
@@ -392,13 +392,13 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
 
       {/* Input mode toggle (HNT for combined mint+delegate, DC for delegate only) */}
       <div className="flex gap-1 rounded-lg bg-surface-inset p-1">
-        <button onClick={() => { setInputMode("dc"); setAmount(""); }}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${inputMode === "dc" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
-          Delegate DC
-        </button>
         <button onClick={() => { setInputMode("hnt"); setAmount(""); }}
           className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${inputMode === "hnt" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
           Burn HNT → Delegate
+        </button>
+        <button onClick={() => { setInputMode("dc"); setAmount(""); }}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${inputMode === "dc" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
+          Delegate Existing DC
         </button>
       </div>
 
