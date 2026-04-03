@@ -1,6 +1,6 @@
 /**
- * Resolve a payer key to its escrow account, DC balance, subnet, and well-known name.
- * Tries IoT SubDAO first, falls back to Mobile SubDAO.
+ * Resolve a payer key to its escrow accounts on both IoT and Mobile subnets,
+ * DC balances, and well-known OUI name.
  */
 import { Connection } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
@@ -36,12 +36,11 @@ async function checkEscrow(connection, payerKey, subnet) {
   const account = await connection.getAccountInfo(escrow);
   if (!account) return null;
 
-  // Parse DC balance from the token account (SPL Token layout: mint(32) + owner(32) + amount(u64 LE at offset 64))
   const balance = account.data.length >= 72
     ? Number(account.data.readBigUInt64LE(64))
     : 0;
 
-  return { escrow: escrow.toBase58(), balance, subnet };
+  return { escrow: escrow.toBase58(), balance };
 }
 
 export async function handleResolvePayer(payerKey, env) {
@@ -52,23 +51,23 @@ export async function handleResolvePayer(payerKey, env) {
   try {
     const connection = new Connection(env.SOLANA_RPC_URL);
 
-    // Try IoT first, then Mobile
-    let result = await checkEscrow(connection, payerKey, "iot");
-    if (!result) {
-      result = await checkEscrow(connection, payerKey, "mobile");
-    }
+    // Check both subnets in parallel
+    const [iotResult, mobileResult, wellKnown] = await Promise.all([
+      checkEscrow(connection, payerKey, "iot"),
+      checkEscrow(connection, payerKey, "mobile"),
+      getWellKnownList(env),
+    ]);
 
-    // Look up well-known name
-    const wellKnown = await getWellKnownList(env);
     const match = wellKnown.find((w) => w.router_key === payerKey);
 
     return jsonResponse({
       payer: payerKey,
-      subnet: result?.subnet || null,
-      escrow: result?.escrow || null,
-      balance: result?.balance ?? null,
       name: match?.name || null,
       oui: match?.id || null,
+      subnets: {
+        iot: iotResult,
+        mobile: mobileResult,
+      },
     });
   } catch (err) {
     return jsonResponse({ error: `Failed to resolve payer: ${err.message}` }, 500);

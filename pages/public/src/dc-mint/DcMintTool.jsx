@@ -66,8 +66,32 @@ function ConversionPreview({ hntPrice, inputMode, amount }) {
 // Resolved target card (shared between OUI and payer key resolution)
 // ---------------------------------------------------------------------------
 
-function ResolvedTargetCard({ data }) {
+function SubnetEscrowRow({ label, info, selected, onSelect }) {
+  if (!info) return null;
+  return (
+    <button onClick={onSelect}
+      className={`w-full text-left rounded-md p-2 text-xs transition-colors ${selected ? "bg-accent/10 border border-accent/30" : "hover:bg-surface-raised"}`}>
+      <div className="flex justify-between items-center">
+        <span className="font-mono uppercase font-medium">{label}</span>
+        <span className="font-mono text-content-secondary">
+          {Number(info.balance).toLocaleString()} DC
+          <span className="text-content-tertiary ml-1">(~${(Number(info.balance) / 100000).toFixed(2)})</span>
+        </span>
+      </div>
+      <p className="font-mono text-[10px] text-content-tertiary mt-0.5">{truncateString(info.escrow, 10, 4)}</p>
+    </button>
+  );
+}
+
+function ResolvedTargetCard({ data, selectedSubnet, onSelectSubnet }) {
   if (!data) return null;
+
+  const hasSubnets = data.subnets;
+  const iot = hasSubnets?.iot;
+  const mobile = hasSubnets?.mobile;
+  const bothExist = iot && mobile;
+  const neitherExist = !iot && !mobile;
+
   return (
     <div className="rounded-lg border border-border bg-surface-inset p-3 text-xs space-y-1.5">
       {data.name && (
@@ -76,32 +100,45 @@ function ResolvedTargetCard({ data }) {
           <span className="font-medium text-content-primary">{data.name}</span>
         </div>
       )}
-      {data.subnet && (
-        <div className="flex justify-between">
-          <span className="text-content-tertiary">Network</span>
-          <span className="font-mono text-content-secondary uppercase">{data.subnet}</span>
-        </div>
-      )}
       <div className="flex justify-between">
         <span className="text-content-tertiary">Payer</span>
         <span className="font-mono text-content-secondary">{truncateString(data.payer, 8, 4)}</span>
       </div>
-      {data.escrow && (
-        <div className="flex justify-between">
-          <span className="text-content-tertiary">Escrow</span>
-          <span className="font-mono text-content-secondary">{truncateString(data.escrow, 8, 4)}</span>
+
+      {/* Subnet escrow(s) */}
+      {hasSubnets && !neitherExist && (
+        <div className="space-y-1 pt-1">
+          {bothExist && (
+            <p className="text-[10px] text-amber-600 dark:text-amber-400">
+              Escrows found on both IoT and Mobile — select one:
+            </p>
+          )}
+          <SubnetEscrowRow label="IoT" info={iot} selected={selectedSubnet === "iot"} onSelect={() => onSelectSubnet?.("iot")} />
+          <SubnetEscrowRow label="Mobile" info={mobile} selected={selectedSubnet === "mobile"} onSelect={() => onSelectSubnet?.("mobile")} />
         </div>
       )}
-      {data.balance != null && (
-        <div className="flex justify-between">
-          <span className="text-content-tertiary">Escrow Balance</span>
-          <span className="font-mono text-content-secondary">
-            {Number(data.balance).toLocaleString()} DC
-            <span className="text-content-tertiary ml-1">(~${(Number(data.balance) / 100000).toFixed(2)})</span>
-          </span>
-        </div>
+
+      {/* Legacy shape (from OUI resolution — no subnets object) */}
+      {!hasSubnets && data.escrow && (
+        <>
+          <div className="flex justify-between">
+            <span className="text-content-tertiary">Escrow</span>
+            <span className="font-mono text-content-secondary">{truncateString(data.escrow, 8, 4)}</span>
+          </div>
+          {data.balance != null && (
+            <div className="flex justify-between">
+              <span className="text-content-tertiary">Balance</span>
+              <span className="font-mono text-content-secondary">
+                {Number(data.balance).toLocaleString()} DC
+                <span className="text-content-tertiary ml-1">(~${(Number(data.balance) / 100000).toFixed(2)})</span>
+              </span>
+            </div>
+          )}
+        </>
       )}
-      {!data.escrow && !data.balance && (
+
+      {/* No escrow found */}
+      {(neitherExist || (!hasSubnets && !data.escrow)) && (
         <p className="text-content-tertiary italic">New delegation — no existing escrow</p>
       )}
     </div>
@@ -267,6 +304,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
   const [targetInput, setTargetInput] = useState("");
   const [resolvedTarget, setResolvedTarget] = useState(null);
   const [targetLoading, setTargetLoading] = useState(false);
+  const [selectedSubnet, setSelectedSubnet] = useState(null);
   const [inputMode, setInputMode] = useState("hnt"); // "hnt" | "dc" (delegate existing DC)
   const [burnMode, setBurnMode] = useState("dc_target"); // "dc_target" | "hnt_burn" (within hnt mode)
   const [amount, setAmount] = useState("");
@@ -319,12 +357,27 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [targetInput, isPayerKey]);
 
+  // Auto-select subnet when resolution completes
+  useEffect(() => {
+    if (!resolvedTarget) { setSelectedSubnet(null); return; }
+    if (resolvedTarget.subnets) {
+      const { iot, mobile } = resolvedTarget.subnets;
+      if (iot && !mobile) setSelectedSubnet("iot");
+      else if (mobile && !iot) setSelectedSubnet("mobile");
+      else if (!iot && !mobile) setSelectedSubnet("iot"); // default for new delegation
+      else setSelectedSubnet(null); // both exist — user must choose
+    } else {
+      // Legacy OUI resolution shape
+      setSelectedSubnet(resolvedTarget.subnet || "iot");
+    }
+  }, [resolvedTarget]);
+
   const handleDelegate = async () => {
     if (!walletPubkey || !sendTransaction || !resolvedTarget) return;
     setError(null);
     setStatus("building");
     try {
-      const params = { owner: walletPubkey.toBase58(), subnet: resolvedTarget.subnet || "iot" };
+      const params = { owner: walletPubkey.toBase58(), subnet: selectedSubnet || "iot" };
 
       if (isPayerKey) {
         params.payer_key = targetInput.trim();
@@ -390,7 +443,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
 
       {/* Resolution result */}
       {targetLoading && <p className="text-xs text-content-tertiary">Resolving...</p>}
-      <ResolvedTargetCard data={resolvedTarget} />
+      <ResolvedTargetCard data={resolvedTarget} selectedSubnet={selectedSubnet} onSelectSubnet={setSelectedSubnet} />
       {targetInput && !targetLoading && !resolvedTarget && (
         <p className="text-xs text-rose-500">{isPayerKey ? "Could not resolve payer key" : "OUI not found"}</p>
       )}
@@ -456,7 +509,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
 
       {status === "idle" || status === "error" ? (
         <button onClick={handleDelegate}
-          disabled={!connected || !resolvedTarget || !amountValid}
+          disabled={!connected || !resolvedTarget || !selectedSubnet || !amountValid}
           className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
           {!connected ? "Connect Wallet" : inputMode === "hnt" ? "Burn HNT & Delegate" : `Delegate ${resolvedTarget?.name ? `to ${resolvedTarget.name}` : ""}`}
         </button>
