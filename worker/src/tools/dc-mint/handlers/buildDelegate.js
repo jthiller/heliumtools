@@ -22,8 +22,11 @@ export async function handleBuildDelegate(request, env) {
   const { owner: ownerStr, amount, oui, payer_key, subnet = "iot", hnt_amount, mint_dc } = body;
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
   if (!oui && !payer_key) return jsonResponse({ error: "Specify oui or payer_key" }, 400);
-  if (!amount || !Number.isInteger(amount) || amount <= 0) {
-    return jsonResponse({ error: "amount (positive integer DC) is required" }, 400);
+  if (!amount || !Number.isSafeInteger(amount) || amount <= 0) {
+    return jsonResponse({ error: "amount must be a positive safe integer" }, 400);
+  }
+  if (hnt_amount && mint_dc) {
+    return jsonResponse({ error: "Specify hnt_amount or mint_dc, not both" }, 400);
   }
   if (hnt_amount && (typeof hnt_amount !== "number" || !Number.isFinite(hnt_amount) || hnt_amount <= 0)) {
     return jsonResponse({ error: "hnt_amount must be a positive number" }, 400);
@@ -51,8 +54,8 @@ export async function handleBuildDelegate(request, env) {
     } else {
       // Validate payer_key is not garbage (it'll be hashed for the PDA, so any string "works",
       // but we want to catch obvious mistakes before the user pays a tx fee)
-      if (!payer_key || payer_key.length < 32) {
-        return jsonResponse({ error: "Invalid payer key" }, 400);
+      if (!payer_key || payer_key.length < 32 || payer_key.length > 64 || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(payer_key)) {
+        return jsonResponse({ error: "Invalid payer key (expected base58, 32-64 chars)" }, 400);
       }
       routerKey = payer_key;
     }

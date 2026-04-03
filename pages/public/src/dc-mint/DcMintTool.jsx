@@ -378,7 +378,9 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
         const hntVal = parseFloat(amount);
         if (!hntPrice?.dc_per_hnt) throw new Error("HNT price not available");
         params.hnt_amount = hntVal;
-        params.amount = Math.round(hntVal * hntPrice.dc_per_hnt * 0.99);
+        const estimatedDc = Math.round(hntVal * hntPrice.dc_per_hnt * 0.99);
+        if (estimatedDc < 1) throw new Error("HNT amount too small — would produce less than 1 DC");
+        params.amount = estimatedDc;
       } else {
         // Delegate existing DC
         params.amount = parseInt(amount, 10);
@@ -494,7 +496,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
         <button onClick={handleDelegate}
           disabled={!connected || !resolvedTarget || !selectedSubnet || !amountValid}
           className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-          {!connected ? "Connect Wallet" : inputMode === "hnt" ? "Burn HNT & Delegate" : `Delegate ${resolvedTarget?.name ? `to ${resolvedTarget.name}` : ""}`}
+          {!connected ? "Connect Wallet" : inputMode === "hnt" ? "Burn HNT & Delegate" : resolvedTarget?.name ? `Delegate to ${resolvedTarget.name}` : "Delegate"}
         </button>
       ) : status === "done" ? (
         <div className="space-y-2">

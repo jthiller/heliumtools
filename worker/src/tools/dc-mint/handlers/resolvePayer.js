@@ -21,6 +21,7 @@ async function getWellKnownList(env) {
   const res = await fetch(WELL_KNOWN_OUIS_URL, { headers: { accept: "application/json" } });
   if (!res.ok) return [];
   const list = await res.json();
+  if (!Array.isArray(list)) return [];
 
   if (env.KV) {
     try { await env.KV.put(KV_WELL_KNOWN_KEY, JSON.stringify(list), { expirationTtl: KV_CACHE_TTL }); }
@@ -44,8 +45,8 @@ async function checkEscrow(connection, payerKey, subnet) {
 }
 
 export async function handleResolvePayer(payerKey, env) {
-  if (!payerKey || payerKey.length < 32) {
-    return jsonResponse({ error: "Invalid payer key" }, 400);
+  if (!payerKey || payerKey.length < 32 || payerKey.length > 64 || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(payerKey)) {
+    return jsonResponse({ error: "Invalid payer key (expected base58, 32-64 chars)" }, 400);
   }
 
   try {
