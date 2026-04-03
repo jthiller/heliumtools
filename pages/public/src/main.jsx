@@ -1,31 +1,35 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing.jsx";
-import L1MigrationTool from "./l1-migration/L1MigrationTool.jsx";
-import DcPurchaseTool from "./dc-purchase/DcPurchaseTool.jsx";
-import OrderStatus from "./dc-purchase/OrderStatus.jsx";
-import HotspotClaimer from "./hotspot-claimer/HotspotClaimer.jsx";
-import HotspotMap from "./hotspot-map/HotspotMap.jsx";
-import MultiGateway from "./multi-gateway/MultiGateway.jsx";
-import DcMintTool from "./dc-mint/DcMintTool.jsx";
-import SolanaProvider from "./multi-gateway/SolanaProvider.jsx";
 import "../fonts/inter.css";
 import "./index.css";
+
+// Lazy-load tool pages — each becomes its own chunk
+const L1MigrationTool = lazy(() => import("./l1-migration/L1MigrationTool.jsx"));
+const DcPurchaseTool = lazy(() => import("./dc-purchase/DcPurchaseTool.jsx"));
+const OrderStatus = lazy(() => import("./dc-purchase/OrderStatus.jsx"));
+const HotspotClaimer = lazy(() => import("./hotspot-claimer/HotspotClaimer.jsx"));
+const HotspotMap = lazy(() => import("./hotspot-map/HotspotMap.jsx"));
+const MultiGateway = lazy(() => import("./multi-gateway/MultiGateway.jsx"));
+const DcMintTool = lazy(() => import("./dc-mint/DcMintTool.jsx"));
+const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/l1-migration" element={<L1MigrationTool />} />
-        <Route path="/dc-purchase" element={<DcPurchaseTool />} />
-        <Route path="/dc-purchase/order/:orderId" element={<OrderStatus />} />
-        <Route path="/hotspot-claimer" element={<HotspotClaimer />} />
-        <Route path="/hotspot-map" element={<HotspotMap />} />
-        <Route path="/multi-gateway" element={<SolanaProvider><MultiGateway /></SolanaProvider>} />
-        <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
-      </Routes>
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/l1-migration" element={<L1MigrationTool />} />
+          <Route path="/dc-purchase" element={<DcPurchaseTool />} />
+          <Route path="/dc-purchase/order/:orderId" element={<OrderStatus />} />
+          <Route path="/hotspot-claimer" element={<HotspotClaimer />} />
+          <Route path="/hotspot-map" element={<HotspotMap />} />
+          <Route path="/multi-gateway" element={<SolanaProvider><MultiGateway /></SolanaProvider>} />
+          <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   </React.StrictMode>
 );
