@@ -19,11 +19,11 @@ export async function buildMintTransaction({ owner, hnt_amount, dc_amount, recip
   return data;
 }
 
-export async function buildDelegateTransaction({ owner, amount, oui }) {
+export async function buildDelegateTransaction({ owner, amount, oui, payer_key, subnet, hnt_amount }) {
   const res = await fetch(`${API_BASE}/build-delegate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, amount, oui }),
+    body: JSON.stringify({ owner, amount, oui, payer_key, subnet, hnt_amount }),
   });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);
@@ -39,6 +39,13 @@ export async function fetchHntPrice() {
 
 export async function resolveOui(oui) {
   const res = await fetch(`${DC_PURCHASE_API}/oui/${oui}`);
+  const data = await parseJson(res);
+  if (!res.ok) return null;
+  return data;
+}
+
+export async function resolvePayerKey(payerKey) {
+  const res = await fetch(`${API_BASE}/resolve-payer/${encodeURIComponent(payerKey)}`);
   const data = await parseJson(res);
   if (!res.ok) return null;
   return data;
