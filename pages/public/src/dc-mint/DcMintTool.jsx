@@ -318,7 +318,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
           data = await resolvePayerKey(trimmed);
         } else {
           const oui = parseInt(trimmed, 10);
-          if (!oui || oui <= 0) { setTargetLoading(false); return; }
+          if (!oui || oui <= 0) { setTargetLoading(false); setHasAttemptedResolve(true); return; }
           const ouiData = await resolveOui(oui);
           if (ouiData) {
             // OUIs are always IoT — normalize into the subnets shape
@@ -388,7 +388,11 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
         params.amount = estimatedDc;
       } else {
         // Delegate existing DC
-        params.amount = parseInt(amount, 10);
+        const dcVal = parseInt(amount, 10);
+        if (dcBalance != null && dcVal > dcBalance) {
+          throw new Error(`Insufficient DC. You have ${dcBalance.toLocaleString()} DC.`);
+        }
+        params.amount = dcVal;
       }
 
       const result = await buildDelegateTransaction(params);
