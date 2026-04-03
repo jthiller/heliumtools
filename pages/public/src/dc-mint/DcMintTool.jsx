@@ -118,27 +118,8 @@ function ResolvedTargetCard({ data, selectedSubnet, onSelectSubnet }) {
         </div>
       )}
 
-      {/* Legacy shape (from OUI resolution — no subnets object) */}
-      {!hasSubnets && data.escrow && (
-        <>
-          <div className="flex justify-between">
-            <span className="text-content-tertiary">Escrow</span>
-            <span className="font-mono text-content-secondary">{truncateString(data.escrow, 8, 4)}</span>
-          </div>
-          {data.balance != null && (
-            <div className="flex justify-between">
-              <span className="text-content-tertiary">Balance</span>
-              <span className="font-mono text-content-secondary">
-                {Number(data.balance).toLocaleString()} DC
-                <span className="text-content-tertiary ml-1">(~${(Number(data.balance) / 100000).toFixed(2)})</span>
-              </span>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* No escrow found */}
-      {((hasSubnets && neitherExist) || (!hasSubnets && !data.escrow)) && (
+      {/* No escrow found on either subnet */}
+      {neitherExist && (
         <p className="text-content-tertiary italic">New delegation — no existing escrow</p>
       )}
     </div>
@@ -335,17 +316,17 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
           if (!oui || oui <= 0) { setTargetLoading(false); return; }
           const ouiData = await resolveOui(oui);
           if (ouiData) {
-            // Normalize OUI response to match payer resolution shape.
-            // The well-known name and subnet are fetched via resolve-payer
-            // only for direct payer key input — OUI resolution already provides
-            // payer/escrow/balance, and the OUI number itself identifies the operator.
+            // OUIs are always IoT — normalize into the subnets shape
+            // so the card renders the same subnet UI as payer key resolution
+            const balance = ouiData.escrowDcBalance ? Number(ouiData.escrowDcBalance) : null;
             data = {
               payer: ouiData.payer,
-              escrow: ouiData.escrow,
-              balance: ouiData.escrowDcBalance ? Number(ouiData.escrowDcBalance) : null,
-              subnet: "iot",
               name: null,
               oui: oui,
+              subnets: {
+                iot: ouiData.escrow ? { escrow: ouiData.escrow, balance: balance ?? 0 } : null,
+                mobile: null,
+              },
             };
           }
         }
@@ -359,17 +340,12 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
 
   // Auto-select subnet when resolution completes
   useEffect(() => {
-    if (!resolvedTarget) { setSelectedSubnet(null); return; }
-    if (resolvedTarget.subnets) {
-      const { iot, mobile } = resolvedTarget.subnets;
-      if (iot && !mobile) setSelectedSubnet("iot");
-      else if (mobile && !iot) setSelectedSubnet("mobile");
-      else if (!iot && !mobile) setSelectedSubnet("iot"); // default for new delegation
-      else setSelectedSubnet(null); // both exist — user must choose
-    } else {
-      // Legacy OUI resolution shape
-      setSelectedSubnet(resolvedTarget.subnet || "iot");
-    }
+    if (!resolvedTarget?.subnets) { setSelectedSubnet(null); return; }
+    const { iot, mobile } = resolvedTarget.subnets;
+    if (iot && !mobile) setSelectedSubnet("iot");
+    else if (mobile && !iot) setSelectedSubnet("mobile");
+    else if (!iot && !mobile) setSelectedSubnet("iot"); // default for new delegation
+    else setSelectedSubnet(null); // both exist — user must choose
   }, [resolvedTarget]);
 
   const handleDelegate = async () => {
