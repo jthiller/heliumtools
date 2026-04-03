@@ -38,23 +38,29 @@ function ConversionPreview({ hntPrice, inputMode, amount }) {
 
   return (
     <div className="rounded-lg border border-border bg-surface-inset p-3 text-xs space-y-1.5">
-      <div className="flex justify-between text-content-secondary">
-        <span>Exchange rate</span>
-        <span className="font-mono">1 HNT = {hntPrice.dc_per_hnt.toLocaleString()} DC</span>
-      </div>
-      <div className="flex justify-between text-content-secondary">
-        <span>HNT price</span>
-        <span className="font-mono">${hntPrice.hnt_usd}</span>
-      </div>
-      {hasAmount && (
+      {hasAmount ? (
         <>
-          <div className="border-t border-border-muted pt-1.5 flex justify-between text-content-secondary">
+          <div className="flex justify-between text-content-secondary">
             <span>You burn</span>
             <span className="font-mono">{hntVal < 0.001 ? hntVal.toExponential(2) : hntVal.toFixed(4)} HNT (~${usdVal.toFixed(2)})</span>
           </div>
           <div className="flex justify-between font-medium text-content-primary">
             <span>You receive</span>
             <span className="font-mono">{Math.round(dcVal).toLocaleString()} DC (~${(dcVal / 100000).toFixed(2)})</span>
+          </div>
+          <div className="border-t border-border-muted pt-1 text-[10px] text-content-tertiary text-center font-mono">
+            1 HNT = {hntPrice.dc_per_hnt.toLocaleString()} DC · HNT ${hntPrice.hnt_usd}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex justify-between text-content-secondary">
+            <span>Exchange rate</span>
+            <span className="font-mono">1 HNT = {hntPrice.dc_per_hnt.toLocaleString()} DC</span>
+          </div>
+          <div className="flex justify-between text-content-secondary">
+            <span>HNT price</span>
+            <span className="font-mono">${hntPrice.hnt_usd}</span>
           </div>
         </>
       )}
@@ -148,7 +154,11 @@ function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalan
     try {
       const params = { owner: walletPubkey.toBase58() };
       if (inputMode === "hnt") {
-        params.hnt_amount = parseFloat(amount);
+        const hntVal = parseFloat(amount);
+        if (hntBalance != null && hntVal > hntBalance) {
+          throw new Error(`Insufficient HNT. You have ${hntBalance.toFixed(4)} HNT.`);
+        }
+        params.hnt_amount = hntVal;
       } else {
         const dcAmount = parseInt(amount, 10);
         if (!Number.isInteger(dcAmount) || dcAmount <= 0) throw new Error("DC amount must be a positive whole number");
@@ -222,13 +232,6 @@ function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalan
         </label>
         <input type="text" value={amount} onChange={(e) => setAmount(e.target.value)}
           placeholder={inputMode === "hnt" ? "e.g. 0.5" : "e.g. 100000"} className={INPUT_CLASS + " mt-1"} />
-        {hntPrice && amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0 && (
-          <p className="mt-1 text-[11px] text-content-tertiary font-mono">
-            {inputMode === "hnt"
-              ? `= ${Math.round(parseFloat(amount) * hntPrice.dc_per_hnt).toLocaleString()} DC (~$${(parseFloat(amount) * hntPrice.hnt_usd).toFixed(2)})`
-              : `= ${hntPrice.dc_per_hnt > 0 ? (parseFloat(amount) / hntPrice.dc_per_hnt).toFixed(4) : "?"} HNT (~$${(parseFloat(amount) / 100000).toFixed(2)})`}
-          </p>
-        )}
       </div>
 
       {hntPrice && <ConversionPreview hntPrice={hntPrice} inputMode={inputMode} amount={amount} />}
@@ -285,6 +288,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
   const [targetInput, setTargetInput] = useState("");
   const [resolvedTarget, setResolvedTarget] = useState(null);
   const [targetLoading, setTargetLoading] = useState(false);
+  const [hasAttemptedResolve, setHasAttemptedResolve] = useState(false);
   const [selectedSubnet, setSelectedSubnet] = useState(null);
   const [inputMode, setInputMode] = useState("hnt"); // "hnt" | "dc" (delegate existing DC)
   const [burnMode, setBurnMode] = useState("dc_target"); // "dc_target" | "hnt_burn" (within hnt mode)
@@ -299,7 +303,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
   // Debounced resolution
   useEffect(() => {
     const trimmed = targetInput.trim();
-    if (!trimmed) { setResolvedTarget(null); setTargetLoading(false); return; }
+    if (!trimmed) { setResolvedTarget(null); setTargetLoading(false); setHasAttemptedResolve(false); return; }
     setResolvedTarget(null);
     setTargetLoading(true);
     let cancelled = false;
@@ -331,9 +335,9 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
             };
           }
         }
-        if (!cancelled) { setResolvedTarget(data); setTargetLoading(false); }
+        if (!cancelled) { setResolvedTarget(data); setTargetLoading(false); setHasAttemptedResolve(true); }
       } catch {
-        if (!cancelled) { setResolvedTarget(null); setTargetLoading(false); }
+        if (!cancelled) { setResolvedTarget(null); setTargetLoading(false); setHasAttemptedResolve(true); }
       }
     }, 500);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -434,7 +438,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
       {/* Resolution result */}
       {targetLoading && <p className="text-xs text-content-tertiary">Resolving...</p>}
       <ResolvedTargetCard data={resolvedTarget} selectedSubnet={selectedSubnet} onSelectSubnet={setSelectedSubnet} />
-      {targetInput && !targetLoading && !resolvedTarget && (
+      {targetInput && !targetLoading && !resolvedTarget && hasAttemptedResolve && (
         <p className="text-xs text-rose-500">{isPayerKey ? "Could not resolve payer key" : "OUI not found"}</p>
       )}
 
@@ -474,19 +478,8 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
           placeholder={inputMode === "dc" ? "e.g. 100000" :
             burnMode === "dc_target" ? "e.g. 100000" : "e.g. 0.5"}
           className={INPUT_CLASS + " mt-1"} />
-        {/* Inline conversion hints */}
         {inputMode === "dc" && amount && parseInt(amount, 10) > 0 && (
           <p className="mt-1 text-[10px] text-content-tertiary font-mono">~${(parseInt(amount, 10) / 100000).toFixed(2)} USD</p>
-        )}
-        {inputMode === "hnt" && burnMode === "dc_target" && hntPrice && amount && parseInt(amount, 10) > 0 && (
-          <p className="mt-1 text-[11px] text-content-tertiary font-mono">
-            burns ~{hntPrice.dc_per_hnt > 0 ? (parseInt(amount, 10) / hntPrice.dc_per_hnt).toFixed(4) : "?"} HNT (~${(parseInt(amount, 10) / 100000).toFixed(2)})
-          </p>
-        )}
-        {inputMode === "hnt" && burnMode === "hnt_burn" && hntPrice && amount && parseFloat(amount) > 0 && (
-          <p className="mt-1 text-[11px] text-content-tertiary font-mono">
-            = {Math.round(parseFloat(amount) * hntPrice.dc_per_hnt).toLocaleString()} DC (~${(parseFloat(amount) * hntPrice.hnt_usd).toFixed(2)})
-          </p>
         )}
       </div>
 
