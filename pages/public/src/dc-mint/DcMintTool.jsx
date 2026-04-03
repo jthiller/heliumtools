@@ -267,7 +267,8 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
   const [targetInput, setTargetInput] = useState("");
   const [resolvedTarget, setResolvedTarget] = useState(null);
   const [targetLoading, setTargetLoading] = useState(false);
-  const [inputMode, setInputMode] = useState("hnt"); // "hnt" | "dc"
+  const [inputMode, setInputMode] = useState("hnt"); // "hnt" | "dc" (delegate existing DC)
+  const [burnMode, setBurnMode] = useState("dc_target"); // "dc_target" | "hnt_burn" (within hnt mode)
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
@@ -334,14 +335,20 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
         params.oui = parseInt(targetInput, 10);
       }
 
-      if (inputMode === "hnt") {
+      if (inputMode === "hnt" && burnMode === "dc_target") {
+        // Exact DC target: on-chain program determines HNT to burn
+        const dcTarget = parseInt(amount, 10);
+        if (!Number.isInteger(dcTarget) || dcTarget <= 0) throw new Error("DC amount must be a positive integer");
+        params.amount = dcTarget;
+        params.mint_dc = true;
+      } else if (inputMode === "hnt" && burnMode === "hnt_burn") {
+        // HNT amount: estimate DC for the delegate instruction
         const hntVal = parseFloat(amount);
-        params.hnt_amount = hntVal;
-        // Estimate DC from HNT using current oracle price — the on-chain program
-        // uses the real oracle, but we need a DC amount for the delegate instruction
         if (!hntPrice?.dc_per_hnt) throw new Error("HNT price not available");
+        params.hnt_amount = hntVal;
         params.amount = Math.round(hntVal * hntPrice.dc_per_hnt);
       } else {
+        // Delegate existing DC
         params.amount = parseInt(amount, 10);
       }
 
@@ -361,7 +368,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
     }
   };
 
-  const amountValid = inputMode === "hnt"
+  const amountValid = inputMode === "hnt" && burnMode === "hnt_burn"
     ? amount && Number.isFinite(parseFloat(amount)) && parseFloat(amount) > 0
     : amount && /^\d+$/.test(amount) && parseInt(amount, 10) > 0;
 
@@ -390,7 +397,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
         <p className="text-xs text-rose-500">{isPayerKey ? "Could not resolve payer key" : "OUI not found"}</p>
       )}
 
-      {/* Input mode toggle (HNT for combined mint+delegate, DC for delegate only) */}
+      {/* Primary mode toggle */}
       <div className="flex gap-1 rounded-lg bg-surface-inset p-1">
         <button onClick={() => { setInputMode("hnt"); setAmount(""); }}
           className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${inputMode === "hnt" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
@@ -402,24 +409,50 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
         </button>
       </div>
 
+      {/* Secondary toggle: when burning HNT, specify by DC target or HNT amount */}
+      {inputMode === "hnt" && (
+        <div className="flex gap-1 rounded-lg bg-surface-inset p-1">
+          <button onClick={() => { setBurnMode("dc_target"); setAmount(""); }}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${burnMode === "dc_target" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
+            Specify DC to deliver
+          </button>
+          <button onClick={() => { setBurnMode("hnt_burn"); setAmount(""); }}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${burnMode === "hnt_burn" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
+            Specify HNT to burn
+          </button>
+        </div>
+      )}
+
       {/* Amount input */}
       <div>
         <label className="block text-xs font-medium text-content-secondary">
-          {inputMode === "hnt" ? "HNT to burn and delegate" : "DC to delegate"}
+          {inputMode === "dc" ? "DC to delegate" :
+           burnMode === "dc_target" ? "DC to deliver" : "HNT to burn"}
         </label>
         <input type="text" value={amount} onChange={(e) => setAmount(e.target.value)}
-          placeholder={inputMode === "hnt" ? "e.g. 0.5" : "e.g. 100000"} className={INPUT_CLASS + " mt-1"} />
+          placeholder={inputMode === "dc" ? "e.g. 100000" :
+            burnMode === "dc_target" ? "e.g. 100000" : "e.g. 0.5"}
+          className={INPUT_CLASS + " mt-1"} />
+        {/* Inline conversion hints */}
         {inputMode === "dc" && amount && parseInt(amount, 10) > 0 && (
           <p className="mt-1 text-[10px] text-content-tertiary font-mono">~${(parseInt(amount, 10) / 100000).toFixed(2)} USD</p>
         )}
-        {inputMode === "hnt" && hntPrice && amount && parseFloat(amount) > 0 && (
+        {inputMode === "hnt" && burnMode === "dc_target" && hntPrice && amount && parseInt(amount, 10) > 0 && (
+          <p className="mt-1 text-[11px] text-content-tertiary font-mono">
+            burns ~{hntPrice.dc_per_hnt > 0 ? (parseInt(amount, 10) / hntPrice.dc_per_hnt).toFixed(4) : "?"} HNT (~${(parseInt(amount, 10) / 100000).toFixed(2)})
+          </p>
+        )}
+        {inputMode === "hnt" && burnMode === "hnt_burn" && hntPrice && amount && parseFloat(amount) > 0 && (
           <p className="mt-1 text-[11px] text-content-tertiary font-mono">
             = {Math.round(parseFloat(amount) * hntPrice.dc_per_hnt).toLocaleString()} DC (~${(parseFloat(amount) * hntPrice.hnt_usd).toFixed(2)})
           </p>
         )}
       </div>
 
-      {inputMode === "hnt" && hntPrice && <ConversionPreview hntPrice={hntPrice} inputMode="hnt" amount={amount} />}
+      {inputMode === "hnt" && hntPrice && (
+        <ConversionPreview hntPrice={hntPrice}
+          inputMode={burnMode === "dc_target" ? "dc" : "hnt"} amount={amount} />
+      )}
 
       {error && <p className="text-sm text-rose-500">{error}</p>}
 

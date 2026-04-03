@@ -19,7 +19,7 @@ export async function handleBuildDelegate(request, env) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const { owner: ownerStr, amount, oui, payer_key, subnet = "iot", hnt_amount } = body;
+  const { owner: ownerStr, amount, oui, payer_key, subnet = "iot", hnt_amount, mint_dc } = body;
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
   if (!oui && !payer_key) return jsonResponse({ error: "Specify oui or payer_key" }, 400);
   if (!amount || !Number.isInteger(amount) || amount <= 0) {
@@ -60,9 +60,13 @@ export async function handleBuildDelegate(request, env) {
     const connection = new Connection(env.SOLANA_RPC_URL);
     const instructions = [];
 
-    // If hnt_amount provided, add mint instruction first (atomic mint+delegate)
+    // Combined mint+delegate: mint DC first, then delegate
     if (hnt_amount) {
+      // User specified HNT to burn — on-chain oracle determines DC yield
       instructions.push(buildMintInstruction(ownerPubkey, { hnt_amount }, ownerPubkey, HNT_DECIMALS));
+    } else if (mint_dc) {
+      // User specified exact DC target — on-chain oracle determines HNT to burn
+      instructions.push(buildMintInstruction(ownerPubkey, { dc_amount: amount }, ownerPubkey, HNT_DECIMALS));
     }
 
     const { instruction: delegateIx, escrow } = await buildDelegateInstruction(

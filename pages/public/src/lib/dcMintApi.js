@@ -19,11 +19,11 @@ export async function buildMintTransaction({ owner, hnt_amount, dc_amount, recip
   return data;
 }
 
-export async function buildDelegateTransaction({ owner, amount, oui, payer_key, subnet, hnt_amount }) {
+export async function buildDelegateTransaction({ owner, amount, oui, payer_key, subnet, hnt_amount, mint_dc }) {
   const res = await fetch(`${API_BASE}/build-delegate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, amount, oui, payer_key, subnet, hnt_amount }),
+    body: JSON.stringify({ owner, amount, oui, payer_key, subnet, hnt_amount, mint_dc }),
   });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);
