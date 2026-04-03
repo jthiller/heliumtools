@@ -88,7 +88,7 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
             <input
               type="text"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
               className="mt-1 w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
