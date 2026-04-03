@@ -12,13 +12,9 @@ import {
 } from "../lib/dcMintApi.js";
 import { truncateString } from "../lib/utils.js";
 import { HNT_MINT, DC_MINT } from "./constants.js";
-import { confirmAndVerify } from "./solanaUtils.js";
+import { confirmAndVerify, cleanInt, cleanDecimal } from "./solanaUtils.js";
 
 const INPUT_CLASS = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-
-// Strip locale formatting from pasted numbers (commas, spaces, periods-as-thousands)
-const cleanInt = (v) => v.replace(/[^\d]/g, "");
-const cleanDecimal = (v) => v.replace(/[^\d.]/g, "");
 
 
 // ---------------------------------------------------------------------------
