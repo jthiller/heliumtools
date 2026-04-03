@@ -373,11 +373,11 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
   }, [resolvedTarget]);
 
   const handleDelegate = async () => {
-    if (!walletPubkey || !sendTransaction || !resolvedTarget) return;
+    if (!walletPubkey || !sendTransaction || !resolvedTarget || !selectedSubnet) return;
     setError(null);
     setStatus("building");
     try {
-      const params = { owner: walletPubkey.toBase58(), subnet: selectedSubnet || "iot" };
+      const params = { owner: walletPubkey.toBase58(), subnet: selectedSubnet };
 
       if (isPayerKey) {
         params.payer_key = targetInput.trim();
