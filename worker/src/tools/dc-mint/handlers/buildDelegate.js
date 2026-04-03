@@ -1,18 +1,15 @@
 /**
  * Build an unsigned delegate_data_credits_v0 transaction.
- * Resolves OUI → payer key, builds the delegation instruction.
+ * Supports OUI number or direct payer key. When hnt_amount is provided,
+ * combines mint + delegate in a single atomic transaction.
  */
-import { PublicKey, TransactionInstruction, SystemProgram, Connection } from "@solana/web3.js";
+import { PublicKey, Connection } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
+import { HNT_DECIMALS } from "../../dc-purchase/lib/constants.js";
 import { getOuiByNumber } from "../../oui-notifier/services/ouis.js";
 import {
-  DATA_CREDITS_PROGRAM, TOKEN_PROGRAM, ASSOCIATED_TOKEN_PROGRAM,
-  DC_MINT_KEY, DATA_CREDITS_PDA, DAO_PDA, SUB_DAO_PDA,
-  ataAddress, writeUint64LE, writeUint32LE, hashName, buildUnsignedTx,
+  buildMintInstruction, buildDelegateInstruction, buildUnsignedTx,
 } from "../lib/solana.js";
-
-// Discriminator: SHA256("global:delegate_data_credits_v0")[0..8]
-const DELEGATE_DISCRIMINATOR = new Uint8Array([0x9a, 0x38, 0xe2, 0x80, 0xa2, 0x73, 0xe2, 0x05]);
 
 export async function handleBuildDelegate(request, env) {
   let body;
@@ -22,10 +19,18 @@ export async function handleBuildDelegate(request, env) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const { owner: ownerStr, amount, oui } = body;
+  const { owner: ownerStr, amount, oui, payer_key, subnet = "iot", hnt_amount } = body;
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
-  if (!amount || !Number.isInteger(amount) || amount <= 0) return jsonResponse({ error: "Invalid DC amount (must be a positive integer)" }, 400);
-  if (!oui) return jsonResponse({ error: "Missing OUI number" }, 400);
+  if (!oui && !payer_key) return jsonResponse({ error: "Specify oui or payer_key" }, 400);
+  if (!hnt_amount && (!amount || !Number.isInteger(amount) || amount <= 0)) {
+    return jsonResponse({ error: "Specify amount (positive integer DC) or hnt_amount" }, 400);
+  }
+  if (hnt_amount && (typeof hnt_amount !== "number" || !Number.isFinite(hnt_amount) || hnt_amount <= 0)) {
+    return jsonResponse({ error: "hnt_amount must be a positive number" }, 400);
+  }
+  if (subnet !== "iot" && subnet !== "mobile") {
+    return jsonResponse({ error: "subnet must be 'iot' or 'mobile'" }, 400);
+  }
 
   let ownerPubkey;
   try {
@@ -35,62 +40,39 @@ export async function handleBuildDelegate(request, env) {
   }
 
   try {
-    const ouiNum = parseInt(oui, 10);
-    if (!ouiNum || ouiNum <= 0) return jsonResponse({ error: "Invalid OUI number" }, 400);
-    const ouiData = await getOuiByNumber(env, ouiNum);
-    if (!ouiData?.payer) {
-      return jsonResponse({ error: `OUI ${oui} not found or has no payer key` }, 404);
+    // Resolve router key from OUI or use direct payer key
+    let routerKey;
+    if (oui) {
+      const ouiNum = parseInt(oui, 10);
+      if (!ouiNum || ouiNum <= 0) return jsonResponse({ error: "Invalid OUI number" }, 400);
+      const ouiData = await getOuiByNumber(env, ouiNum);
+      if (!ouiData?.payer) return jsonResponse({ error: `OUI ${oui} not found or has no payer key` }, 404);
+      routerKey = ouiData.payer;
+    } else {
+      routerKey = payer_key;
     }
-    const routerKey = ouiData.payer;
+
     const connection = new Connection(env.SOLANA_RPC_URL);
+    const instructions = [];
 
-    const nameHash = await hashName(routerKey);
-    const delegatedDataCredits = PublicKey.findProgramAddressSync(
-      [new TextEncoder().encode("delegated_data_credits"), SUB_DAO_PDA.toBuffer(), nameHash],
-      DATA_CREDITS_PROGRAM,
-    )[0];
-    const escrowAccount = PublicKey.findProgramAddressSync(
-      [new TextEncoder().encode("escrow_dc_account"), delegatedDataCredits.toBuffer()],
-      DATA_CREDITS_PROGRAM,
-    )[0];
+    // If hnt_amount provided, add mint instruction first (atomic mint+delegate)
+    if (hnt_amount) {
+      instructions.push(buildMintInstruction(ownerPubkey, { hnt_amount }, ownerPubkey, HNT_DECIMALS));
+    }
 
-    // DelegateDataCreditsArgsV0: u64 amount + String router_key
-    const routerKeyBytes = new TextEncoder().encode(routerKey);
-    const argsBuffer = new Uint8Array(8 + 4 + routerKeyBytes.length);
-    writeUint64LE(argsBuffer, BigInt(amount), 0);
-    writeUint32LE(argsBuffer, routerKeyBytes.length, 8);
-    argsBuffer.set(routerKeyBytes, 12);
+    const { instruction: delegateIx, escrow } = await buildDelegateInstruction(
+      ownerPubkey, amount || 0, routerKey, subnet,
+    );
+    instructions.push(delegateIx);
 
-    const instructionData = new Uint8Array(DELEGATE_DISCRIMINATOR.length + argsBuffer.length);
-    instructionData.set(DELEGATE_DISCRIMINATOR, 0);
-    instructionData.set(argsBuffer, DELEGATE_DISCRIMINATOR.length);
-
-    const delegateIx = new TransactionInstruction({
-      programId: DATA_CREDITS_PROGRAM,
-      keys: [
-        { pubkey: delegatedDataCredits, isSigner: false, isWritable: true },
-        { pubkey: DATA_CREDITS_PDA, isSigner: false, isWritable: false },
-        { pubkey: DC_MINT_KEY, isSigner: false, isWritable: false },
-        { pubkey: DAO_PDA, isSigner: false, isWritable: false },
-        { pubkey: SUB_DAO_PDA, isSigner: false, isWritable: false },
-        { pubkey: ownerPubkey, isSigner: true, isWritable: false },
-        { pubkey: ataAddress(ownerPubkey, DC_MINT_KEY), isSigner: false, isWritable: true },
-        { pubkey: escrowAccount, isSigner: false, isWritable: true },
-        { pubkey: ownerPubkey, isSigner: true, isWritable: true },
-        { pubkey: ASSOCIATED_TOKEN_PROGRAM, isSigner: false, isWritable: false },
-        { pubkey: TOKEN_PROGRAM, isSigner: false, isWritable: false },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      ],
-      data: instructionData,
-    });
-
-    const vtx = await buildUnsignedTx(connection, ownerPubkey, [delegateIx]);
+    const vtx = await buildUnsignedTx(connection, ownerPubkey, instructions);
 
     return jsonResponse({
       transaction: Buffer.from(vtx.serialize()).toString("base64"),
-      oui,
+      oui: oui ? parseInt(oui, 10) : undefined,
       payer: routerKey,
-      escrow: escrowAccount.toBase58(),
+      escrow,
+      subnet,
     });
   } catch (err) {
     return jsonResponse({ error: `Failed to build delegate transaction: ${err.message}` }, 500);

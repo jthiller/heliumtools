@@ -2,6 +2,7 @@ import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handleBuildMint } from "./handlers/buildMint.js";
 import { handleBuildDelegate } from "./handlers/buildDelegate.js";
 import { handlePrice } from "./handlers/price.js";
+import { handleResolvePayer } from "./handlers/resolvePayer.js";
 
 export async function handleDcMintRequest(request, env) {
   const url = new URL(request.url);
@@ -21,6 +22,11 @@ export async function handleDcMintRequest(request, env) {
 
   if (pathname === "/price" && request.method === "GET") {
     return handlePrice();
+  }
+
+  const payerMatch = pathname.match(/^\/resolve-payer\/(.+)$/);
+  if (payerMatch && request.method === "GET") {
+    return handleResolvePayer(payerMatch[1], env);
   }
 
   return jsonResponse({ error: "Not found" }, 404);
