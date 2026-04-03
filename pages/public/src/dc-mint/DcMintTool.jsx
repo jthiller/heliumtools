@@ -138,7 +138,7 @@ function ResolvedTargetCard({ data, selectedSubnet, onSelectSubnet }) {
       )}
 
       {/* No escrow found */}
-      {(neitherExist || (!hasSubnets && !data.escrow)) && (
+      {((hasSubnets && neitherExist) || (!hasSubnets && !data.escrow)) && (
         <p className="text-content-tertiary italic">New delegation — no existing escrow</p>
       )}
     </div>
