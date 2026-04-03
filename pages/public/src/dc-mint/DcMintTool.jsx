@@ -278,7 +278,7 @@ function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalan
 // Delegate Tab
 // ---------------------------------------------------------------------------
 
-function DelegateTab({ hntPrice, onBalanceChange }) {
+function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
   const { connected, publicKey: walletPubkey, sendTransaction } = useWallet();
   const { connection } = useConnection();
 
@@ -293,11 +293,8 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
   const [error, setError] = useState(null);
   const [txSignature, setTxSignature] = useState(null);
 
-  // Auto-detect: numeric = OUI, long base58 = payer key
-  // Auto-detect: small number = OUI, long non-numeric string = payer key
-  const trimmedTarget = targetInput.trim();
-  const numericTarget = /^\d+$/.test(trimmedTarget) ? parseInt(trimmedTarget, 10) : null;
-  const isPayerKey = trimmedTarget.length >= 32 && (numericTarget === null || numericTarget > 10000);
+  // Display hint (not used in effect — effect computes its own from the closure)
+  const isPayerKey = targetInput.trim().length >= 32 && !/^\d+$/.test(targetInput.trim());
 
   // Debounced resolution
   useEffect(() => {
@@ -308,8 +305,12 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
+        // Detect inside closure to avoid stale render-scope value
+        const isNumeric = /^\d+$/.test(trimmed);
+        const isPayer = trimmed.length >= 32 && !isNumeric;
+
         let data;
-        if (isPayerKey) {
+        if (isPayer) {
           data = await resolvePayerKey(trimmed);
         } else {
           const oui = parseInt(trimmed, 10);
@@ -336,7 +337,7 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
       }
     }, 500);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [targetInput, isPayerKey]);
+  }, [targetInput]);
 
   // Auto-select subnet when resolution completes
   useEffect(() => {
@@ -404,6 +405,19 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
       <div className="flex justify-center">
         <WalletMultiButton />
       </div>
+
+      {connected && inputMode === "dc" && hasDcAta === false && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-800/50 rounded-lg p-2.5">
+          No DC token account found. Use "Burn HNT → Delegate" to mint and delegate in one step.
+        </p>
+      )}
+
+      {connected && inputMode === "dc" && dcBalance != null && (
+        <div className="rounded-lg bg-surface-inset px-3 py-2 text-xs">
+          <span className="text-content-tertiary">Your DC: </span>
+          <span className="font-mono text-content-secondary">{dcBalance.toLocaleString()}</span>
+        </div>
+      )}
 
       {/* OUI or Payer Key input */}
       <div>
@@ -593,7 +607,8 @@ export default function DcMintTool() {
           {tab === "mint"
             ? <MintTab hntPrice={hntPrice} hntBalance={hntBalance} dcBalance={dcBalance}
                 hasHntAta={hasHntAta} hasDcAta={hasDcAta} onBalanceChange={refreshBalances} />
-            : <DelegateTab hntPrice={hntPrice} onBalanceChange={refreshBalances} />}
+            : <DelegateTab hntPrice={hntPrice} dcBalance={dcBalance} hasDcAta={hasDcAta}
+                onBalanceChange={refreshBalances} />}
         </div>
       </main>
     </div>
