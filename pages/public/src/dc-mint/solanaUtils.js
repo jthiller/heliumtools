@@ -33,9 +33,32 @@ export async function confirmAndVerify(connection, signature) {
 /** Strip everything except digits (for DC/integer amounts). */
 export const cleanInt = (v) => v.replace(/[^\d]/g, "");
 
-/** Strip everything except digits and one decimal point (for HNT amounts). */
+/**
+ * Normalize a decimal number string from any locale format.
+ * Handles: "1,000.5" (EN), "1.000,5" (DE/FR), "1 000,5" (FR), "1000.5", "1000,5"
+ * Returns digits + at most one decimal point.
+ */
 export const cleanDecimal = (v) => {
-  const stripped = v.replace(/[^\d.]/g, "");
-  const parts = stripped.split(".");
-  return parts.length <= 1 ? stripped : parts[0] + "." + parts.slice(1).join("");
+  let s = v.replace(/[^\d.,]/g, "");
+  const commaCount = (s.match(/,/g) || []).length;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+
+  if (commaCount === 1 && lastComma > lastDot) {
+    // Single comma after dots (or no dots): European decimal — "1.000,5" or "0,5"
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else {
+    // Multiple commas = EN thousands, strip them
+    s = s.replace(/,/g, "");
+  }
+
+  // Detect dots used as thousands separators: multiple dots, or groups of exactly 3 digits
+  const dotParts = s.split(".");
+  if (dotParts.length > 2 && dotParts.slice(1).every((p) => p.length === 3)) {
+    // All dot-separated groups are 3 digits — these are thousands separators, not decimals
+    return dotParts.join("");
+  }
+
+  // Collapse to at most one decimal point
+  return dotParts.length <= 1 ? s : dotParts[0] + "." + dotParts.slice(1).join("");
 };
