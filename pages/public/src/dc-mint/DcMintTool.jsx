@@ -297,21 +297,18 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
           if (!oui || oui <= 0) { setTargetLoading(false); return; }
           const ouiData = await resolveOui(oui);
           if (ouiData) {
-            // Normalize OUI response to match payer resolution shape
+            // Normalize OUI response to match payer resolution shape.
+            // The well-known name and subnet are fetched via resolve-payer
+            // only for direct payer key input — OUI resolution already provides
+            // payer/escrow/balance, and the OUI number itself identifies the operator.
             data = {
               payer: ouiData.payer,
               escrow: ouiData.escrow,
               balance: ouiData.escrowDcBalance ? Number(ouiData.escrowDcBalance) : null,
               subnet: "iot",
-              name: null, // OUI resolver doesn't return names — will be enriched by well-known
+              name: null,
               oui: oui,
             };
-            // Try to get well-known name
-            try {
-              const payerData = await resolvePayerKey(ouiData.payer);
-              if (payerData?.name) data.name = payerData.name;
-              if (payerData?.subnet) data.subnet = payerData.subnet;
-            } catch { /* best effort */ }
           }
         }
         if (!cancelled) { setResolvedTarget(data); setTargetLoading(false); }
@@ -343,10 +340,11 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
         params.mint_dc = true;
       } else if (inputMode === "hnt" && burnMode === "hnt_burn") {
         // HNT amount: estimate DC for the delegate instruction
+        // Apply 1% slippage buffer — on-chain oracle may differ from cached price
         const hntVal = parseFloat(amount);
         if (!hntPrice?.dc_per_hnt) throw new Error("HNT price not available");
         params.hnt_amount = hntVal;
-        params.amount = Math.round(hntVal * hntPrice.dc_per_hnt);
+        params.amount = Math.round(hntVal * hntPrice.dc_per_hnt * 0.99);
       } else {
         // Delegate existing DC
         params.amount = parseInt(amount, 10);
@@ -399,11 +397,11 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
 
       {/* Primary mode toggle */}
       <div className="flex gap-1 rounded-lg bg-surface-inset p-1">
-        <button onClick={() => { setInputMode("hnt"); setAmount(""); }}
+        <button onClick={() => { setInputMode("hnt"); setBurnMode("dc_target"); setAmount(""); }}
           className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${inputMode === "hnt" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
           Burn HNT → Delegate
         </button>
-        <button onClick={() => { setInputMode("dc"); setAmount(""); }}
+        <button onClick={() => { setInputMode("dc"); setBurnMode("dc_target"); setAmount(""); }}
           className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${inputMode === "dc" ? "bg-surface-raised text-content-primary shadow-sm" : "text-content-tertiary hover:text-content-secondary"}`}>
           Delegate Existing DC
         </button>

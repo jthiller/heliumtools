@@ -133,7 +133,7 @@ export function buildMintInstruction(owner, amounts, recipient, hntDecimals) {
   const rcpt = recipient || owner;
 
   const parts = [];
-  if (amounts.hnt_amount) {
+  if (amounts.hnt_amount != null) {
     const [whole, frac = ""] = amounts.hnt_amount.toFixed(hntDecimals).split(".");
     const lamports = BigInt(whole) * BigInt(10 ** hntDecimals) + BigInt(frac);
     const some = new Uint8Array(9);
