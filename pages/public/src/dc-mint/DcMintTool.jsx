@@ -274,7 +274,10 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
   const [txSignature, setTxSignature] = useState(null);
 
   // Auto-detect: numeric = OUI, long base58 = payer key
-  const isPayerKey = targetInput.length >= 32 && !/^\d+$/.test(targetInput);
+  // Auto-detect: small number = OUI, long non-numeric string = payer key
+  const trimmedTarget = targetInput.trim();
+  const numericTarget = /^\d+$/.test(trimmedTarget) ? parseInt(trimmedTarget, 10) : null;
+  const isPayerKey = trimmedTarget.length >= 32 && (numericTarget === null || numericTarget > 10000);
 
   // Debounced resolution
   useEffect(() => {
@@ -332,7 +335,12 @@ function DelegateTab({ hntPrice, onBalanceChange }) {
       }
 
       if (inputMode === "hnt") {
-        params.hnt_amount = parseFloat(amount);
+        const hntVal = parseFloat(amount);
+        params.hnt_amount = hntVal;
+        // Estimate DC from HNT using current oracle price — the on-chain program
+        // uses the real oracle, but we need a DC amount for the delegate instruction
+        if (!hntPrice?.dc_per_hnt) throw new Error("HNT price not available");
+        params.amount = Math.round(hntVal * hntPrice.dc_per_hnt);
       } else {
         params.amount = parseInt(amount, 10);
       }
