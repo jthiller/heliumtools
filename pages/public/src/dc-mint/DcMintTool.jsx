@@ -322,11 +322,16 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
           const ouiData = await resolveOui(oui);
           if (ouiData) {
             // OUIs are always IoT — normalize into the subnets shape
-            // so the card renders the same subnet UI as payer key resolution
             const balance = ouiData.escrowDcBalance ? Number(ouiData.escrowDcBalance) : null;
+            // Resolve well-known name via payer key lookup
+            let name = null;
+            try {
+              const payerInfo = await resolvePayerKey(ouiData.payer);
+              if (payerInfo?.name) name = payerInfo.name;
+            } catch { /* best effort */ }
             data = {
               payer: ouiData.payer,
-              name: null,
+              name,
               oui: oui,
               subnets: {
                 iot: ouiData.escrow ? { escrow: ouiData.escrow, balance: balance ?? 0 } : null,
