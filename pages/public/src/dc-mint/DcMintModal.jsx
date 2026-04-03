@@ -8,6 +8,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { buildMintTransaction, fetchHntPrice } from "../lib/dcMintApi.js";
 import { HNT_MINT, DC_MINT } from "./constants.js";
+import { confirmAndVerify } from "./solanaUtils.js";
 
 export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 100000 }) {
   const { publicKey: walletPubkey, sendTransaction } = useWallet();
@@ -56,7 +57,7 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
       const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, "base64"));
       const sig = await sendTransaction(txn, connection);
       setStatus("confirming");
-      await connection.confirmTransaction(sig, "confirmed");
+      await confirmAndVerify(connection, sig);
       setStatus("done");
       onSuccess?.(sig);
     } catch (err) {

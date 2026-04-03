@@ -12,12 +12,14 @@ import {
 } from "../lib/dcMintApi.js";
 import { truncateString } from "../lib/utils.js";
 import { HNT_MINT, DC_MINT } from "./constants.js";
+import { confirmAndVerify } from "./solanaUtils.js";
 
 const INPUT_CLASS = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 // Strip locale formatting from pasted numbers (commas, spaces, periods-as-thousands)
 const cleanInt = (v) => v.replace(/[^\d]/g, "");
 const cleanDecimal = (v) => v.replace(/[^\d.]/g, "");
+
 
 // ---------------------------------------------------------------------------
 // Conversion Preview
@@ -175,7 +177,7 @@ function MintTab({ hntPrice, hntBalance, dcBalance, hasHntAta, hasDcAta, onBalan
       const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, "base64"));
       const sig = await sendTransaction(txn, connection);
       setStatus("confirming");
-      await connection.confirmTransaction(sig, "confirmed");
+      await confirmAndVerify(connection, sig);
       setTxSignature(sig);
       setStatus("done");
       onBalanceChange?.();
@@ -405,7 +407,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
       const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, "base64"));
       const sig = await sendTransaction(txn, connection);
       setStatus("confirming");
-      await connection.confirmTransaction(sig, "confirmed");
+      await confirmAndVerify(connection, sig);
       setTxSignature(sig);
       setStatus("done");
       onBalanceChange?.();

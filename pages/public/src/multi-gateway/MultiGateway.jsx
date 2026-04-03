@@ -8,6 +8,7 @@ import StatusBanner from "../components/StatusBanner.jsx";
 import CopyButton from "../components/CopyButton.jsx";
 import DcMintModal from "../dc-mint/DcMintModal.jsx";
 import { DC_MINT as DC_MINT_KEY } from "../dc-mint/constants.js";
+import { confirmAndVerify } from "../dc-mint/solanaUtils.js";
 import {
   fetchGateways,
   fetchGatewayPackets,
@@ -1182,7 +1183,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
         const txn = VersionedTransaction.deserialize(Buffer.from(txnInfo.transaction, "base64"));
         const sig = await sendTransaction(txn, connection);
         setStep("confirming_issue");
-        await connection.confirmTransaction(sig, "confirmed");
+        await confirmAndVerify(connection, sig);
         setTxSignature(sig);
       }
 
