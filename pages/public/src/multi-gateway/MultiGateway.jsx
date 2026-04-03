@@ -1226,7 +1226,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
       const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, "base64"));
       const sig = await sendTransaction(txn, connection);
       setStep("confirming_onboard");
-      await connection.confirmTransaction(sig, "confirmed");
+      await confirmAndVerify(connection, sig);
       setTxSignature(sig);
       setStep("done");
     } catch (err) {
