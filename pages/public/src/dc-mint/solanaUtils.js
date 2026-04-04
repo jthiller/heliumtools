@@ -5,28 +5,37 @@
 export async function confirmAndVerify(connection, signature) {
   await connection.confirmTransaction(signature, "confirmed");
 
-  // Verify success — getTransaction may lag behind confirmTransaction on some RPC nodes
-  let tx;
-  try {
-    tx = await connection.getTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: "confirmed",
-    });
-  } catch (fetchErr) {
-    // Verification is best-effort — the tx was confirmed, we just can't read it back
-    console.warn("Post-confirm verification failed:", fetchErr);
-    return;
+  // Verify success — getTransaction may lag behind confirmTransaction on some RPC nodes.
+  // Retry a few times with backoff since the index can trail behind confirmation.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let tx = null;
+  let lastErr;
+
+  for (let i = 0; i < 5; i++) {
+    try {
+      tx = await connection.getTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+        commitment: "confirmed",
+      });
+    } catch (err) {
+      lastErr = err;
+    }
+    if (tx) break;
+    await sleep(400 * (i + 1));
   }
 
   if (!tx) {
-    // RPC inconsistency — confirmed but not yet indexed. Treat as unverified success.
-    console.warn("Transaction confirmed but getTransaction returned null");
-    return;
+    const suffix = lastErr ? ` Last error: ${lastErr}` : "";
+    throw new Error(`Transaction confirmed but could not be verified after 5 attempts.${suffix}`);
   }
 
   if (tx.meta?.err) {
-    const errMsg = tx.meta.logMessages?.findLast((l) => /error|fail/i.test(l)) || JSON.stringify(tx.meta.err);
-    throw new Error(`Transaction failed on-chain: ${errMsg}`);
+    const logs = tx.meta.logMessages || [];
+    let errLog;
+    for (let i = logs.length - 1; i >= 0; i--) {
+      if (/error|fail/i.test(logs[i])) { errLog = logs[i]; break; }
+    }
+    throw new Error(`Transaction failed on-chain: ${errLog || JSON.stringify(tx.meta.err)}`);
   }
 }
 
@@ -45,8 +54,15 @@ export const cleanDecimal = (v) => {
   const lastDot = s.lastIndexOf(".");
 
   if (commaCount === 1 && lastComma > lastDot) {
-    // Single comma after dots (or no dots): European decimal — "1.000,5" or "0,5"
-    s = s.replace(/\./g, "").replace(",", ".");
+    // Single comma after dots (or no dots).
+    // Disambiguate: if exactly 3 digits follow the comma, treat as EN thousands ("1,000")
+    // Otherwise it's a European decimal ("0,5" or "1.000,5")
+    const afterComma = s.slice(lastComma + 1);
+    if (/^\d{3}$/.test(afterComma)) {
+      s = s.replace(/,/g, "");
+    } else {
+      s = s.replace(/\./g, "").replace(",", ".");
+    }
   } else {
     // Multiple commas = EN thousands, strip them
     s = s.replace(/,/g, "");
