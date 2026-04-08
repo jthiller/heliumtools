@@ -1,13 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { useAsyncCallback } from 'react-async-hook';
-import { bulkSendRawTransactions } from '@helium/spl-utils';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import Address from '@helium/address';
 import { ArrowRightIcon } from '@heroicons/react/24/outline';
 import StatusBanner from '../components/StatusBanner.jsx';
-
-const MIGRATION_SERVICE_URL = import.meta.env.VITE_MIGRATION_SERVICE_URL || 'https://migration.web.helium.io';
-const SOLANA_URL = import.meta.env.VITE_SOLANA_URL || 'https://solana-rpc.web.helium.io/?session-key=Pluto';
+import { migrateWallet } from '../lib/l1MigrationApi.js';
 
 export const L1MigrationToolContent = () => {
     const [wallet, setWallet] = useState("");
@@ -35,40 +32,27 @@ export const L1MigrationToolContent = () => {
         }
     }, [solanaWallet]);
 
-    const connection = useMemo(() => new Connection(SOLANA_URL), []);
-
     const {
-        execute: executeInflate,
-        error: errorInflate,
-        loading: loadingInflate,
+        execute: executeMigrate,
+        error: errorMigrate,
+        loading: loadingMigrate,
     } = useAsyncCallback(async (wallet) => {
         setStatus(null);
-        async function getTxs() {
-            const res = await fetch(`${MIGRATION_SERVICE_URL}/migrate/${wallet.toBase58()}?limit=1000`);
-            if (!res.ok) throw new Error(`Migration service error: ${res.status}`);
-            return res.json();
+        const result = await migrateWallet(wallet.toBase58());
+        if (result.success) {
+            setStatus({
+                tone: result.transactionsProcessed === 0 ? 'info' : 'success',
+                message: result.message,
+            });
+        } else {
+            throw new Error(result.message);
         }
-        const txs = (await getTxs()).transactions;
-        if (!txs || txs.length === 0) {
-            setStatus({ tone: 'info', message: "No transactions found to migrate." });
-            return true;
-        }
-
-        const txBuffers = txs.map((tx) => Buffer.from(tx, 'base64'));
-        await bulkSendRawTransactions(connection, txBuffers);
-
-        const txs2 = (await getTxs()).transactions;
-        if (txs2.length !== 0) {
-            throw new Error(`Failed to migrate ${txs2.length} transactions, try again`);
-        }
-
-        setStatus({ tone: 'success', message: "Migration successful!" });
         return true;
     });
 
     // Determine the banner to show
-    const bannerTone = errorInflate ? 'error' : status?.tone;
-    const bannerMessage = errorInflate?.message || status?.message;
+    const bannerTone = errorMigrate ? 'error' : status?.tone;
+    const bannerMessage = errorMigrate?.message || status?.message;
 
     return (
         <div className="space-y-6">
@@ -116,11 +100,11 @@ export const L1MigrationToolContent = () => {
 
             {/* Action Button */}
             <button
-                disabled={!solanaWallet || loadingInflate}
-                onClick={() => executeInflate(solanaWallet)}
+                disabled={!solanaWallet || loadingMigrate}
+                onClick={() => executeMigrate(solanaWallet)}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {loadingInflate ? 'Submitting...' : 'Seed Wallet'}
+                {loadingMigrate ? 'Submitting...' : 'Seed Wallet'}
             </button>
         </div>
     );
