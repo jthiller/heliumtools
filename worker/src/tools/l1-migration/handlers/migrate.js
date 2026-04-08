@@ -9,6 +9,8 @@ const POLL_INTERVAL_MS = 1000;
 const RESEND_INTERVAL_MS = 4000;
 const MAX_WAIT_MS = 120_000;
 const FETCH_TIMEOUT_MS = 15_000;
+const POLL_BATCH_SIZE = 256;
+const SEND_BATCH_SIZE = 50;
 
 function resolveToSolanaAddress(input) {
   try {
@@ -41,7 +43,7 @@ async function fetchMigrationTransactions(solanaAddress) {
   );
   if (!res.ok) throw new Error(`Migration service error: ${res.status}`);
   const data = await res.json();
-  return data.transactions || [];
+  return Array.isArray(data?.transactions) ? data.transactions : [];
 }
 
 /**
@@ -71,49 +73,56 @@ async function broadcastAndConfirm(connection, txBuffers) {
     }
 
     if (pollable.length > 0) {
-      const pollIds = pollable.map((idx) => pending.get(idx).txid);
-      const statuses = await connection.getSignatureStatuses(pollIds);
+      // Chunk polling to stay under the 256-signature RPC limit
+      for (let b = 0; b < pollable.length; b += POLL_BATCH_SIZE) {
+        const batch = pollable.slice(b, b + POLL_BATCH_SIZE);
+        const batchIds = batch.map((idx) => pending.get(idx).txid);
+        const statuses = await connection.getSignatureStatuses(batchIds);
 
-      for (let j = 0; j < pollable.length; j++) {
-        const s = statuses.value[j];
-        if (s?.err) {
-          console.error(
-            `Transaction ${pollIds[j]} failed on-chain:`,
-            JSON.stringify(s.err)
-          );
-          pending.delete(pollable[j]);
-          failed++;
-          continue;
-        }
-        const confirmed =
-          s &&
-          (s.confirmationStatus === "confirmed" ||
-            s.confirmationStatus === "finalized");
-        if (confirmed) {
-          pending.delete(pollable[j]);
+        for (let j = 0; j < batch.length; j++) {
+          const s = statuses.value[j];
+          if (s?.err) {
+            console.error(
+              `Transaction ${batchIds[j]} failed on-chain:`,
+              JSON.stringify(s.err)
+            );
+            pending.delete(batch[j]);
+            failed++;
+            continue;
+          }
+          const confirmed =
+            s &&
+            (s.confirmationStatus === "confirmed" ||
+              s.confirmationStatus === "finalized");
+          if (confirmed) {
+            pending.delete(batch[j]);
+          }
         }
       }
     }
 
     if (pending.size === 0) break;
 
-    // Send/resend remaining pending transactions
+    // Send/resend remaining pending transactions in batches
     if (Date.now() - lastSendTime >= RESEND_INTERVAL_MS) {
       lastSendTime = Date.now();
       const entries = [...pending.entries()];
-      const sendResults = await Promise.all(
-        entries.map(([, { buf }]) =>
-          connection
-            .sendRawTransaction(buf, { skipPreflight: true, maxRetries: 0 })
-            .catch((err) => {
-              console.warn("sendRawTransaction error:", err.message);
-              return null;
-            })
-        )
-      );
-      for (let j = 0; j < entries.length; j++) {
-        if (sendResults[j]) {
-          entries[j][1].txid = sendResults[j];
+      for (let b = 0; b < entries.length; b += SEND_BATCH_SIZE) {
+        const batch = entries.slice(b, b + SEND_BATCH_SIZE);
+        const sendResults = await Promise.all(
+          batch.map(([, { buf }]) =>
+            connection
+              .sendRawTransaction(buf, { skipPreflight: true, maxRetries: 0 })
+              .catch((err) => {
+                console.warn("sendRawTransaction error:", err.message);
+                return null;
+              })
+          )
+        );
+        for (let j = 0; j < batch.length; j++) {
+          if (sendResults[j]) {
+            batch[j][1].txid = sendResults[j];
+          }
         }
       }
     }
@@ -197,6 +206,6 @@ export async function handleMigrate(request, env) {
     });
   } catch (err) {
     console.error("Migration error:", err.message, err.stack);
-    return jsonResponse({ error: `Migration failed: ${err.message}` }, 500);
+    return jsonResponse({ error: "Migration failed" }, 500);
   }
 }
