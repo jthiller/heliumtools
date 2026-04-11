@@ -41,6 +41,15 @@ const sections = [
     description: "Tools for Hotspot owners and operators",
     tools: [
       {
+        name: "IoT Hotspot Setup",
+        description:
+          "Connect to a Helium IoT Hotspot over Bluetooth. View diagnostics, configure WiFi, and prepare for onboarding.",
+        href: "/iot-onboard",
+        icon: SignalIcon,
+        iconBg: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+        badge: "New",
+      },
+      {
         name: "Add a Hotspot",
         description:
           "Add a LoRaWAN gateway to the Helium network and monitor it in real time. View signal quality, packet activity, and connection status.",
