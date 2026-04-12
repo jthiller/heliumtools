@@ -42,6 +42,7 @@ export default function useHotspotBle() {
   const scanningRef = useRef(false);
   const deviceRef = useRef(null);
   const disconnectHandlerRef = useRef(null);
+  const intentionalDisconnectRef = useRef(false);
 
   const readCharacteristic = useCallback(async (uuid) => {
     const char = await serviceRef.current.getCharacteristic(uuid);
@@ -59,9 +60,17 @@ export default function useHotspotBle() {
     setWifiConnectStatus(null);
   }
 
+  function cleanupDevice() {
+    if (disconnectHandlerRef.current && deviceRef.current) {
+      deviceRef.current.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
+      disconnectHandlerRef.current = null;
+    }
+  }
+
   const scan = useCallback(async () => {
     if (scanningRef.current) return;
     scanningRef.current = true;
+    intentionalDisconnectRef.current = false;
     setError(null);
     setActivity([]);
     clearConnectionState();
@@ -73,12 +82,12 @@ export default function useHotspotBle() {
       });
 
       // Remove stale listener from previous device
-      if (disconnectHandlerRef.current && deviceRef.current) {
-        deviceRef.current.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
-      }
+      cleanupDevice();
       disconnectHandlerRef.current = () => {
         serviceRef.current = null;
-        setStatus('disconnected');
+        if (!intentionalDisconnectRef.current) {
+          setStatus('disconnected');
+        }
       };
       dev.addEventListener('gattserverdisconnected', disconnectHandlerRef.current);
       deviceRef.current = dev;
@@ -141,6 +150,7 @@ export default function useHotspotBle() {
   }, [readCharacteristic, log]);
 
   const disconnect = useCallback(() => {
+    intentionalDisconnectRef.current = true;
     serviceRef.current = null;
     setStatus('idle');
     try { device?.gatt?.disconnect(); } catch {}
@@ -148,8 +158,10 @@ export default function useHotspotBle() {
 
   const refreshDiagnostics = useCallback(async () => {
     if (!serviceRef.current) return;
-    const val = await readCharacteristic(Characteristic.DIAGNOSTICS);
-    setDiagnostics(decodeDiagnostics(dataViewToBytes(val)));
+    try {
+      const val = await readCharacteristic(Characteristic.DIAGNOSTICS);
+      setDiagnostics(decodeDiagnostics(dataViewToBytes(val)));
+    } catch {}
   }, [readCharacteristic]);
 
   const refreshWifi = useCallback(async () => {
@@ -174,6 +186,8 @@ export default function useHotspotBle() {
     if (!serviceRef.current) return;
     setWifiConnectStatus('connecting');
     let char;
+    let timer;
+    let handler;
     try {
       char = await serviceRef.current.getCharacteristic(Characteristic.WIFI_CONNECT);
       await char.startNotifications();
@@ -181,12 +195,12 @@ export default function useHotspotBle() {
       const TERMINAL = new Set(['connected', 'failed', 'timeout', 'invalid']);
 
       const resultPromise = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
           char.removeEventListener('characteristicvaluechanged', handler);
           reject(new Error('WiFi connection timed out'));
         }, 60_000);
 
-        function handler(event) {
+        handler = (event) => {
           const val = readString(event.target.value).trim().toLowerCase();
           setWifiConnectStatus(val);
           if (TERMINAL.has(val) || val.startsWith('error')) {
@@ -194,7 +208,7 @@ export default function useHotspotBle() {
             char.removeEventListener('characteristicvaluechanged', handler);
             resolve(val);
           }
-        }
+        };
         char.addEventListener('characteristicvaluechanged', handler);
       });
 
@@ -205,6 +219,8 @@ export default function useHotspotBle() {
     } catch (err) {
       setWifiConnectStatus(`error: ${err.message}`);
     } finally {
+      if (timer) clearTimeout(timer);
+      if (handler && char) char.removeEventListener('characteristicvaluechanged', handler);
       try { await char?.stopNotifications(); } catch {}
     }
   }, [refreshWifi]);
@@ -233,6 +249,14 @@ export default function useHotspotBle() {
     }, 3000);
     return () => clearInterval(interval);
   }, [status, device]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanupDevice();
+      try { deviceRef.current?.gatt?.disconnect(); } catch {}
+    };
+  }, []);
 
   return {
     status,

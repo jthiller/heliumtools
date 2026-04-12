@@ -295,10 +295,11 @@ function WifiPanel({
 
         <form onSubmit={handleConnect} className="space-y-3">
           <div>
-            <label className="text-xs font-mono uppercase tracking-widest text-content-tertiary mb-1 block">
+            <label htmlFor="wifi-ssid" className="text-xs font-mono uppercase tracking-widest text-content-tertiary mb-1 block">
               SSID
             </label>
             <input
+              id="wifi-ssid"
               type="text"
               value={ssid}
               onChange={(e) => setSsid(e.target.value)}
@@ -307,11 +308,12 @@ function WifiPanel({
             />
           </div>
           <div>
-            <label className="text-xs font-mono uppercase tracking-widest text-content-tertiary mb-1 block">
+            <label htmlFor="wifi-password" className="text-xs font-mono uppercase tracking-widest text-content-tertiary mb-1 block">
               Password
             </label>
             <div className="relative">
               <input
+                id="wifi-password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
