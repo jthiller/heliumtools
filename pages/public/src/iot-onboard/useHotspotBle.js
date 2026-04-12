@@ -141,6 +141,9 @@ export default function useHotspotBle() {
         setStatus('idle');
         return;
       }
+      // Clean up GATT if connection succeeded but a later step failed
+      cleanupDevice();
+      try { deviceRef.current?.gatt?.disconnect(); } catch {}
       log(`Error: ${err.message}`);
       setError(err.message);
       setStatus('error');
@@ -152,6 +155,8 @@ export default function useHotspotBle() {
   const disconnect = useCallback(() => {
     intentionalDisconnectRef.current = true;
     serviceRef.current = null;
+    clearConnectionState();
+    setActivity([]);
     setStatus('idle');
     try { device?.gatt?.disconnect(); } catch {}
   }, [device]);
@@ -227,15 +232,19 @@ export default function useHotspotBle() {
 
   const removeWifi = useCallback(async (ssid) => {
     if (!serviceRef.current) return;
-    const char = await serviceRef.current.getCharacteristic(Characteristic.WIFI_REMOVE);
-    await char.writeValue(encodeWifiRemove(ssid));
-    await refreshWifi();
+    try {
+      const char = await serviceRef.current.getCharacteristic(Characteristic.WIFI_REMOVE);
+      await char.writeValue(encodeWifiRemove(ssid));
+      await refreshWifi();
+    } catch {}
   }, [refreshWifi]);
 
   const identifyLights = useCallback(async () => {
     if (!serviceRef.current) return;
-    const char = await serviceRef.current.getCharacteristic(Characteristic.LIGHTS);
-    await char.writeValue(new Uint8Array([1]));
+    try {
+      const char = await serviceRef.current.getCharacteristic(Characteristic.LIGHTS);
+      await char.writeValue(new Uint8Array([1]));
+    } catch {}
   }, []);
 
   // Detect silent disconnects via periodic GATT liveness check
