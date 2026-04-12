@@ -149,11 +149,15 @@ export function buildIssueInstruction(owner, gatewayPubkeyB58, merkleTree, colle
 }
 
 /**
- * Build the onboardDataOnlyIotHotspotV0 instruction.
- * Requires the asset's compression proof from DAS.
+ * Build an onboard IoT Hotspot instruction.
+ * mode "data_only" → onboardDataOnlyIotHotspotV0 (1M DC)
+ * mode "full"      → onboardIotHotspotV0 (4M DC, PoC eligible)
  */
 export function buildOnboardInstruction(owner, gatewayPubkeyB58, merkleTree, asset, proof, canopyDepth, opts = {}) {
-  const disc = anchorDiscriminator("onboard_data_only_iot_hotspot_v0");
+  const instructionName = opts.mode === "full"
+    ? "onboard_iot_hotspot_v0"
+    : "onboard_data_only_iot_hotspot_v0";
+  const disc = anchorDiscriminator(instructionName);
 
   const dataHash = Buffer.from(bs58.decode(asset.compression.data_hash));
   const creatorHash = Buffer.from(bs58.decode(asset.compression.creator_hash));
@@ -164,59 +168,8 @@ export function buildOnboardInstruction(owner, gatewayPubkeyB58, merkleTree, ass
   const data = Buffer.concat([
     disc, dataHash, creatorHash, root, indexBuf,
     encodeOptionU64(opts.location),       // H3 cell hex string → u64
-    encodeOptionI32(opts.elevation),      // meters
-    encodeOptionI32(opts.gain),           // dBi × 10
-  ]);
-
-  const accounts = [
-    { pubkey: owner, isSigner: true, isWritable: true },                     // payer
-    { pubkey: owner, isSigner: true, isWritable: true },                     // dc_fee_payer
-    { pubkey: iotInfoKey(gatewayPubkeyB58), isSigner: false, isWritable: true }, // iot_info
-    { pubkey: owner, isSigner: true, isWritable: true },                     // hotspot_owner
-    { pubkey: merkleTree, isSigner: false, isWritable: false },              // merkle_tree
-    { pubkey: ataAddress(owner, DC_MINT), isSigner: false, isWritable: true }, // dc_burner
-    { pubkey: REWARDABLE_ENTITY_CONFIG_KEY, isSigner: false, isWritable: false }, // rewardable_entity_config
-    { pubkey: DATA_ONLY_CONFIG_KEY, isSigner: false, isWritable: false },    // data_only_config
-    { pubkey: DAO_KEY, isSigner: false, isWritable: false },                 // dao
-    { pubkey: keyToAssetKey(gatewayPubkeyB58), isSigner: false, isWritable: false }, // key_to_asset
-    { pubkey: IOT_SUB_DAO_KEY, isSigner: false, isWritable: true },          // sub_dao
-    { pubkey: DC_MINT, isSigner: false, isWritable: true },                  // dc_mint
-    { pubkey: DC_KEY, isSigner: false, isWritable: false },                  // dc
-    { pubkey: COMPRESSION, isSigner: false, isWritable: false },             // compression_program
-    { pubkey: DATA_CREDITS, isSigner: false, isWritable: false },            // data_credits_program
-    { pubkey: SPL_TOKEN, isSigner: false, isWritable: false },               // token_program
-    { pubkey: SPL_ATA, isSigner: false, isWritable: false },                 // associated_token_program
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
-    { pubkey: SUB_DAOS, isSigner: false, isWritable: false },                // helium_sub_daos_program
-  ];
-
-  const proofPath = proof.proof.slice(0, proof.proof.length - canopyDepth);
-  for (const proofKey of proofPath) {
-    accounts.push({ pubkey: new PublicKey(proofKey), isSigner: false, isWritable: false });
-  }
-
-  return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
-}
-
-/**
- * Build the onboardIotHotspotV0 instruction (full / PoC-eligible onboard).
- * Same account layout as data-only but uses a different discriminator and
- * costs more DC. The dc_fee_payer covers the fee instead of the maker.
- */
-export function buildFullOnboardInstruction(owner, gatewayPubkeyB58, merkleTree, asset, proof, canopyDepth, opts = {}) {
-  const disc = anchorDiscriminator("onboard_iot_hotspot_v0");
-
-  const dataHash = Buffer.from(bs58.decode(asset.compression.data_hash));
-  const creatorHash = Buffer.from(bs58.decode(asset.compression.creator_hash));
-  const root = Buffer.from(bs58.decode(proof.root));
-  const indexBuf = Buffer.alloc(4);
-  indexBuf.writeUInt32LE(asset.compression.leaf_id);
-
-  const data = Buffer.concat([
-    disc, dataHash, creatorHash, root, indexBuf,
-    encodeOptionU64(opts.location),
-    encodeOptionI32(opts.elevation),
-    encodeOptionI32(opts.gain),
+    encodeOptionI32(opts.elevation ?? null), // meters
+    encodeOptionI32(opts.gain ?? null),      // dBi × 10
   ]);
 
   const accounts = [

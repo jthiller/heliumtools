@@ -768,6 +768,13 @@ export default function HotspotMap() {
 
     (async () => {
       try {
+        // If the param is already a valid entity key (raw base58), use it directly
+        if (isValidEntityKey(encoded)) {
+          setKeysInput(encoded);
+          resolveKeys([encoded]);
+          return;
+        }
+
         const decoded = await decodeKeys(encoded);
         const valid = decoded.filter(isValidEntityKey);
         if (valid.length === 0) {

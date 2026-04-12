@@ -7,7 +7,6 @@ import {
   keyToAssetKey,
   iotInfoKey,
   buildOnboardInstruction,
-  buildFullOnboardInstruction,
   fetchAsset,
   fetchAssetProof,
   getCanopyDepth,
@@ -32,9 +31,6 @@ export async function handleOnboard(request, env) {
   const { owner: ownerStr, gateway_pubkey, location, elevation, gain, mode } = body;
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
   if (!gateway_pubkey) return jsonResponse({ error: "Missing gateway_pubkey" }, 400);
-  if (!location) return jsonResponse({ error: "Missing location" }, 400);
-  if (elevation === null || elevation === undefined) return jsonResponse({ error: "Missing elevation" }, 400);
-  if (gain === null || gain === undefined) return jsonResponse({ error: "Missing gain" }, 400);
   if (mode && mode !== "full" && mode !== "data_only") {
     return jsonResponse({ error: "Invalid mode, must be 'full' or 'data_only'" }, 400);
   }
@@ -63,6 +59,9 @@ export async function handleOnboard(request, env) {
     if (iotInfoAccount) {
       return jsonResponse({ already_onboarded: true });
     }
+    if (!configAccount) {
+      return jsonResponse({ error: "DataOnlyConfig account not found on-chain" }, 500);
+    }
 
     const assetId = new PublicKey(ktaAccount.data.slice(KTA_ASSET_OFFSET, KTA_ASSET_OFFSET + 32)).toBase58();
     const merkleTree = new PublicKey(configAccount.data.slice(CONFIG_MERKLE_OFFSET, CONFIG_MERKLE_OFFSET + 32));
@@ -79,10 +78,9 @@ export async function handleOnboard(request, env) {
     }
     const canopyDepth = getCanopyDepth(treeAccount.data);
 
-    const buildFn = mode === "full" ? buildFullOnboardInstruction : buildOnboardInstruction;
-    const onboardIx = buildFn(
+    const onboardIx = buildOnboardInstruction(
       ownerPubkey, gateway_pubkey, merkleTree, asset, proof, canopyDepth,
-      { location, elevation, gain },
+      { location: location || undefined, elevation: elevation ?? undefined, gain: gain ?? undefined, mode: mode || "data_only" },
     );
 
     const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 });
@@ -101,6 +99,7 @@ export async function handleOnboard(request, env) {
       transaction: Buffer.from(vtx.serialize()).toString("base64"),
     });
   } catch (err) {
-    return jsonResponse({ error: `Failed to build onboard transaction: ${err.message}` }, 500);
+    console.error("Onboard error:", err.message, err.stack);
+    return jsonResponse({ error: "Failed to build onboard transaction" }, 500);
   }
 }

@@ -23,6 +23,10 @@ import {
   EyeSlashIcon,
   CheckCircleIcon,
   XCircleIcon,
+  ArrowTopRightOnSquareIcon,
+  GlobeAltIcon,
+  BoltIcon,
+  MapPinIcon,
 } from '@heroicons/react/24/outline';
 
 const BASEMAP_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
@@ -460,9 +464,12 @@ function OnboardPanel({ ble }) {
   const [viewState, setViewState] = useState({ latitude: initLat, longitude: initLng, zoom: 16 });
 
   const h3Cell = useMemo(() => {
-    try { return latLngToCell(viewState.latitude, viewState.longitude, 12); }
+    const la = parseFloat(lat);
+    const lo = parseFloat(lng);
+    if (isNaN(la) || isNaN(lo)) return null;
+    try { return latLngToCell(la, lo, 12); }
     catch { return null; }
-  }, [viewState.latitude, viewState.longitude]);
+  }, [lat, lng]);
 
   const hexGeoJSON = useMemo(() => {
     if (!h3Cell) return null;
@@ -801,26 +808,50 @@ function OnboardPanel({ ble }) {
                 Hotspot onboarded successfully
               </p>
             </div>
-            {txSignature && (
-              <a
-                href={`https://solscan.io/tx/${txSignature}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-accent hover:underline"
-              >
-                View transaction on Solscan
-              </a>
-            )}
-            {ble.pubkey && (
-              <a
-                href={`https://world.helium.com/network/iot/hotspot/${ble.pubkey}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-sm text-accent hover:underline"
-              >
-                View Hotspot on Helium World
-              </a>
-            )}
+            <div className="space-y-2">
+              {txSignature && (
+                <a
+                  href={`https://solscan.io/tx/${txSignature}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-accent-text hover:underline"
+                >
+                  <ArrowTopRightOnSquareIcon className="h-4 w-4 shrink-0" />
+                  View transaction on Solscan
+                </a>
+              )}
+              {ble.pubkey && (
+                <>
+                  <a
+                    href={`https://world.helium.com/network/iot/hotspot/${ble.pubkey}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-accent-text hover:underline"
+                  >
+                    <GlobeAltIcon className="h-4 w-4 shrink-0" />
+                    View Hotspot on Helium World
+                  </a>
+                  <a
+                    href={`/hotspot-claimer?mode=hotspot&key=${encodeURIComponent(ble.pubkey)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-accent-text hover:underline"
+                  >
+                    <BoltIcon className="h-4 w-4 shrink-0" />
+                    Claim rewards in Reward Claimer
+                  </a>
+                  <a
+                    href={`/hotspot-map?keys=${encodeURIComponent(ble.pubkey)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-accent-text hover:underline"
+                  >
+                    <MapPinIcon className="h-4 w-4 shrink-0" />
+                    View on Hotspot Map
+                  </a>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

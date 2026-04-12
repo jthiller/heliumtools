@@ -96,6 +96,7 @@ export async function handleIssue(request, env) {
       transaction: signedWire.toString("base64"),
     });
   } catch (err) {
-    return jsonResponse({ error: `Failed to build issue transaction: ${err.message}` }, 500);
+    console.error("Issue error:", err.message, err.stack);
+    return jsonResponse({ error: "Failed to build issue transaction" }, 500);
   }
 }
