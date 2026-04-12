@@ -77,11 +77,12 @@ async function fetchMakerInfo(onboardingKey, env) {
     const maker = hotspot.maker;
     if (!maker) return { name: null, address: null, dc_balance: 0, dc_sufficient: false };
 
-    // Convert Helium address to Solana pubkey (bytes 1-33 of base58-decoded address)
+    // Convert Helium address to Solana pubkey
+    // Helium format: [version(1), net_type(1), ed25519_pubkey(32), checksum(4)]
     let dcBalance = 0n;
     try {
       const heliumAddrBytes = bs58.decode(maker.address);
-      const solanaKeyBytes = heliumAddrBytes.slice(1, 33);
+      const solanaKeyBytes = heliumAddrBytes.slice(2, 34);
       const makerSolanaPubkey = new PublicKey(solanaKeyBytes);
       const makerDcAta = ataAddress(makerSolanaPubkey, DC_MINT);
       const ataAccount = await fetchAccount(env, makerDcAta);
