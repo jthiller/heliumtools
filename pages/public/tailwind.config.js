@@ -55,6 +55,14 @@ export default {
           "0%": { backgroundColor: "rgb(var(--color-accent) / 0.12)" },
           "100%": { backgroundColor: "transparent" },
         },
+        flipOut: {
+          "0%": { transform: "translateY(0)", opacity: "1" },
+          "100%": { transform: "translateY(-100%)", opacity: "0" },
+        },
+        flipIn: {
+          "0%": { transform: "translateY(100%)", opacity: "0" },
+          "100%": { transform: "translateY(0)", opacity: "1" },
+        },
       },
       animation: {
         "pulse-once": "pulse-once 1.5s ease-out forwards",
