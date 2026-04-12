@@ -9,6 +9,7 @@ import {
 } from './bleProto.js';
 
 const decoder = new TextDecoder();
+const TERMINAL_WIFI_STATES = new Set(['connected', 'failed', 'timeout', 'invalid']);
 
 function readString(dataView) {
   return decoder.decode(new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength));
@@ -35,7 +36,7 @@ export default function useHotspotBle() {
   const hotspotName = useMemo(() => pubkey ? animalHash(pubkey) : null, [pubkey]);
 
   const log = useCallback((msg) => {
-    setActivity((prev) => [...prev, msg]);
+    setActivity((prev) => [...prev.slice(-99), msg]);
   }, []);
 
   const serviceRef = useRef(null);
@@ -158,8 +159,8 @@ export default function useHotspotBle() {
     clearConnectionState();
     setActivity([]);
     setStatus('idle');
-    try { device?.gatt?.disconnect(); } catch {}
-  }, [device]);
+    try { deviceRef.current?.gatt?.disconnect(); } catch {}
+  }, []);
 
   const refreshDiagnostics = useCallback(async () => {
     if (!serviceRef.current) return;
@@ -197,7 +198,6 @@ export default function useHotspotBle() {
       char = await serviceRef.current.getCharacteristic(Characteristic.WIFI_CONNECT);
       await char.startNotifications();
 
-      const TERMINAL = new Set(['connected', 'failed', 'timeout', 'invalid']);
 
       const resultPromise = new Promise((resolve, reject) => {
         timer = setTimeout(() => {
@@ -208,7 +208,7 @@ export default function useHotspotBle() {
         handler = (event) => {
           const val = readString(event.target.value).trim().toLowerCase();
           setWifiConnectStatus(val);
-          if (TERMINAL.has(val) || val.startsWith('error')) {
+          if (TERMINAL_WIFI_STATES.has(val) || val.startsWith('error')) {
             clearTimeout(timer);
             char.removeEventListener('characteristicvaluechanged', handler);
             resolve(val);
