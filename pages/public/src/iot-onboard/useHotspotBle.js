@@ -5,14 +5,17 @@ import {
   decodeDiagnostics,
   decodeWifiServices,
   encodeWifiConnect,
-  decodeWifiConnect,
   encodeWifiRemove,
 } from './bleProto.js';
 
 const decoder = new TextDecoder();
 
 function readString(dataView) {
-  return decoder.decode(dataView.buffer);
+  return decoder.decode(new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength));
+}
+
+function dataViewToBytes(dataView) {
+  return new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
 }
 
 export default function useHotspotBle() {
@@ -37,6 +40,7 @@ export default function useHotspotBle() {
 
   const serviceRef = useRef(null);
   const scanningRef = useRef(false);
+  const deviceRef = useRef(null);
   const disconnectHandlerRef = useRef(null);
 
   const readCharacteristic = useCallback(async (uuid) => {
@@ -44,11 +48,23 @@ export default function useHotspotBle() {
     return char.readValue();
   }, []);
 
+  function clearConnectionState() {
+    setPubkey(null);
+    setOnboardingKey(null);
+    setDiagnostics(null);
+    setEthernetOnline(null);
+    setWifiSsid(null);
+    setWifiNetworks([]);
+    setWifiConfigured([]);
+    setWifiConnectStatus(null);
+  }
+
   const scan = useCallback(async () => {
     if (scanningRef.current) return;
     scanningRef.current = true;
     setError(null);
     setActivity([]);
+    clearConnectionState();
     setStatus('scanning');
     try {
       log('Requesting Bluetooth device...');
@@ -56,15 +72,16 @@ export default function useHotspotBle() {
         filters: [{ services: [SERVICE_UUID] }],
       });
 
-      // Remove stale listener if re-scanning the same device
-      if (disconnectHandlerRef.current) {
-        dev.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
+      // Remove stale listener from previous device
+      if (disconnectHandlerRef.current && deviceRef.current) {
+        deviceRef.current.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
       }
       disconnectHandlerRef.current = () => {
         serviceRef.current = null;
         setStatus('disconnected');
       };
       dev.addEventListener('gattserverdisconnected', disconnectHandlerRef.current);
+      deviceRef.current = dev;
       setDevice(dev);
 
       setStatus('connecting');
@@ -100,7 +117,7 @@ export default function useHotspotBle() {
       if (okVal) setOnboardingKey(readString(okVal));
 
       const diagVal = await safeRead('Diagnostics', Characteristic.DIAGNOSTICS);
-      if (diagVal) setDiagnostics(decodeDiagnostics(diagVal.buffer));
+      if (diagVal) setDiagnostics(decodeDiagnostics(dataViewToBytes(diagVal)));
 
       const ethVal = await safeRead('Ethernet status', Characteristic.ETHERNET_ONLINE);
       if (ethVal) setEthernetOnline(readString(ethVal) === 'true');
@@ -121,27 +138,31 @@ export default function useHotspotBle() {
     } finally {
       scanningRef.current = false;
     }
-  }, [readCharacteristic]);
+  }, [readCharacteristic, log]);
 
   const disconnect = useCallback(() => {
-    if (device?.gatt?.connected) {
-      device.gatt.disconnect();
-    }
+    serviceRef.current = null;
+    setStatus('idle');
+    try { device?.gatt?.disconnect(); } catch {}
   }, [device]);
 
   const refreshDiagnostics = useCallback(async () => {
     if (!serviceRef.current) return;
     const val = await readCharacteristic(Characteristic.DIAGNOSTICS);
-    setDiagnostics(decodeDiagnostics(val.buffer));
+    setDiagnostics(decodeDiagnostics(dataViewToBytes(val)));
   }, [readCharacteristic]);
 
   const refreshWifi = useCallback(async () => {
     if (!serviceRef.current) return;
-    const availVal = await readCharacteristic(Characteristic.WIFI_SERVICES);
-    setWifiNetworks(decodeWifiServices(availVal.buffer));
+    try {
+      const availVal = await readCharacteristic(Characteristic.WIFI_SERVICES);
+      setWifiNetworks(decodeWifiServices(dataViewToBytes(availVal)));
+    } catch {}
 
-    const confVal = await readCharacteristic(Characteristic.WIFI_CONFIGURED);
-    setWifiConfigured(decodeWifiServices(confVal.buffer));
+    try {
+      const confVal = await readCharacteristic(Characteristic.WIFI_CONFIGURED);
+      setWifiConfigured(decodeWifiServices(dataViewToBytes(confVal)));
+    } catch {}
 
     try {
       const ssidVal = await readCharacteristic(Characteristic.WIFI_SSID);
@@ -154,35 +175,21 @@ export default function useHotspotBle() {
     setWifiConnectStatus('connecting');
     let char;
     try {
-      console.log('[BLE WiFi] Getting WIFI_CONNECT characteristic...');
       char = await serviceRef.current.getCharacteristic(Characteristic.WIFI_CONNECT);
-
-      // Read current value before writing to see baseline state
-      try {
-        const cur = await char.readValue();
-        console.log('[BLE WiFi] Current value before write:', readString(cur));
-      } catch (e) {
-        console.log('[BLE WiFi] Could not read current value:', e.message);
-      }
-
-      console.log('[BLE WiFi] Starting notifications...');
       await char.startNotifications();
 
       const TERMINAL = new Set(['connected', 'failed', 'timeout', 'invalid']);
 
       const resultPromise = new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          console.log('[BLE WiFi] 60s timeout reached, no terminal status received');
           char.removeEventListener('characteristicvaluechanged', handler);
           reject(new Error('WiFi connection timed out'));
         }, 60_000);
 
         function handler(event) {
-          const raw = readString(event.target.value);
-          const val = raw.trim().toLowerCase();
-          console.log('[BLE WiFi] Notification received:', JSON.stringify(raw), '→', val);
+          const val = readString(event.target.value).trim().toLowerCase();
           setWifiConnectStatus(val);
-          if (TERMINAL.has(val)) {
+          if (TERMINAL.has(val) || val.startsWith('error')) {
             clearTimeout(timer);
             char.removeEventListener('characteristicvaluechanged', handler);
             resolve(val);
@@ -191,18 +198,11 @@ export default function useHotspotBle() {
         char.addEventListener('characteristicvaluechanged', handler);
       });
 
-      const encoded = encodeWifiConnect(ssid, password);
-      const verified = decodeWifiConnect(encoded);
-      console.log('[BLE WiFi] Encoded payload:', JSON.stringify(verified), '(', encoded.length, 'bytes, hex:', Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join(' '), ')');
-      await char.writeValue(encoded);
-      console.log('[BLE WiFi] Write complete, waiting for notifications...');
-
-      const result = await resultPromise;
-      console.log('[BLE WiFi] Terminal result:', result);
+      await char.writeValue(encodeWifiConnect(ssid, password));
+      await resultPromise;
 
       await refreshWifi();
     } catch (err) {
-      console.error('[BLE WiFi] Error:', err.message);
       setWifiConnectStatus(`error: ${err.message}`);
     } finally {
       try { await char?.stopNotifications(); } catch {}

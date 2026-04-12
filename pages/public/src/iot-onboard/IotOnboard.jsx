@@ -20,6 +20,7 @@ const WIFI_STATUS_MAP = {
   'failed':      { text: 'Failed to connect. Check password and try again.', tone: 'error' },
   'timeout':     { text: 'Connection timed out. The network may be out of range.', tone: 'error' },
   'invalid':     { text: 'Invalid network or credentials.', tone: 'error' },
+  'error':       { text: 'Connection error. Try again.', tone: 'error' },
 };
 
 function WifiStatus({ status }) {
@@ -235,6 +236,7 @@ function WifiPanel({
                 onClick={() => onRemove(wifiSsid)}
                 className="text-content-tertiary hover:text-rose-500 transition"
                 title="Disconnect from network"
+                aria-label="Disconnect from network"
               >
                 <XMarkIcon className="h-4 w-4" />
               </button>
@@ -258,6 +260,7 @@ function WifiPanel({
                     onClick={() => onRemove(net)}
                     className="text-content-tertiary hover:text-rose-500 transition"
                     title="Remove network"
+                    aria-label="Remove network"
                   >
                     <XMarkIcon className="h-4 w-4" />
                   </button>
@@ -320,6 +323,7 @@ function WifiPanel({
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary transition"
                 title={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword
                   ? <EyeSlashIcon className="h-4 w-4" />
