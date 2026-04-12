@@ -235,8 +235,8 @@ function WifiPanel({
               <button
                 onClick={() => onRemove(wifiSsid)}
                 className="text-content-tertiary hover:text-rose-500 transition"
-                title="Disconnect from network"
-                aria-label="Disconnect from network"
+                title="Forget network"
+                aria-label="Forget network"
               >
                 <XMarkIcon className="h-4 w-4" />
               </button>

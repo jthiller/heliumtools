@@ -71,6 +71,8 @@ export default function useHotspotBle() {
   const scan = useCallback(async () => {
     if (scanningRef.current) return;
     scanningRef.current = true;
+    // Clean up previous device before opening picker
+    cleanupDevice();
     intentionalDisconnectRef.current = false;
     setError(null);
     setActivity([]);
@@ -81,9 +83,6 @@ export default function useHotspotBle() {
       const dev = await navigator.bluetooth.requestDevice({
         filters: [{ services: [SERVICE_UUID] }],
       });
-
-      // Remove stale listener from previous device
-      cleanupDevice();
       disconnectHandlerRef.current = () => {
         serviceRef.current = null;
         if (!intentionalDisconnectRef.current) {
