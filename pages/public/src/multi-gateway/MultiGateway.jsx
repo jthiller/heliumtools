@@ -936,9 +936,9 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
     }
   }, [lat, lng]);
 
-  const locationComplete = lat && lng && heightAGL && gain
-    && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng))
-    && !isNaN(parseInt(heightAGL)) && !isNaN(parseFloat(gain));
+  const locationComplete = lat !== '' && lng !== '' && heightAGL !== '' && gain !== ''
+    && Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng))
+    && Number.isFinite(parseInt(heightAGL)) && Number.isFinite(parseFloat(gain));
 
   return (
     <div className="space-y-3">

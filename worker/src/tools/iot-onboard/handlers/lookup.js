@@ -43,7 +43,8 @@ export async function handleLookup(request, env) {
       hotspot_type: makerResult?.dc_sufficient ? "full" : "data_only",
     });
   } catch (err) {
-    return jsonResponse({ error: `Lookup failed: ${err.message}` }, 500);
+    console.error("Lookup error:", err.message, err.stack);
+    return jsonResponse({ error: "Lookup failed" }, 500);
   }
 }
 
@@ -70,7 +71,7 @@ async function fetchMakerInfo(onboardingKey, env) {
     if (!maker) return { name: null, address: null, dc_balance: 0, dc_sufficient: false };
 
     // Convert Helium address to Solana pubkey (bytes 1-33 of base58-decoded address)
-    let dcBalance = 0;
+    let dcBalance = 0n;
     try {
       const heliumAddrBytes = bs58.decode(maker.address);
       const solanaKeyBytes = heliumAddrBytes.slice(1, 33);
@@ -78,8 +79,7 @@ async function fetchMakerInfo(onboardingKey, env) {
       const makerDcAta = ataAddress(makerSolanaPubkey, DC_MINT);
       const ataAccount = await fetchAccount(env, makerDcAta);
       if (ataAccount) {
-        // SPL Token account layout: mint(32) + owner(32) + amount(u64 at offset 64)
-        dcBalance = Number(ataAccount.readBigUInt64LE(64));
+        dcBalance = ataAccount.readBigUInt64LE(64);
       }
     } catch {
       // If we can't read maker balance, proceed with 0
@@ -88,8 +88,8 @@ async function fetchMakerInfo(onboardingKey, env) {
     return {
       name: maker.name || null,
       address: maker.address || null,
-      dc_balance: dcBalance,
-      dc_sufficient: dcBalance >= FULL_ONBOARD_DC_THRESHOLD,
+      dc_balance: dcBalance.toString(),
+      dc_sufficient: dcBalance >= BigInt(FULL_ONBOARD_DC_THRESHOLD),
     };
   } catch (err) {
     clearTimeout(timeout);

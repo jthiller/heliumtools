@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { VersionedTransaction } from '@solana/web3.js';
-import bs58 from 'bs58';
 import { latLngToCell, cellToBoundary } from 'h3-js';
 import MapGL, { Source, Layer } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -489,9 +488,9 @@ function OnboardPanel({ ble }) {
     if (!isNaN(la) && !isNaN(lo)) setViewState(v => ({ ...v, latitude: la, longitude: lo }));
   }, [lat, lng]);
 
-  const locationComplete = lat && lng && elevation && gain
-    && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng))
-    && !isNaN(parseInt(elevation)) && !isNaN(parseFloat(gain));
+  const locationComplete = lat !== '' && lng !== '' && elevation !== '' && gain !== ''
+    && Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng))
+    && Number.isFinite(parseInt(elevation)) && Number.isFinite(parseFloat(gain));
 
   // --- Handlers ---
 
@@ -508,7 +507,7 @@ function OnboardPanel({ ble }) {
       const result = await requestIssue(
         walletPubkey.toBase58(),
         ble.pubkey,
-        { unsigned_msg: addGatewayHex, gateway_signature: addGatewayHex },
+        addGatewayHex,
       );
 
       if (result.already_issued) {
@@ -600,7 +599,7 @@ function OnboardPanel({ ble }) {
                 {lookupData.maker.dc_sufficient
                   ? <CheckCircleIcon className="h-3.5 w-3.5 text-emerald-500" />
                   : <XCircleIcon className="h-3.5 w-3.5 text-rose-500" />}
-                {lookupData.maker.dc_balance.toLocaleString()} DC
+                {Number(lookupData.maker.dc_balance).toLocaleString()} DC
               </span>
             </div>
           </div>

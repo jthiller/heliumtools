@@ -24,11 +24,11 @@ export async function handleIssue(request, env) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const { owner: ownerStr, gateway_pubkey, add_gateway_response } = body;
+  const { owner: ownerStr, gateway_pubkey, add_gateway_txn } = body;
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
   if (!gateway_pubkey) return jsonResponse({ error: "Missing gateway_pubkey" }, 400);
-  if (!add_gateway_response?.unsigned_msg || !add_gateway_response?.gateway_signature) {
-    return jsonResponse({ error: "Missing add_gateway_response (unsigned_msg, gateway_signature)" }, 400);
+  if (!add_gateway_txn) {
+    return jsonResponse({ error: "Missing add_gateway_txn (hex-encoded BLE response)" }, 400);
   }
 
   let ownerPubkey;
@@ -78,14 +78,14 @@ export async function handleIssue(request, env) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         transaction: serializedTx,
-        msg: add_gateway_response.unsigned_msg,
-        signature: add_gateway_response.gateway_signature,
+        msg: add_gateway_txn,
+        signature: add_gateway_txn,
       }),
     });
 
     if (!verifyRes.ok) {
-      const errText = await verifyRes.text();
-      return jsonResponse({ error: `ECC verifier failed: ${errText}` }, 500);
+      console.error("ECC verifier error:", verifyRes.status, await verifyRes.text());
+      return jsonResponse({ error: "ECC verifier rejected the gateway signature" }, 500);
     }
 
     const verifyData = await verifyRes.json();

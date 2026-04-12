@@ -15,14 +15,14 @@ export async function lookupHotspot(onboardingKey, gatewayPubkey) {
   return data;
 }
 
-export async function requestIssue(owner, gatewayPubkey, addGatewayResponse) {
+export async function requestIssue(owner, gatewayPubkey, addGatewayTxn) {
   const res = await fetch(`${API_BASE}/issue`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       owner,
       gateway_pubkey: gatewayPubkey,
-      add_gateway_response: addGatewayResponse,
+      add_gateway_txn: addGatewayTxn,
     }),
   });
   const data = await parseJson(res);

@@ -56,7 +56,9 @@ export async function handleOnboard(request, env) {
     if (!ktaAccount) {
       return jsonResponse({ error: "Gateway not yet issued on-chain. Run issue step first." }, 400);
     }
-    if (iotInfoAccount) {
+    if (iotInfoAccount && location) {
+      // Already onboarded but requesting location assertion — allow it
+    } else if (iotInfoAccount) {
       return jsonResponse({ already_onboarded: true });
     }
     if (!configAccount) {
