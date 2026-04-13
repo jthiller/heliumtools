@@ -30,14 +30,19 @@ export function truncateString(str, head = 6, tail = 4) {
   return `${str.slice(0, head)}...${str.slice(-tail)}`;
 }
 
-/** Format a duration in seconds to a human-readable string (e.g. "2h 15m") */
+/** Format a duration in seconds to a human-readable string (e.g. "2d 3h 15m") */
 export function formatDuration(seconds) {
   if (seconds == null) return "-";
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  const h = Math.floor(seconds / 3600);
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  return parts.join(" ");
 }
 
 /** Format a Unix ms timestamp to a relative time string (e.g. "3m ago") */
