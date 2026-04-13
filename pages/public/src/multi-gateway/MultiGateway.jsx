@@ -888,7 +888,7 @@ function GatewayMapModal({ gateways, onClose }) {
 // ---------------------------------------------------------------------------
 
 function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL, setGain,
-  loading, isDark, onSubmit, onSkip, inputClass, dcSufficient = true, onMintDc }) {
+  loading, isDark, onSubmit, inputClass, dcSufficient = true, onMintDc }) {
 
   const hasCoords = lat && lng && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng));
   const initLat = hasCoords ? parseFloat(lat) : 37.77;
@@ -935,6 +935,10 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
       setViewState((v) => ({ ...v, latitude: la, longitude: lo }));
     }
   }, [lat, lng]);
+
+  const locationComplete = lat !== '' && lng !== '' && heightAGL !== '' && gain !== ''
+    && Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng))
+    && Number.isFinite(parseInt(heightAGL)) && Number.isFinite(parseFloat(gain));
 
   return (
     <div className="space-y-3">
@@ -1014,18 +1018,10 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
 
       <button
         onClick={onSubmit}
-        disabled={loading || !dcSufficient}
+        disabled={loading || !dcSufficient || !locationComplete}
         className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
       >
-        {loading ? "Preparing..." : "Assert Location"}
-      </button>
-
-      <button
-        onClick={onSkip}
-        disabled={loading || !dcSufficient}
-        className="w-full text-xs text-content-tertiary hover:text-content-secondary"
-      >
-        Skip location, register without
+        {loading ? "Preparing..." : "Onboard and Assert Location"}
       </button>
     </div>
   );
@@ -1363,7 +1359,6 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
                 setLat={setLat} setLng={setLng} setHeightAGL={setHeightAGL} setGain={setGain}
                 loading={loading} isDark={isDark}
                 onSubmit={handleOnboardWithWallet}
-                onSkip={() => handleOnboardWithWallet({ lat: "", lng: "", elevation: "", gain: "" })}
                 inputClass={inputClass}
                 dcSufficient={dcSufficient}
                 onMintDc={() => setShowDcMintModal(true)}

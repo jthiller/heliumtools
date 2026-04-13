@@ -43,7 +43,7 @@ const sections = [
       {
         name: "IoT Hotspot Setup",
         description:
-          "Connect to a Helium IoT Hotspot over Bluetooth. View diagnostics, configure WiFi, and prepare for onboarding.",
+          "Connect to a Helium IoT Hotspot over Bluetooth. View diagnostics, configure WiFi, and onboard your Hotspot to the IoT network.",
         href: "/iot-onboard",
         icon: SignalIcon,
         iconBg: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",

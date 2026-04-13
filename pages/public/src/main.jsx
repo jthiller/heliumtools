@@ -29,7 +29,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="/hotspot-map" element={<HotspotMap />} />
           <Route path="/multi-gateway" element={<SolanaProvider><MultiGateway /></SolanaProvider>} />
           <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
-          <Route path="/iot-onboard" element={<IotOnboard />} />
+          <Route path="/iot-onboard" element={<SolanaProvider><IotOnboard /></SolanaProvider>} />
         </Routes>
       </Suspense>
     </BrowserRouter>

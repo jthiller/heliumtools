@@ -37,11 +37,33 @@ export function encodeWifiConnect(ssid, password) {
   return WifiConnectMsg.encode({ service: ssid, password }).finish();
 }
 
-export function decodeWifiConnect(buffer) {
-  const msg = WifiConnectMsg.decode(new Uint8Array(buffer));
-  return { service: msg.service, password: msg.password };
-}
-
 export function encodeWifiRemove(ssid) {
   return WifiRemoveMsg.encode({ service: ssid }).finish();
+}
+
+// add_gateway_v1 { string owner = 1; uint64 amount = 2; uint64 fee = 3; string payer = 4; }
+// owner and payer are Helium-format base58 address strings (gateway-config
+// firmware calls libp2p_crypto:b58_to_bin on these fields).
+const AddGatewayReqMsg = new protobuf.Type('add_gateway_v1')
+  .add(new protobuf.Field('owner', 1, 'string'))
+  .add(new protobuf.Field('amount', 2, 'uint64'))
+  .add(new protobuf.Field('fee', 3, 'uint64'))
+  .add(new protobuf.Field('payer', 4, 'string'));
+root.add(AddGatewayReqMsg);
+
+export function encodeAddGateway(ownerB58, payerB58) {
+  return AddGatewayReqMsg.encode({
+    owner: ownerB58,
+    amount: 0,
+    fee: 0,
+    payer: payerB58,
+  }).finish();
+}
+
+export class StaleFirmwareError extends Error {
+  constructor(rawResponse) {
+    super('Hotspot firmware is too old to sign Solana-era transactions.');
+    this.name = 'StaleFirmwareError';
+    this.rawResponse = rawResponse;
+  }
 }
