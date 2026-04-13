@@ -3,6 +3,7 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { VersionedTransaction } from '@solana/web3.js';
 import { latLngToCell, cellToBoundary } from 'h3-js';
+import Address from '@helium/address';
 import MapGL, { Source, Layer } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Header from '../components/Header.jsx';
@@ -21,11 +22,13 @@ import {
   EyeIcon,
   EyeSlashIcon,
   CheckCircleIcon,
+  ExclamationTriangleIcon,
   XCircleIcon,
   ArrowTopRightOnSquareIcon,
   GlobeAltIcon,
   BoltIcon,
   MapPinIcon,
+  ViewfinderCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const BASEMAP_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
@@ -67,6 +70,53 @@ function WifiStatus({ status }) {
     return <StatusBanner tone={mapped.tone} message={mapped.text} />;
   }
   return <StatusBanner tone="info" message={`WiFi status: ${status}`} />;
+}
+
+const MNTD_FIRMWARE_URL = 'https://pub-b6000f897a404647a3b09e6d2a841924.r2.dev/MNTD_2023_04_18_0.img';
+const MNTD_MAKERS = new Set(['RAKwireless', 'CalChip Connect']);
+const BALENA_ETCHER_URL = 'https://etcher.balena.io/';
+
+function StaleFirmwareBanner({ maker, rawResponse }) {
+  const hasFirmwareImage = maker && MNTD_MAKERS.has(maker);
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <div className="text-sm text-amber-800 dark:text-amber-200 space-y-2">
+          <p className="font-medium">Hotspot firmware is too old to sign Solana transactions.</p>
+          <p className="text-amber-700 dark:text-amber-300">
+            This Hotspot&apos;s firmware predates the Helium → Solana migration and cannot
+            produce the signatures required for on-chain onboarding.
+          </p>
+        </div>
+      </div>
+      {hasFirmwareImage && (
+        <div className="border-t border-amber-500/30 pt-3 space-y-2 text-xs text-amber-800 dark:text-amber-200">
+          <p className="font-medium">Update firmware ({maker} Hotspots):</p>
+          <ol className="list-decimal list-inside space-y-1">
+            <li>
+              <a href={MNTD_FIRMWARE_URL} className="underline font-mono hover:no-underline" target="_blank" rel="noopener noreferrer">
+                Download the MNTD firmware image
+              </a>{' '}
+              (~1 GB)
+            </li>
+            <li>
+              Flash it directly to your SD card using{' '}
+              <a href={BALENA_ETCHER_URL} className="underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                balenaEtcher
+              </a>
+            </li>
+            <li>Insert the SD card into your Hotspot and power it on</li>
+            <li>Wait ~5 minutes for initial boot, then put it back in pairing mode and retry</li>
+          </ol>
+        </div>
+      )}
+      <details className="text-xs text-amber-700 dark:text-amber-400">
+        <summary className="cursor-pointer">Technical details</summary>
+        <p className="font-mono mt-1">Hotspot returned: {rawResponse}</p>
+      </details>
+    </div>
+  );
 }
 
 function BleNotSupported() {
@@ -395,6 +445,26 @@ function WifiPanel({
 // OnboardPanel — full on-chain onboarding flow
 // ---------------------------------------------------------------------------
 
+async function signAndBroadcast(txn, walletPubkey, sendTransaction, connection) {
+  const msg = txn.message;
+  const staticKeys = msg.staticAccountKeys || msg.accountKeys || [];
+  const numSigners = msg.header?.numRequiredSignatures ?? txn.signatures.length;
+  const signerKeys = staticKeys.slice(0, numSigners);
+  const walletStr = walletPubkey.toBase58();
+  const walletIsSigner = signerKeys.some((k) => k.toBase58() === walletStr);
+
+  let sig;
+  if (walletIsSigner) {
+    // Wallet must sign — use the wallet adapter
+    sig = await sendTransaction(txn, connection, { skipPreflight: true });
+  } else {
+    // Transaction is already fully signed (e.g., maker-paid) — broadcast directly
+    sig = await connection.sendRawTransaction(txn.serialize(), { skipPreflight: true });
+  }
+  await confirmAndVerify(connection, sig);
+  return sig;
+}
+
 function OnboardPanel({ ble }) {
   const { connected, publicKey: walletPubkey, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -507,6 +577,24 @@ function OnboardPanel({ ble }) {
     if (!isNaN(la) && !isNaN(lo)) setViewState(v => ({ ...v, latitude: la, longitude: lo }));
   }, [lat, lng]);
 
+  const [geolocating, setGeolocating] = useState(false);
+  const handleGeolocate = useCallback(() => {
+    if (!navigator.geolocation) return;
+    setGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const la = pos.coords.latitude;
+        const lo = pos.coords.longitude;
+        setLat(la.toFixed(6));
+        setLng(lo.toFixed(6));
+        setViewState((v) => ({ ...v, latitude: la, longitude: lo, zoom: 17 }));
+        setGeolocating(false);
+      },
+      () => setGeolocating(false),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
+  }, []);
+
   const locationComplete = lat !== '' && lng !== '' && elevation !== '' && gain !== ''
     && Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lng))
     && Number.isFinite(parseInt(elevation)) && Number.isFinite(parseFloat(gain));
@@ -518,9 +606,10 @@ function OnboardPanel({ ble }) {
     setLoading(true);
     setError(null);
     try {
-      // Get ECC chip signature via BLE
-      const ownerBytes = walletPubkey.toBytes();
-      const addGatewayHex = await ble.writeAddGateway(ownerBytes, ownerBytes);
+      // Firmware's b58_to_bin expects a Helium-style address (version + net_type + pubkey + checksum).
+      // Convert the Solana ed25519 pubkey bytes to the Helium address format.
+      const heliumAddr = new Address(0, 0, 1, walletPubkey.toBytes()).b58;
+      const addGatewayHex = await ble.writeAddGateway(heliumAddr, heliumAddr);
 
       // Build issue transaction on worker
       const result = await requestIssue(
@@ -534,13 +623,19 @@ function OnboardPanel({ ble }) {
         return;
       }
 
-      const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, 'base64'));
-      const sig = await sendTransaction(txn, connection);
-      await confirmAndVerify(connection, sig);
-      setTxSignature(sig);
+      let lastSig = null;
+      for (const txB64 of result.transactions) {
+        const txn = VersionedTransaction.deserialize(Buffer.from(txB64, 'base64'));
+        lastSig = await signAndBroadcast(txn, walletPubkey, sendTransaction, connection);
+      }
+      setTxSignature(lastSig);
       setStep('location');
     } catch (err) {
-      setError(err.message);
+      if (err.name === 'StaleFirmwareError') {
+        setError({ kind: 'stale_firmware', rawResponse: err.rawResponse });
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -552,6 +647,9 @@ function OnboardPanel({ ble }) {
     setError(null);
     try {
       const h3Hex = latLngToCell(parseFloat(lat), parseFloat(lng), 12);
+      // When maker has enough DC for full PoC onboard, they pay everything.
+      // Otherwise the user covers DC (and SOL).
+      const userPays = !lookupData?.maker?.dc_sufficient;
       const result = await requestOnboard(
         walletPubkey.toBase58(),
         ble.pubkey,
@@ -559,7 +657,7 @@ function OnboardPanel({ ble }) {
           location: h3Hex,
           elevation: parseInt(elevation, 10),
           gain: Math.round(parseFloat(gain) * 10),
-          mode: onboardMode || 'data_only',
+          user_pays: userPays,
         },
       );
 
@@ -568,10 +666,12 @@ function OnboardPanel({ ble }) {
         return;
       }
 
-      const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, 'base64'));
-      const sig = await sendTransaction(txn, connection);
-      await confirmAndVerify(connection, sig);
-      setTxSignature(sig);
+      let lastSig = null;
+      for (const txB64 of result.transactions) {
+        const txn = VersionedTransaction.deserialize(Buffer.from(txB64, 'base64'));
+        lastSig = await signAndBroadcast(txn, walletPubkey, sendTransaction, connection);
+      }
+      setTxSignature(lastSig);
       setStep('done');
     } catch (err) {
       setError(err.message);
@@ -591,7 +691,10 @@ function OnboardPanel({ ble }) {
 
       <div className="p-4 space-y-4">
         {lookupError && <StatusBanner tone="warning" message={`Lookup: ${lookupError}`} />}
-        {error && <StatusBanner tone="error" message={error} />}
+        {typeof error === 'string' && <StatusBanner tone="error" message={error} />}
+        {error?.kind === 'stale_firmware' && (
+          <StaleFirmwareBanner maker={lookupData?.maker?.name} rawResponse={error.rawResponse} />
+        )}
 
         {/* Maker info card */}
         {lookupData?.maker && (
@@ -747,6 +850,16 @@ function OnboardPanel({ ble }) {
                   </svg>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={handleGeolocate}
+                disabled={geolocating}
+                title="Use my location"
+                aria-label="Use my location"
+                className="absolute top-2 right-2 rounded-md bg-surface-raised border border-border shadow-sm p-2 text-content-secondary hover:text-accent-text hover:border-accent transition disabled:opacity-50"
+              >
+                <ViewfinderCircleIcon className={`h-4 w-4 ${geolocating ? 'animate-pulse' : ''}`} />
+              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

@@ -1,20 +1,17 @@
-import { PublicKey, ComputeBudgetProgram, VersionedTransaction, TransactionMessage, Connection } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
-import {
-  ECC_VERIFIER_URL,
-  DATA_ONLY_CONFIG_KEY,
-  CONFIG_COLLECTION_OFFSET,
-  CONFIG_MERKLE_OFFSET,
-  keyToAssetKey,
-  buildIssueInstruction,
-} from "../../../lib/helium-solana.js";
+import { keyToAssetKey } from "../../../lib/helium-solana.js";
+import { fetchAccount } from "../../hotspot-claimer/services/common.js";
+
+const ONBOARDING_API = "https://onboarding.dewi.org/api/v3";
 
 /**
  * POST /issue
- * Body: { owner, gateway_pubkey, add_gateway_response: { unsigned_msg, gateway_signature } }
+ * Body: { owner, gateway_pubkey, add_gateway_txn }
  *
- * Build the issueDataOnlyEntityV0 transaction, send through ECC verifier,
- * return the co-signed transaction for the user's wallet to sign.
+ * Forwards the BLE-signed add_gateway transaction to the Helium onboarding
+ * server, which returns ready-to-sign Solana transactions for issuing the
+ * compressed NFT entity.
  */
 export async function handleIssue(request, env) {
   let body;
@@ -31,69 +28,54 @@ export async function handleIssue(request, env) {
     return jsonResponse({ error: "Missing add_gateway_txn (hex-encoded BLE response)" }, 400);
   }
 
-  let ownerPubkey;
   try {
-    ownerPubkey = new PublicKey(ownerStr);
+    new PublicKey(ownerStr);
   } catch {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
   try {
-    const connection = new Connection(env.SOLANA_RPC_URL);
-    const ktaKey = keyToAssetKey(gateway_pubkey);
-
-    const [ktaAccount, configAccount, { blockhash }] = await Promise.all([
-      connection.getAccountInfo(ktaKey),
-      connection.getAccountInfo(DATA_ONLY_CONFIG_KEY),
-      connection.getLatestBlockhash(),
-    ]);
-
+    // Short-circuit if already issued
+    const ktaAccount = await fetchAccount(env, keyToAssetKey(gateway_pubkey));
     if (ktaAccount) {
       return jsonResponse({ already_issued: true });
     }
 
-    if (!configAccount) {
-      return jsonResponse({ error: "DataOnlyConfig account not found on-chain" }, 500);
-    }
-
-    const configData = configAccount.data;
-    const collection = new PublicKey(configData.slice(CONFIG_COLLECTION_OFFSET, CONFIG_COLLECTION_OFFSET + 32));
-    const merkleTree = new PublicKey(configData.slice(CONFIG_MERKLE_OFFSET, CONFIG_MERKLE_OFFSET + 32));
-
-    const issueIx = buildIssueInstruction(ownerPubkey, gateway_pubkey, merkleTree, collection);
-    const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 });
-    const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 });
-
-    const message = new TransactionMessage({
-      payerKey: ownerPubkey,
-      recentBlockhash: blockhash,
-      instructions: [computeBudgetIx, computePriceIx, issueIx],
-    }).compileToLegacyMessage();
-
-    const vtx = new VersionedTransaction(message);
-    const serializedTx = Buffer.from(vtx.serialize()).toString("hex");
-
-    const verifyRes = await fetch(`${ECC_VERIFIER_URL}/verify`, {
+    // The BLE returns a base64-encoded signed AddGatewayV1 protobuf.
+    // Pass it through to the onboarding server as-is.
+    const res = await fetch(`${ONBOARDING_API}/transactions/create-hotspot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transaction: serializedTx,
-        msg: add_gateway_txn,
-        signature: add_gateway_txn,
-      }),
+      body: JSON.stringify({ transaction: add_gateway_txn }),
     });
 
-    if (!verifyRes.ok) {
-      console.error("ECC verifier error:", verifyRes.status, await verifyRes.text());
-      return jsonResponse({ error: "ECC verifier rejected the gateway signature" }, 500);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Onboarding server error:", res.status, errText);
+      return jsonResponse({
+        error: `Onboarding server rejected the Hotspot signature (${res.status})`,
+      }, 500);
     }
 
-    const verifyData = await verifyRes.json();
-    const signedWire = Buffer.from(verifyData.transaction, "hex");
+    const data = await res.json();
+    if (data?.errorMessage) {
+      console.error("Onboarding server errorMessage:", data.errorMessage);
+      return jsonResponse({ error: data.errorMessage }, 500);
+    }
+
+    const solanaTransactions = data?.data?.solanaTransactions;
+    if (!Array.isArray(solanaTransactions) || solanaTransactions.length === 0) {
+      return jsonResponse({ error: "Onboarding server returned no transactions" }, 500);
+    }
+
+    // Return the transactions as base64 strings for the frontend to sign
+    const transactions = solanaTransactions.map((txBytes) =>
+      Buffer.from(txBytes).toString("base64")
+    );
 
     return jsonResponse({
       already_issued: false,
-      transaction: signedWire.toString("base64"),
+      transactions,
     });
   } catch (err) {
     console.error("Issue error:", err.message, err.stack);

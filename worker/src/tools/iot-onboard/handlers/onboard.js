@@ -1,24 +1,19 @@
-import { PublicKey, ComputeBudgetProgram, VersionedTransaction, TransactionMessage, Connection } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
-import {
-  DATA_ONLY_CONFIG_KEY,
-  CONFIG_MERKLE_OFFSET,
-  KTA_ASSET_OFFSET,
-  keyToAssetKey,
-  iotInfoKey,
-  buildOnboardInstruction,
-  fetchAsset,
-  fetchAssetProof,
-  getCanopyDepth,
-} from "../../../lib/helium-solana.js";
+import { keyToAssetKey, iotInfoKey } from "../../../lib/helium-solana.js";
+import { fetchAccount } from "../../hotspot-claimer/services/common.js";
+
+const ONBOARDING_API = "https://onboarding.dewi.org/api/v3";
 
 /**
  * POST /onboard
- * Body: { owner, gateway_pubkey, location, elevation, gain, mode }
- *   location: H3 resolution-12 cell index as hex string
- *   elevation: altitude in meters (integer)
- *   gain: antenna gain in dBi × 10 (integer)
- *   mode: "full" | "data_only"
+ * Body: { owner, gateway_pubkey, location, elevation, gain }
+ *   location: H3 resolution-12 cell index as hex string (optional)
+ *   elevation: altitude in meters (optional)
+ *   gain: antenna gain in dBi × 10 (optional)
+ *
+ * Forwards to the Helium onboarding server which builds the appropriate
+ * Solana transactions based on the maker's configuration (full PoC vs data-only).
  */
 export async function handleOnboard(request, env) {
   let body;
@@ -28,77 +23,75 @@ export async function handleOnboard(request, env) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const { owner: ownerStr, gateway_pubkey, location, elevation, gain, mode } = body;
+  const { owner: ownerStr, gateway_pubkey, location, elevation, gain, user_pays } = body;
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
   if (!gateway_pubkey) return jsonResponse({ error: "Missing gateway_pubkey" }, 400);
-  if (mode && mode !== "full" && mode !== "data_only") {
-    return jsonResponse({ error: "Invalid mode, must be 'full' or 'data_only'" }, 400);
+  if (location !== undefined && location !== null && !/^[0-9a-fA-F]+$/.test(location)) {
+    return jsonResponse({ error: "Invalid location (must be hex H3 cell index)" }, 400);
   }
 
-  let ownerPubkey;
   try {
-    ownerPubkey = new PublicKey(ownerStr);
+    new PublicKey(ownerStr);
   } catch {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
   try {
-    const rpcUrl = env.SOLANA_RPC_URL;
-    const connection = new Connection(rpcUrl);
-
-    const ktaKey = keyToAssetKey(gateway_pubkey);
-    const [ktaAccount, iotInfoAccount, configAccount] = await Promise.all([
-      connection.getAccountInfo(ktaKey),
-      connection.getAccountInfo(iotInfoKey(gateway_pubkey)),
-      connection.getAccountInfo(DATA_ONLY_CONFIG_KEY),
+    const [ktaAccount, iotAccount] = await Promise.all([
+      fetchAccount(env, keyToAssetKey(gateway_pubkey)),
+      fetchAccount(env, iotInfoKey(gateway_pubkey)),
     ]);
 
     if (!ktaAccount) {
       return jsonResponse({ error: "Gateway not yet issued on-chain. Run issue step first." }, 400);
     }
-    if (iotInfoAccount && location) {
-      // Already onboarded but requesting location assertion — allow it
-    } else if (iotInfoAccount) {
+    if (iotAccount && !location) {
       return jsonResponse({ already_onboarded: true });
     }
-    if (!configAccount) {
-      return jsonResponse({ error: "DataOnlyConfig account not found on-chain" }, 500);
+
+    // Convert H3 hex string to decimal (onboarding server expects decimal u64)
+    const locationDecimal = location ? BigInt("0x" + location).toString() : undefined;
+
+    // Only set `payer` when the user is paying DC (data-only mode or insufficient maker DC).
+    // Omitting `payer` makes the maker cover both DC and SOL fees.
+    const payload = { entityKey: gateway_pubkey };
+    if (user_pays) payload.payer = ownerStr;
+    if (locationDecimal !== undefined) payload.location = locationDecimal;
+    if (elevation !== undefined && elevation !== null) payload.elevation = elevation;
+    if (gain !== undefined && gain !== null) payload.gain = gain;
+
+    const res = await fetch(`${ONBOARDING_API}/transactions/iot/onboard`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Onboarding server error:", res.status, errText);
+      return jsonResponse({
+        error: `Onboarding server error (${res.status})`,
+      }, 500);
     }
 
-    const assetId = new PublicKey(ktaAccount.data.slice(KTA_ASSET_OFFSET, KTA_ASSET_OFFSET + 32)).toBase58();
-    const merkleTree = new PublicKey(configAccount.data.slice(CONFIG_MERKLE_OFFSET, CONFIG_MERKLE_OFFSET + 32));
-
-    const [asset, proof, { blockhash }, treeAccount] = await Promise.all([
-      fetchAsset(rpcUrl, assetId),
-      fetchAssetProof(rpcUrl, assetId),
-      connection.getLatestBlockhash(),
-      connection.getAccountInfo(merkleTree),
-    ]);
-
-    if (!treeAccount) {
-      return jsonResponse({ error: "Merkle tree account not found" }, 500);
+    const data = await res.json();
+    if (data?.errorMessage) {
+      console.error("Onboarding server errorMessage:", data.errorMessage);
+      return jsonResponse({ error: data.errorMessage }, 500);
     }
-    const canopyDepth = getCanopyDepth(treeAccount.data);
 
-    const onboardIx = buildOnboardInstruction(
-      ownerPubkey, gateway_pubkey, merkleTree, asset, proof, canopyDepth,
-      { location: location || undefined, elevation: elevation ?? undefined, gain: gain ?? undefined, mode: mode || "data_only" },
+    const solanaTransactions = data?.data?.solanaTransactions;
+    if (!Array.isArray(solanaTransactions) || solanaTransactions.length === 0) {
+      return jsonResponse({ error: "Onboarding server returned no transactions" }, 500);
+    }
+
+    const transactions = solanaTransactions.map((txBytes) =>
+      Buffer.from(txBytes).toString("base64")
     );
-
-    const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 });
-    const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 });
-
-    const message = new TransactionMessage({
-      payerKey: ownerPubkey,
-      recentBlockhash: blockhash,
-      instructions: [computeBudgetIx, computePriceIx, onboardIx],
-    }).compileToLegacyMessage();
-
-    const vtx = new VersionedTransaction(message);
 
     return jsonResponse({
       already_onboarded: false,
-      transaction: Buffer.from(vtx.serialize()).toString("base64"),
+      transactions,
     });
   } catch (err) {
     console.error("Onboard error:", err.message, err.stack);

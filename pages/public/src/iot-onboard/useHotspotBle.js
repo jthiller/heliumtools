@@ -7,7 +7,7 @@ import {
   encodeWifiConnect,
   encodeWifiRemove,
   encodeAddGateway,
-  decodeAddGatewayResponse,
+  StaleFirmwareError,
 } from './bleProto.js';
 
 const decoder = new TextDecoder();
@@ -199,7 +199,6 @@ export default function useHotspotBle() {
       char = await serviceRef.current.getCharacteristic(Characteristic.WIFI_CONNECT);
       await char.startNotifications();
 
-
       const resultPromise = new Promise((resolve, reject) => {
         timer = setTimeout(() => {
           char.removeEventListener('characteristicvaluechanged', handler);
@@ -253,49 +252,47 @@ export default function useHotspotBle() {
    * the signed response. Returns the raw signed txn bytes as a hex string
    * for the worker to parse and verify.
    */
-  const writeAddGateway = useCallback(async (ownerBytes, payerBytes) => {
+  const writeAddGateway = useCallback(async (ownerB58, payerB58) => {
     if (!serviceRef.current) throw new Error('Not connected');
     log('Requesting add_gateway from ECC chip...');
 
     const char = await serviceRef.current.getCharacteristic(Characteristic.ADD_GATEWAY);
-    await char.startNotifications();
 
-    try {
-      const result = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          char.removeEventListener('characteristicvaluechanged', handler);
-          reject(new Error('add_gateway response timed out'));
-        }, 30_000);
+    // Write the encoded request, then READ the characteristic to get the signed
+    // response. The firmware sets characteristic value to the signed Helium
+    // AddGatewayV1 txn binary on success, or a short ASCII error string on failure.
+    const payload = encodeAddGateway(ownerB58, payerB58);
+    await char.writeValue(payload);
 
-        function handler(event) {
-          clearTimeout(timer);
-          char.removeEventListener('characteristicvaluechanged', handler);
-          resolve(dataViewToBytes(event.target.value));
-        }
-        char.addEventListener('characteristicvaluechanged', handler);
-
-        const payload = encodeAddGateway(ownerBytes, payerBytes);
-        char.writeValue(payload).catch((err) => {
-          clearTimeout(timer);
-          char.removeEventListener('characteristicvaluechanged', handler);
-          reject(err);
-        });
-      });
-
-      log('ECC chip signed add_gateway');
-      const txnBytes = decodeAddGatewayResponse(result);
-      if (!txnBytes || txnBytes.length === 0) {
-        throw new Error('Empty add_gateway response from Hotspot');
+    // ECC signing takes a few seconds. Poll until we get a real signed response
+    // or an error string (skip "init" / "processing" intermediate states).
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      let view;
+      try {
+        view = await char.readValue();
+      } catch {
+        continue;
       }
-
-      const hex = Array.from(new Uint8Array(txnBytes))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      return hex;
-    } finally {
-      try { await char.stopNotifications(); } catch {}
+      const bytes = dataViewToBytes(view);
+      if (bytes.length < 20) {
+        const text = new TextDecoder().decode(bytes).trim();
+        if (/^(init|processing)$/i.test(text)) {
+          log(`ECC status: ${text}`);
+          continue;
+        }
+        if (/^[a-z_]+$/i.test(text)) {
+          throw new StaleFirmwareError(text);
+        }
+      }
+      log(`ECC signed: ${bytes.length} bytes`);
+      // Return as base64 — what the onboarding server expects
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
     }
+    throw new Error('add_gateway response timed out after 60s');
   }, [log]);
 
   // Detect silent disconnects via periodic GATT liveness check

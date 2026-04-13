@@ -37,11 +37,11 @@ export async function requestIssue(owner, gatewayPubkey, addGatewayTxn) {
   return data;
 }
 
-export async function requestOnboard(owner, gatewayPubkey, { location, elevation, gain, mode }) {
+export async function requestOnboard(owner, gatewayPubkey, { location, elevation, gain, user_pays }) {
   const res = await fetch(`${API_BASE}/onboard`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, gateway_pubkey: gatewayPubkey, location, elevation, gain, mode }),
+    body: JSON.stringify({ owner, gateway_pubkey: gatewayPubkey, location, elevation, gain, user_pays }),
   });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);
