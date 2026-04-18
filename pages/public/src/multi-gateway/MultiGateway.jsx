@@ -95,6 +95,17 @@ function buildOuiLookup(ouiData) {
   };
 }
 
+function buildDuplicateSourcesTitle(gw) {
+  const lines = ["Multiple sources reporting this MAC:"];
+  if (gw.current_source) lines.push(`• ${gw.current_source}  (bound — receiving downlinks)`);
+  for (const r of gw.duplicate_sources || []) {
+    const ago = r.seconds_ago == null ? "" : `, last seen ${r.seconds_ago}s ago`;
+    const hits = r.count > 1 ? `, ${r.count} attempts` : "";
+    lines.push(`• ${r.addr}  (rejected${hits}${ago})`);
+  }
+  return lines.join("\n");
+}
+
 function gatewayName(publicKey) {
   if (!publicKey) return null;
   return animalHash(publicKey);
@@ -437,6 +448,15 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                       {gw.mac}
                     </span>
                     <CopyButton text={gw.mac} />
+                    {gw.duplicate_sources?.length > 0 && (
+                      <span
+                        className="cursor-help text-amber-500"
+                        title={buildDuplicateSourcesTitle(gw)}
+                        aria-label="Multiple source IPs reporting this MAC"
+                      >
+                        ⚠
+                      </span>
+                    )}
                   </span>
                 </td>
                 <td className="px-4 py-3">
