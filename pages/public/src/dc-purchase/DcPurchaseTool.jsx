@@ -6,6 +6,7 @@ import {
 } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
 import { usdFormatter, numberFormatter } from "../lib/utils.js";
@@ -221,7 +222,9 @@ export default function DcPurchaseTool() {
                     <span className="text-xs font-mono uppercase tracking-wider text-content-tertiary shrink-0 w-14">Payer</span>
                     <div className="flex-1 min-w-0 overflow-hidden">
                       <MiddleEllipsis>
-                        <code className="text-xs text-content-secondary" title={resolved.payer}>{resolved.payer}</code>
+                        <Tooltip content={resolved.payer}>
+                          <code className="text-xs text-content-secondary">{resolved.payer}</code>
+                        </Tooltip>
                       </MiddleEllipsis>
                     </div>
                     <CopyButton text={resolved.payer} />
@@ -238,7 +241,9 @@ export default function DcPurchaseTool() {
                     >
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <MiddleEllipsis>
-                          <code title={resolved.escrow}>{resolved.escrow}</code>
+                          <Tooltip content={resolved.escrow}>
+                            <code>{resolved.escrow}</code>
+                          </Tooltip>
                         </MiddleEllipsis>
                       </div>
                       <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />

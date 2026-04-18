@@ -6,6 +6,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import CopyButton from "../components/CopyButton.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 import DcMintModal from "../dc-mint/DcMintModal.jsx";
 import { DC_MINT as DC_MINT_KEY } from "../dc-mint/constants.js";
 import { confirmAndVerify } from "../dc-mint/solanaUtils.js";
@@ -99,7 +100,7 @@ function buildDuplicateSourcesTitle(gw) {
   const lines = ["Multiple sources reporting this MAC:"];
   if (gw.current_source) lines.push(`• ${gw.current_source}  (bound — receiving downlinks)`);
   for (const r of gw.duplicate_sources || []) {
-    const ago = r.seconds_ago == null ? "" : `, last seen ${r.seconds_ago}s ago`;
+    const ago = r.seconds_ago == null ? "" : `, last seen ${formatDuration(r.seconds_ago)} ago`;
     const hits = r.count > 1 ? `, ${r.count} attempts` : "";
     lines.push(`• ${r.addr}  (rejected${hits}${ago})`);
   }
@@ -427,17 +428,16 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                   gw.mac === selectedMac ? "bg-surface-inset" : ""
                 }`}
               >
-                <td
-                  className="w-8 px-2 py-3"
-                  title={gw.connected ? "Active" : "Inactive"}
-                >
-                  <span
-                    className={`inline-block h-2 w-2 rounded-full ${
-                      gw.connected
-                        ? "bg-emerald-500"
-                        : "bg-content-tertiary"
-                    }`}
-                  />
+                <td className="w-8 px-2 py-3">
+                  <Tooltip content={gw.connected ? "Active" : "Inactive"}>
+                    <span
+                      className={`inline-block h-2 w-2 rounded-full ${
+                        gw.connected
+                          ? "bg-emerald-500"
+                          : "bg-content-tertiary"
+                      }`}
+                    />
+                  </Tooltip>
                 </td>
                 <td className="px-4 py-3">
                   <RegionBadge region={gw.region} />
@@ -449,21 +449,27 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                     </span>
                     <CopyButton text={gw.mac} />
                     {gw.duplicate_sources?.length > 0 && (
-                      <span
-                        className="cursor-help text-amber-500"
-                        title={buildDuplicateSourcesTitle(gw)}
-                        aria-label="Multiple source IPs reporting this MAC"
+                      <Tooltip
+                        content={buildDuplicateSourcesTitle(gw)}
+                        placement="bottom"
                       >
-                        ⚠
-                      </span>
+                        <span
+                          className="cursor-help text-amber-500"
+                          aria-label="Multiple source IPs reporting this MAC"
+                        >
+                          ⚠
+                        </span>
+                      </Tooltip>
                     )}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="text-xs text-content-primary" title={gw.public_key}>
-                      {gatewayName(gw.public_key) || truncateString(gw.public_key, 8, 4)}
-                    </span>
+                    <Tooltip content={gw.public_key}>
+                      <span className="text-xs text-content-primary">
+                        {gatewayName(gw.public_key) || truncateString(gw.public_key, 8, 4)}
+                      </span>
+                    </Tooltip>
                     {gw.public_key && <CopyButton text={gw.public_key} />}
                   </span>
                 </td>
@@ -494,37 +500,40 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                     if (!status) return <span className="text-content-tertiary">—</span>;
                     if (!status.onchain) {
                       return (
-                        <button
-                          className="rounded bg-accent px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90"
-                          title="Onboard this Hotspot"
-                          onClick={(e) => { e.stopPropagation(); onOnboard?.(gw.mac); }}
-                        >
-                          Onboard
-                        </button>
+                        <Tooltip content="Onboard this Hotspot">
+                          <button
+                            className="rounded bg-accent px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90"
+                            onClick={(e) => { e.stopPropagation(); onOnboard?.(gw.mac); }}
+                          >
+                            Onboard
+                          </button>
+                        </Tooltip>
                       );
                     }
                     if (!status.iot_onboarded || !status.has_location) {
                       return (
-                        <button
-                          className="rounded bg-amber-500 px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90"
-                          title={!status.iot_onboarded ? "Register on IoT network" : "Assert location"}
-                          onClick={(e) => { e.stopPropagation(); onAssertLocation?.(gw.mac); }}
-                        >
-                          {!status.iot_onboarded ? "Register" : "Set Location"}
-                        </button>
+                        <Tooltip content={!status.iot_onboarded ? "Register on IoT network" : "Assert location"}>
+                          <button
+                            className="rounded bg-amber-500 px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90"
+                            onClick={(e) => { e.stopPropagation(); onAssertLocation?.(gw.mac); }}
+                          >
+                            {!status.iot_onboarded ? "Register" : "Set Location"}
+                          </button>
+                        </Tooltip>
                       );
                     }
                     return (
-                      <a
-                        href={status.entity_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
-                        title="View on Helium World"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        ✓
-                      </a>
+                      <Tooltip content="View on Helium World">
+                        <a
+                          href={status.entity_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          ✓
+                        </a>
+                      </Tooltip>
                     );
                   })()}
                 </td>
@@ -554,21 +563,23 @@ function NetIdCell({ devAddr }) {
   if (!result) return <span className="text-content-tertiary">-</span>;
   const operator = netIdToOperator(result.netId);
   return (
-    <span className="text-xs" title={`NetID: ${result.netId}`}>
-      {operator ? (
-        <span className="text-content-primary">{operator}</span>
-      ) : (
-        <a
-          href={`https://michaeldjeffrey.github.io/bit_looker/?net_id=${result.netId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono text-accent hover:underline"
-        >
-          {result.netId}
-        </a>
-      )}
-      <span className="ml-1.5 text-[10px] text-content-tertiary">T{result.type}</span>
-    </span>
+    <Tooltip content={`NetID: ${result.netId}`}>
+      <span className="text-xs">
+        {operator ? (
+          <span className="text-content-primary">{operator}</span>
+        ) : (
+          <a
+            href={`https://michaeldjeffrey.github.io/bit_looker/?net_id=${result.netId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-accent hover:underline"
+          >
+            {result.netId}
+          </a>
+        )}
+        <span className="ml-1.5 text-[10px] text-content-tertiary">T{result.type}</span>
+      </span>
+    </Tooltip>
   );
 }
 
@@ -580,7 +591,9 @@ function FrameTypeBadge({ frameType }) {
   };
   const Icon = info.icon;
   return (
-    <Icon className={`h-4 w-4 ${info.color}`} title={info.title} aria-label={info.title} />
+    <Tooltip content={info.title}>
+      <Icon className={`h-4 w-4 ${info.color}`} aria-label={info.title} />
+    </Tooltip>
   );
 }
 
@@ -595,21 +608,24 @@ function OuiCell({ devAddr, ouiLookup }) {
   if (!match) return <span className="text-content-tertiary">-</span>;
   if (match.name) {
     return (
-      <span className="text-xs text-content-secondary" title={`OUI ${match.oui}`}>
-        {match.name}
-      </span>
+      <Tooltip content={`OUI ${match.oui}`}>
+        <span className="text-xs text-content-secondary">
+          {match.name}
+        </span>
+      </Tooltip>
     );
   }
   return (
+    <Tooltip content="Identify this OUI">
     <a
       href={WELL_KNOWN_REPO}
       target="_blank"
       rel="noopener noreferrer"
       className="text-xs text-accent hover:underline"
-      title="Identify this OUI"
     >
       {match.oui}
     </a>
+    </Tooltip>
   );
 }
 
@@ -681,20 +697,22 @@ function GatewayDetail({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
               {info.group !== prevGroup && (
                 <span className="text-border-muted select-none">|</span>
               )}
-              <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs" title={info.title}>
-                <input
-                  type="checkbox"
-                  checked={visibleTypes[type]}
-                  onChange={() => toggleType(type)}
-                  className="h-3 w-3 rounded border-border text-accent focus:ring-accent"
-                />
-                <info.icon
-                  className={`h-3.5 w-3.5 ${visibleTypes[type] ? info.color : "text-content-tertiary"}`}
-                />
-                <span className={visibleTypes[type] ? "text-content-secondary" : "text-content-tertiary"}>
-                  {info.label || info.title}
-                </span>
-              </label>
+              <Tooltip content={info.title}>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={visibleTypes[type]}
+                    onChange={() => toggleType(type)}
+                    className="h-3 w-3 rounded border-border text-accent focus:ring-accent"
+                  />
+                  <info.icon
+                    className={`h-3.5 w-3.5 ${visibleTypes[type] ? info.color : "text-content-tertiary"}`}
+                  />
+                  <span className={visibleTypes[type] ? "text-content-secondary" : "text-content-tertiary"}>
+                    {info.label || info.title}
+                  </span>
+                </label>
+              </Tooltip>
             </Fragment>
           );
         })}

@@ -8,6 +8,7 @@ import {
 } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
 import { usdFormatter, numberFormatter } from "../lib/utils.js";
@@ -199,14 +200,13 @@ export default function OrderStatus() {
               <div className="flex items-start gap-2">
                 {order?.payer ? (
                   <>
-                    <code
-                      className="flex-1 min-w-0 text-sm text-content-secondary"
-                      title={order.payer}
-                    >
-                      <MiddleEllipsis>
-                        <span>{order.payer}</span>
-                      </MiddleEllipsis>
-                    </code>
+                    <Tooltip content={order.payer}>
+                      <code className="flex-1 min-w-0 text-sm text-content-secondary">
+                        <MiddleEllipsis>
+                          <span>{order.payer}</span>
+                        </MiddleEllipsis>
+                      </code>
+                    </Tooltip>
                     <CopyButton text={order.payer} size="h-3.5 w-3.5" />
                   </>
                 ) : (
@@ -223,11 +223,13 @@ export default function OrderStatus() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <code className="min-w-0 flex-1" title={order.escrow}>
-                    <MiddleEllipsis>
-                      <span>{order.escrow}</span>
-                    </MiddleEllipsis>
-                  </code>
+                  <Tooltip content={order.escrow}>
+                    <code className="min-w-0 flex-1">
+                      <MiddleEllipsis>
+                        <span>{order.escrow}</span>
+                      </MiddleEllipsis>
+                    </code>
+                  </Tooltip>
                   <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
                 </a>
               ) : (

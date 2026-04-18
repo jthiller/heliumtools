@@ -11,6 +11,7 @@ import {
 } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 import {
   lookupHotspot,
   fetchRewards,
@@ -379,13 +380,14 @@ function HotspotCard({ hotspot, destination, rewardsLoaded, onNavigateToWallet }
           <div className="min-w-0">
             <dt className="text-xs text-content-secondary">Owner</dt>
             <dd className="flex items-center gap-1 min-w-0">
-              <button
-                onClick={() => onNavigateToWallet(hotspot.owner)}
-                className="font-mono text-accent-text hover:opacity-80 hover:underline truncate"
-                title="View wallet Hotspots"
-              >
-                {truncateAddress(hotspot.owner)}
-              </button>
+              <Tooltip content="View wallet Hotspots">
+                <button
+                  onClick={() => onNavigateToWallet(hotspot.owner)}
+                  className="font-mono text-accent-text hover:opacity-80 hover:underline truncate"
+                >
+                  {truncateAddress(hotspot.owner)}
+                </button>
+              </Tooltip>
               <CopyButton text={hotspot.owner} size="h-3.5 w-3.5" />
             </dd>
           </div>
@@ -648,7 +650,9 @@ function WalletRewardCells({ entityKey, walletRewards, rewardsLoading, rewardErr
   if (error) {
     return (
       <td colSpan={3} className="py-3 text-right">
-        <span className="text-xs text-rose-500 dark:text-rose-400" title={error}>Failed</span>
+        <Tooltip content={error}>
+          <span className="text-xs text-rose-500 dark:text-rose-400">Failed</span>
+        </Tooltip>
       </td>
     );
   }
@@ -709,9 +713,11 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
             <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" /> Failed
           </span>
           {claimErrors[entityKey] && (
-            <p className="text-xs text-rose-500 dark:text-rose-400 mt-0.5 truncate" title={claimErrors[entityKey]}>
-              {claimErrors[entityKey]}
-            </p>
+            <Tooltip content={claimErrors[entityKey]}>
+              <p className="text-xs text-rose-500 dark:text-rose-400 mt-0.5 truncate">
+                {claimErrors[entityKey]}
+              </p>
+            </Tooltip>
           )}
         </div>
       )}
@@ -722,9 +728,11 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
         <div className="text-right max-w-[180px] ml-auto">
           <span className="text-xs text-amber-600">Rate Limited</span>
           {claimErrors[entityKey] && (
-            <p className="text-xs text-amber-500 mt-0.5 truncate" title={claimErrors[entityKey]}>
-              {claimErrors[entityKey]}
-            </p>
+            <Tooltip content={claimErrors[entityKey]}>
+              <p className="text-xs text-amber-500 mt-0.5 truncate">
+                {claimErrors[entityKey]}
+              </p>
+            </Tooltip>
           )}
         </div>
       )}
@@ -1212,13 +1220,14 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                     </td>
                     <td className="py-3">
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => onNavigateToHotspot(h.entityKey)}
-                          className="font-mono text-xs text-accent-text hover:opacity-80 hover:underline"
-                          title="View Hotspot details"
-                        >
-                          {truncateAddress(h.entityKey)}
-                        </button>
+                        <Tooltip content="View Hotspot details">
+                          <button
+                            onClick={() => onNavigateToHotspot(h.entityKey)}
+                            className="font-mono text-xs text-accent-text hover:opacity-80 hover:underline"
+                          >
+                            {truncateAddress(h.entityKey)}
+                          </button>
+                        </Tooltip>
                         <CopyButton text={h.entityKey} size="h-3 w-3" />
                       </div>
                     </td>
@@ -1308,7 +1317,9 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
                     <div className="mt-2"><Spinner className="h-3 w-3 text-content-tertiary" /></div>
                   ) : hotspotError ? (
                     <div className="mt-2">
-                      <span className="text-xs text-rose-500 dark:text-rose-400" title={hotspotError}>Failed to load rewards</span>
+                      <Tooltip content={hotspotError}>
+                        <span className="text-xs text-rose-500 dark:text-rose-400">Failed to load rewards</span>
+                      </Tooltip>
                     </div>
                   ) : rewards ? (
                     <div className="mt-2 flex gap-4 text-xs font-mono">

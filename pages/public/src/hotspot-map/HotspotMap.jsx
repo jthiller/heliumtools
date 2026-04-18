@@ -15,6 +15,7 @@ import {
   LinkIcon,
 } from "@heroicons/react/24/outline";
 import MiddleEllipsis from "react-middle-ellipsis";
+import Tooltip from "../components/Tooltip.jsx";
 import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
 import { encodeKeys, decodeKeys } from "../lib/urlCompression.js";
@@ -275,23 +276,26 @@ function CopyableRow({ label, value }) {
       <span className="text-xs text-content-tertiary shrink-0">{label}</span>
       <div className="flex-1 min-w-0">
         <MiddleEllipsis>
-          <span className="text-xs font-mono text-content-secondary" title={value}>{value}</span>
+          <Tooltip content={value}>
+            <span className="text-xs font-mono text-content-secondary">{value}</span>
+          </Tooltip>
         </MiddleEllipsis>
       </div>
-      <button
-        onClick={() => {
-          navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        }}
-        className="shrink-0 rounded p-1 text-content-tertiary hover:text-content-secondary hover:bg-surface-inset transition"
-        title={`Copy ${label.toLowerCase()}`}
-      >
-        {copied
-          ? <ClipboardDocumentCheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-          : <ClipboardDocumentIcon className="h-3.5 w-3.5" />
-        }
-      </button>
+      <Tooltip content={copied ? "Copied" : `Copy ${label.toLowerCase()}`}>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(value);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          className="shrink-0 rounded p-1 text-content-tertiary hover:text-content-secondary hover:bg-surface-inset transition"
+        >
+          {copied
+            ? <ClipboardDocumentCheckIcon className="h-3.5 w-3.5 text-emerald-500" />
+            : <ClipboardDocumentIcon className="h-3.5 w-3.5" />
+          }
+        </button>
+      </Tooltip>
     </div>
   );
 }
@@ -1239,25 +1243,27 @@ export default function HotspotMap() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-content-tertiary">
                     Hotspots
                   </span>
-                  <button
-                    onClick={() => fitBounds(hotspots.filter((h) => h.coords))}
-                    className="text-[10px] text-content-tertiary hover:text-content-secondary transition"
-                    title="Fit map to all Hotspots"
-                  >
-                    Fit all
-                  </button>
-                  <button
-                    onClick={handleShare}
-                    className={`flex items-center gap-1 text-[10px] transition ${
-                      shareState === "copied"
-                        ? "text-emerald-600"
-                        : "text-content-tertiary hover:text-content-secondary"
-                    }`}
-                    title="Copy shareable link"
-                  >
-                    <LinkIcon className="h-3 w-3" />
-                    {shareState === "copied" ? "Copied!" : "Share"}
-                  </button>
+                  <Tooltip content="Fit map to all Hotspots">
+                    <button
+                      onClick={() => fitBounds(hotspots.filter((h) => h.coords))}
+                      className="text-[10px] text-content-tertiary hover:text-content-secondary transition"
+                    >
+                      Fit all
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Copy shareable link">
+                    <button
+                      onClick={handleShare}
+                      className={`flex items-center gap-1 text-[10px] transition ${
+                        shareState === "copied"
+                          ? "text-emerald-600"
+                          : "text-content-tertiary hover:text-content-secondary"
+                      }`}
+                    >
+                      <LinkIcon className="h-3 w-3" />
+                      {shareState === "copied" ? "Copied!" : "Share"}
+                    </button>
+                  </Tooltip>
                   <div className="flex items-center gap-1 ml-auto">
                     {[
                       { key: "all", label: `All ${stats.total}` },

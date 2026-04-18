@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ClipboardDocumentIcon, CheckIcon } from "@heroicons/react/24/outline";
+import Tooltip from "./Tooltip.jsx";
 
 export default function CopyButton({ text, size = "h-4 w-4" }) {
   const [copied, setCopied] = useState(false);
@@ -15,18 +16,19 @@ export default function CopyButton({ text, size = "h-4 w-4" }) {
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center text-content-tertiary hover:text-content-secondary transition-colors"
-      title="Copy to clipboard"
-      aria-label="Copy to clipboard"
-    >
-      {copied ? (
-        <CheckIcon className={`${size} text-emerald-500`} />
-      ) : (
-        <ClipboardDocumentIcon className={size} />
-      )}
-    </button>
+    <Tooltip content={copied ? "Copied" : "Copy to clipboard"}>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="inline-flex items-center text-content-tertiary hover:text-content-secondary transition-colors"
+        aria-label="Copy to clipboard"
+      >
+        {copied ? (
+          <CheckIcon className={`${size} text-emerald-500`} />
+        ) : (
+          <ClipboardDocumentIcon className={size} />
+        )}
+      </button>
+    </Tooltip>
   );
 }

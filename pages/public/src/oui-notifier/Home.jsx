@@ -14,12 +14,13 @@ import {
   Area,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as ChartTooltip,
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
+import Tooltip from "../components/Tooltip.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import MiddleEllipsis from "react-middle-ellipsis";
 import { classNames, usdFormatter, numberFormatter, getLocalStorageItem, setLocalStorageItem, removeLocalStorageItem } from "../lib/utils.js";
@@ -392,7 +393,7 @@ export default function HomePage() {
                         minTickGap={40}
                         tickFormatter={(str) => { const d = new Date(str); return `${d.getMonth() + 1}/${d.getDate()}`; }}
                       />
-                      <Tooltip
+                      <ChartTooltip
                         contentStyle={{ borderRadius: "8px", border: `1px solid ${chartColors.tooltipBorder}`, backgroundColor: chartColors.tooltipBg, color: chartColors.tooltipText, boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontSize: "13px" }}
                         formatter={(val) => [usdFormatter.format(val), "Balance"]}
                         labelFormatter={(label) => new Date(label).toLocaleDateString()}
@@ -418,7 +419,9 @@ export default function HomePage() {
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <MiddleEllipsis>
-                        <code className="text-sm text-content-secondary" title={payer}>{payer}</code>
+                        <Tooltip content={payer}>
+                          <code className="text-sm text-content-secondary">{payer}</code>
+                        </Tooltip>
                       </MiddleEllipsis>
                     </div>
                     <CopyButton text={payer} />
@@ -439,7 +442,9 @@ export default function HomePage() {
                   >
                     <span className="min-w-0 overflow-hidden">
                       <MiddleEllipsis>
-                        <code title={escrow}>{escrow}</code>
+                        <Tooltip content={escrow}>
+                          <code>{escrow}</code>
+                        </Tooltip>
                       </MiddleEllipsis>
                     </span>
                     <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
@@ -498,13 +503,13 @@ export default function HomePage() {
                           <td className="px-4 py-3 text-right">
                             {editingSubId === sub.id ? (
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => handleUpdateSubscription(sub.id)} aria-label="Save changes" title="Save changes" className="text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"><CheckIcon className="h-4 w-4" /></button>
-                                <button onClick={() => setEditingSubId(null)} aria-label="Cancel editing" title="Cancel editing" className="text-content-tertiary hover:text-content-secondary"><XMarkIcon className="h-4 w-4" /></button>
+                                <Tooltip content="Save changes"><button onClick={() => handleUpdateSubscription(sub.id)} aria-label="Save changes" className="text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"><CheckIcon className="h-4 w-4" /></button></Tooltip>
+                                <Tooltip content="Cancel editing"><button onClick={() => setEditingSubId(null)} aria-label="Cancel editing" className="text-content-tertiary hover:text-content-secondary"><XMarkIcon className="h-4 w-4" /></button></Tooltip>
                               </div>
                             ) : (
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => { setEditingSubId(sub.id); setEditLabel(sub.label || ""); setEditWebhook(sub.webhook_url || ""); }} aria-label="Edit subscription" title="Edit subscription" className="text-content-tertiary hover:text-content-secondary"><PencilIcon className="h-4 w-4" /></button>
-                                <button onClick={() => handleDeleteSubscription(sub.id)} aria-label="Delete subscription" title="Delete subscription" className="text-rose-400 hover:text-rose-600 dark:text-rose-500 dark:hover:text-rose-400"><TrashIcon className="h-4 w-4" /></button>
+                                <Tooltip content="Edit subscription"><button onClick={() => { setEditingSubId(sub.id); setEditLabel(sub.label || ""); setEditWebhook(sub.webhook_url || ""); }} aria-label="Edit subscription" className="text-content-tertiary hover:text-content-secondary"><PencilIcon className="h-4 w-4" /></button></Tooltip>
+                                <Tooltip content="Delete subscription"><button onClick={() => handleDeleteSubscription(sub.id)} aria-label="Delete subscription" className="text-rose-400 hover:text-rose-600 dark:text-rose-500 dark:hover:text-rose-400"><TrashIcon className="h-4 w-4" /></button></Tooltip>
                               </div>
                             )}
                           </td>
