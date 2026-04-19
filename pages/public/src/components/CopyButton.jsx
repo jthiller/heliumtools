@@ -16,7 +16,7 @@ export default function CopyButton({ text, size = "h-4 w-4" }) {
   };
 
   return (
-    <Tooltip content={copied ? "Copied" : "Copy to clipboard"}>
+    <Tooltip content="Copy to clipboard">
       <button
         type="button"
         onClick={handleCopy}

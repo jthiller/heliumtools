@@ -221,11 +221,11 @@ export default function DcPurchaseTool() {
                   <div className="flex items-center gap-2 overflow-hidden">
                     <span className="text-xs font-mono uppercase tracking-wider text-content-tertiary shrink-0 w-14">Payer</span>
                     <div className="flex-1 min-w-0 overflow-hidden">
-                      <MiddleEllipsis>
-                        <Tooltip content={resolved.payer}>
+                      <Tooltip content={resolved.payer}>
+                        <MiddleEllipsis>
                           <code className="text-xs text-content-secondary">{resolved.payer}</code>
-                        </Tooltip>
-                      </MiddleEllipsis>
+                        </MiddleEllipsis>
+                      </Tooltip>
                     </div>
                     <CopyButton text={resolved.payer} />
                   </div>
@@ -240,11 +240,11 @@ export default function DcPurchaseTool() {
                       rel="noreferrer"
                     >
                       <div className="flex-1 min-w-0 overflow-hidden">
-                        <MiddleEllipsis>
-                          <Tooltip content={resolved.escrow}>
+                        <Tooltip content={resolved.escrow}>
+                          <MiddleEllipsis>
                             <code>{resolved.escrow}</code>
-                          </Tooltip>
-                        </MiddleEllipsis>
+                          </MiddleEllipsis>
+                        </Tooltip>
                       </div>
                       <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
                     </a>

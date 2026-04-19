@@ -275,13 +275,13 @@ function CopyableRow({ label, value }) {
     <div className="flex items-center gap-2">
       <span className="text-xs text-content-tertiary shrink-0">{label}</span>
       <div className="flex-1 min-w-0">
-        <MiddleEllipsis>
-          <Tooltip content={value}>
+        <Tooltip content={value}>
+          <MiddleEllipsis>
             <span className="text-xs font-mono text-content-secondary">{value}</span>
-          </Tooltip>
-        </MiddleEllipsis>
+          </MiddleEllipsis>
+        </Tooltip>
       </div>
-      <Tooltip content={copied ? "Copied" : `Copy ${label.toLowerCase()}`}>
+      <Tooltip content={`Copy ${label.toLowerCase()}`}>
         <button
           onClick={() => {
             navigator.clipboard.writeText(value);

@@ -418,11 +418,11 @@ export default function HomePage() {
                 {payer ? (
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
-                      <MiddleEllipsis>
-                        <Tooltip content={payer}>
+                      <Tooltip content={payer}>
+                        <MiddleEllipsis>
                           <code className="text-sm text-content-secondary">{payer}</code>
-                        </Tooltip>
-                      </MiddleEllipsis>
+                        </MiddleEllipsis>
+                      </Tooltip>
                     </div>
                     <CopyButton text={payer} />
                   </div>
@@ -441,11 +441,11 @@ export default function HomePage() {
                     rel="noreferrer"
                   >
                     <span className="min-w-0 overflow-hidden">
-                      <MiddleEllipsis>
-                        <Tooltip content={escrow}>
+                      <Tooltip content={escrow}>
+                        <MiddleEllipsis>
                           <code>{escrow}</code>
-                        </Tooltip>
-                      </MiddleEllipsis>
+                        </MiddleEllipsis>
+                      </Tooltip>
                     </span>
                     <ArrowRightIcon className="h-3 w-3 shrink-0 -rotate-45" />
                   </a>
