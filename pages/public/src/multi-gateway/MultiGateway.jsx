@@ -19,6 +19,7 @@ import {
   requestOnboardTxn,
   createEventSource,
 } from "../lib/multiGatewayApi.js";
+import { fetchGeo } from "../lib/sharedApi.js";
 import { latLngToCell, cellToBoundary } from "h3-js";
 import {
   truncateString,
@@ -58,6 +59,15 @@ const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/styl
 const ISSUE_SOL_COST = 0.002;     // SOL for the issue step (account rent)
 const ONBOARD_SOL_COST = 0.004;   // SOL for both steps combined
 const ONBOARD_DC_COST = 100000;   // 100,000 DC ($1) for IoT network registration
+
+// Gateways without a GPS fix report (0, 0) ("null island"); treat that as missing.
+function hasValidLocation(g) {
+  return (
+    g?.latitude != null &&
+    g?.longitude != null &&
+    !(g.latitude === 0 && g.longitude === 0)
+  );
+}
 
 
 /**
@@ -804,7 +814,7 @@ function GatewayDetail({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
 function GatewayMapModal({ gateways, onClose }) {
   const dark = useDarkMode();
   const withCoords = useMemo(
-    () => gateways.filter((g) => g.latitude != null && g.longitude != null),
+    () => gateways.filter(hasValidLocation),
     [gateways],
   );
 
@@ -886,8 +896,7 @@ function GatewayMapModal({ gateways, onClose }) {
           <div className="flex-1 overflow-y-auto">
             {gateways.map((gw) => {
               const name = gatewayName(gw.public_key);
-              const hasCoords =
-                gw.latitude != null && gw.longitude != null;
+              const hasCoords = hasValidLocation(gw);
               return (
                 <button
                   key={gw.mac}
@@ -929,14 +938,31 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
   loading, isDark, onSubmit, inputClass, dcSufficient = true, onMintDc }) {
 
   const hasCoords = lat && lng && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng));
-  const initLat = hasCoords ? parseFloat(lat) : 37.77;
-  const initLng = hasCoords ? parseFloat(lng) : -122.42;
 
-  const [viewState, setViewState] = useState({
-    latitude: initLat,
-    longitude: initLng,
-    zoom: 16,
-  });
+  const [viewState, setViewState] = useState(() =>
+    hasCoords
+      ? { latitude: parseFloat(lat), longitude: parseFloat(lng), zoom: 16 }
+      : { latitude: 39, longitude: -98, zoom: 3 },
+  );
+
+  // Re-center on the requester's CF-derived location when starting blank.
+  // If the user drags before fetch resolves, hasCoords flips and cleanup cancels.
+  useEffect(() => {
+    if (hasCoords) return;
+    let cancelled = false;
+    fetchGeo().then((geo) => {
+      if (cancelled || !geo) return;
+      setViewState((v) => ({
+        ...v,
+        latitude: geo.latitude,
+        longitude: geo.longitude,
+        zoom: 10,
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasCoords]);
 
   // Compute h3 cell boundary from map center
   const h3Cell = useMemo(() => {
@@ -1137,9 +1163,12 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
   const [step, setStep] = useState(initialStep);
   const [txSignature, setTxSignature] = useState(null);
 
-  // Location form (pre-filled from gateway GPS if available)
-  const [lat, setLat] = useState(() => gateway?.latitude?.toString() || "");
-  const [lng, setLng] = useState(() => gateway?.longitude?.toString() || "");
+  const [lat, setLat] = useState(() =>
+    hasValidLocation(gateway) ? gateway.latitude.toString() : "",
+  );
+  const [lng, setLng] = useState(() =>
+    hasValidLocation(gateway) ? gateway.longitude.toString() : "",
+  );
   const [heightAGL, setHeightAGL] = useState(""); // height above ground level (m)
   const [gain, setGain] = useState("1.2"); // dBi
 

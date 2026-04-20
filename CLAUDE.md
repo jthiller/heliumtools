@@ -22,7 +22,16 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Tools organized under `src/tools/` (e.g., `src/tools/oui-notifier/`)
 - Schema: `worker/schema.sql`
 - Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
+- Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
 - Cron runs 4x/day: 00:00, 06:00, 12:00, 18:00 UTC
+
+### When to put something in `shared/` vs a specific tool
+Default to the tool's own directory. Hoist to `shared/` only when:
+1. **The code is not tool-specific** — it has no knowledge of any one tool's domain (e.g., gateways, OUIs, L1 migration). Reading `request.cf` or validating a Solana address qualifies; fetching gateway packets does not.
+2. **Two tools are actually consuming it, or one has a concrete imminent need.** Speculative "might reuse this someday" doesn't count. One caller isn't enough — leave the utility with that caller until a second tool has code that wants it. Hoisting on a hunch creates a "shared" bucket that accumulates dead code.
+3. **The shape is stable.** If the API is still being iterated on, let it bake inside the tool first. Hoisting signals "don't change this casually."
+
+When hoisting, mirror the path on both sides: `worker/src/tools/shared/<handler>` ↔ `pages/public/src/lib/sharedApi.js` ↔ route prefix `/shared`. Don't create an ad-hoc top-level worker route outside `tools/` — the prefix router in `src/index.js` is the single dispatch point.
 
 ### Environments
 - **Dev**: D1 `heliumtools-dev`, email from `alerts-dev@heliumtools.org`
@@ -42,7 +51,7 @@ cd worker && wrangler dev
 # Query production D1
 cd worker && npx wrangler d1 execute heliumtools-prod --env production --remote --command "SELECT ..."
 
-# Deploy worker (production)
+# Force-deploy worker (production) — normally not needed; main pushes auto-deploy
 cd worker && wrangler deploy --env production
 
 # Tail production logs
@@ -102,5 +111,4 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 
 ## Deployment
 
-- **Pages**: Cloudflare Pages — auto-deploys from `main` branch
-- **Worker**: Cloudflare Workers — requires manual deploy: `cd worker && wrangler deploy --env production`
+Both Pages and Worker auto-deploy from the `main` branch — any merge or direct push to `main` ships to production. There is no staging gate between commit and prod, so treat every commit to `main` as a production release. `wrangler deploy --env production` is only needed for out-of-band force deploys (e.g., config rollbacks).

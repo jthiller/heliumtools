@@ -12,6 +12,7 @@ import { handleMultiGatewayRequest } from "./tools/multi-gateway/index.js";
 import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { handleL1MigrationRequest } from "./tools/l1-migration/index.js";
 import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard/index.js";
+import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
 
 const routes = [
@@ -23,6 +24,7 @@ const routes = [
   { prefix: "/dc-mint", handler: handleDcMintRequest },
   { prefix: "/l1-migration", handler: handleL1MigrationRequest },
   { prefix: "/iot-onboard", handler: handleIotOnboardRequest },
+  { prefix: "/shared", handler: handleSharedRequest },
 ];
 
 function stripPrefix(request, prefix) {
