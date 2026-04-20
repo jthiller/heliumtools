@@ -18,8 +18,8 @@ import {
   requestIssueTxns,
   requestOnboardTxn,
   createEventSource,
-  fetchGeo,
 } from "../lib/multiGatewayApi.js";
+import { fetchGeo } from "../lib/sharedApi.js";
 import { latLngToCell, cellToBoundary } from "h3-js";
 import {
   truncateString,

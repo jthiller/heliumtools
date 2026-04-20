@@ -31,24 +31,6 @@ export async function fetchOuis() {
   return data;
 }
 
-let geoPromise = null;
-export function fetchGeo() {
-  if (!geoPromise) {
-    geoPromise = (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/geo`);
-        if (!res.ok) return null;
-        const data = await parseJson(res);
-        if (data?.latitude == null || data?.longitude == null) return null;
-        return { latitude: data.latitude, longitude: data.longitude };
-      } catch {
-        return null;
-      }
-    })();
-  }
-  return geoPromise;
-}
-
 export async function checkOnchainStatus(pubkeys) {
   const res = await fetch(`${API_BASE}/onchain`, {
     method: "POST",
