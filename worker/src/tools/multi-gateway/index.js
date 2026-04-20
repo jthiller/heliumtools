@@ -2,6 +2,7 @@ import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { getOuiCache } from "./oui-cache.js";
 import { handleBatchOnchainStatus } from "./handlers/onchain.js";
 import { handleIssueAndOnboard, handleOnboard } from "./handlers/issue.js";
+import { handleGeo } from "./handlers/geo.js";
 import { REGIONS } from "./regions.js";
 
 function getHost(env) {
@@ -181,6 +182,10 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
   if (pathname === "/ouis" && request.method === "GET") {
     const data = await getOuiCache(env);
     return jsonResponse(data);
+  }
+
+  if (pathname === "/geo" && request.method === "GET") {
+    return handleGeo(request);
   }
 
   return jsonResponse({ error: "Not found" }, 404);

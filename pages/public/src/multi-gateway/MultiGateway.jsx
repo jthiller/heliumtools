@@ -18,6 +18,7 @@ import {
   requestIssueTxns,
   requestOnboardTxn,
   createEventSource,
+  fetchGeo,
 } from "../lib/multiGatewayApi.js";
 import { latLngToCell, cellToBoundary } from "h3-js";
 import {
@@ -937,14 +938,31 @@ function LocationStep({ lat, lng, heightAGL, gain, setLat, setLng, setHeightAGL,
   loading, isDark, onSubmit, inputClass, dcSufficient = true, onMintDc }) {
 
   const hasCoords = lat && lng && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng));
-  const initLat = hasCoords ? parseFloat(lat) : 37.77;
-  const initLng = hasCoords ? parseFloat(lng) : -122.42;
 
-  const [viewState, setViewState] = useState({
-    latitude: initLat,
-    longitude: initLng,
-    zoom: 16,
-  });
+  const [viewState, setViewState] = useState(() =>
+    hasCoords
+      ? { latitude: parseFloat(lat), longitude: parseFloat(lng), zoom: 16 }
+      : { latitude: 39, longitude: -98, zoom: 3 },
+  );
+
+  // Re-center on the requester's CF-derived location when starting blank.
+  // If the user drags before fetch resolves, hasCoords flips and cleanup cancels.
+  useEffect(() => {
+    if (hasCoords) return;
+    let cancelled = false;
+    fetchGeo().then((geo) => {
+      if (cancelled || !geo) return;
+      setViewState((v) => ({
+        ...v,
+        latitude: geo.latitude,
+        longitude: geo.longitude,
+        zoom: 10,
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasCoords]);
 
   // Compute h3 cell boundary from map center
   const h3Cell = useMemo(() => {
