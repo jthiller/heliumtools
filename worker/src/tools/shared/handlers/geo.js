@@ -8,7 +8,7 @@ export function handleGeo(request) {
   const lng = cf.longitude != null ? parseFloat(cf.longitude) : NaN;
   const body = Number.isFinite(lat) && Number.isFinite(lng)
     ? { latitude: lat, longitude: lng, city: cf.city ?? null }
-    : { latitude: null, longitude: null };
+    : { latitude: null, longitude: null, city: null };
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: {
