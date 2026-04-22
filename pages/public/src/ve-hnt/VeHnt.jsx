@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAsyncCallback } from "react-async-hook";
-import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import Address from "@helium/address";
+import { resolveSolanaWallet } from "../lib/solanaAddress.js";
 import {
   ArrowTopRightOnSquareIcon,
   BoltIcon,
@@ -21,20 +21,6 @@ import { formatDuration, numberFormatter, truncateString } from "../lib/utils.js
 import { fetchPositions, buildClaimTransactions } from "../lib/veHntApi.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function resolveSolanaWallet(input) {
-  if (!input) return null;
-  const trimmed = input.trim();
-  try {
-    return new PublicKey(trimmed);
-  } catch {
-    try {
-      return new PublicKey(Address.fromB58(trimmed).publicKey);
-    } catch {
-      return null;
-    }
-  }
-}
 
 function fmtHnt(value, opts = {}) {
   const { dp = 2, compact = false } = opts;
@@ -504,7 +490,7 @@ export default function VeHnt() {
         }
         const sigs = [];
         for (const b64 of transactions) {
-          const tx = VersionedTransaction.deserialize(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+          const tx = VersionedTransaction.deserialize(Buffer.from(b64, "base64"));
           setClaimStates((s) => ({ ...s, [mint]: "signing" }));
           const sig = await sendTransaction(tx, connection);
           setClaimStates((s) => ({ ...s, [mint]: "sending" }));

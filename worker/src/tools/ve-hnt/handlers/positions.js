@@ -71,10 +71,12 @@ export async function handlePositions(url, env, request) {
     const nowTs = Math.floor(Date.now() / 1000);
     const currentEpoch = computeCurrentEpoch(nowTs);
 
-    // 1. Fetch registrar (cached — rarely changes)
-    const registrarBuf = await RegistrarCache(env, () =>
-      fetchAccount(env, HNT_REGISTRAR_KEY),
-    );
+    // Registrar fetch and NFT discovery are independent — parallelize.
+    const [registrarBuf, mints] = await Promise.all([
+      RegistrarCache(env, () => fetchAccount(env, HNT_REGISTRAR_KEY)),
+      findPositionMints(env, wallet),
+    ]);
+
     if (!registrarBuf) {
       return jsonResponse({ error: "Failed to load HNT registrar." }, 500);
     }
@@ -85,9 +87,6 @@ export async function handlePositions(url, env, request) {
     if (hntVotingMintIdx === -1) {
       return jsonResponse({ error: "Registrar missing HNT voting mint." }, 500);
     }
-
-    // 2. Discover position NFT mints for the wallet
-    const mints = await findPositionMints(env, wallet);
     if (mints.length === 0) {
       return jsonResponse({
         wallet: wallet.toBase58(),
@@ -213,42 +212,39 @@ export async function handlePositions(url, env, request) {
       totalVeHnt += veHnt;
 
       positions.push({
-        _sortVeHnt: veHnt,
-        mint: mint.toBase58(),
-        positionKey: positionKey(mint).toBase58(),
-        amountLockedHnt: formatNative(position.amountDepositedNative, HNT_DECIMALS),
-        lockup: {
-          kind: position.lockup.kind,
-          startTs: position.lockup.startTs,
-          endTs: position.lockup.endTs,
-          timeRemainingSecs: Math.max(0, position.lockup.endTs - nowTs),
+        sortKey: veHnt,
+        out: {
+          mint: mint.toBase58(),
+          positionKey: positionKey(mint).toBase58(),
+          amountLockedHnt: formatNative(position.amountDepositedNative, HNT_DECIMALS),
+          lockup: {
+            kind: position.lockup.kind,
+            startTs: position.lockup.startTs,
+            endTs: position.lockup.endTs,
+            timeRemainingSecs: Math.max(0, position.lockup.endTs - nowTs),
+          },
+          veHnt: formatNative(veHnt, HNT_DECIMALS),
+          isLandrush,
+          landrushMultiplier: multiplier,
+          delegation: delegationOut,
+          pendingRewardsHnt: pendingRewards === null ? null : formatNative(pendingRewards, HNT_DECIMALS),
+          pendingRewardsApprox: delegation ? "current-vehnt" : null,
+          dailyRewardHnt: dailyReward === null ? null : formatNative(dailyReward, HNT_DECIMALS),
+          numActiveVotes: position.numActiveVotes,
+          recentProposalsCount: position.recentProposals.length,
+          proxy: proxyFromPosition(position, wallet),
         },
-        veHnt: formatNative(veHnt, HNT_DECIMALS),
-        isLandrush,
-        landrushMultiplier: multiplier,
-        delegation: delegationOut,
-        pendingRewardsHnt: pendingRewards === null ? null : formatNative(pendingRewards, HNT_DECIMALS),
-        pendingRewardsApprox: delegation ? "current-vehnt" : null,
-        dailyRewardHnt: dailyReward === null ? null : formatNative(dailyReward, HNT_DECIMALS),
-        numActiveVotes: position.numActiveVotes,
-        recentProposalsCount: position.recentProposals.length,
-        proxy: proxyFromPosition(position, wallet),
       });
     }
 
-    // Sort positions by veHNT descending (biggest first), then strip sort key
-    positions.sort((a, b) => {
-      if (a._sortVeHnt < b._sortVeHnt) return 1;
-      if (a._sortVeHnt > b._sortVeHnt) return -1;
-      return 0;
-    });
-    for (const p of positions) delete p._sortVeHnt;
+    positions.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
+    const sortedPositions = positions.map((p) => p.out);
 
     console.log(
       JSON.stringify({
         event: "vehnt_positions",
         wallet: wallet.toBase58(),
-        positionCount: positions.length,
+        positionCount: sortedPositions.length,
         currentEpoch,
       }),
     );
@@ -260,9 +256,9 @@ export async function handlePositions(url, env, request) {
         hntLocked: formatNative(totalLocked, HNT_DECIMALS),
         veHnt: formatNative(totalVeHnt, HNT_DECIMALS),
         pendingRewardsHnt: formatNative(totalPending, HNT_DECIMALS),
-        positionCount: positions.length,
+        positionCount: sortedPositions.length,
       },
-      positions,
+      positions: sortedPositions,
     });
   } catch (err) {
     console.error("ve-hnt positions error", err?.message, err?.stack);

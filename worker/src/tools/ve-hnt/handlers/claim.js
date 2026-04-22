@@ -64,11 +64,13 @@ export async function handleClaim(request, env) {
 
   try {
     // Refetch the delegated position — don't trust client state.
+    // Blockhash is independent of account state, so fetch it in parallel.
     const positionKey = derivePositionKey(mint);
     const delegatedKey = deriveDelegatedPositionKey(positionKey);
-    const [delegatedBuf, daoBuf] = await Promise.all([
+    const [delegatedBuf, daoBuf, blockhash] = await Promise.all([
       fetchAccount(env, delegatedKey),
       DaoCache(env, () => fetchAccount(env, DAO_KEY)),
+      getRecentBlockhash(env),
     ]);
     if (!delegatedBuf) {
       return jsonResponse(
@@ -86,7 +88,6 @@ export async function handleClaim(request, env) {
     const nowTs = Math.floor(Date.now() / 1000);
     const currentEpoch = computeCurrentEpoch(nowTs);
 
-    // Compute the unclaimed epoch list (bitmap-aware).
     const unclaimed = [];
     for (let e = delegation.lastClaimedEpoch + 1; e < currentEpoch; e++) {
       if (unclaimed.length >= MAX_EPOCHS_PER_CLAIM_CALL) break;
@@ -102,7 +103,6 @@ export async function handleClaim(request, env) {
       });
     }
 
-    const blockhash = await getRecentBlockhash(env);
     const transactions = await buildClaimTransactions({
       positionAuthority,
       mint,
