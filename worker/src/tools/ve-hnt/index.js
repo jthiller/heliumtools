@@ -1,6 +1,7 @@
 import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handlePositions } from "./handlers/positions.js";
 import { handleClaim } from "./handlers/claim.js";
+import { handlePositionEpochs } from "./handlers/positionEpochs.js";
 
 export async function handleVeHntRequest(request, env) {
   const url = new URL(request.url);
@@ -12,6 +13,10 @@ export async function handleVeHntRequest(request, env) {
 
   if (pathname === "/positions" && request.method === "GET") {
     return handlePositions(url, env, request);
+  }
+
+  if (pathname === "/position-epochs" && request.method === "GET") {
+    return handlePositionEpochs(url, env, request);
   }
 
   if (pathname === "/claim" && request.method === "POST") {

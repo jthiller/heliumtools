@@ -14,6 +14,14 @@ export async function fetchPositions(wallet) {
   return data;
 }
 
+export async function fetchPositionEpochs(positionMint) {
+  const query = new URLSearchParams({ positionMint });
+  const res = await fetch(`${API_BASE}/position-epochs?${query.toString()}`);
+  const data = await parseJson(res);
+  throwIfApiError(res, data);
+  return data;
+}
+
 export async function buildClaimTransactions({ wallet, positionMint }) {
   const res = await fetch(`${API_BASE}/claim`, {
     method: "POST",

@@ -18,7 +18,7 @@ import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import Tooltip from "../components/Tooltip.jsx";
 import { formatDuration, numberFormatter, truncateString } from "../lib/utils.js";
-import { fetchPositions, buildClaimTransactions } from "../lib/veHntApi.js";
+import { fetchPositions, fetchPositionEpochs, buildClaimTransactions } from "../lib/veHntApi.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -178,6 +178,129 @@ function StatusPill({ position }) {
 }
 
 // ─── Position Card (active) ───────────────────────────────────────────────────
+
+// ─── Per-epoch drilldown ──────────────────────────────────────────────────────
+
+const REASON_COPY = {
+  v1_hnt: "Claimable (v1): HNT via DAO",
+  v0_dnt: "Claimable (v0): DNT via sub-DAO",
+  v0_blocked_by_hnt_issued: "Locked (v0 blocked): sub-DAO shows DNT but HIP-138 cutover already issued HNT",
+  position_vehnt_zero: "No reward: position's veHNT at this epoch's start is 0 (lockup already expired)",
+  dao_epoch_not_issued: "Waiting: DAO hasn't yet marked this epoch's rewards done_issuing",
+  no_rewards: "No reward data for this epoch",
+};
+
+function ReasonPill({ reason }) {
+  const isClaimable = reason === "v1_hnt" || reason === "v0_dnt";
+  const isLocked = reason === "v0_blocked_by_hnt_issued";
+  const color = isClaimable
+    ? "text-emerald-600 dark:text-emerald-400"
+    : isLocked
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-content-tertiary";
+  return (
+    <Tooltip content={REASON_COPY[reason] ?? reason}>
+      <span className={`font-mono text-[10px] uppercase tracking-[0.08em] border-b border-dotted border-content-tertiary cursor-help ${color}`}>
+        {reason.replaceAll("_", " ")}
+      </span>
+    </Tooltip>
+  );
+}
+
+function EpochBreakdown({ mint }) {
+  const { execute, result, error, loading } = useAsyncCallback(fetchPositionEpochs);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (open && !result && !loading) execute(mint);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const summary = useMemo(() => {
+    if (!result?.epochs) return null;
+    const byReason = {};
+    let totalHnt = 0;
+    let totalDnt = 0;
+    for (const e of result.epochs) {
+      byReason[e.reason] = (byReason[e.reason] ?? 0) + 1;
+      totalHnt += Number(e.claimable.hnt);
+      totalDnt += Number(e.claimable.dnt);
+    }
+    return { byReason, totalHnt, totalDnt, count: result.epochs.length };
+  }, [result]);
+
+  return (
+    <div className="border-t border-border-muted">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-6 py-2.5 text-left hover:bg-surface-inset/40 transition"
+        aria-expanded={open}
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-content-tertiary">
+          Per-epoch breakdown
+        </span>
+        <ChevronDownIcon className={`h-3.5 w-3.5 text-content-tertiary transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-6 pb-4">
+          {loading && (
+            <p className="text-xs text-content-tertiary py-3">Loading epoch data…</p>
+          )}
+          {error && (
+            <p className="text-xs text-rose-600 py-3">{error.message}</p>
+          )}
+          {summary && (
+            <>
+              <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-mono text-content-tertiary">
+                <span><span className="text-content tabular-nums">{summary.count}</span> unclaimed epochs</span>
+                {summary.totalHnt > 0 && <span>· <span className="text-emerald-600 tabular-nums">{fmtHnt(summary.totalHnt)}</span> HNT</span>}
+                {summary.totalDnt > 0 && <span>· <span className="text-emerald-600 tabular-nums">{fmtHnt(summary.totalDnt)}</span> DNT</span>}
+                {Object.entries(summary.byReason).map(([r, n]) => (
+                  <span key={r}>· <span className="text-content tabular-nums">{n}</span> {r.replaceAll("_", " ")}</span>
+                ))}
+              </div>
+              <div className="max-h-72 overflow-y-auto overflow-x-auto rounded-md border border-border-muted">
+                <table className="w-full text-xs font-mono tabular-nums">
+                  <thead className="sticky top-0 bg-surface-inset">
+                    <tr className="text-left text-content-tertiary uppercase tracking-[0.08em] text-[10px]">
+                      <th className="px-3 py-2 font-medium">Epoch</th>
+                      <th className="px-3 py-2 font-medium text-right">Pos veHNT</th>
+                      <th className="px-3 py-2 font-medium text-right">HNT</th>
+                      <th className="px-3 py-2 font-medium text-right">DNT</th>
+                      <th className="px-3 py-2 font-medium">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.epochs.map((row) => {
+                      const hnt = Number(row.claimable.hnt);
+                      const dnt = Number(row.claimable.dnt);
+                      return (
+                        <tr key={row.epoch} className="border-t border-border-muted">
+                          <td className="px-3 py-1.5 text-content-secondary">{row.epoch}</td>
+                          <td className="px-3 py-1.5 text-right text-content-tertiary">
+                            {row.positionVehnt === "0" ? "0" : fmtHnt(Number(row.positionVehnt) / 1e8)}
+                          </td>
+                          <td className={`px-3 py-1.5 text-right ${hnt > 0 ? "text-content" : "text-content-tertiary"}`}>
+                            {hnt > 0 ? fmtHnt(hnt) : "—"}
+                          </td>
+                          <td className={`px-3 py-1.5 text-right ${dnt > 0 ? "text-content" : "text-content-tertiary"}`}>
+                            {dnt > 0 ? fmtHnt(dnt) : "—"}
+                          </td>
+                          <td className="px-3 py-1.5"><ReasonPill reason={row.reason} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CliffProgress({ startTs, endTs }) {
   const now = Date.now() / 1000;
@@ -366,6 +489,8 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
           </a>
         </div>
       )}
+
+      {delegation && <EpochBreakdown mint={position.mint} />}
 
       {/* Footer: position key + vote activity */}
       <footer className="flex items-center justify-between gap-3 px-6 py-3 border-t border-border-muted text-[11px] text-content-tertiary">
