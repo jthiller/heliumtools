@@ -292,7 +292,19 @@ export function decodeSubDaoEpochInfo(buf) {
   /* vehnt_in_closing_positions */ o += 16;
   /* fall_rates_from_closing_positions */ o += 16;
   const delegationRewardsIssued = buf.readBigUInt64LE(o); o += 8;
-  return { delegationRewardsIssued, vehntAtEpochStart };
+
+  // Option<u128> utility_score
+  const usTag = buf.readUInt8(o); o += 1;
+  if (usTag === 1) o += 16;
+  // Option<i64> rewards_issued_at
+  const riaTag = buf.readUInt8(o); o += 1;
+  if (riaTag === 1) o += 8;
+  /* bump_seed */ o += 1;
+  /* initialized */ o += 1;
+  /* dc_onboarding_fees_paid */ o += 8;
+  const hntRewardsIssued = buf.readBigUInt64LE(o); o += 8;
+
+  return { delegationRewardsIssued, vehntAtEpochStart, hntRewardsIssued };
 }
 
 export function decodeDaoEpochInfo(buf) {

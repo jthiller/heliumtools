@@ -126,10 +126,16 @@ export function computePendingRewards({
       continue;
     }
 
+    // DNT path via claim_rewards_v0. On-chain constraint
+    // `sub_dao_epoch_info.hnt_rewards_issued == 0` gates this: if HIP-138
+    // already issued HNT rewards against the epoch (post-cutover), v0 is
+    // blocked and the `delegation_rewards_issued` balance on the sub_dao
+    // epoch is legacy bookkeeping, not actually claimable.
     const subDaoInfo = subDaoEpochInfoByEpoch?.get(e);
     if (subDaoInfo
         && subDaoInfo.delegationRewardsIssued > 0n
-        && subDaoInfo.vehntAtEpochStart > 0n) {
+        && subDaoInfo.vehntAtEpochStart > 0n
+        && subDaoInfo.hntRewardsIssued === 0n) {
       pendingRewardsDnt +=
         (positionVehnt * subDaoInfo.delegationRewardsIssued) / subDaoInfo.vehntAtEpochStart;
       unclaimedEpochsDnt.push(e);
