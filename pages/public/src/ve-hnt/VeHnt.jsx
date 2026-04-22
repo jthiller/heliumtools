@@ -348,14 +348,18 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
             </Tooltip>
           )}
           {numActiveVotes > 0 && (
-            <span className="font-mono uppercase tracking-[0.1em] text-[10px]">
-              {numActiveVotes} active vote{numActiveVotes === 1 ? "" : "s"}
-            </span>
+            <Tooltip content="Proposals this position is currently casting a vote in">
+              <span className="font-mono uppercase tracking-[0.1em] text-[10px] border-b border-dotted border-content-tertiary cursor-help">
+                {numActiveVotes} active vote{numActiveVotes === 1 ? "" : "s"}
+              </span>
+            </Tooltip>
           )}
-          {recentProposalsCount > 0 && !numActiveVotes && (
-            <span className="font-mono uppercase tracking-[0.1em] text-[10px]">
-              {recentProposalsCount} recent
-            </span>
+          {recentProposalsCount > 0 && (
+            <Tooltip content="Governance proposals this position has participated in within its recent-proposals tracking window (used for reward eligibility)">
+              <span className="font-mono uppercase tracking-[0.1em] text-[10px] border-b border-dotted border-content-tertiary cursor-help">
+                {recentProposalsCount} recent proposal{recentProposalsCount === 1 ? "" : "s"}
+              </span>
+            </Tooltip>
           )}
         </div>
       </footer>
