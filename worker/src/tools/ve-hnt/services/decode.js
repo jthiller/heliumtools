@@ -133,8 +133,8 @@ export function isEpochClaimed(delegatedPosition, epoch) {
  *   collection: Pubkey (32)
  *   bump_seed: u8 (1)
  *   collection_bump_seed: u8 (1)
- *   reserved1: [u8; 3]
- *   reserved2: [u64; 8]
+ *   reserved1: [u8; 4]
+ *   reserved2: [u64; 3]  (24 bytes)
  *   proxy_config: Pubkey (32)
  *   voting_mints: Vec<VotingMintConfigV0>  (4-byte LE len + items)
  *
@@ -160,8 +160,8 @@ export function decodeRegistrar(buf) {
   const collection = new PublicKey(buf.slice(o, o + 32)); o += 32;
   /* bump_seed */ o += 1;
   /* collection_bump_seed */ o += 1;
-  /* reserved1 [u8;3] */ o += 3;
-  /* reserved2 [u64;8] */ o += 64;
+  /* reserved1 [u8;4] */ o += 4;
+  /* reserved2 [u64;3] */ o += 24;
   const proxyConfig = new PublicKey(buf.slice(o, o + 32)); o += 32;
 
   const vmcLen = buf.readUInt32LE(o); o += 4;
