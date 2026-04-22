@@ -1,5 +1,6 @@
 import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handlePositions } from "./handlers/positions.js";
+import { handleClaim } from "./handlers/claim.js";
 
 export async function handleVeHntRequest(request, env) {
   const url = new URL(request.url);
@@ -11,6 +12,10 @@ export async function handleVeHntRequest(request, env) {
 
   if (pathname === "/positions" && request.method === "GET") {
     return handlePositions(url, env, request);
+  }
+
+  if (pathname === "/claim" && request.method === "POST") {
+    return handleClaim(request, env);
   }
 
   return jsonResponse({ error: "Not found" }, 404);
