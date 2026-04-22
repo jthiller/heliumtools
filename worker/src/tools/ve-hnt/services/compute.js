@@ -64,53 +64,85 @@ export function computeVeHntAt(position, votingMintConfig, ts) {
 /**
  * Sum pending delegation rewards across unclaimed epochs.
  *
- * For each epoch e in (last_claimed_epoch, currentEpoch) where the bitmap
- * bit is 0:
- *   share = position_vehnt_at_epoch_start(e) * dao_epoch_info[e].delegation_rewards_issued
- *           / dao_epoch_info[e].vehnt_at_epoch_start
+ * For each unclaimed epoch e in (last_claimed_epoch, currentEpoch) we
+ * check TWO reward sources in parallel:
  *
- * Epochs whose dao_epoch_info has not yet finished issuing (done_issuing_rewards=false)
- * are skipped — they'll be claimable later.
+ *   1. DaoEpochInfoV0 — post-HIP-138. Non-zero delegation_rewards_issued
+ *      means HNT is claimable via claim_rewards_v1.
+ *   2. SubDaoEpochInfoV0 — pre-HIP-138. Non-zero delegation_rewards_issued
+ *      means DNT (IOT or MOBILE, depending on sub-dao) is claimable via
+ *      claim_rewards_v0.
  *
- * Returns: { pendingRewards: BigInt, unclaimedEpochs: number[] }
+ * Share formula (both sources):
+ *   share = position_vehnt_at_epoch_start(e) * delegation_rewards_issued(e)
+ *           / vehnt_at_epoch_start(e)
+ *
+ * Bitmap is shared between v0 and v1 — set_claimed advances regardless of
+ * which program was called. So per epoch exactly one of the two sources
+ * is active (the one that matched HIP-138 activation status at that time).
+ *
+ * Returns:
+ *   {
+ *     pendingRewardsHnt: BigInt,
+ *     pendingRewardsDnt: BigInt,   // iot or mobile, depends on sub_dao
+ *     unclaimedEpochsHnt: number[],
+ *     unclaimedEpochsDnt: number[],
+ *     unclaimedEpochsCount: number,
+ *   }
  */
 export function computePendingRewards({
   position,
   delegatedPosition,
   votingMintConfig,
   daoEpochInfoByEpoch,
+  subDaoEpochInfoByEpoch,
   currentEpoch,
   secondsPerEpoch,
 }) {
-  const unclaimedEpochs = [];
-  let pendingRewards = 0n;
+  let pendingRewardsHnt = 0n;
+  let pendingRewardsDnt = 0n;
+  const unclaimedEpochsHnt = [];
+  const unclaimedEpochsDnt = [];
+  let unclaimedEpochsCount = 0;
 
   const startEpoch = delegatedPosition.lastClaimedEpoch + 1;
-  const endEpoch = currentEpoch; // exclusive — current epoch hasn't closed
+  const endEpoch = currentEpoch;
 
   for (let e = startEpoch; e < endEpoch; e++) {
     if (isEpochClaimed(delegatedPosition, e)) continue;
-    const info = daoEpochInfoByEpoch.get(e);
-    if (!info) continue; // not initialized or not fetched
-    if (!info.doneIssuingRewards) continue;
-    if (info.delegationRewardsIssued === 0n) continue;
-    if (info.vehntAtEpochStart === 0n) continue;
+    unclaimedEpochsCount++;
 
     const epochStartTs = e * secondsPerEpoch;
     const positionVehnt = computeVeHntAt(position, votingMintConfig, epochStartTs);
-    if (positionVehnt === 0n) {
-      // expired position before this epoch — still counts as claimed once we advance past it.
-      unclaimedEpochs.push(e);
+    if (positionVehnt === 0n) continue;
+
+    const daoInfo = daoEpochInfoByEpoch.get(e);
+    if (daoInfo && daoInfo.doneIssuingRewards
+        && daoInfo.delegationRewardsIssued > 0n
+        && daoInfo.vehntAtEpochStart > 0n) {
+      pendingRewardsHnt +=
+        (positionVehnt * daoInfo.delegationRewardsIssued) / daoInfo.vehntAtEpochStart;
+      unclaimedEpochsHnt.push(e);
       continue;
     }
 
-    const share =
-      (positionVehnt * info.delegationRewardsIssued) / info.vehntAtEpochStart;
-    pendingRewards += share;
-    unclaimedEpochs.push(e);
+    const subDaoInfo = subDaoEpochInfoByEpoch?.get(e);
+    if (subDaoInfo
+        && subDaoInfo.delegationRewardsIssued > 0n
+        && subDaoInfo.vehntAtEpochStart > 0n) {
+      pendingRewardsDnt +=
+        (positionVehnt * subDaoInfo.delegationRewardsIssued) / subDaoInfo.vehntAtEpochStart;
+      unclaimedEpochsDnt.push(e);
+    }
   }
 
-  return { pendingRewards, unclaimedEpochs };
+  return {
+    pendingRewardsHnt,
+    pendingRewardsDnt,
+    unclaimedEpochsHnt,
+    unclaimedEpochsDnt,
+    unclaimedEpochsCount,
+  };
 }
 
 /**

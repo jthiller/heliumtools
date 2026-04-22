@@ -72,6 +72,8 @@ function lockupSummary(lockup) {
 
 function SummaryHeader({ totals, currentEpoch }) {
   const pendingNum = Number(totals.pendingRewardsHnt || 0);
+  const iotPending = Number(totals.pendingRewardsIot || 0);
+  const mobilePending = Number(totals.pendingRewardsMobile || 0);
   return (
     <div className="relative overflow-hidden rounded-2xl border border-border bg-surface-raised">
       {/* Headline */}
@@ -110,13 +112,24 @@ function SummaryHeader({ totals, currentEpoch }) {
             {fmtHnt(totals.pendingRewardsHnt)} <span className="text-sm font-sans text-content-secondary">HNT</span>
           </p>
         </div>
-        {pendingNum > 0 && (
-          <Tooltip content="Approximates historical veHNT with current value. Cliff positions may vary slightly from on-chain.">
-            <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary border-b border-dotted border-content-tertiary">
-              approx*
-            </p>
-          </Tooltip>
-        )}
+        <div className="text-right">
+          {(iotPending > 0 || mobilePending > 0) && (
+            <Tooltip content="Pre-HIP-138 delegation rewards (IOT/MOBILE) are claimable via claim_rewards_v0 on helium.vote. This tool's claim flow currently only handles HNT (v1).">
+              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-content-tertiary border-b border-dotted border-content-tertiary cursor-help">
+                {iotPending > 0 && <span className="text-iot">+ {fmtHnt(totals.pendingRewardsIot)} IOT </span>}
+                {mobilePending > 0 && <span className="text-mobile">+ {fmtHnt(totals.pendingRewardsMobile)} MOBILE </span>}
+                <span className="text-content-tertiary">pre-HIP-138</span>
+              </p>
+            </Tooltip>
+          )}
+          {pendingNum > 0 && (
+            <Tooltip content="Approximates historical veHNT with current value. Cliff positions may vary slightly from on-chain.">
+              <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary border-b border-dotted border-content-tertiary cursor-help mt-1">
+                approx*
+              </p>
+            </Tooltip>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -126,9 +139,15 @@ function SummaryHeader({ totals, currentEpoch }) {
 
 const SUBDAO_COLOR = { IOT: "text-iot", MOBILE: "text-mobile" };
 
+function positionHasPending(p) {
+  const hnt = Number(p.pendingRewards?.hnt || p.pendingRewardsHnt || 0);
+  const dnt = Number(p.pendingRewards?.dnt || 0);
+  return hnt > 0 || dnt > 0;
+}
+
 function StatusPill({ position }) {
   const expired = position.lockup.timeRemainingSecs <= 0;
-  const hasPending = Number(position.pendingRewardsHnt || 0) > 0;
+  const hasPending = positionHasPending(position);
 
   if (expired) {
     return (
@@ -184,7 +203,8 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
     isLandrush,
     landrushMultiplier,
     delegation,
-    pendingRewardsHnt,
+    pendingRewards,
+    pendingRewardsHnt: legacyHnt,
     pendingRewardsApprox,
     dailyRewardHnt,
     numActiveVotes,
@@ -192,8 +212,10 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
     proxy,
   } = position;
 
-  const pendingNum = Number(pendingRewardsHnt || 0);
-  const hasPending = pendingNum > 0;
+  const hntPending = Number(pendingRewards?.hnt || legacyHnt || 0);
+  const dntPending = Number(pendingRewards?.dnt || 0);
+  const dntLabel = pendingRewards?.dntLabel;
+  const hasPending = hntPending > 0 || dntPending > 0;
   const { primary: lockupPrimary, secondary: lockupSecondary } = lockupSummary(lockup);
 
   return (
@@ -274,11 +296,11 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
               <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
                 Pending reward
               </p>
-              <div className="mt-1 flex items-baseline gap-1.5">
+              <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
                 <span className={`font-display text-2xl tracking-[-0.02em] tabular-nums ${
-                  hasPending ? "text-content" : "text-content-tertiary"
+                  hntPending > 0 ? "text-content" : "text-content-tertiary"
                 }`}>
-                  {fmtHnt(pendingRewardsHnt)}
+                  {fmtHnt(pendingRewards?.hnt ?? legacyHnt)}
                 </span>
                 <span className="text-xs font-display text-content-secondary">HNT</span>
                 {pendingRewardsApprox === "current-vehnt" && hasPending && (
@@ -289,6 +311,16 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
                   </Tooltip>
                 )}
               </div>
+              {dntPending > 0 && dntLabel && (
+                <Tooltip content={`Pre-HIP-138 delegation rewards in ${dntLabel}. Claimable via claim_rewards_v0 (not yet supported in this tool — use helium.vote).`}>
+                  <p className="mt-1 flex items-baseline gap-1 text-[11px] font-mono tabular-nums border-b border-dotted border-content-tertiary inline-block cursor-help">
+                    <span className={dntLabel === "IOT" ? "text-iot" : "text-mobile"}>
+                      + {fmtHnt(pendingRewards.dnt)} {dntLabel}
+                    </span>
+                    <span className="text-content-tertiary">(pre-HIP-138)</span>
+                  </p>
+                </Tooltip>
+              )}
               {hasPending && dailyRewardHnt && (
                 <p className="mt-1 text-[11px] font-mono tabular-nums text-content-tertiary">
                   ≈ <span className="text-content-secondary">{fmtHnt(dailyRewardHnt)}</span> HNT per epoch
@@ -373,8 +405,10 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
 // ─── Expired table ────────────────────────────────────────────────────────────
 
 function ExpiredPositionRow({ position }) {
-  const pendingNum = Number(position.pendingRewardsHnt || 0);
+  const hnt = Number(position.pendingRewards?.hnt || position.pendingRewardsHnt || 0);
+  const dnt = Number(position.pendingRewards?.dnt || 0);
   const unclaimed = position.delegation?.unclaimedEpochs ?? 0;
+  const hasPending = hnt > 0 || dnt > 0;
   return (
     <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-baseline gap-x-4 gap-y-1 py-3 px-4 sm:px-6 border-b border-border-muted last:border-0 text-sm">
       <div className="min-w-0">
@@ -392,14 +426,18 @@ function ExpiredPositionRow({ position }) {
         expired {fmtDate(position.lockup.endTs)}
       </p>
       <Tooltip content={
-        unclaimed > 0 && pendingNum === 0
-          ? `${unclaimed} epochs are unclaimed on-chain, but all post-date this position's expiry — after expiry veHNT is zero, so no rewards accrue. Pre-expiry unclaimed epochs (if any) would surface in the active grid.`
-          : "No pending rewards on this expired position."
+        hasPending
+          ? "Position has unclaimed rewards — normally promoted to the active grid; showing here only if the lockup is already expired."
+          : unclaimed > 0
+            ? `${unclaimed} epochs are unclaimed on-chain per the bitmap, but all post-date this position's expiry — after expiry veHNT is zero, so no rewards accrue in either claim_rewards_v0 (DNT) or claim_rewards_v1 (HNT).`
+            : "No pending rewards on this expired position."
       }>
         <p className={`font-mono text-[11px] tabular-nums text-right border-b border-dotted ${
-          pendingNum > 0 ? "text-content border-content-tertiary" : "text-content-tertiary border-transparent"
+          hasPending ? "text-content border-content-tertiary" : "text-content-tertiary border-transparent"
         } cursor-help`}>
-          {pendingNum > 0 ? `${fmtHnt(position.pendingRewardsHnt)} HNT` : "0 pending"}
+          {hasPending
+            ? `${fmtHnt(hnt)} HNT${dnt > 0 ? ` + ${fmtHnt(dnt)} ${position.pendingRewards.dntLabel}` : ""}`
+            : "0 pending"}
         </p>
       </Tooltip>
       <a
@@ -529,13 +567,14 @@ export default function VeHnt() {
   );
 
   // Partition: positions worth user attention (active lockup OR has unclaimed
-  // rewards) vs. truly dormant expired ones.
+  // HNT or DNT rewards) vs. truly dormant expired ones.
   const { active, expired } = useMemo(() => {
     const active = [];
     const expired = [];
     for (const p of data?.positions || []) {
-      const hasPending = Number(p.pendingRewardsHnt || 0) > 0;
-      if (p.lockup.timeRemainingSecs > 0 || hasPending) active.push(p);
+      const hnt = Number(p.pendingRewards?.hnt || p.pendingRewardsHnt || 0);
+      const dnt = Number(p.pendingRewards?.dnt || 0);
+      if (p.lockup.timeRemainingSecs > 0 || hnt > 0 || dnt > 0) active.push(p);
       else expired.push(p);
     }
     return { active, expired };

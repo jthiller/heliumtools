@@ -11,6 +11,7 @@ import {
   positionKey,
   delegatedPositionKey,
   daoEpochInfoKey,
+  subDaoEpochInfoKey,
   currentEpoch as computeCurrentEpoch,
 } from "../../../lib/helium-solana.js";
 import { fetchAccount, fetchMultipleAccounts } from "../../hotspot-claimer/services/common.js";
@@ -22,6 +23,7 @@ import {
   decodeRegistrar,
   decodeDao,
   decodeDaoEpochInfo,
+  decodeSubDaoEpochInfo,
   isEpochClaimed,
 } from "../services/decode.js";
 import { findPositionMints } from "../services/discovery.js";
@@ -134,26 +136,56 @@ export async function handlePositions(url, env, request) {
     const lastFullEpoch = currentEpoch - 1;
     if (lastFullEpoch >= 0) epochsNeeded.add(lastFullEpoch);
 
-    // 5. Resolve each epoch — cached for past (immutable) epochs
+    // 5. Resolve each epoch from both reward sources in parallel:
+    //    - DaoEpochInfoV0  — post-HIP-138 HNT rewards (claim_rewards_v1)
+    //    - SubDaoEpochInfoV0 — pre-HIP-138 DNT rewards per sub-dao (claim_rewards_v0)
+    // Cached for past (immutable) epochs. SubDao epoch info is keyed by sub-dao too.
     const daoEpochInfoByEpoch = new Map();
+    const subDaoEpochInfoByKey = new Map(); // key: `${subDao58}:${epoch}`
     const epochsList = Array.from(epochsNeeded).sort((a, b) => a - b);
     if (epochsList.length > 0) {
-      // Fetch past epochs through cache; currentEpoch-1 may be just-closed so we
-      // also pass it through cache (if doneIssuingRewards it stays cached).
-      const bufs = await Promise.all(
-        epochsList.map((epoch) =>
-          DaoEpochInfoCache(env, epoch, () =>
-            fetchAccount(env, daoEpochInfoKey(DAO_KEY, epoch)),
-          ),
+      const uniqueSubDaos = new Map(); // subDao58 -> PublicKey
+      for (const { delegation } of decoded) {
+        if (delegation) uniqueSubDaos.set(delegation.subDao.toBase58(), delegation.subDao);
+      }
+
+      const daoFetches = epochsList.map((epoch) =>
+        DaoEpochInfoCache(env, epoch, () =>
+          fetchAccount(env, daoEpochInfoKey(DAO_KEY, epoch)),
         ),
       );
+      const subDaoFetches = [];
+      for (const [sdStr, sd] of uniqueSubDaos) {
+        for (const epoch of epochsList) {
+          subDaoFetches.push({
+            key: `${sdStr}:${epoch}`,
+            epoch,
+            promise: fetchAccount(env, subDaoEpochInfoKey(sd, epoch)),
+          });
+        }
+      }
+
+      const [daoBufs, subDaoResults] = await Promise.all([
+        Promise.all(daoFetches),
+        Promise.all(subDaoFetches.map((x) => x.promise)),
+      ]);
+
       for (let i = 0; i < epochsList.length; i++) {
-        if (bufs[i]) {
+        if (daoBufs[i]) {
           try {
-            daoEpochInfoByEpoch.set(epochsList[i], decodeDaoEpochInfo(bufs[i]));
+            daoEpochInfoByEpoch.set(epochsList[i], decodeDaoEpochInfo(daoBufs[i]));
           } catch (e) {
             console.error("decodeDaoEpochInfo failed", epochsList[i], e?.message);
           }
+        }
+      }
+      for (let i = 0; i < subDaoFetches.length; i++) {
+        const buf = subDaoResults[i];
+        if (!buf) continue;
+        try {
+          subDaoEpochInfoByKey.set(subDaoFetches[i].key, decodeSubDaoEpochInfo(buf));
+        } catch (e) {
+          console.error("decodeSubDaoEpochInfo failed", subDaoFetches[i].key, e?.message);
         }
       }
     }
@@ -161,7 +193,9 @@ export async function handlePositions(url, env, request) {
     // 6. Compute per-position fields
     let totalLocked = 0n;
     let totalVeHnt = 0n;
-    let totalPending = 0n;
+    let totalPendingHnt = 0n;
+    let totalPendingDntIot = 0n;
+    let totalPendingDntMobile = 0n;
     const votingMintConfig = registrar.votingMints[hntVotingMintIdx];
 
     for (const { mint, position, delegation } of decoded) {
@@ -171,22 +205,32 @@ export async function handlePositions(url, env, request) {
         nowTs,
       );
 
-      let pendingRewards = null;
+      let pendingHnt = null;
+      let pendingDnt = null;
       let unclaimedEpochsCount = 0;
       let dailyReward = null;
       let delegationOut = null;
 
       if (delegation) {
-        const { pendingRewards: pr, unclaimedEpochs } = computePendingRewards({
+        const subDao58 = delegation.subDao.toBase58();
+        const subDaoEpochMap = new Map();
+        for (const e of epochsList || []) {
+          const v = subDaoEpochInfoByKey.get(`${subDao58}:${e}`);
+          if (v) subDaoEpochMap.set(e, v);
+        }
+
+        const rewards = computePendingRewards({
           position,
           delegatedPosition: delegation,
           votingMintConfig,
           daoEpochInfoByEpoch,
+          subDaoEpochInfoByEpoch: subDaoEpochMap,
           currentEpoch,
           secondsPerEpoch: SECONDS_PER_EPOCH,
         });
-        pendingRewards = pr;
-        unclaimedEpochsCount = unclaimedEpochs.length;
+        pendingHnt = rewards.pendingRewardsHnt;
+        pendingDnt = rewards.pendingRewardsDnt;
+        unclaimedEpochsCount = rewards.unclaimedEpochsCount;
 
         const lastInfo = daoEpochInfoByEpoch.get(lastFullEpoch);
         dailyReward = approximateDailyReward({
@@ -197,7 +241,7 @@ export async function handlePositions(url, env, request) {
 
         delegationOut = {
           subDao: subDaoLabel(delegation.subDao),
-          subDaoAddress: delegation.subDao.toBase58(),
+          subDaoAddress: subDao58,
           startTs: delegation.startTs,
           expirationTs: delegation.expirationTs,
           lastClaimedEpoch: delegation.lastClaimedEpoch,
@@ -205,11 +249,23 @@ export async function handlePositions(url, env, request) {
           purged: delegation.purged,
         };
 
-        totalPending += pr;
+        totalPendingHnt += pendingHnt;
+        const label = subDaoLabel(delegation.subDao);
+        if (label === "IOT") totalPendingDntIot += pendingDnt;
+        else if (label === "MOBILE") totalPendingDntMobile += pendingDnt;
       }
 
       totalLocked += BigInt(position.amountDepositedNative);
       totalVeHnt += veHnt;
+
+      const dntLabel = delegation ? subDaoLabel(delegation.subDao) : null;
+      const pendingRewardsOut = delegation
+        ? {
+            hnt: formatNative(pendingHnt, HNT_DECIMALS),
+            dnt: pendingDnt > 0n ? formatNative(pendingDnt, 6) : "0",
+            dntLabel,
+          }
+        : null;
 
       positions.push({
         sortKey: veHnt,
@@ -227,7 +283,8 @@ export async function handlePositions(url, env, request) {
           isLandrush,
           landrushMultiplier: multiplier,
           delegation: delegationOut,
-          pendingRewardsHnt: pendingRewards === null ? null : formatNative(pendingRewards, HNT_DECIMALS),
+          pendingRewards: pendingRewardsOut,
+          pendingRewardsHnt: pendingRewardsOut ? pendingRewardsOut.hnt : null,
           pendingRewardsApprox: delegation ? "current-vehnt" : null,
           dailyRewardHnt: dailyReward === null ? null : formatNative(dailyReward, HNT_DECIMALS),
           numActiveVotes: position.numActiveVotes,
@@ -255,7 +312,9 @@ export async function handlePositions(url, env, request) {
       totals: {
         hntLocked: formatNative(totalLocked, HNT_DECIMALS),
         veHnt: formatNative(totalVeHnt, HNT_DECIMALS),
-        pendingRewardsHnt: formatNative(totalPending, HNT_DECIMALS),
+        pendingRewardsHnt: formatNative(totalPendingHnt, HNT_DECIMALS),
+        pendingRewardsIot: formatNative(totalPendingDntIot, 6),
+        pendingRewardsMobile: formatNative(totalPendingDntMobile, 6),
         positionCount: sortedPositions.length,
       },
       positions: sortedPositions,

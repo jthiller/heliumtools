@@ -263,6 +263,38 @@ export function decodeDao(buf) {
  *   not_emitted: u64 (8)
  *   smoothed_hnt_burned: u64 (8)
  */
+/**
+ * SubDaoEpochInfoV0 — helium-sub-daos/src/state.rs
+ * Source of pre-HIP-138 delegation rewards (paid in DNT via
+ * claim_rewards_v0). We only read delegation_rewards_issued and
+ * vehnt_at_epoch_start.
+ *
+ *   epoch: u64 (8)
+ *   sub_dao: Pubkey (32)
+ *   dc_burned: u64 (8)
+ *   vehnt_at_epoch_start: u64 (8)
+ *   vehnt_in_closing_positions: u128 (16)
+ *   fall_rates_from_closing_positions: u128 (16)
+ *   delegation_rewards_issued: u64 (8)
+ *   utility_score: Option<u128> (1 tag + 16 if some)
+ *   rewards_issued_at: Option<i64> (1 tag + 8 if some)
+ *   bump_seed, initialized, ...
+ *
+ * Note: vehnt_at_epoch_start is a u64 here (SubDao) vs u64 in Dao —
+ * both hold raw veHNT native units with no extra precision.
+ */
+export function decodeSubDaoEpochInfo(buf) {
+  let o = DISC;
+  /* epoch */ o += 8;
+  /* sub_dao */ o += 32;
+  /* dc_burned */ o += 8;
+  const vehntAtEpochStart = buf.readBigUInt64LE(o); o += 8;
+  /* vehnt_in_closing_positions */ o += 16;
+  /* fall_rates_from_closing_positions */ o += 16;
+  const delegationRewardsIssued = buf.readBigUInt64LE(o); o += 8;
+  return { delegationRewardsIssued, vehntAtEpochStart };
+}
+
 export function decodeDaoEpochInfo(buf) {
   let o = DISC;
   /* done_calculating_scores */ o += 1;
