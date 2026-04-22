@@ -99,9 +99,12 @@ export function findPDA(seeds, programId) {
   return PublicKey.findProgramAddressSync(seeds, programId)[0];
 }
 
+export const MOBILE_MINT = new PublicKey("mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6");
+
 // Static PDAs — derived from constants, computed once at module load
 export const DAO_KEY = findPDA([Buffer.from("dao"), HNT_MINT.toBuffer()], SUB_DAOS);
 export const IOT_SUB_DAO_KEY = findPDA([Buffer.from("sub_dao"), IOT_MINT.toBuffer()], SUB_DAOS);
+export const MOBILE_SUB_DAO_KEY = findPDA([Buffer.from("sub_dao"), MOBILE_MINT.toBuffer()], SUB_DAOS);
 export const DATA_ONLY_CONFIG_KEY = findPDA([Buffer.from("data_only_config"), DAO_KEY.toBuffer()], ENTITY_MANAGER);
 export const DATA_ONLY_ESCROW_KEY = findPDA([Buffer.from("data_only_escrow"), DATA_ONLY_CONFIG_KEY.toBuffer()], ENTITY_MANAGER);
 export const ENTITY_CREATOR_KEY = findPDA([Buffer.from("entity_creator"), DAO_KEY.toBuffer()], ENTITY_MANAGER);

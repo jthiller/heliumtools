@@ -4,8 +4,8 @@ import { checkIpRateLimit } from "../../../lib/rateLimit.js";
 import {
   HNT_MINT,
   HNT_REGISTRAR_KEY,
-  IOT_MINT,
   IOT_SUB_DAO_KEY,
+  MOBILE_SUB_DAO_KEY,
   DAO_KEY,
   SECONDS_PER_EPOCH,
   positionKey,
@@ -35,14 +35,22 @@ import { RegistrarCache, DaoCache, DaoEpochInfoCache } from "../services/cache.j
 const HNT_DECIMALS = 8;
 
 // Sub-DAO label table: maps known sub_dao keys → human name.
-// Post-HIP-141 IOT sub-dao is the only one that remains; delegation to
-// MOBILE was sunset. We look up by string for display only.
 const SUB_DAO_LABELS = {
   [IOT_SUB_DAO_KEY.toBase58()]: "IOT",
+  [MOBILE_SUB_DAO_KEY.toBase58()]: "MOBILE",
 };
 
 function subDaoLabel(subDaoPubkey) {
   return SUB_DAO_LABELS[subDaoPubkey.toBase58()] || "Unknown";
+}
+
+const DEFAULT_PUBKEY = "11111111111111111111111111111111";
+
+function proxyFromPosition(position, wallet) {
+  const vc = position.voteController.toBase58();
+  if (vc === DEFAULT_PUBKEY) return null;
+  if (vc === wallet.toBase58()) return null;
+  return { voteController: vc };
 }
 
 export async function handlePositions(url, env, request) {
@@ -224,10 +232,7 @@ export async function handlePositions(url, env, request) {
         dailyRewardHnt: dailyReward === null ? null : formatNative(dailyReward, HNT_DECIMALS),
         numActiveVotes: position.numActiveVotes,
         recentProposalsCount: position.recentProposals.length,
-        proxy:
-          position.voteController.toBase58() === wallet.toBase58()
-            ? null
-            : { voteController: position.voteController.toBase58() },
+        proxy: proxyFromPosition(position, wallet),
       });
     }
 
