@@ -197,22 +197,25 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
   const { primary: lockupPrimary, secondary: lockupSecondary } = lockupSummary(lockup);
 
   return (
-    <article className="group relative rounded-2xl border border-border bg-surface-raised overflow-hidden transition hover:border-content-tertiary">
-      {/* Left edge accent rail */}
-      <div
-        className={`absolute left-0 top-0 bottom-0 w-[3px] ${
-          lockup.timeRemainingSecs <= 0 && hasPending
-            ? "bg-amber-500"
-            : lockup.timeRemainingSecs <= 0
-              ? "bg-border"
-              : isLandrush
-                ? "bg-amber-400"
-                : delegation
-                  ? "bg-accent"
-                  : "bg-border"
-        }`}
-        aria-hidden="true"
-      />
+    <article className="group relative rounded-2xl border border-border bg-surface-raised transition hover:border-content-tertiary">
+      {/* Left edge accent rail — in an overflow-hidden wrapper so it clips
+          against the rounded corners while the outer card stays unclipped
+          (so tooltips can spill over card edges). */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
+        <div
+          className={`absolute left-0 top-0 bottom-0 w-[3px] ${
+            lockup.timeRemainingSecs <= 0 && hasPending
+              ? "bg-amber-500"
+              : lockup.timeRemainingSecs <= 0
+                ? "bg-border"
+                : isLandrush
+                  ? "bg-amber-400"
+                  : delegation
+                    ? "bg-accent"
+                    : "bg-border"
+          }`}
+        />
+      </div>
 
       {/* Header strip: index + status + landrush seal */}
       <header className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-border-muted">
