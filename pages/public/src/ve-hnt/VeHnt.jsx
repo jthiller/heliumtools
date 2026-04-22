@@ -138,20 +138,24 @@ function SummaryHeader({ totals, currentEpoch }) {
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
+const SUBDAO_COLOR = { IOT: "text-iot", MOBILE: "text-mobile" };
+
 function StatusPill({ position }) {
   const expired = position.lockup.timeRemainingSecs <= 0;
+  const hasPending = Number(position.pendingRewardsHnt || 0) > 0;
+
   if (expired) {
     return (
-      <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-content-tertiary">
-        <span className="h-1.5 w-1.5 rounded-full bg-content-tertiary" />
-        Expired
+      <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em]">
+        <span className={`h-1.5 w-1.5 rounded-full ${hasPending ? "bg-amber-500" : "bg-content-tertiary"}`} />
+        <span className={hasPending ? "text-amber-700 dark:text-amber-400" : "text-content-tertiary"}>
+          Expired{hasPending && " · unclaimed"}
+        </span>
       </span>
     );
   }
   if (position.delegation && !position.delegation.purged) {
-    const subDaoClass =
-      position.delegation.subDao === "IOT" ? "text-iot" :
-      position.delegation.subDao === "MOBILE" ? "text-mobile" : "text-accent-text";
+    const subDaoClass = SUBDAO_COLOR[position.delegation.subDao] ?? "text-accent-text";
     return (
       <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em]">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -211,7 +215,15 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
       {/* Left edge accent rail */}
       <div
         className={`absolute left-0 top-0 bottom-0 w-[3px] ${
-          isLandrush ? "bg-amber-400" : delegation ? "bg-accent" : "bg-border"
+          lockup.timeRemainingSecs <= 0 && hasPending
+            ? "bg-amber-500"
+            : lockup.timeRemainingSecs <= 0
+              ? "bg-border"
+              : isLandrush
+                ? "bg-amber-400"
+                : delegation
+                  ? "bg-accent"
+                  : "bg-border"
         }`}
         aria-hidden="true"
       />
@@ -510,12 +522,14 @@ export default function VeHnt() {
     [connectedKey, sendTransaction, connection, load, submittedWalletStr],
   );
 
-  // Partition positions by state
+  // Partition: positions worth user attention (active lockup OR has unclaimed
+  // rewards) vs. truly dormant expired ones.
   const { active, expired } = useMemo(() => {
     const active = [];
     const expired = [];
     for (const p of data?.positions || []) {
-      if (p.lockup.timeRemainingSecs > 0) active.push(p);
+      const hasPending = Number(p.pendingRewardsHnt || 0) > 0;
+      if (p.lockup.timeRemainingSecs > 0 || hasPending) active.push(p);
       else expired.push(p);
     }
     return { active, expired };
