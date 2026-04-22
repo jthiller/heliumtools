@@ -373,8 +373,10 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
 // ─── Expired table ────────────────────────────────────────────────────────────
 
 function ExpiredPositionRow({ position }) {
+  const pendingNum = Number(position.pendingRewardsHnt || 0);
+  const unclaimed = position.delegation?.unclaimedEpochs ?? 0;
   return (
-    <div className="grid grid-cols-[1fr_auto_auto_auto] items-baseline gap-x-4 gap-y-1 py-3 px-4 sm:px-6 border-b border-border-muted last:border-0 text-sm">
+    <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-baseline gap-x-4 gap-y-1 py-3 px-4 sm:px-6 border-b border-border-muted last:border-0 text-sm">
       <div className="min-w-0">
         <p className="font-mono tabular-nums text-content-secondary">
           {fmtHnt(position.amountLockedHnt)} <span className="text-[11px] text-content-tertiary">HNT</span>
@@ -389,6 +391,17 @@ function ExpiredPositionRow({ position }) {
       <p className="font-mono text-[11px] text-content-tertiary tabular-nums">
         expired {fmtDate(position.lockup.endTs)}
       </p>
+      <Tooltip content={
+        unclaimed > 0 && pendingNum === 0
+          ? `${unclaimed} epochs are unclaimed on-chain, but all post-date this position's expiry — after expiry veHNT is zero, so no rewards accrue. Pre-expiry unclaimed epochs (if any) would surface in the active grid.`
+          : "No pending rewards on this expired position."
+      }>
+        <p className={`font-mono text-[11px] tabular-nums text-right border-b border-dotted ${
+          pendingNum > 0 ? "text-content border-content-tertiary" : "text-content-tertiary border-transparent"
+        } cursor-help`}>
+          {pendingNum > 0 ? `${fmtHnt(position.pendingRewardsHnt)} HNT` : "0 pending"}
+        </p>
+      </Tooltip>
       <a
         href="https://heliumvote.com/hnt/positions"
         target="_blank"
