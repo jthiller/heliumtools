@@ -78,33 +78,47 @@ function SummaryHeader({ totals, currentEpoch }) {
   const iotPending = Number(totals.pendingRewardsIot || 0);
   const mobilePending = Number(totals.pendingRewardsMobile || 0);
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-surface-raised">
+    <div className="relative rounded-2xl border border-border bg-surface-raised">
       {/* Headline */}
-      <div className="px-6 sm:px-8 pt-7 pb-6">
-        <div className="flex items-baseline justify-between mb-2">
+      <div className="grid grid-cols-2 divide-x divide-border-muted">
+        <div className="px-6 sm:px-8 py-6">
+          <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
+            HNT locked
+          </p>
+          <div className="mt-2 flex items-end gap-2">
+            <p className="font-display text-3xl sm:text-4xl font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
+              {fmtHnt(totals.hntLocked, { dp: 0 })}
+            </p>
+            <p className="pb-0.5 font-display text-sm text-content-secondary tracking-[-0.01em]">HNT</p>
+          </div>
+          <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.1em] text-content-tertiary">
+            across{" "}
+            <span className="text-content-secondary tabular-nums">
+              {numberFormatter.format(totals.positionCount)}
+            </span>{" "}
+            {totals.positionCount === 1 ? "position" : "positions"}
+          </p>
+        </div>
+        <div className="px-6 sm:px-8 py-6">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
             Total voting power
           </p>
-          <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
-            epoch {currentEpoch}
+          <div className="mt-2 flex items-end gap-2">
+            <p className="font-display text-3xl sm:text-4xl font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
+              {fmtHnt(totals.veHnt, { dp: 0 })}
+            </p>
+            <p className="pb-0.5 font-display text-sm text-content-secondary tracking-[-0.01em]">veHNT</p>
+          </div>
+          <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.1em] text-content-tertiary">
+            epoch <span className="text-content-secondary tabular-nums">{currentEpoch}</span>
           </p>
         </div>
-        <div className="flex items-end gap-3">
-          <p className="font-display text-5xl sm:text-[64px] font-semibold text-content tracking-[-0.035em] tabular-nums leading-none">
-            {fmtHnt(totals.veHnt, { dp: 0, compact: false })}
-          </p>
-          <p className="pb-2 font-display text-xl text-content-secondary tracking-[-0.01em]">veHNT</p>
-        </div>
-        <p className="mt-3 text-sm text-content-secondary">
-          <span className="font-mono tabular-nums text-content">{fmtHnt(totals.hntLocked)}</span>{" "}
-          HNT locked across{" "}
-          <span className="font-mono tabular-nums text-content">{numberFormatter.format(totals.positionCount)}</span>{" "}
-          {totals.positionCount === 1 ? "position" : "positions"}
-        </p>
       </div>
 
-      {/* Pending rewards footer — visually set apart when nonzero */}
-      <div className="border-t border-border-muted bg-surface-inset/60 px-6 sm:px-8 py-4 flex items-baseline justify-between gap-4">
+      {/* Pending rewards footer — visually set apart when nonzero. Own
+          rounded-bottom corners (not inherited from an overflow-hidden
+          parent) so the outer card can let tooltips spill over its edges. */}
+      <div className="rounded-b-2xl border-t border-border-muted bg-surface-inset/60 px-6 sm:px-8 py-4 flex items-baseline justify-between gap-4">
         <div>
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
             Pending delegation rewards
@@ -146,14 +160,6 @@ function positionHasPending(p) {
   return Number(p.pendingRewards?.hnt || 0) > 0 || Number(p.pendingRewards?.dnt || 0) > 0;
 }
 
-function railColor(position) {
-  const { lockup, isLandrush, delegation } = position;
-  if (lockup.isExpired && positionHasPending(position)) return "bg-amber-500";
-  if (lockup.isExpired) return "bg-border";
-  if (isLandrush) return "bg-amber-400";
-  if (delegation) return "bg-accent";
-  return "bg-border";
-}
 
 function StatusPill({ position }) {
   const expired = position.lockup.isExpired;
@@ -352,13 +358,6 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
 
   return (
     <article className="group relative rounded-2xl border border-border bg-surface-raised transition hover:border-content-tertiary">
-      {/* Left edge accent rail — in an overflow-hidden wrapper so it clips
-          against the rounded corners while the outer card stays unclipped
-          (so tooltips can spill over card edges). */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
-        <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${railColor(position)}`} />
-      </div>
-
       {/* Header strip: index + status + landrush seal */}
       <header className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-border-muted">
         <div className="flex items-center gap-3">
@@ -380,23 +379,40 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
         )}
       </header>
 
-      {/* Hero: veHNT voting power */}
-      <div className="px-6 pt-5">
-        <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
-          Voting power
-        </p>
-        <div className="mt-1 flex items-end gap-2">
-          <p className="font-display text-[40px] font-semibold text-content tracking-[-0.03em] tabular-nums leading-none">
-            {fmtHnt(veHnt, { dp: 0, compact: true })}
+      {/* Hero: HNT locked + voting power stat pair */}
+      <div className="grid grid-cols-2 divide-x divide-border-muted">
+        <div className="px-6 py-5">
+          <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
+            HNT locked
           </p>
-          <p className="pb-1 text-xs font-display text-content-secondary">veHNT</p>
-        </div>
-        <p className="mt-1.5 text-xs text-content-secondary">
-          <span className="font-mono tabular-nums text-content">{fmtHnt(amountLockedHnt)}</span>{" "}
-          HNT locked · <span className={`font-mono text-[11px] uppercase tracking-wider ${
+          <div className="mt-1.5 flex items-end gap-1.5">
+            <p className="font-display text-[26px] font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
+              {fmtHnt(amountLockedHnt, { dp: 0 })}
+            </p>
+            <p className="pb-0.5 text-[11px] font-display text-content-secondary">HNT</p>
+          </div>
+          <p className={`mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${
             lockup.kind === "Constant" ? "text-violet-600 dark:text-violet-400" : "text-emerald-600 dark:text-emerald-400"
-          }`}>{lockup.kind}</span>
-        </p>
+          }`}>
+            {lockup.kind}
+          </p>
+        </div>
+        <div className="px-6 py-5">
+          <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
+            Voting power
+          </p>
+          <div className="mt-1.5 flex items-end gap-1.5">
+            <p className="font-display text-[26px] font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
+              {fmtHnt(veHnt, { dp: 0, compact: true })}
+            </p>
+            <p className="pb-0.5 text-[11px] font-display text-content-secondary">veHNT</p>
+          </div>
+          {dailyRewardHnt && hasPending && (
+            <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-content-tertiary tabular-nums">
+              ≈ <span className="text-content-secondary">{fmtHnt(dailyRewardHnt)}</span> HNT/epoch
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Lockup */}
@@ -440,11 +456,6 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
                     <span className="text-content-tertiary">(pre-HIP-138)</span>
                   </p>
                 </Tooltip>
-              )}
-              {hasPending && dailyRewardHnt && (
-                <p className="mt-1 text-[11px] font-mono tabular-nums text-content-tertiary">
-                  ≈ <span className="text-content-secondary">{fmtHnt(dailyRewardHnt)}</span> HNT per epoch
-                </p>
               )}
             </div>
             {hasPending && (
