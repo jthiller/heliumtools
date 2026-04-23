@@ -8,7 +8,6 @@ import {
   Tooltip,
   Customized,
   ResponsiveContainer,
-  useActiveTooltipDataPoints,
 } from "recharts";
 // useXAxis/useYAxis return the internal d3 scale functions recharts uses for
 // its own dot placement. Not exposed from recharts' public index; deep-import
@@ -93,20 +92,6 @@ function catmullRomPath(points) {
     d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
   return d;
-}
-
-// recharts drives tooltip state off its own internal active-index, not our
-// <Scatter> onMouseEnter. Using that state as the source of truth for
-// hoveredId keeps the tooltip, band, and fcnt labels all pointing at the
-// same dot — otherwise a custom-shape circle and a series-level handler
-// can resolve to different packets.
-function HoverSync({ onChange }) {
-  const points = useActiveTooltipDataPoints();
-  const trackId = points?.[0]?.trackId ?? null;
-  useEffect(() => {
-    onChange(trackId);
-  }, [trackId, onChange]);
-  return null;
 }
 
 // `<Customized>` in recharts 3.x doesn't pass scales as props — pull them from
@@ -423,6 +408,10 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                     data={pointsByTrack.get(t.id) ?? []}
                     // Fill per-packet by frame type — mirrors the table's
                     // palette. Track identity still shows via the hover band.
+                    // Event handlers live on the <circle> itself so the band
+                    // keys off the exact dot under the cursor, not the series
+                    // hitbox (which can be a different track than what
+                    // recharts' axis-mode tooltip resolves to).
                     shape={(dotProps) => (
                       <circle
                         cx={dotProps.cx}
@@ -430,13 +419,15 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                         r={4}
                         fill={colorForFrameType(dotProps.payload.frameType, isDark)}
                         fillOpacity={opacity}
+                        onMouseEnter={() => setHoveredId(dotProps.payload.trackId)}
+                        onMouseLeave={() => setHoveredId(null)}
+                        style={{ cursor: "pointer" }}
                       />
                     )}
                     isAnimationActive={false}
                   />
                 );
               })}
-              <Customized component={() => <HoverSync onChange={setHoveredId} />} />
               <Customized
                 component={() => (
                   <FcntLabels
