@@ -1,0 +1,11 @@
+# Content-addressed assets (filename includes a hash) — safe to cache forever.
+# `immutable` tells browsers to skip revalidation for the lifetime of the cache.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML documents — revalidate every time. Prevents stale HTML pointing at
+# chunks that no longer exist on a fresh deploy.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
