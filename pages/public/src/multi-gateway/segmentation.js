@@ -53,8 +53,22 @@ function makeBucket(id) {
     rssiMin: Infinity,
     rssiMax: -Infinity,
     sfMode: new Map(),
+    frameTypeMode: new Map(),
     count: 0,
   };
+}
+
+export function dominantFrameType(track) {
+  if (!track?.frameTypeMode || track.frameTypeMode.size === 0) return null;
+  let best = null;
+  let bestN = -1;
+  for (const [ft, n] of track.frameTypeMode) {
+    if (n > bestN) {
+      bestN = n;
+      best = ft;
+    }
+  }
+  return best;
 }
 
 function newTrack(state, pkt) {
@@ -78,6 +92,9 @@ function updateTrack(t, pkt) {
   t.lastFcnt = pkt.fcnt;
   if (pkt.spreading_factor) {
     t.sfMode.set(pkt.spreading_factor, (t.sfMode.get(pkt.spreading_factor) ?? 0) + 1);
+  }
+  if (pkt.frame_type) {
+    t.frameTypeMode.set(pkt.frame_type, (t.frameTypeMode.get(pkt.frame_type) ?? 0) + 1);
   }
 }
 

@@ -17,17 +17,18 @@ import { useXAxis, useYAxis } from "recharts/es6/hooks";
 import useDarkMode from "../lib/useDarkMode.js";
 import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { readChartColors } from "../lib/chartColors.js";
-import { colorForTrack, listTracks, BUCKET_IDS } from "./segmentation.js";
+import { dominantFrameType, listTracks } from "./segmentation.js";
 
-function isDownlinkTrack(id) {
-  return id === BUCKET_IDS.downlinks;
-}
-
-function trackVisible(t, { showDownlinks, netIdFilter, trackFilter }) {
-  if (isDownlinkTrack(t.id)) return showDownlinks && t.count > 0;
+function trackVisible(t, { netIdFilter, trackFilter }) {
   if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
   if (trackFilter !== "all" && t.id !== trackFilter) return false;
   return true;
+}
+
+function colorForTrack(track, isDark) {
+  const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
+  const mode = dominantFrameType(track);
+  return palette[mode] ?? (isDark ? "#d1d5db" : "#9ca3af");
 }
 
 // Per-packet dot colour — mirrors the FRAME_TYPES palette in MultiGateway.jsx
@@ -206,9 +207,7 @@ function CustomTooltip({ active, payload }) {
   const p = payload[0].payload;
   const netIdInfo = p.devAddr ? devAddrToNetId(p.devAddr) : null;
   const operator = netIdInfo?.netId ? netIdToOperator(netIdInfo.netId) : null;
-  const label = p.trackId === BUCKET_IDS.downlinks
-    ? "Downlinks"
-    : `${operator ?? netIdInfo?.netId ?? "Unknown NetID"} · ${p.devAddr} · ${p.trackId}`;
+  const label = `${operator ?? netIdInfo?.netId ?? "Unknown NetID"} · ${p.devAddr} · ${p.trackId}`;
   return (
     <div className="rounded-md border border-border bg-surface-raised px-3 py-2 text-xs shadow-soft">
       <div className="font-medium text-content-primary">{label}</div>
@@ -229,33 +228,29 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
 
-  // Joins have no dev_addr/fcnt so they can't be segmented — never render them.
-  // Downlinks stay as a single toggleable bucket, gated on the table's filter row.
-  const showDownlinks =
-    (visibleTypes?.UnconfirmedDown ?? false) ||
-    (visibleTypes?.ConfirmedDown ?? false);
-
+  // Only uplink device tracks are charted. Joins have no dev_addr/fcnt so they
+  // can't be segmented; downlinks have no meaningful RSSI on the gateway side.
   const tracks = useMemo(() => {
-    const all = listTracks(segmenter);
-    all.push(segmenter.downlinks);
-    return all;
+    return listTracks(segmenter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segmenter, packets]);
+
+  const trackColorById = useMemo(() => {
+    const map = new Map();
+    for (const t of tracks) map.set(t.id, colorForTrack(t, isDark));
+    return map;
+  }, [tracks, isDark]);
 
   const chartColors = useMemo(readChartColors, [isDark]);
 
   const netIdOptions = useMemo(() => {
     const set = new Set();
-    for (const t of tracks) {
-      if (isDownlinkTrack(t.id)) continue;
-      if (t.netId) set.add(t.netId);
-    }
+    for (const t of tracks) if (t.netId) set.add(t.netId);
     return [...set].sort();
   }, [tracks]);
 
   const trackOptions = useMemo(() => {
     const list = tracks.filter((t) => {
-      if (isDownlinkTrack(t.id)) return false;
       if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
       return t.count > 0;
     });
@@ -291,11 +286,11 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
     return map;
   }, [packets]);
 
-  const filterOpts = { showDownlinks, netIdFilter, trackFilter };
+  const filterOpts = { netIdFilter, trackFilter };
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
 
-  const deviceCount = tracks.filter((t) => !isDownlinkTrack(t.id) && t.count > 0).length;
+  const deviceCount = tracks.filter((t) => t.count > 0).length;
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
     let minTs = Infinity, maxTs = -Infinity;
@@ -394,7 +389,7 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                   <BandOverlay
                     hoveredId={hoveredId}
                     pointsByTrack={pointsByTrack}
-                    color={hoveredId ? colorForTrack(hoveredId, isDark) : null}
+                    color={hoveredId ? trackColorById.get(hoveredId) ?? null : null}
                   />
                 )}
               />
@@ -428,7 +423,7 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                   <FcntLabels
                     hoveredId={hoveredId}
                     pointsByTrack={pointsByTrack}
-                    color={hoveredId ? colorForTrack(hoveredId, isDark) : null}
+                    color={hoveredId ? trackColorById.get(hoveredId) ?? null : null}
                     isDark={isDark}
                   />
                 )}
