@@ -668,18 +668,14 @@ export default function VeHnt() {
   // Track the connected wallet so we can distinguish "initial connect"
   // from "user switched wallets in Phantom/Solflare". Initial connect only
   // autofills when the input is empty (so it doesn't clobber a pasted
-  // address). A switch always follows the new wallet and re-queries.
+  // address). A switch always follows the new wallet; the auto-query effect
+  // below picks up the resulting input change.
   const prevConnectedRef = useRef(null);
   useEffect(() => {
     const prev = prevConnectedRef.current;
     prevConnectedRef.current = connectedStr;
     if (!connectedStr) return;
-    if (prev && connectedStr !== prev) {
-      setInput(connectedStr);
-      load(connectedStr);
-    } else if (!prev && !input) {
-      setInput(connectedStr);
-    }
+    if ((prev && connectedStr !== prev) || !input) setInput(connectedStr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectedStr]);
 
@@ -695,14 +691,28 @@ export default function VeHnt() {
     );
   }, [submittedWalletStr, setSearchParams]);
 
-  const onSubmit = useCallback(() => {
-    if (submittedWalletStr) load(submittedWalletStr);
+  // Auto-query whenever the resolved wallet becomes a new valid address.
+  // Matches the pattern on other tools (hotspot-claimer): debounce typing
+  // so we don't thrash the RPC, but fire immediately on mount (0ms) when
+  // a URL-provided or connected wallet resolves right away.
+  const lastLoadedRef = useRef(null);
+  useEffect(() => {
+    if (!submittedWalletStr) return;
+    if (lastLoadedRef.current === submittedWalletStr) return;
+    const delay = lastLoadedRef.current === null ? 0 : 400;
+    const t = setTimeout(() => {
+      lastLoadedRef.current = submittedWalletStr;
+      load(submittedWalletStr);
+    }, delay);
+    return () => clearTimeout(t);
   }, [submittedWalletStr, load]);
 
-  useEffect(() => {
-    if (urlWallet && submittedWalletStr && !data) load(submittedWalletStr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // After a successful claim, force-refresh by clearing the dedupe ref
+  // so the auto-query effect re-fires on the next tick.
+  const refresh = useCallback(() => {
+    lastLoadedRef.current = null;
+    if (submittedWalletStr) load(submittedWalletStr);
+  }, [submittedWalletStr, load]);
 
   const [claimStates, setClaimStates] = useState({});
   const [claimErrors, setClaimErrors] = useState({});
@@ -734,13 +744,13 @@ export default function VeHnt() {
         }
         setClaimSignatures((sg) => ({ ...sg, [mint]: sigs }));
         setClaimStates((s) => ({ ...s, [mint]: "claimed" }));
-        setTimeout(() => load(submittedWalletStr), 1500);
+        setTimeout(refresh, 1500);
       } catch (err) {
         setClaimStates((s) => ({ ...s, [mint]: "error" }));
         setClaimErrors((e) => ({ ...e, [mint]: err?.message || "Claim failed" }));
       }
     },
-    [connectedKey, sendTransaction, connection, load, submittedWalletStr],
+    [connectedKey, sendTransaction, connection, refresh],
   );
 
   // Partition: positions worth user attention (still-earning lockup OR has
@@ -775,14 +785,11 @@ export default function VeHnt() {
           </p>
         </div>
 
-        {/* Wallet input */}
-        <form
-          onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
-          className="mb-8 flex flex-col sm:flex-row gap-3"
-        >
+        {/* Wallet input — queries automatically as the address resolves */}
+        <div className="mb-8 flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label htmlFor="wallet" className="block text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary mb-1.5">
-              Wallet address
+              Wallet address{loading && <span className="ml-2 text-accent-text">loading…</span>}
             </label>
             <input
               id="wallet"
@@ -793,17 +800,10 @@ export default function VeHnt() {
               className="block w-full rounded-lg border border-border bg-surface-raised px-3.5 py-2.5 font-mono text-xs text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end">
             <WalletMultiButton style={{ borderRadius: "8px", height: "44px", fontSize: "14px" }} />
-            <button
-              type="submit"
-              disabled={!submittedWalletStr || loading}
-              className="h-[44px] inline-flex items-center justify-center rounded-lg bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition"
-            >
-              {loading ? "Loading…" : "Analyze"}
-            </button>
           </div>
-        </form>
+        </div>
 
         {error && (
           <div className="mb-6">
