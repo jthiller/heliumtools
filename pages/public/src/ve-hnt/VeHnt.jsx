@@ -707,12 +707,11 @@ export default function VeHnt() {
     return () => clearTimeout(t);
   }, [submittedWalletStr, load]);
 
-  // Explicit "Analyze" button — force-refresh even if we already loaded
-  // this wallet (useful after a claim to re-query on-chain state).
-  const onSubmit = useCallback(() => {
-    if (!submittedWalletStr) return;
-    lastLoadedRef.current = submittedWalletStr;
-    load(submittedWalletStr);
+  // After a successful claim, force-refresh by clearing the dedupe ref
+  // so the auto-query effect re-fires on the next tick.
+  const refresh = useCallback(() => {
+    lastLoadedRef.current = null;
+    if (submittedWalletStr) load(submittedWalletStr);
   }, [submittedWalletStr, load]);
 
   const [claimStates, setClaimStates] = useState({});
@@ -745,13 +744,13 @@ export default function VeHnt() {
         }
         setClaimSignatures((sg) => ({ ...sg, [mint]: sigs }));
         setClaimStates((s) => ({ ...s, [mint]: "claimed" }));
-        setTimeout(() => load(submittedWalletStr), 1500);
+        setTimeout(refresh, 1500);
       } catch (err) {
         setClaimStates((s) => ({ ...s, [mint]: "error" }));
         setClaimErrors((e) => ({ ...e, [mint]: err?.message || "Claim failed" }));
       }
     },
-    [connectedKey, sendTransaction, connection, load, submittedWalletStr],
+    [connectedKey, sendTransaction, connection, refresh],
   );
 
   // Partition: positions worth user attention (still-earning lockup OR has
@@ -786,14 +785,11 @@ export default function VeHnt() {
           </p>
         </div>
 
-        {/* Wallet input */}
-        <form
-          onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
-          className="mb-8 flex flex-col sm:flex-row gap-3"
-        >
+        {/* Wallet input — queries automatically as the address resolves */}
+        <div className="mb-8 flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label htmlFor="wallet" className="block text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary mb-1.5">
-              Wallet address
+              Wallet address{loading && <span className="ml-2 text-accent-text">loading…</span>}
             </label>
             <input
               id="wallet"
@@ -804,17 +800,10 @@ export default function VeHnt() {
               className="block w-full rounded-lg border border-border bg-surface-raised px-3.5 py-2.5 font-mono text-xs text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end">
             <WalletMultiButton style={{ borderRadius: "8px", height: "44px", fontSize: "14px" }} />
-            <button
-              type="submit"
-              disabled={!submittedWalletStr || loading}
-              className="h-[44px] inline-flex items-center justify-center rounded-lg bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition"
-            >
-              {loading ? "Loading…" : "Analyze"}
-            </button>
           </div>
-        </form>
+        </div>
 
         {error && (
           <div className="mb-6">
