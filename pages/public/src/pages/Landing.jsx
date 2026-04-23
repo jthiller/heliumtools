@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon, LockClosedIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import ShaderDithering from "../components/ShaderDithering.jsx";
 
@@ -83,6 +83,21 @@ const sections = [
         icon: ArrowPathIcon,
         iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
         badge: null,
+      },
+    ],
+  },
+  {
+    title: "HNT Holders",
+    description: "Tools for HNT stakers and voters",
+    tools: [
+      {
+        name: "veHNT Positions",
+        description:
+          "Analyze staked HNT positions on any wallet: lockup status, landrush bonus, delegation, pending rewards, and voting activity.",
+        href: "/ve-hnt",
+        icon: LockClosedIcon,
+        iconBg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
+        badge: "New",
       },
     ],
   },

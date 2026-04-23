@@ -32,6 +32,66 @@ export const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxW
 export const IOT_MINT = new PublicKey("iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns");
 export const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
 
+// Voter Stake Registry (veHNT positions)
+export const VSR_PROGRAM = new PublicKey("hvsrNC3NKbcryqDs2DocYHZ9yPKEVzdSjQG6RVtK1s8");
+// SPL governance program (realm lives under this)
+export const SPL_GOVERNANCE_PROGRAM = new PublicKey("hgovkRU6Ghe1Qoyb54HdSLdqN7VtxaifBzRmh9jtd3S");
+// Circuit breaker program (reward pool rate limiter)
+export const CIRCUIT_BREAKER_PROGRAM = new PublicKey("circAbx64bbsscPbQzZAUvuXpHqrCe6fLMzc2uKXz9g");
+
+// veHNT constants
+export const SCALED_FACTOR_BASE = 1_000_000_000n;
+export const SECONDS_PER_EPOCH = 86400;
+
+// Realm PDA for HNT: [b"governance", "Helium"] under SPL governance program
+export const HELIUM_REALM = findPDA(
+  [Buffer.from("governance"), Buffer.from("Helium")],
+  SPL_GOVERNANCE_PROGRAM,
+);
+// HNT registrar: [realm, "registrar", HNT_MINT] under VSR
+export const HNT_REGISTRAR_KEY = findPDA(
+  [HELIUM_REALM.toBuffer(), Buffer.from("registrar"), HNT_MINT.toBuffer()],
+  VSR_PROGRAM,
+);
+// Position collection NFT: [b"collection", registrar] under VSR
+export const HNT_POSITION_COLLECTION_KEY = findPDA(
+  [Buffer.from("collection"), HNT_REGISTRAR_KEY.toBuffer()],
+  VSR_PROGRAM,
+);
+
+// --- VSR / sub-DAO PDAs ---
+
+export function positionKey(mint) {
+  return findPDA([Buffer.from("position"), mint.toBuffer()], VSR_PROGRAM);
+}
+
+export function delegatedPositionKey(position) {
+  return findPDA([Buffer.from("delegated_position"), position.toBuffer()], SUB_DAOS);
+}
+
+export function daoEpochInfoKey(dao, epoch) {
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(BigInt(epoch));
+  return findPDA([Buffer.from("dao_epoch_info"), dao.toBuffer(), epochBuf], SUB_DAOS);
+}
+
+export function subDaoEpochInfoKey(subDao, epoch) {
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(BigInt(epoch));
+  return findPDA([Buffer.from("sub_dao_epoch_info"), subDao.toBuffer(), epochBuf], SUB_DAOS);
+}
+
+export function circuitBreakerKey(tokenAccount) {
+  return findPDA(
+    [Buffer.from("account_windowed_breaker"), tokenAccount.toBuffer()],
+    CIRCUIT_BREAKER_PROGRAM,
+  );
+}
+
+export function currentEpoch(nowSeconds) {
+  return Math.floor(nowSeconds / SECONDS_PER_EPOCH);
+}
+
 // ---------------------------------------------------------------------------
 // PDA helpers
 // ---------------------------------------------------------------------------
@@ -39,9 +99,12 @@ export function findPDA(seeds, programId) {
   return PublicKey.findProgramAddressSync(seeds, programId)[0];
 }
 
+export const MOBILE_MINT = new PublicKey("mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6");
+
 // Static PDAs — derived from constants, computed once at module load
 export const DAO_KEY = findPDA([Buffer.from("dao"), HNT_MINT.toBuffer()], SUB_DAOS);
 export const IOT_SUB_DAO_KEY = findPDA([Buffer.from("sub_dao"), IOT_MINT.toBuffer()], SUB_DAOS);
+export const MOBILE_SUB_DAO_KEY = findPDA([Buffer.from("sub_dao"), MOBILE_MINT.toBuffer()], SUB_DAOS);
 export const DATA_ONLY_CONFIG_KEY = findPDA([Buffer.from("data_only_config"), DAO_KEY.toBuffer()], ENTITY_MANAGER);
 export const DATA_ONLY_ESCROW_KEY = findPDA([Buffer.from("data_only_escrow"), DATA_ONLY_CONFIG_KEY.toBuffer()], ENTITY_MANAGER);
 export const ENTITY_CREATOR_KEY = findPDA([Buffer.from("entity_creator"), DAO_KEY.toBuffer()], ENTITY_MANAGER);

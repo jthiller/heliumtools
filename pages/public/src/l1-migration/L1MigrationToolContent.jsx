@@ -1,26 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { useAsyncCallback } from 'react-async-hook';
-import { PublicKey } from '@solana/web3.js';
 import Address from '@helium/address';
 import { ArrowRightIcon } from '@heroicons/react/24/outline';
 import StatusBanner from '../components/StatusBanner.jsx';
+import { resolveSolanaWallet } from '../lib/solanaAddress.js';
 import { migrateWallet } from '../lib/l1MigrationApi.js';
 
 export const L1MigrationToolContent = () => {
     const [wallet, setWallet] = useState("");
     const [status, setStatus] = useState(null);
 
-    const solanaWallet = useMemo(() => {
-        try {
-            return new PublicKey(wallet);
-        } catch (e) {
-            try {
-                return new PublicKey(Address.fromB58(wallet).publicKey);
-            } catch (e) {
-                return null;
-            }
-        }
-    }, [wallet]);
+    const solanaWallet = useMemo(() => resolveSolanaWallet(wallet), [wallet]);
 
     const heliumWallet = useMemo(() => {
         if (!solanaWallet) return null;
