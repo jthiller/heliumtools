@@ -86,10 +86,17 @@ export async function handleClaim(request, env) {
     const nowTs = Math.floor(Date.now() / 1000);
     const currentEpoch = computeCurrentEpoch(nowTs);
 
+    // Single pass: collect up to MAX_EPOCHS_PER_CLAIM_CALL unclaimed epochs
+    // into `unclaimed`, then keep counting the rest in `remaining`. Tracking
+    // `lastExamined` avoids the double-count that happens if you restart the
+    // scan at `lastClaimedEpoch + 1 + unclaimed.length` — claimed bits inside
+    // the first range aren't in `unclaimed.length`, so the offset is wrong.
     const unclaimed = [];
+    let remaining = 0;
     for (let e = delegation.lastClaimedEpoch + 1; e < currentEpoch; e++) {
-      if (unclaimed.length >= MAX_EPOCHS_PER_CLAIM_CALL) break;
-      if (!isEpochClaimed(delegation, e)) unclaimed.push(e);
+      if (isEpochClaimed(delegation, e)) continue;
+      if (unclaimed.length < MAX_EPOCHS_PER_CLAIM_CALL) unclaimed.push(e);
+      else remaining++;
     }
 
     if (unclaimed.length === 0) {
@@ -109,12 +116,6 @@ export async function handleClaim(request, env) {
       epochs: unclaimed,
       blockhash,
     });
-
-    // How many claimable epochs are left beyond this build call?
-    let remaining = 0;
-    for (let e = delegation.lastClaimedEpoch + 1 + unclaimed.length; e < currentEpoch; e++) {
-      if (!isEpochClaimed(delegation, e)) remaining++;
-    }
 
     console.log(
       JSON.stringify({

@@ -1,4 +1,4 @@
-import { SCALED_FACTOR_BASE } from "../../../lib/helium-solana.js";
+import { SCALED_FACTOR_BASE, SECONDS_PER_EPOCH } from "../../../lib/helium-solana.js";
 import { isEpochClaimed } from "./decode.js";
 
 /**
@@ -142,7 +142,7 @@ export function approximateDailyReward({ position, votingMintConfig, daoEpochInf
   const { veHnt } = computeVeHnt(
     position,
     votingMintConfig,
-    daoEpochInfo.epoch * 86400,
+    daoEpochInfo.epoch * SECONDS_PER_EPOCH,
   );
   if (veHnt === 0n) return 0n;
   return (veHnt * daoEpochInfo.delegationRewardsIssued) / daoEpochInfo.vehntAtEpochStart;
