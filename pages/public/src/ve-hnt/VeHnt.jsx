@@ -55,17 +55,20 @@ function splitDurationParts(seconds) {
 }
 
 function lockupSummary(lockup) {
-  if (lockup.timeRemainingSecs <= 0) return { primary: "Expired", secondary: fmtDate(lockup.endTs) };
-  const { big, small } = splitDurationParts(lockup.timeRemainingSecs);
-  if (lockup.kind === "Cliff") {
-    return { primary: `Unlocks in ${big}${small ? ` ${small}` : ""}`, secondary: `on ${fmtDate(lockup.endTs)}` };
+  if (lockup.kind === "Constant") {
+    // Constant: indefinite — never actually expires. end_ts is just the
+    // minimum unwind period if the owner later converts to Cliff.
+    const totalDays = Math.floor((lockup.endTs - lockup.startTs) / 86400);
+    return {
+      primary: "Indefinite lockup",
+      secondary: `${totalDays}d minimum to unwind · started ${fmtDate(lockup.startTs)}`,
+    };
   }
-  // Constant: indefinite lockup with minimum unwind period.
-  const totalDays = Math.floor((lockup.endTs - lockup.startTs) / 86400);
-  return {
-    primary: "Indefinite lockup",
-    secondary: `${totalDays}d minimum to unwind · started ${fmtDate(lockup.startTs)}`,
-  };
+  if (lockup.isExpired) {
+    return { primary: "Lockup ended", secondary: fmtDate(lockup.endTs) };
+  }
+  const { big, small } = splitDurationParts(lockup.timeRemainingSecs);
+  return { primary: `Unlocks in ${big}${small ? ` ${small}` : ""}`, secondary: `on ${fmtDate(lockup.endTs)}` };
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
@@ -146,7 +149,7 @@ function positionHasPending(p) {
 }
 
 function StatusPill({ position }) {
-  const expired = position.lockup.timeRemainingSecs <= 0;
+  const expired = position.lockup.isExpired;
   const hasPending = positionHasPending(position);
 
   if (expired) {
@@ -349,9 +352,9 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
         <div
           className={`absolute left-0 top-0 bottom-0 w-[3px] ${
-            lockup.timeRemainingSecs <= 0 && hasPending
+            lockup.isExpired && hasPending
               ? "bg-amber-500"
-              : lockup.timeRemainingSecs <= 0
+              : lockup.isExpired
                 ? "bg-border"
                 : isLandrush
                   ? "bg-amber-400"
@@ -408,7 +411,7 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
           <p className="text-sm text-content font-medium">{lockupPrimary}</p>
           <p className="text-[11px] font-mono tabular-nums text-content-tertiary text-right">{lockupSecondary}</p>
         </div>
-        {lockup.kind === "Cliff" && <CliffProgress startTs={lockup.startTs} endTs={lockup.endTs} />}
+        {lockup.kind === "Cliff" && !lockup.isExpired && <CliffProgress startTs={lockup.startTs} endTs={lockup.endTs} />}
       </div>
 
       {/* Delegation + rewards */}
@@ -691,15 +694,17 @@ export default function VeHnt() {
     [connectedKey, sendTransaction, connection, load, submittedWalletStr],
   );
 
-  // Partition: positions worth user attention (active lockup OR has unclaimed
-  // HNT or DNT rewards) vs. truly dormant expired ones.
+  // Partition: positions worth user attention (still-earning lockup OR has
+  // unclaimed rewards) vs. truly dormant expired ones. Constant positions
+  // never expire in voting-power terms, so they stay "active" regardless of
+  // their end_ts (which is just the minimum unwind period).
   const { active, expired } = useMemo(() => {
     const active = [];
     const expired = [];
     for (const p of data?.positions || []) {
       const hnt = Number(p.pendingRewards?.hnt || p.pendingRewardsHnt || 0);
       const dnt = Number(p.pendingRewards?.dnt || 0);
-      if (p.lockup.timeRemainingSecs > 0 || hnt > 0 || dnt > 0) active.push(p);
+      if (!p.lockup.isExpired || hnt > 0 || dnt > 0) active.push(p);
       else expired.push(p);
     }
     return { active, expired };

@@ -2,17 +2,20 @@ import { SCALED_FACTOR_BASE } from "../../../lib/helium-solana.js";
 import { isEpochClaimed } from "./decode.js";
 
 /**
- * Compute veHNT voting power for a position at a given timestamp.
- *
- * Mirrors PositionV0::voting_power in voter-stake-registry/src/state/position.rs.
+ * Compute veHNT voting power for a position at a given timestamp. Mirrors
+ * PositionV0::voting_power in voter-stake-registry/src/state/position.rs
+ * verbatim — especially the Constant-kind short-circuit in Lockup::seconds_left,
+ * which pretends curr_ts is start_ts, so Constant positions NEVER expire in
+ * voting-power terms. Their end_ts is just the minimum unwind period if the
+ * kind is later changed to Cliff.
  *
  *   baseline = amount * baseline_factor / SCALED_FACTOR_BASE
  *   max_locked = amount * max_extra_factor / SCALED_FACTOR_BASE
- *   locked =
- *     None:    0
- *     expired: 0
- *     Cliff:    max_locked * min(end_ts - curr_ts, saturation) / saturation
- *     Constant: max_locked * min(end_ts - start_ts, saturation) / saturation
+ *   seconds_left =
+ *     Constant: end_ts - start_ts (always, regardless of curr_ts)
+ *     Cliff:    max(0, end_ts - curr_ts)
+ *     None:     0
+ *   locked = max_locked * min(seconds_left, saturation) / saturation
  *   genesis_multiplier = (curr_ts < genesis_end && mult > 0) ? mult : 1
  *   veHNT = (baseline + locked) * genesis_multiplier
  */
@@ -29,13 +32,10 @@ export function computeVeHnt(position, votingMintConfig, nowTs) {
   const saturation = BigInt(votingMintConfig.lockupSaturationSecs);
 
   let secondsLeft = 0n;
-  const expired = endTs <= nowTs;
-  if (!expired) {
-    if (kind === "Cliff") {
-      secondsLeft = BigInt(endTs - nowTs);
-    } else if (kind === "Constant") {
-      secondsLeft = BigInt(endTs - startTs);
-    }
+  if (kind === "Constant") {
+    secondsLeft = BigInt(endTs - startTs);
+  } else if (kind === "Cliff" && endTs > nowTs) {
+    secondsLeft = BigInt(endTs - nowTs);
   }
 
   let locked = 0n;

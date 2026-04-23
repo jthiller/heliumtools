@@ -278,6 +278,11 @@ export async function handlePositions(url, env, request) {
             startTs: position.lockup.startTs,
             endTs: position.lockup.endTs,
             timeRemainingSecs: Math.max(0, position.lockup.endTs - nowTs),
+            // Constant lockups never "expire" in voting-power terms —
+            // their end_ts is just the minimum unwind period if converted
+            // to Cliff. Only Cliff lockups truly end.
+            isExpired:
+              position.lockup.kind === "Cliff" && position.lockup.endTs <= nowTs,
           },
           veHnt: formatNative(veHnt, HNT_DECIMALS),
           isLandrush,
