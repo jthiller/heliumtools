@@ -1,5 +1,4 @@
 import {
-  PublicKey,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,

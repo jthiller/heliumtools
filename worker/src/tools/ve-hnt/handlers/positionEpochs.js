@@ -55,9 +55,13 @@ export async function handlePositionEpochs(url, env, request) {
     const position = decodePosition(positionBuf);
     const delegation = delegatedBuf ? decodeDelegatedPosition(delegatedBuf) : null;
 
-    const vmc = registrar.votingMints[
-      registrar.votingMints.findIndex((v) => v.mint.toBase58() === HNT_MINT.toBase58())
-    ];
+    const vmcIdx = registrar.votingMints.findIndex(
+      (v) => v.mint.toBase58() === HNT_MINT.toBase58(),
+    );
+    if (vmcIdx === -1) {
+      return jsonResponse({ error: "Registrar missing HNT voting mint." }, 500);
+    }
+    const vmc = registrar.votingMints[vmcIdx];
     const nowTs = Math.floor(Date.now() / 1000);
     const currentEpoch = computeCurrentEpoch(nowTs);
 
@@ -71,8 +75,14 @@ export async function handlePositionEpochs(url, env, request) {
       });
     }
 
+    // The bitmap covers the range (lastClaimedEpoch, lastClaimedEpoch+128].
+    // Epochs with the bit set have already been claimed (possibly out of
+    // order), so their rewards are spent — exclude them so the drilldown
+    // only surfaces actually-claimable epochs.
     const epochs = [];
-    for (let e = delegation.lastClaimedEpoch + 1; e < currentEpoch; e++) epochs.push(e);
+    for (let e = delegation.lastClaimedEpoch + 1; e < currentEpoch; e++) {
+      if (!isEpochClaimed(delegation, e)) epochs.push(e);
+    }
 
     const [daoBufs, subDaoBufs] = await Promise.all([
       epochs.length === 0 ? [] : batchCachedAccounts(
@@ -99,7 +109,6 @@ export async function handlePositionEpochs(url, env, request) {
       return {
         epoch,
         startTs: epochStartTs,
-        claimed: isEpochClaimed(delegation, epoch),
         positionVehnt: formatNative(positionVehnt, HNT_DECIMALS),
         claimable: {
           hnt: formatNative(claimableHnt, HNT_DECIMALS),

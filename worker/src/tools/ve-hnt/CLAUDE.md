@@ -19,23 +19,36 @@ Entry: `index.js` → `handlers/`.
 
 **Services:**
 - `decode.js` — Manual Borsh decoders for PositionV0, DelegatedPositionV0,
-  RegistrarV0, DaoV0, DaoEpochInfoV0. No Anchor dependency in worker;
-  offsets verified against helium-program-library master.
-- `discovery.js` — Helius DAS `getAssetsByOwner` filtered by the HNT
-  position collection PDA. Pagination capped at 10k/wallet.
+  RegistrarV0, DaoEpochInfoV0, SubDaoEpochInfoV0. No Anchor dependency in
+  worker; offsets verified against helium-program-library master.
+- `discovery.js` — Helius DAS `searchAssets` with `tokenType: "fungible"`
+  and a server-side `grouping` filter on the HNT position collection PDA.
+  Position NFTs are SPL tokens (decimals=0, supply=1), so Helius
+  classifies them as fungible; `getAssetsByOwner` with default
+  `showFungible:false` would miss them.
 - `compute.js` — veHNT formula (baseline + locked) × genesis_multiplier
-  with landrush detection; pending rewards sum across unclaimed epochs;
-  daily-reward approximation from the most recent fully-issued epoch.
+  with landrush detection; `resolveEpochReward` classifies each unclaimed
+  epoch (v1_hnt / v0_dnt / v0_blocked / position_vehnt_zero / …);
+  `computePendingRewards` sums across unclaimed epochs.
 - `cache.js` — KV read-through for registrar (24h), DAO (24h), past-epoch
-  DaoEpochInfoV0 (30d — immutable), daily rate (10m).
+  DaoEpochInfoV0 (30d — immutable). `batchCachedAccounts` avoids
+  per-account fan-out by collapsing N-sequential RPCs into one
+  getMultipleAccounts call.
 
 ## Key Concepts
 
 ### Position discovery
 Every HNT position is an NFT in the registrar's collection PDA, derived as
-`["collection", registrar]` under the VSR program. We call
-`getAssetsByOwner` then filter for that collection. For each matching
-mint we derive `positionKey = ["position", mint]` under VSR.
+`["collection", registrar]` under the VSR program. We call Helius DAS
+`searchAssets` with `tokenType: "fungible"` and a server-side `grouping`
+filter on that collection. For each matching mint we derive
+`positionKey = ["position", mint]` under VSR.
+
+**Why fungible?** veHNT position NFTs are SPL tokens with decimals=0 and
+supply=1. Helius DAS classifies anything with SPL Token metadata as
+"fungible", so `getAssetsByOwner` with default `showFungible:false`
+excludes them. Matches helium-program-library's
+`getPositionKeysForOwner` in voter-stake-registry-sdk.
 
 ### veHNT formula
 Mirrors `PositionV0::voting_power` in `voter-stake-registry`:

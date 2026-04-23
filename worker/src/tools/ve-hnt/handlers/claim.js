@@ -1,9 +1,7 @@
-import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../../lib/rateLimit.js";
 import {
   DAO_KEY,
-  SECONDS_PER_EPOCH,
   positionKey as derivePositionKey,
   delegatedPositionKey as deriveDelegatedPositionKey,
   currentEpoch as computeCurrentEpoch,
