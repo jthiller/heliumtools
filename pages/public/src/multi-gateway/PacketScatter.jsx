@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ScatterChart,
   Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  ReferenceLine,
   Customized,
   ResponsiveContainer,
 } from "recharts";
@@ -60,6 +60,10 @@ function colorForFrameType(frameType, isDark) {
   const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
   return palette[frameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
 }
+
+// When a hovered dot is past this fraction of the chart width, anchor the
+// tooltip to its right edge so it doesn't clip off the chart.
+const TOOLTIP_FLIP_THRESHOLD = 0.65;
 
 // SNR → half-band size (dB). LoRaWAN SNR floor is ~-20 dB (below demodulation
 // limit); +10 dB is effectively excellent. Low SNR = more uncertain reception
@@ -202,14 +206,26 @@ function formatTimeTick(ts) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function CustomTooltip({ active, payload }) {
-  if (!active || !payload || payload.length === 0) return null;
-  const p = payload[0].payload;
+// We render our own tooltip instead of recharts' <Tooltip> because a custom
+// shape fn breaks the per-item hover wiring recharts' tooltip relies on —
+// without owned dot elements, its shared={false} path can't resolve which
+// dot is active.
+function HoverTooltip({ hover }) {
+  if (!hover) return null;
+  const p = hover.payload;
   const netIdInfo = p.devAddr ? devAddrToNetId(p.devAddr) : null;
   const operator = netIdInfo?.netId ? netIdToOperator(netIdInfo.netId) : null;
   const label = `${operator ?? netIdInfo?.netId ?? "Unknown NetID"} · ${p.devAddr} · ${p.trackId}`;
+  const flipRight = hover.x > hover.hostWidth * TOOLTIP_FLIP_THRESHOLD;
   return (
-    <div className="rounded-md border border-border bg-surface-raised px-3 py-2 text-xs shadow-soft">
+    <div
+      className="pointer-events-none absolute z-10 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs shadow-soft"
+      style={{
+        left: flipRight ? undefined : hover.x + 12,
+        right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,
+        top: Math.max(0, hover.y - 48),
+      }}
+    >
       <div className="font-medium text-content-primary">{label}</div>
       <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[11px] text-content-secondary">
         <span>{new Date(p.timestamp).toLocaleTimeString()}</span>
@@ -224,7 +240,10 @@ function CustomTooltip({ active, payload }) {
 
 export default function PacketScatter({ packets, segmenter, visibleTypes, loading }) {
   const isDark = useDarkMode();
-  const [hoveredId, setHoveredId] = useState(null);
+  // `hover` carries both the trackId (for band + label colouring + dimming)
+  // and the full payload/screen-coords we need to render our own tooltip.
+  const [hover, setHover] = useState(null);
+  const hoveredId = hover?.trackId ?? null;
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
 
@@ -291,6 +310,42 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
 
   const deviceCount = tracks.filter((t) => t.count > 0).length;
+
+  // One stable shape fn across all Scatter series — opacity/color derive from
+  // the dot's own payload so the closure only changes on hover/theme, not per
+  // track. Handlers live here so the band keys off the exact dot the cursor
+  // is on, not recharts' series-level hitbox.
+  const dotShape = useCallback(
+    (dotProps) => {
+      const dimmed = hoveredId != null && hoveredId !== dotProps.payload.trackId;
+      return (
+        <circle
+          cx={dotProps.cx}
+          cy={dotProps.cy}
+          r={4}
+          fill={colorForFrameType(dotProps.payload.frameType, isDark)}
+          fillOpacity={dimmed ? 0.15 : 0.9}
+          onMouseEnter={(e) => {
+            const dotRect = e.currentTarget.getBoundingClientRect();
+            const hostRect = e.currentTarget
+              .closest("[data-chart-host]")
+              ?.getBoundingClientRect();
+            if (!hostRect) return;
+            setHover({
+              trackId: dotProps.payload.trackId,
+              payload: dotProps.payload,
+              x: dotRect.left + dotRect.width / 2 - hostRect.left,
+              y: dotRect.top + dotRect.height / 2 - hostRect.top,
+              hostWidth: hostRect.width,
+            });
+          }}
+          onMouseLeave={() => setHover(null)}
+          style={{ cursor: "pointer" }}
+        />
+      );
+    },
+    [hoveredId, isDark],
+  );
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
     let minTs = Infinity, maxTs = -Infinity;
@@ -352,7 +407,7 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
         </div>
       </div>
 
-      <div className="h-64 px-2 py-3">
+      <div className="relative h-64 px-2 py-3" data-chart-host>
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
             Loading...
@@ -383,12 +438,14 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                 unit=" dBm"
                 width={70}
               />
-              <Tooltip
-                content={<CustomTooltip />}
-                cursor={{ strokeDasharray: "3 3" }}
-                shared={false}
-                trigger="hover"
-              />
+              {hover && (
+                <ReferenceLine
+                  x={hover.payload.timestamp}
+                  stroke={chartColors?.grid}
+                  strokeDasharray="3 3"
+                  ifOverflow="hidden"
+                />
+              )}
               <Customized
                 component={() => (
                   <BandOverlay
@@ -398,36 +455,17 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                   />
                 )}
               />
-              {visibleTracks.map((t) => {
-                const dimmed = hoveredId != null && hoveredId !== t.id;
-                const opacity = dimmed ? 0.15 : 0.9;
-                return (
-                  <Scatter
-                    key={t.id}
-                    name={t.devAddr ?? t.id}
-                    data={pointsByTrack.get(t.id) ?? []}
-                    // Fill per-packet by frame type — mirrors the table's
-                    // palette. Track identity still shows via the hover band.
-                    // Event handlers live on the <circle> itself so the band
-                    // keys off the exact dot under the cursor, not the series
-                    // hitbox (which can be a different track than what
-                    // recharts' axis-mode tooltip resolves to).
-                    shape={(dotProps) => (
-                      <circle
-                        cx={dotProps.cx}
-                        cy={dotProps.cy}
-                        r={4}
-                        fill={colorForFrameType(dotProps.payload.frameType, isDark)}
-                        fillOpacity={opacity}
-                        onMouseEnter={() => setHoveredId(dotProps.payload.trackId)}
-                        onMouseLeave={() => setHoveredId(null)}
-                        style={{ cursor: "pointer" }}
-                      />
-                    )}
-                    isAnimationActive={false}
-                  />
-                );
-              })}
+              {visibleTracks.map((t) => (
+                <Scatter
+                  key={t.id}
+                  name={t.devAddr ?? t.id}
+                  data={pointsByTrack.get(t.id) ?? []}
+                  // Fill per-packet by frame type (see dotShape); track
+                  // identity shows via the hover band instead.
+                  shape={dotShape}
+                  isAnimationActive={false}
+                />
+              ))}
               <Customized
                 component={() => (
                   <FcntLabels
@@ -441,6 +479,7 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
             </ScatterChart>
           </ResponsiveContainer>
         )}
+        {hover && <HoverTooltip hover={hover} />}
       </div>
     </div>
   );
