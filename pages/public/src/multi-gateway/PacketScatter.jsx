@@ -6,7 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ReferenceArea,
+  Customized,
   ResponsiveContainer,
 } from "recharts";
 import useDarkMode from "../lib/useDarkMode.js";
@@ -23,6 +23,132 @@ function trackVisible(t, { showDownlinks, netIdFilter, trackFilter }) {
   if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
   if (trackFilter !== "all" && t.id !== trackFilter) return false;
   return true;
+}
+
+// SNR → half-band size (dB). LoRaWAN SNR floor is ~-20 dB (below demodulation
+// limit); +10 dB is effectively excellent. Low SNR = more uncertain reception
+// = wider band.
+const SNR_BEST = 10;
+const SNR_WORST = -20;
+const HALF_WIDTH_MIN_DB = 1.5;
+const HALF_WIDTH_MAX_DB = 10;
+
+function halfWidthForSnr(snr) {
+  if (snr == null || !Number.isFinite(snr)) return HALF_WIDTH_MAX_DB / 2;
+  const t = Math.max(0, Math.min(1, (snr - SNR_WORST) / (SNR_BEST - SNR_WORST)));
+  return HALF_WIDTH_MAX_DB - (HALF_WIDTH_MAX_DB - HALF_WIDTH_MIN_DB) * t;
+}
+
+// Catmull-Rom cubic-bezier interpolation through screen-space points.
+// Endpoints duplicate the adjacent neighbour so tangents are well-defined.
+function catmullRomPath(points) {
+  if (points.length === 0) return "";
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
+// Draw fcnt above each dot of the hovered track. Rendered as a separate
+// Customized after Scatter so labels sit on top of dots; paint-order: stroke
+// fill creates a halo so numbers stay legible over busy chart areas.
+function FcntLabels({ hoveredId, pointsByTrack, color, isDark, xAxisMap, yAxisMap }) {
+  if (!hoveredId || !color) return null;
+  const pts = pointsByTrack.get(hoveredId);
+  if (!pts || pts.length === 0) return null;
+  const xScale = Object.values(xAxisMap || {})[0]?.scale;
+  const yScale = Object.values(yAxisMap || {})[0]?.scale;
+  if (!xScale || !yScale) return null;
+  const halo = isDark ? "#000000" : "#ffffff";
+  return (
+    <g pointerEvents="none">
+      {pts.map((p, i) => {
+        if (p.fcnt == null) return null;
+        const x = xScale(p.timestamp);
+        const y = yScale(p.rssi) - 8;
+        return (
+          <text
+            key={i}
+            x={x}
+            y={y}
+            textAnchor="middle"
+            fontSize={10}
+            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+            fontWeight={600}
+            fill={color}
+            stroke={halo}
+            strokeWidth={3}
+            strokeOpacity={0.85}
+            style={{ paintOrder: "stroke fill" }}
+          >
+            {p.fcnt}
+          </text>
+        );
+      })}
+    </g>
+  );
+}
+
+// Render a filled, SNR-weighted band following the hovered track's packets.
+// Band extends to the full chart width; thickness varies per packet based on SNR.
+function BandOverlay({ hoveredId, pointsByTrack, color, xAxisMap, yAxisMap }) {
+  if (!hoveredId || !color) return null;
+  const pts = pointsByTrack.get(hoveredId);
+  if (!pts || pts.length === 0) return null;
+  const xScale = Object.values(xAxisMap || {})[0]?.scale;
+  const yScale = Object.values(yAxisMap || {})[0]?.scale;
+  if (!xScale || !yScale) return null;
+  const [xLeft, xRight] = xScale.range();
+
+  const sorted = [...pts].sort((a, b) => a.timestamp - b.timestamp);
+  const sp = sorted.map((p) => {
+    const hwDb = halfWidthForSnr(p.snr);
+    return {
+      x: xScale(p.timestamp),
+      yUp: yScale(p.rssi + hwDb),
+      yDn: yScale(p.rssi - hwDb),
+    };
+  });
+
+  const first = sp[0];
+  const last = sp[sp.length - 1];
+  const upperPts = [
+    { x: xLeft, y: first.yUp },
+    ...sp.map((p) => ({ x: p.x, y: p.yUp })),
+    { x: xRight, y: last.yUp },
+  ];
+  const lowerPts = [
+    { x: xLeft, y: first.yDn },
+    ...sp.map((p) => ({ x: p.x, y: p.yDn })),
+    { x: xRight, y: last.yDn },
+  ];
+
+  const upperD = catmullRomPath(upperPts);
+  const lowerReversed = [...lowerPts].reverse();
+  const lowerD = catmullRomPath(lowerReversed).replace(/^M /, "L ");
+  const d = `${upperD} ${lowerD} Z`;
+
+  return (
+    <path
+      d={d}
+      fill={color}
+      fillOpacity={0.18}
+      stroke={color}
+      strokeOpacity={0.45}
+      strokeWidth={1}
+      strokeDasharray="4 2"
+      pointerEvents="none"
+    />
+  );
 }
 
 function formatTimeTick(ts) {
@@ -123,22 +249,6 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
 
-  // Bounds of the hovered track's currently-visible points, rendered as a
-  // translucent band so the user can spot every payload from the same device.
-  const hoveredBand = useMemo(() => {
-    if (!hoveredId) return null;
-    const pts = pointsByTrack.get(hoveredId);
-    if (!pts || pts.length < 2) return null;
-    let minT = Infinity, maxT = -Infinity, minR = Infinity, maxR = -Infinity;
-    for (const p of pts) {
-      if (p.timestamp < minT) minT = p.timestamp;
-      if (p.timestamp > maxT) maxT = p.timestamp;
-      if (p.rssi < minR) minR = p.rssi;
-      if (p.rssi > maxR) maxR = p.rssi;
-    }
-    return { id: hoveredId, minT, maxT, minR, maxR };
-  }, [hoveredId, pointsByTrack]);
-
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -214,20 +324,17 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                 width={70}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
-              {hoveredBand && (
-                <ReferenceArea
-                  x1={hoveredBand.minT}
-                  x2={hoveredBand.maxT}
-                  y1={hoveredBand.minR - 2}
-                  y2={hoveredBand.maxR + 2}
-                  fill={colorForTrack(hoveredBand.id, isDark)}
-                  fillOpacity={0.12}
-                  stroke={colorForTrack(hoveredBand.id, isDark)}
-                  strokeOpacity={0.5}
-                  strokeDasharray="4 2"
-                  ifOverflow="hidden"
-                />
-              )}
+              <Customized
+                component={(props) => (
+                  <BandOverlay
+                    hoveredId={hoveredId}
+                    pointsByTrack={pointsByTrack}
+                    color={hoveredId ? colorForTrack(hoveredId, isDark) : null}
+                    xAxisMap={props.xAxisMap}
+                    yAxisMap={props.yAxisMap}
+                  />
+                )}
+              />
               {visibleTracks.map((t) => (
                 <Scatter
                   key={t.id}
@@ -240,6 +347,18 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                   isAnimationActive={false}
                 />
               ))}
+              <Customized
+                component={(props) => (
+                  <FcntLabels
+                    hoveredId={hoveredId}
+                    pointsByTrack={pointsByTrack}
+                    color={hoveredId ? colorForTrack(hoveredId, isDark) : null}
+                    isDark={isDark}
+                    xAxisMap={props.xAxisMap}
+                    yAxisMap={props.yAxisMap}
+                  />
+                )}
+              />
             </ScatterChart>
           </ResponsiveContainer>
         )}
