@@ -6,6 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceArea,
   ResponsiveContainer,
 } from "recharts";
 import useDarkMode from "../lib/useDarkMode.js";
@@ -122,6 +123,22 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
 
+  // Bounds of the hovered track's currently-visible points, rendered as a
+  // translucent band so the user can spot every payload from the same device.
+  const hoveredBand = useMemo(() => {
+    if (!hoveredId) return null;
+    const pts = pointsByTrack.get(hoveredId);
+    if (!pts || pts.length < 2) return null;
+    let minT = Infinity, maxT = -Infinity, minR = Infinity, maxR = -Infinity;
+    for (const p of pts) {
+      if (p.timestamp < minT) minT = p.timestamp;
+      if (p.timestamp > maxT) maxT = p.timestamp;
+      if (p.rssi < minR) minR = p.rssi;
+      if (p.rssi > maxR) maxR = p.rssi;
+    }
+    return { id: hoveredId, minT, maxT, minR, maxR };
+  }, [hoveredId, pointsByTrack]);
+
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -197,6 +214,20 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
                 width={70}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+              {hoveredBand && (
+                <ReferenceArea
+                  x1={hoveredBand.minT}
+                  x2={hoveredBand.maxT}
+                  y1={hoveredBand.minR - 2}
+                  y2={hoveredBand.maxR + 2}
+                  fill={colorForTrack(hoveredBand.id, isDark)}
+                  fillOpacity={0.12}
+                  stroke={colorForTrack(hoveredBand.id, isDark)}
+                  strokeOpacity={0.5}
+                  strokeDasharray="4 2"
+                  ifOverflow="hidden"
+                />
+              )}
               {visibleTracks.map((t) => (
                 <Scatter
                   key={t.id}
