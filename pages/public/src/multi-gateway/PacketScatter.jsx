@@ -8,16 +8,14 @@ import {
   ReferenceLine,
   Customized,
   ResponsiveContainer,
+  usePlotArea,
+  useXAxisDomain,
+  useYAxisDomain,
 } from "recharts";
-// useXAxis/useYAxis return the internal d3 scale functions recharts uses for
-// its own dot placement. Not exposed from recharts' public index; deep-import
-// to guarantee our band/label overlays use the exact same projection as the
-// dots they annotate.
-import { useXAxis, useYAxis } from "recharts/es6/hooks";
 import useDarkMode from "../lib/useDarkMode.js";
 import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { readChartColors } from "../lib/chartColors.js";
-import { dominantFrameType, listTracks } from "./segmentation.js";
+import { listTracks } from "./segmentation.js";
 
 function trackVisible(t, { netIdFilter, trackFilter }) {
   if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
@@ -27,8 +25,9 @@ function trackVisible(t, { netIdFilter, trackFilter }) {
 
 function colorForTrack(track, isDark) {
   const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
-  const mode = dominantFrameType(track);
-  return palette[mode] ?? (isDark ? "#d1d5db" : "#9ca3af");
+  // Use firstFrameType (set once at track creation) rather than the dominant
+  // one so the colour doesn't flicker as later packets shift the mode.
+  return palette[track?.firstFrameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
 }
 
 // Per-packet dot colour — mirrors the FRAME_TYPES palette in MultiGateway.jsx
@@ -74,7 +73,8 @@ const HALF_WIDTH_MIN_DB = 1.5;
 const HALF_WIDTH_MAX_DB = 10;
 
 function halfWidthForSnr(snr) {
-  if (snr == null || !Number.isFinite(snr)) return HALF_WIDTH_MAX_DB / 2;
+  // Unknown SNR → widest band (max uncertainty). Matches "worst case" default.
+  if (snr == null || !Number.isFinite(snr)) return HALF_WIDTH_MAX_DB;
   const t = Math.max(0, Math.min(1, (snr - SNR_WORST) / (SNR_BEST - SNR_WORST)));
   return HALF_WIDTH_MAX_DB - (HALF_WIDTH_MAX_DB - HALF_WIDTH_MIN_DB) * t;
 }
@@ -98,19 +98,23 @@ function catmullRomPath(points) {
   return d;
 }
 
-// `<Customized>` in recharts 3.x doesn't pass scales as props — pull them from
-// the same hooks recharts uses internally to place dots, so our overlay and
-// the dots share a single projection.
+// `<Customized>` in recharts 3.x doesn't pass scales as props. Build linear
+// scales from the public-API domain + plot-area hooks (matching recharts'
+// default numeric axis), so overlays project the same as the dots.
 function useChartScales() {
-  const xAxis = useXAxis(0);
-  const yAxis = useYAxis(0);
+  const plot = usePlotArea();
+  const xDomain = useXAxisDomain();
+  const yDomain = useYAxisDomain();
   return useMemo(() => {
-    const xScale = xAxis?.scale;
-    const yScale = yAxis?.scale;
-    if (!xScale || !yScale || typeof xScale.range !== "function") return null;
-    const [xLeft, xRight] = xScale.range();
-    return { xScale, yScale, xLeft, xRight };
-  }, [xAxis, yAxis]);
+    if (!plot || !xDomain || !yDomain) return null;
+    const [xMin, xMax] = xDomain;
+    const [yMin, yMax] = yDomain;
+    if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMax === xMin) return null;
+    if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || yMax === yMin) return null;
+    const xScale = (v) => plot.x + ((v - xMin) / (xMax - xMin)) * plot.width;
+    const yScale = (v) => plot.y + plot.height - ((v - yMin) / (yMax - yMin)) * plot.height;
+    return { xScale, yScale, xLeft: plot.x, xRight: plot.x + plot.width };
+  }, [plot, xDomain, yDomain]);
 }
 
 // Draw fcnt above each dot of the hovered track. paint-order: stroke fill
@@ -238,7 +242,7 @@ function HoverTooltip({ hover }) {
   );
 }
 
-export default function PacketScatter({ packets, segmenter, visibleTypes, loading }) {
+export default function PacketScatter({ packets, segmenter, loading }) {
   const isDark = useDarkMode();
   // `hover` carries both the trackId (for band + label colouring + dimming)
   // and the full payload/screen-coords we need to render our own tooltip.

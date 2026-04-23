@@ -671,19 +671,21 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
       .then((data) => {
         segmenterRef.current = createSegmenter();
         const tagged = data.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: false }));
-        ingestBatch(segmenterRef.current, tagged);
-        setPackets(tagged);
+        const kept = ingestBatch(segmenterRef.current, tagged);
+        setPackets(kept);
       })
       .catch((err) => console.error("Failed to fetch packets:", err))
       .finally(() => setLoading(false));
   }, [mac]);
 
-  // Append new packets from SSE
+  // Append new packets from SSE. Skip multi-channel duplicates so the chart
+  // and table don't draw phantom dots for the same physical transmission.
   useEffect(() => {
     if (latestPacket && latestPacket.mac === mac) {
       setPackets((prev) => {
         const pkt = { ...latestPacket.metadata, _id: ++idRef.current, _new: true };
         const res = ingest(segmenterRef.current, pkt);
+        if (res.duplicate) return prev;
         pkt._trackId = res.trackId;
         const next = [...prev, pkt];
         return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
@@ -696,7 +698,6 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
       <PacketScatter
         packets={packets}
         segmenter={segmenterRef.current}
-        visibleTypes={visibleTypes}
         loading={loading}
       />
       <GatewayDetail

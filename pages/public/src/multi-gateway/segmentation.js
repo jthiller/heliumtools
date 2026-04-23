@@ -49,6 +49,7 @@ function makeBucket(id) {
     lastTs: 0,
     firstFcnt: null,
     lastFcnt: null,
+    firstFrameType: null,
     rssiMean: 0,
     rssiMin: Infinity,
     rssiMax: -Infinity,
@@ -79,6 +80,7 @@ function newTrack(state, pkt) {
   t.netId = netIdInfo?.netId ?? null;
   t.firstTs = pkt.timestamp;
   t.firstFcnt = pkt.fcnt;
+  t.firstFrameType = pkt.frame_type;
   state.tracks.set(id, t);
   return t;
 }
@@ -198,11 +200,13 @@ export function ingest(state, pkt) {
 
 export function ingestBatch(state, pkts) {
   const sorted = [...pkts].sort((a, b) => a.timestamp - b.timestamp);
+  const kept = [];
   for (const pkt of sorted) {
     const res = ingest(state, pkt);
     pkt._trackId = res.trackId;
+    if (!res.duplicate) kept.push(pkt);
   }
-  return sorted;
+  return kept;
 }
 
 export function listTracks(state) {
