@@ -13,17 +13,11 @@ import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { readChartColors } from "../lib/chartColors.js";
 import { colorForTrack, listTracks, BUCKET_IDS } from "./segmentation.js";
 
-function isJoinTrack(id) {
-  return id === BUCKET_IDS.joins;
-}
 function isDownlinkTrack(id) {
   return id === BUCKET_IDS.downlinks;
 }
 
-// Single-source-of-truth predicate: does a given track pass the user's
-// frame-type filter (Joins on/off, Downlinks on/off) and the NetID/track filters?
-function trackVisible(t, { showJoins, showDownlinks, netIdFilter, trackFilter }) {
-  if (isJoinTrack(t.id)) return showJoins && t.count > 0;
+function trackVisible(t, { showDownlinks, netIdFilter, trackFilter }) {
   if (isDownlinkTrack(t.id)) return showDownlinks && t.count > 0;
   if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
   if (trackFilter !== "all" && t.id !== trackFilter) return false;
@@ -40,11 +34,9 @@ function CustomTooltip({ active, payload }) {
   const p = payload[0].payload;
   const netIdInfo = p.devAddr ? devAddrToNetId(p.devAddr) : null;
   const operator = netIdInfo?.netId ? netIdToOperator(netIdInfo.netId) : null;
-  const label = p.trackId === BUCKET_IDS.joins
-    ? "Join frames"
-    : p.trackId === BUCKET_IDS.downlinks
-      ? "Downlinks"
-      : `${operator ?? netIdInfo?.netId ?? "Unknown NetID"} · ${p.devAddr} · ${p.trackId}`;
+  const label = p.trackId === BUCKET_IDS.downlinks
+    ? "Downlinks"
+    : `${operator ?? netIdInfo?.netId ?? "Unknown NetID"} · ${p.devAddr} · ${p.trackId}`;
   return (
     <div className="rounded-md border border-border bg-surface-raised px-3 py-2 text-xs shadow-soft">
       <div className="font-medium text-content-primary">{label}</div>
@@ -65,39 +57,33 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
 
-  // Joins/Downlinks buckets on the chart mirror the table filter checkboxes.
-  const showJoins =
-    (visibleTypes?.JoinRequest ?? false) ||
-    (visibleTypes?.JoinAccept ?? false) ||
-    (visibleTypes?.RejoinRequest ?? false) ||
-    (visibleTypes?.Proprietary ?? false);
+  // Joins have no dev_addr/fcnt so they can't be segmented — never render them.
+  // Downlinks stay as a single toggleable bucket, gated on the table's filter row.
   const showDownlinks =
     (visibleTypes?.UnconfirmedDown ?? false) ||
     (visibleTypes?.ConfirmedDown ?? false);
 
   const tracks = useMemo(() => {
     const all = listTracks(segmenter);
-    all.push(segmenter.joins, segmenter.downlinks);
+    all.push(segmenter.downlinks);
     return all;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segmenter, packets]);
 
   const chartColors = useMemo(readChartColors, [isDark]);
 
-  // NetID options built from live tracks
   const netIdOptions = useMemo(() => {
     const set = new Set();
     for (const t of tracks) {
-      if (isJoinTrack(t.id) || isDownlinkTrack(t.id)) continue;
+      if (isDownlinkTrack(t.id)) continue;
       if (t.netId) set.add(t.netId);
     }
     return [...set].sort();
   }, [tracks]);
 
-  // Track options, filtered by the current NetID selection
   const trackOptions = useMemo(() => {
     const list = tracks.filter((t) => {
-      if (isJoinTrack(t.id) || isDownlinkTrack(t.id)) return false;
+      if (isDownlinkTrack(t.id)) return false;
       if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
       return t.count > 0;
     });
@@ -132,7 +118,7 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
     return map;
   }, [packets]);
 
-  const filterOpts = { showJoins, showDownlinks, netIdFilter, trackFilter };
+  const filterOpts = { showDownlinks, netIdFilter, trackFilter };
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
 
