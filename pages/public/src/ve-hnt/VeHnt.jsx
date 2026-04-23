@@ -668,18 +668,14 @@ export default function VeHnt() {
   // Track the connected wallet so we can distinguish "initial connect"
   // from "user switched wallets in Phantom/Solflare". Initial connect only
   // autofills when the input is empty (so it doesn't clobber a pasted
-  // address). A switch always follows the new wallet and re-queries.
+  // address). A switch always follows the new wallet; the auto-query effect
+  // below picks up the resulting input change.
   const prevConnectedRef = useRef(null);
   useEffect(() => {
     const prev = prevConnectedRef.current;
     prevConnectedRef.current = connectedStr;
     if (!connectedStr) return;
-    if (prev && connectedStr !== prev) {
-      setInput(connectedStr);
-      load(connectedStr);
-    } else if (!prev && !input) {
-      setInput(connectedStr);
-    }
+    if ((prev && connectedStr !== prev) || !input) setInput(connectedStr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectedStr]);
 
@@ -695,14 +691,29 @@ export default function VeHnt() {
     );
   }, [submittedWalletStr, setSearchParams]);
 
-  const onSubmit = useCallback(() => {
-    if (submittedWalletStr) load(submittedWalletStr);
+  // Auto-query whenever the resolved wallet becomes a new valid address.
+  // Matches the pattern on other tools (hotspot-claimer): debounce typing
+  // so we don't thrash the RPC, but fire immediately on mount (0ms) when
+  // a URL-provided or connected wallet resolves right away.
+  const lastLoadedRef = useRef(null);
+  useEffect(() => {
+    if (!submittedWalletStr) return;
+    if (lastLoadedRef.current === submittedWalletStr) return;
+    const delay = lastLoadedRef.current === null ? 0 : 400;
+    const t = setTimeout(() => {
+      lastLoadedRef.current = submittedWalletStr;
+      load(submittedWalletStr);
+    }, delay);
+    return () => clearTimeout(t);
   }, [submittedWalletStr, load]);
 
-  useEffect(() => {
-    if (urlWallet && submittedWalletStr && !data) load(submittedWalletStr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Explicit "Analyze" button — force-refresh even if we already loaded
+  // this wallet (useful after a claim to re-query on-chain state).
+  const onSubmit = useCallback(() => {
+    if (!submittedWalletStr) return;
+    lastLoadedRef.current = submittedWalletStr;
+    load(submittedWalletStr);
+  }, [submittedWalletStr, load]);
 
   const [claimStates, setClaimStates] = useState({});
   const [claimErrors, setClaimErrors] = useState({});
