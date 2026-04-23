@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAsyncCallback } from "react-async-hook";
 import { VersionedTransaction } from "@solana/web3.js";
@@ -633,9 +633,25 @@ export default function VeHnt() {
   const connectedStr = connectedKey?.toBase58() || "";
   const canClaim = Boolean(connectedKey && submittedWalletStr && connectedStr === submittedWalletStr);
 
+  const { execute: load, result: data, error, loading } = useAsyncCallback(fetchPositions);
+
+  // Track the connected wallet so we can distinguish "initial connect"
+  // from "user switched wallets in Phantom/Solflare". Initial connect only
+  // autofills when the input is empty (so it doesn't clobber a pasted
+  // address). A switch always follows the new wallet and re-queries.
+  const prevConnectedRef = useRef(null);
   useEffect(() => {
-    if (!input && connectedStr) setInput(connectedStr);
-  }, [connectedStr, input]);
+    const prev = prevConnectedRef.current;
+    prevConnectedRef.current = connectedStr;
+    if (!connectedStr) return;
+    if (prev && connectedStr !== prev) {
+      setInput(connectedStr);
+      load(connectedStr);
+    } else if (!prev && !input) {
+      setInput(connectedStr);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedStr]);
 
   useEffect(() => {
     setSearchParams(
@@ -648,8 +664,6 @@ export default function VeHnt() {
       { replace: true },
     );
   }, [submittedWalletStr, setSearchParams]);
-
-  const { execute: load, result: data, error, loading } = useAsyncCallback(fetchPositions);
 
   const onSubmit = useCallback(() => {
     if (submittedWalletStr) load(submittedWalletStr);
