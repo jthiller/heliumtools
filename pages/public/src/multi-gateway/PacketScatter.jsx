@@ -9,6 +9,11 @@ import {
   Customized,
   ResponsiveContainer,
 } from "recharts";
+// useXAxis/useYAxis return the internal d3 scale functions recharts uses for
+// its own dot placement. Not exposed from recharts' public index; deep-import
+// to guarantee our band/label overlays use the exact same projection as the
+// dots they annotate.
+import { useXAxis, useYAxis } from "recharts/es6/hooks";
 import useDarkMode from "../lib/useDarkMode.js";
 import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { readChartColors } from "../lib/chartColors.js";
@@ -23,6 +28,36 @@ function trackVisible(t, { showDownlinks, netIdFilter, trackFilter }) {
   if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
   if (trackFilter !== "all" && t.id !== trackFilter) return false;
   return true;
+}
+
+// Per-packet dot colour — mirrors the FRAME_TYPES palette in MultiGateway.jsx
+// (emerald / sky / violet families) so the chart reads the same as the table.
+// Tailwind classes can't be used as SVG fills, so we hard-code the matching
+// hex values. Dark-mode variants are lighter to stay legible on dark surfaces.
+const FRAME_TYPE_HEX_LIGHT = {
+  UnconfirmedUp: "#10b981",      // emerald-500
+  ConfirmedUp: "#047857",        // emerald-700 (darker = confirmed)
+  UnconfirmedDown: "#38bdf8",    // sky-400
+  ConfirmedDown: "#0284c7",      // sky-600
+  JoinRequest: "#8b5cf6",        // violet-500
+  JoinAccept: "#6d28d9",         // violet-700
+  RejoinRequest: "#a78bfa",      // violet-400
+  Proprietary: "#9ca3af",        // gray-400
+};
+const FRAME_TYPE_HEX_DARK = {
+  UnconfirmedUp: "#34d399",      // emerald-400
+  ConfirmedUp: "#10b981",        // emerald-500
+  UnconfirmedDown: "#7dd3fc",    // sky-300
+  ConfirmedDown: "#38bdf8",      // sky-400
+  JoinRequest: "#a78bfa",        // violet-400
+  JoinAccept: "#8b5cf6",         // violet-500
+  RejoinRequest: "#c4b5fd",      // violet-300
+  Proprietary: "#d1d5db",        // gray-300
+};
+
+function colorForFrameType(frameType, isDark) {
+  const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
+  return palette[frameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
 }
 
 // SNR → half-band size (dB). LoRaWAN SNR floor is ~-20 dB (below demodulation
@@ -58,23 +93,35 @@ function catmullRomPath(points) {
   return d;
 }
 
-// Draw fcnt above each dot of the hovered track. Rendered as a separate
-// Customized after Scatter so labels sit on top of dots; paint-order: stroke
-// fill creates a halo so numbers stay legible over busy chart areas.
-function FcntLabels({ hoveredId, pointsByTrack, color, isDark, xAxisMap, yAxisMap }) {
-  if (!hoveredId || !color) return null;
+// `<Customized>` in recharts 3.x doesn't pass scales as props — pull them from
+// the same hooks recharts uses internally to place dots, so our overlay and
+// the dots share a single projection.
+function useChartScales() {
+  const xAxis = useXAxis(0);
+  const yAxis = useYAxis(0);
+  return useMemo(() => {
+    const xScale = xAxis?.scale;
+    const yScale = yAxis?.scale;
+    if (!xScale || !yScale || typeof xScale.range !== "function") return null;
+    const [xLeft, xRight] = xScale.range();
+    return { xScale, yScale, xLeft, xRight };
+  }, [xAxis, yAxis]);
+}
+
+// Draw fcnt above each dot of the hovered track. paint-order: stroke fill
+// creates a halo so numbers stay legible over busy chart areas.
+function FcntLabels({ hoveredId, pointsByTrack, color, isDark }) {
+  const scales = useChartScales();
+  if (!hoveredId || !color || !scales) return null;
   const pts = pointsByTrack.get(hoveredId);
   if (!pts || pts.length === 0) return null;
-  const xScale = Object.values(xAxisMap || {})[0]?.scale;
-  const yScale = Object.values(yAxisMap || {})[0]?.scale;
-  if (!xScale || !yScale) return null;
   const halo = isDark ? "#000000" : "#ffffff";
   return (
     <g pointerEvents="none">
       {pts.map((p, i) => {
         if (p.fcnt == null) return null;
-        const x = xScale(p.timestamp);
-        const y = yScale(p.rssi) - 8;
+        const x = scales.xScale(p.timestamp);
+        const y = scales.yScale(p.rssi) - 8;
         return (
           <text
             key={i}
@@ -98,16 +145,14 @@ function FcntLabels({ hoveredId, pointsByTrack, color, isDark, xAxisMap, yAxisMa
   );
 }
 
-// Render a filled, SNR-weighted band following the hovered track's packets.
-// Band extends to the full chart width; thickness varies per packet based on SNR.
-function BandOverlay({ hoveredId, pointsByTrack, color, xAxisMap, yAxisMap }) {
-  if (!hoveredId || !color) return null;
+// Filled, SNR-weighted band following the hovered track's packets.
+// Extends to the full chart width; thickness varies per packet based on SNR.
+function BandOverlay({ hoveredId, pointsByTrack, color }) {
+  const scales = useChartScales();
+  if (!hoveredId || !color || !scales) return null;
   const pts = pointsByTrack.get(hoveredId);
   if (!pts || pts.length === 0) return null;
-  const xScale = Object.values(xAxisMap || {})[0]?.scale;
-  const yScale = Object.values(yAxisMap || {})[0]?.scale;
-  if (!xScale || !yScale) return null;
-  const [xLeft, xRight] = xScale.range();
+  const { xScale, yScale, xLeft, xRight } = scales;
 
   const sorted = [...pts].sort((a, b) => a.timestamp - b.timestamp);
   const sp = sorted.map((p) => {
@@ -239,6 +284,7 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
         fcnt: pkt.fcnt,
         snr: pkt.snr,
         sf: pkt.spreading_factor,
+        frameType: pkt.frame_type,
         trackId: tid,
       });
     }
@@ -249,14 +295,33 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
 
+  const deviceCount = tracks.filter((t) => !isDownlinkTrack(t.id) && t.count > 0).length;
+  const spanLabel = useMemo(() => {
+    if (packets.length === 0) return null;
+    let minTs = Infinity, maxTs = -Infinity;
+    for (const p of packets) {
+      if (p.timestamp < minTs) minTs = p.timestamp;
+      if (p.timestamp > maxTs) maxTs = p.timestamp;
+    }
+    const ms = maxTs - minTs;
+    if (ms < 60_000) return "<1 min";
+    const min = Math.round(ms / 60_000);
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const m = min - h * 60;
+    return m > 0 ? `${h} h ${m} min` : `${h} h`;
+  }, [packets]);
+
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <h3 className="text-sm font-medium text-content-primary">
-          Estimated devices
-          <span className="ml-2 text-xs font-normal text-content-tertiary">
-            RSSI over time, one color per segmented device
-          </span>
+          {deviceCount === 1 ? "1 Estimated Device" : `${deviceCount} Estimated Devices`}
+          {spanLabel && (
+            <span className="ml-2 text-xs font-normal text-content-tertiary">
+              ({spanLabel})
+            </span>
+          )}
         </h3>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label className="flex items-center gap-1.5 text-content-secondary">
@@ -325,37 +390,46 @@ export default function PacketScatter({ packets, segmenter, visibleTypes, loadin
               />
               <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
               <Customized
-                component={(props) => (
+                component={() => (
                   <BandOverlay
                     hoveredId={hoveredId}
                     pointsByTrack={pointsByTrack}
                     color={hoveredId ? colorForTrack(hoveredId, isDark) : null}
-                    xAxisMap={props.xAxisMap}
-                    yAxisMap={props.yAxisMap}
                   />
                 )}
               />
-              {visibleTracks.map((t) => (
-                <Scatter
-                  key={t.id}
-                  name={t.devAddr ?? t.id}
-                  data={pointsByTrack.get(t.id) ?? []}
-                  fill={colorForTrack(t.id, isDark)}
-                  fillOpacity={hoveredId == null || hoveredId === t.id ? 0.9 : 0.15}
-                  onMouseEnter={() => setHoveredId(t.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  isAnimationActive={false}
-                />
-              ))}
+              {visibleTracks.map((t) => {
+                const dimmed = hoveredId != null && hoveredId !== t.id;
+                const opacity = dimmed ? 0.15 : 0.9;
+                return (
+                  <Scatter
+                    key={t.id}
+                    name={t.devAddr ?? t.id}
+                    data={pointsByTrack.get(t.id) ?? []}
+                    // Fill per-packet by frame type — mirrors the table's
+                    // palette. Track identity still shows via the hover band.
+                    shape={(dotProps) => (
+                      <circle
+                        cx={dotProps.cx}
+                        cy={dotProps.cy}
+                        r={4}
+                        fill={colorForFrameType(dotProps.payload.frameType, isDark)}
+                        fillOpacity={opacity}
+                      />
+                    )}
+                    onMouseEnter={() => setHoveredId(t.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    isAnimationActive={false}
+                  />
+                );
+              })}
               <Customized
-                component={(props) => (
+                component={() => (
                   <FcntLabels
                     hoveredId={hoveredId}
                     pointsByTrack={pointsByTrack}
                     color={hoveredId ? colorForTrack(hoveredId, isDark) : null}
                     isDark={isDark}
-                    xAxisMap={props.xAxisMap}
-                    yAxisMap={props.yAxisMap}
                   />
                 )}
               />

@@ -9,8 +9,11 @@ import { devAddrToNetId } from "../lib/lorawan.js";
 const FCNT_GAP_MAX = 64;          // max jump in fcnt to stay on the same track
 const FCNT_WRAP_WINDOW = 16;      // accept wrap only when old fcnt is near 16-bit top
 const FCNT_MAX = 65536;
-const RSSI_HARD_LIMIT_DBM = 30;   // reject cross-device merges across huge RSSI gaps
-const RSSI_WEIGHT = 0.05;         // tie-breaker: 20 dB ≈ 1 fcnt slot of score
+// Two devices can fortuitously interleave fcnts; when the RSSI signature
+// differs meaningfully, treat them as distinct. 15 dB is looser than typical
+// multipath fading (~10 dB) but tight enough to separate strong vs weak radios.
+const RSSI_HARD_LIMIT_DBM = 15;
+const RSSI_WEIGHT = 0.1;         // tie-breaker weight: 10 dB ≈ 1 fcnt slot of score
 const DUP_WINDOW_MS = 2000;       // same (D,F) within this delta is multi-channel duplicate
 const MAX_TRACKS_PER_DEVADDR = 4;
 const DEDUPE_CAP = 500;
