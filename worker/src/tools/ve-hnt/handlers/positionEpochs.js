@@ -22,23 +22,12 @@ import {
   decodeSubDaoEpochInfo,
   isEpochClaimed,
 } from "../services/decode.js";
-import { computeVeHntAt } from "../services/compute.js";
-import { RegistrarCache, DaoEpochInfoCache } from "../services/cache.js";
+import { computeVeHntAt, resolveEpochReward } from "../services/compute.js";
+import { RegistrarCache, batchCachedAccounts, DAO_EPOCH_TTL } from "../services/cache.js";
 
 const HNT_DECIMALS = 8;
 const DNT_DECIMALS = 6;
 
-/**
- * GET /ve-hnt/position-epochs?positionMint=<mint>
- *
- * Returns a per-epoch breakdown for a single position covering the
- * unclaimed window (last_claimed_epoch+1, currentEpoch). Each row shows:
- *   - position's veHNT at that epoch's start
- *   - DAO epoch-info source (post-HIP-138 HNT rewards)
- *   - Sub-DAO epoch-info source (pre-HIP-138 DNT rewards; claimable only if
- *     sub_dao_epoch_info.hnt_rewards_issued == 0)
- *   - Computed share from each source
- */
 export async function handlePositionEpochs(url, env, request) {
   const limitErr = await checkIpRateLimit(env, request, {
     prefix: "rl:vehnt:epochs",
@@ -66,11 +55,9 @@ export async function handlePositionEpochs(url, env, request) {
     const position = decodePosition(positionBuf);
     const delegation = delegatedBuf ? decodeDelegatedPosition(delegatedBuf) : null;
 
-    const vmcIdx = registrar.votingMints.findIndex(
-      (v) => v.mint.toBase58() === HNT_MINT.toBase58(),
-    );
-    const vmc = registrar.votingMints[vmcIdx];
-
+    const vmc = registrar.votingMints[
+      registrar.votingMints.findIndex((v) => v.mint.toBase58() === HNT_MINT.toBase58())
+    ];
     const nowTs = Math.floor(Date.now() / 1000);
     const currentEpoch = computeCurrentEpoch(nowTs);
 
@@ -84,18 +71,22 @@ export async function handlePositionEpochs(url, env, request) {
       });
     }
 
-    const startEpoch = delegation.lastClaimedEpoch + 1;
-    const endEpoch = currentEpoch;
     const epochs = [];
-    for (let e = startEpoch; e < endEpoch; e++) epochs.push(e);
+    for (let e = delegation.lastClaimedEpoch + 1; e < currentEpoch; e++) epochs.push(e);
 
-    const daoKeys = epochs.map((e) => daoEpochInfoKey(DAO_KEY, e));
-    const subDaoKeys = epochs.map((e) => subDaoEpochInfoKey(delegation.subDao, e));
     const [daoBufs, subDaoBufs] = await Promise.all([
-      Promise.all(daoKeys.map((k, i) =>
-        DaoEpochInfoCache(env, epochs[i], () => fetchAccount(env, k))
-      )),
-      fetchMultipleAccounts(env, subDaoKeys),
+      epochs.length === 0 ? [] : batchCachedAccounts(
+        env,
+        epochs.map((e) => ({
+          kvKey: `ve-hnt:daoEpoch:${e}`,
+          pubkey: daoEpochInfoKey(DAO_KEY, e),
+        })),
+        DAO_EPOCH_TTL,
+      ),
+      epochs.length === 0 ? [] : fetchMultipleAccounts(
+        env,
+        epochs.map((e) => subDaoEpochInfoKey(delegation.subDao, e)),
+      ),
     ]);
 
     const rows = epochs.map((epoch, i) => {
@@ -103,47 +94,13 @@ export async function handlePositionEpochs(url, env, request) {
       const dao = daoBufs[i] ? decodeDaoEpochInfo(daoBufs[i]) : null;
       const subDao = subDaoBufs[i] ? decodeSubDaoEpochInfo(subDaoBufs[i]) : null;
       const positionVehnt = computeVeHntAt(position, vmc, epochStartTs);
-
-      let claimableHnt = 0n;
-      let claimableDnt = 0n;
-      let reason = null;
-
-      if (positionVehnt === 0n) {
-        reason = "position_vehnt_zero";
-      } else if (dao && dao.doneIssuingRewards
-          && dao.delegationRewardsIssued > 0n
-          && dao.vehntAtEpochStart > 0n) {
-        claimableHnt = (positionVehnt * dao.delegationRewardsIssued) / dao.vehntAtEpochStart;
-        reason = "v1_hnt";
-      } else if (subDao
-          && subDao.delegationRewardsIssued > 0n
-          && subDao.vehntAtEpochStart > 0n
-          && subDao.hntRewardsIssued === 0n) {
-        claimableDnt = (positionVehnt * subDao.delegationRewardsIssued) / subDao.vehntAtEpochStart;
-        reason = "v0_dnt";
-      } else if (subDao && subDao.hntRewardsIssued > 0n) {
-        reason = "v0_blocked_by_hnt_issued";
-      } else if (!dao || !dao.doneIssuingRewards) {
-        reason = "dao_epoch_not_issued";
-      } else {
-        reason = "no_rewards";
-      }
+      const { claimableHnt, claimableDnt, reason } = resolveEpochReward(positionVehnt, dao, subDao);
 
       return {
         epoch,
         startTs: epochStartTs,
         claimed: isEpochClaimed(delegation, epoch),
-        positionVehnt: positionVehnt.toString(),
-        dao: dao ? {
-          delegationRewardsIssued: dao.delegationRewardsIssued.toString(),
-          vehntAtEpochStart: dao.vehntAtEpochStart.toString(),
-          doneIssuingRewards: dao.doneIssuingRewards,
-        } : null,
-        subDao: subDao ? {
-          delegationRewardsIssued: subDao.delegationRewardsIssued.toString(),
-          vehntAtEpochStart: subDao.vehntAtEpochStart.toString(),
-          hntRewardsIssued: subDao.hntRewardsIssued.toString(),
-        } : null,
+        positionVehnt: formatNative(positionVehnt, HNT_DECIMALS),
         claimable: {
           hnt: formatNative(claimableHnt, HNT_DECIMALS),
           dnt: claimableDnt > 0n ? formatNative(claimableDnt, DNT_DECIMALS) : "0",

@@ -143,9 +143,16 @@ function SummaryHeader({ totals, currentEpoch }) {
 const SUBDAO_COLOR = { IOT: "text-iot", MOBILE: "text-mobile" };
 
 function positionHasPending(p) {
-  const hnt = Number(p.pendingRewards?.hnt || p.pendingRewardsHnt || 0);
-  const dnt = Number(p.pendingRewards?.dnt || 0);
-  return hnt > 0 || dnt > 0;
+  return Number(p.pendingRewards?.hnt || 0) > 0 || Number(p.pendingRewards?.dnt || 0) > 0;
+}
+
+function railColor(position) {
+  const { lockup, isLandrush, delegation } = position;
+  if (lockup.isExpired && positionHasPending(position)) return "bg-amber-500";
+  if (lockup.isExpired) return "bg-border";
+  if (isLandrush) return "bg-amber-400";
+  if (delegation) return "bg-accent";
+  return "bg-border";
 }
 
 function StatusPill({ position }) {
@@ -282,7 +289,7 @@ function EpochBreakdown({ mint }) {
                         <tr key={row.epoch} className="border-t border-border-muted">
                           <td className="px-3 py-1.5 text-content-secondary">{row.epoch}</td>
                           <td className="px-3 py-1.5 text-right text-content-tertiary">
-                            {row.positionVehnt === "0" ? "0" : fmtHnt(Number(row.positionVehnt) / 1e8)}
+                            {fmtHnt(row.positionVehnt)}
                           </td>
                           <td className={`px-3 py-1.5 text-right ${hnt > 0 ? "text-content" : "text-content-tertiary"}`}>
                             {hnt > 0 ? fmtHnt(hnt) : "—"}
@@ -330,7 +337,6 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
     landrushMultiplier,
     delegation,
     pendingRewards,
-    pendingRewardsHnt: legacyHnt,
     pendingRewardsApprox,
     dailyRewardHnt,
     numActiveVotes,
@@ -338,7 +344,7 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
     proxy,
   } = position;
 
-  const hntPending = Number(pendingRewards?.hnt || legacyHnt || 0);
+  const hntPending = Number(pendingRewards?.hnt || 0);
   const dntPending = Number(pendingRewards?.dnt || 0);
   const dntLabel = pendingRewards?.dntLabel;
   const hasPending = hntPending > 0 || dntPending > 0;
@@ -350,19 +356,7 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
           against the rounded corners while the outer card stays unclipped
           (so tooltips can spill over card edges). */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
-        <div
-          className={`absolute left-0 top-0 bottom-0 w-[3px] ${
-            lockup.isExpired && hasPending
-              ? "bg-amber-500"
-              : lockup.isExpired
-                ? "bg-border"
-                : isLandrush
-                  ? "bg-amber-400"
-                  : delegation
-                    ? "bg-accent"
-                    : "bg-border"
-          }`}
-        />
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${railColor(position)}`} />
       </div>
 
       {/* Header strip: index + status + landrush seal */}
@@ -426,7 +420,7 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
                 <span className={`font-display text-2xl tracking-[-0.02em] tabular-nums ${
                   hntPending > 0 ? "text-content" : "text-content-tertiary"
                 }`}>
-                  {fmtHnt(pendingRewards?.hnt ?? legacyHnt)}
+                  {fmtHnt(pendingRewards?.hnt)}
                 </span>
                 <span className="text-xs font-display text-content-secondary">HNT</span>
                 {pendingRewardsApprox === "current-vehnt" && hasPending && (
@@ -533,7 +527,7 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
 // ─── Expired table ────────────────────────────────────────────────────────────
 
 function ExpiredPositionRow({ position }) {
-  const hnt = Number(position.pendingRewards?.hnt || position.pendingRewardsHnt || 0);
+  const hnt = Number(position.pendingRewards?.hnt || 0);
   const dnt = Number(position.pendingRewards?.dnt || 0);
   const unclaimed = position.delegation?.unclaimedEpochs ?? 0;
   const hasPending = hnt > 0 || dnt > 0;
@@ -702,9 +696,7 @@ export default function VeHnt() {
     const active = [];
     const expired = [];
     for (const p of data?.positions || []) {
-      const hnt = Number(p.pendingRewards?.hnt || p.pendingRewardsHnt || 0);
-      const dnt = Number(p.pendingRewards?.dnt || 0);
-      if (!p.lockup.isExpired || hnt > 0 || dnt > 0) active.push(p);
+      if (!p.lockup.isExpired || positionHasPending(p)) active.push(p);
       else expired.push(p);
     }
     return { active, expired };

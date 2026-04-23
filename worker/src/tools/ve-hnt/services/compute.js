@@ -3,21 +3,10 @@ import { isEpochClaimed } from "./decode.js";
 
 /**
  * Compute veHNT voting power for a position at a given timestamp. Mirrors
- * PositionV0::voting_power in voter-stake-registry/src/state/position.rs
- * verbatim — especially the Constant-kind short-circuit in Lockup::seconds_left,
- * which pretends curr_ts is start_ts, so Constant positions NEVER expire in
- * voting-power terms. Their end_ts is just the minimum unwind period if the
- * kind is later changed to Cliff.
- *
- *   baseline = amount * baseline_factor / SCALED_FACTOR_BASE
- *   max_locked = amount * max_extra_factor / SCALED_FACTOR_BASE
- *   seconds_left =
- *     Constant: end_ts - start_ts (always, regardless of curr_ts)
- *     Cliff:    max(0, end_ts - curr_ts)
- *     None:     0
- *   locked = max_locked * min(seconds_left, saturation) / saturation
- *   genesis_multiplier = (curr_ts < genesis_end && mult > 0) ? mult : 1
- *   veHNT = (baseline + locked) * genesis_multiplier
+ * PositionV0::voting_power verbatim — especially the Constant-kind
+ * short-circuit in Lockup::seconds_left, which pretends curr_ts is start_ts,
+ * so Constant positions NEVER expire in voting-power terms. Their end_ts is
+ * just the minimum unwind period if the kind is later changed to Cliff.
  */
 export function computeVeHnt(position, votingMintConfig, nowTs) {
   const amount = BigInt(position.amountDepositedNative);
@@ -52,109 +41,101 @@ export function computeVeHnt(position, votingMintConfig, nowTs) {
   return { veHnt, isLandrush, multiplier: Number(multiplier) };
 }
 
-/**
- * Compute veHNT at an arbitrary past timestamp. Same formula but using the
- * epoch's start_ts as the "current" time. Used when calculating historical
- * share of delegation rewards.
- */
 export function computeVeHntAt(position, votingMintConfig, ts) {
   return computeVeHnt(position, votingMintConfig, ts).veHnt;
 }
 
 /**
- * Sum pending delegation rewards across unclaimed epochs.
+ * Reward reasons emitted per epoch. Shared between the per-position
+ * aggregator (computePendingRewards) and the per-epoch handler so the
+ * UI's reason-labels map is authoritative.
+ */
+export const REWARD_REASONS = Object.freeze({
+  V1_HNT: "v1_hnt",
+  V0_DNT: "v0_dnt",
+  V0_BLOCKED: "v0_blocked_by_hnt_issued",
+  POSITION_VEHNT_ZERO: "position_vehnt_zero",
+  DAO_EPOCH_NOT_ISSUED: "dao_epoch_not_issued",
+  NO_REWARDS: "no_rewards",
+});
+
+/**
+ * Classify one epoch: given the position's veHNT at epoch start plus the
+ * DAO and sub-DAO epoch-info records, return what (if anything) is
+ * claimable and why.
  *
- * For each unclaimed epoch e in (last_claimed_epoch, currentEpoch) we
- * check TWO reward sources in parallel:
- *
- *   1. DaoEpochInfoV0 — post-HIP-138. Non-zero delegation_rewards_issued
- *      means HNT is claimable via claim_rewards_v1.
- *   2. SubDaoEpochInfoV0 — pre-HIP-138. Non-zero delegation_rewards_issued
- *      means DNT (IOT or MOBILE, depending on sub-dao) is claimable via
- *      claim_rewards_v0.
- *
- * Share formula (both sources):
- *   share = position_vehnt_at_epoch_start(e) * delegation_rewards_issued(e)
- *           / vehnt_at_epoch_start(e)
- *
- * Bitmap is shared between v0 and v1 — set_claimed advances regardless of
- * which program was called. So per epoch exactly one of the two sources
- * is active (the one that matched HIP-138 activation status at that time).
- *
- * Returns:
- *   {
- *     pendingRewardsHnt: BigInt,
- *     pendingRewardsDnt: BigInt,   // iot or mobile, depends on sub_dao
- *     unclaimedEpochsHnt: number[],
- *     unclaimedEpochsDnt: number[],
- *     unclaimedEpochsCount: number,
- *   }
+ *   - v1_hnt: post-HIP-138, DAO has delegation_rewards_issued
+ *   - v0_dnt: pre-HIP-138, sub-DAO has it AND hnt_rewards_issued == 0
+ *   - v0_blocked: sub-DAO has DNT but HIP-138 already issued HNT, so v0 rejects
+ *   - position_vehnt_zero: Cliff lockup ended → no share
+ *   - dao_epoch_not_issued: DAO hasn't marked the epoch closed yet
+ *   - no_rewards: neither source has data
+ */
+export function resolveEpochReward(positionVehnt, dao, subDao) {
+  if (positionVehnt === 0n) {
+    return { claimableHnt: 0n, claimableDnt: 0n, reason: REWARD_REASONS.POSITION_VEHNT_ZERO };
+  }
+  if (dao && dao.doneIssuingRewards
+      && dao.delegationRewardsIssued > 0n
+      && dao.vehntAtEpochStart > 0n) {
+    return {
+      claimableHnt: (positionVehnt * dao.delegationRewardsIssued) / dao.vehntAtEpochStart,
+      claimableDnt: 0n,
+      reason: REWARD_REASONS.V1_HNT,
+    };
+  }
+  if (subDao
+      && subDao.delegationRewardsIssued > 0n
+      && subDao.vehntAtEpochStart > 0n
+      && subDao.hntRewardsIssued === 0n) {
+    return {
+      claimableHnt: 0n,
+      claimableDnt: (positionVehnt * subDao.delegationRewardsIssued) / subDao.vehntAtEpochStart,
+      reason: REWARD_REASONS.V0_DNT,
+    };
+  }
+  if (subDao && subDao.hntRewardsIssued > 0n) {
+    return { claimableHnt: 0n, claimableDnt: 0n, reason: REWARD_REASONS.V0_BLOCKED };
+  }
+  if (!dao || !dao.doneIssuingRewards) {
+    return { claimableHnt: 0n, claimableDnt: 0n, reason: REWARD_REASONS.DAO_EPOCH_NOT_ISSUED };
+  }
+  return { claimableHnt: 0n, claimableDnt: 0n, reason: REWARD_REASONS.NO_REWARDS };
+}
+
+/**
+ * Sum pending delegation rewards across unclaimed epochs by delegating
+ * per-epoch classification to resolveEpochReward.
  */
 export function computePendingRewards({
   position,
   delegatedPosition,
   votingMintConfig,
   daoEpochInfoByEpoch,
-  subDaoEpochInfoByEpoch,
+  subDaoEpochInfoByKey,
+  subDao58,
   currentEpoch,
   secondsPerEpoch,
 }) {
   let pendingRewardsHnt = 0n;
   let pendingRewardsDnt = 0n;
-  const unclaimedEpochsHnt = [];
-  const unclaimedEpochsDnt = [];
   let unclaimedEpochsCount = 0;
 
-  const startEpoch = delegatedPosition.lastClaimedEpoch + 1;
-  const endEpoch = currentEpoch;
-
-  for (let e = startEpoch; e < endEpoch; e++) {
+  for (let e = delegatedPosition.lastClaimedEpoch + 1; e < currentEpoch; e++) {
     if (isEpochClaimed(delegatedPosition, e)) continue;
     unclaimedEpochsCount++;
 
-    const epochStartTs = e * secondsPerEpoch;
-    const positionVehnt = computeVeHntAt(position, votingMintConfig, epochStartTs);
-    if (positionVehnt === 0n) continue;
-
-    const daoInfo = daoEpochInfoByEpoch.get(e);
-    if (daoInfo && daoInfo.doneIssuingRewards
-        && daoInfo.delegationRewardsIssued > 0n
-        && daoInfo.vehntAtEpochStart > 0n) {
-      pendingRewardsHnt +=
-        (positionVehnt * daoInfo.delegationRewardsIssued) / daoInfo.vehntAtEpochStart;
-      unclaimedEpochsHnt.push(e);
-      continue;
-    }
-
-    // DNT path via claim_rewards_v0. On-chain constraint
-    // `sub_dao_epoch_info.hnt_rewards_issued == 0` gates this: if HIP-138
-    // already issued HNT rewards against the epoch (post-cutover), v0 is
-    // blocked and the `delegation_rewards_issued` balance on the sub_dao
-    // epoch is legacy bookkeeping, not actually claimable.
-    const subDaoInfo = subDaoEpochInfoByEpoch?.get(e);
-    if (subDaoInfo
-        && subDaoInfo.delegationRewardsIssued > 0n
-        && subDaoInfo.vehntAtEpochStart > 0n
-        && subDaoInfo.hntRewardsIssued === 0n) {
-      pendingRewardsDnt +=
-        (positionVehnt * subDaoInfo.delegationRewardsIssued) / subDaoInfo.vehntAtEpochStart;
-      unclaimedEpochsDnt.push(e);
-    }
+    const positionVehnt = computeVeHntAt(position, votingMintConfig, e * secondsPerEpoch);
+    const dao = daoEpochInfoByEpoch.get(e);
+    const subDao = subDaoEpochInfoByKey?.get(`${subDao58}:${e}`);
+    const { claimableHnt, claimableDnt } = resolveEpochReward(positionVehnt, dao, subDao);
+    pendingRewardsHnt += claimableHnt;
+    pendingRewardsDnt += claimableDnt;
   }
 
-  return {
-    pendingRewardsHnt,
-    pendingRewardsDnt,
-    unclaimedEpochsHnt,
-    unclaimedEpochsDnt,
-    unclaimedEpochsCount,
-  };
+  return { pendingRewardsHnt, pendingRewardsDnt, unclaimedEpochsCount };
 }
 
-/**
- * Approximate daily reward from the most recently issued epoch.
- * Returns HNT native units (BigInt) or null if not computable.
- */
 export function approximateDailyReward({ position, votingMintConfig, daoEpochInfo }) {
   if (!daoEpochInfo || !daoEpochInfo.doneIssuingRewards) return null;
   if (daoEpochInfo.vehntAtEpochStart === 0n) return null;
