@@ -31,23 +31,7 @@ import {
   subscribeToAlerts,
 } from "../lib/api.js";
 import useDarkMode from "../lib/useDarkMode.js";
-
-// Read CSS custom properties (stored as RGB channels) for Recharts (needs hex)
-function getChartColors() {
-  const style = getComputedStyle(document.documentElement);
-  const hex = (name) => {
-    const [r, g, b] = style.getPropertyValue(name).trim().split(/\s+/).map(Number);
-    return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
-  };
-  return {
-    stroke: hex("--color-accent-text"),
-    grid: hex("--color-border"),
-    tickText: hex("--color-content-tertiary"),
-    tooltipBorder: hex("--color-border"),
-    tooltipBg: hex("--color-surface-raised"),
-    tooltipText: hex("--color-content"),
-  };
-}
+import { readChartColors } from "../lib/chartColors.js";
 
 // Standard input class for consistency
 const inputClassName = "block w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
@@ -55,7 +39,7 @@ const inputClassName = "block w-full rounded-lg border border-border bg-surface-
 export default function HomePage() {
   const isDark = useDarkMode();
   // Re-read computed CSS values when theme changes
-  const chartColors = useMemo(getChartColors, [isDark]);
+  const chartColors = useMemo(readChartColors, [isDark]);
   const [ouis, setOuis] = useState([]);
   const [ouiInput, setOuiInput] = useState("");
   const [payer, setPayer] = useState("");

@@ -50,6 +50,8 @@ import MapGL, { NavigationControl, Source, Layer } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import useDarkMode from "../lib/useDarkMode.js";
+import { createSegmenter, ingest, ingestBatch } from "./segmentation.js";
+import PacketScatter from "./PacketScatter.jsx";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -608,7 +610,9 @@ function FrameTypeBadge({ frameType }) {
 }
 
 const ALL_FRAME_TYPES = Object.keys(FRAME_TYPES);
-const MAX_PACKETS = 200;
+// 500 packets ≈ 10–15 min of history per active device — enough for segmentation
+// to establish tracks while keeping recharts + React responsive.
+const MAX_PACKETS = 500;
 
 const WELL_KNOWN_REPO = "https://github.com/helium/well-known/";
 
@@ -639,10 +643,13 @@ function OuiCell({ devAddr, ouiLookup }) {
   );
 }
 
-function GatewayDetail({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
+// Wraps the scatter chart + detail panel. Owns packet state, the segmenter,
+// and the frame-type filter so both children read a single source of truth.
+// (Kept in this file to avoid exporting GatewayDetail's helper constellation —
+// FRAME_TYPES, FrameTypeBadge, NetIdCell, OuiCell, LiveTime, gatewayName.)
+function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
   const idRef = useRef(0);
-  const tagPackets = (arr, isNew) =>
-    arr.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: isNew }));
+  const segmenterRef = useRef(createSegmenter());
   const [packets, setPackets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState(() =>
@@ -654,19 +661,19 @@ function GatewayDetail({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
   const toggleType = (type) =>
     setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
 
-  const reversedPackets = useMemo(
-    () =>
-      [...packets]
-        .reverse()
-        .filter((pkt) => !pkt.frame_type || visibleTypes[pkt.frame_type] !== false)
-        .slice(0, MAX_PACKETS),
-    [packets, visibleTypes],
-  );
-
+  // Initial fetch + reset segmenter on mac change. Reset happens before the
+  // fetch resolves AND again just before ingesting, so a stray SSE packet
+  // arriving mid-fetch for the old mac can't poison the new segmenter.
   useEffect(() => {
+    segmenterRef.current = createSegmenter();
     setLoading(true);
     fetchGatewayPackets(mac)
-      .then((data) => setPackets(tagPackets(data, false)))
+      .then((data) => {
+        segmenterRef.current = createSegmenter();
+        const tagged = data.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: false }));
+        ingestBatch(segmenterRef.current, tagged);
+        setPackets(tagged);
+      })
       .catch((err) => console.error("Failed to fetch packets:", err))
       .finally(() => setLoading(false));
   }, [mac]);
@@ -675,11 +682,46 @@ function GatewayDetail({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
   useEffect(() => {
     if (latestPacket && latestPacket.mac === mac) {
       setPackets((prev) => {
-        const next = [...prev, ...tagPackets([latestPacket.metadata], true)];
+        const pkt = { ...latestPacket.metadata, _id: ++idRef.current, _new: true };
+        const res = ingest(segmenterRef.current, pkt);
+        pkt._trackId = res.trackId;
+        const next = [...prev, pkt];
         return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
       });
     }
   }, [latestPacket, mac]);
+
+  return (
+    <>
+      <PacketScatter
+        packets={packets}
+        segmenter={segmenterRef.current}
+        visibleTypes={visibleTypes}
+        loading={loading}
+      />
+      <GatewayDetail
+        mac={mac}
+        publicKey={publicKey}
+        ouiLookup={ouiLookup}
+        onClose={onClose}
+        packets={packets}
+        loading={loading}
+        visibleTypes={visibleTypes}
+        toggleType={toggleType}
+      />
+    </>
+  );
+}
+
+function GatewayDetail({ mac, publicKey, ouiLookup, onClose, packets, loading, visibleTypes, toggleType }) {
+  const reversedPackets = useMemo(
+    () =>
+      [...packets]
+        .reverse()
+        .filter((pkt) => !pkt.frame_type || visibleTypes[pkt.frame_type] !== false)
+        .slice(0, MAX_PACKETS),
+    [packets, visibleTypes],
+  );
 
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
@@ -1655,7 +1697,7 @@ export default function MultiGateway() {
         </div>
 
         {selectedMac && (
-          <GatewayDetail
+          <GatewayInspector
             mac={selectedMac}
             publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
             latestPacket={latestPacket}
