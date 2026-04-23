@@ -39,6 +39,30 @@ function fmtHnt(value, opts = {}) {
   return n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
 }
 
+/**
+ * Render a number with the fractional part de-emphasized: "420.69" →
+ * <span>420<span dim>.69</span></span>. Hides a trailing zero fraction
+ * ("85,000.00" → "85,000") and passes through compact ("3.00M") and
+ * sentinel ("<0.0001") forms untouched.
+ */
+function BigNumber({ value, className = "" }) {
+  const str = String(value);
+  if (str.startsWith("<") || /[MkB]$/.test(str)) {
+    return <span className={className}>{str}</span>;
+  }
+  const dotIdx = str.indexOf(".");
+  if (dotIdx === -1) return <span className={className}>{str}</span>;
+  const intPart = str.slice(0, dotIdx);
+  const fracPart = str.slice(dotIdx);
+  if (/^\.0+$/.test(fracPart)) return <span className={className}>{intPart}</span>;
+  return (
+    <span className={className}>
+      {intPart}
+      <span className="text-[0.62em] text-content-tertiary font-normal">{fracPart}</span>
+    </span>
+  );
+}
+
 function fmtDate(ts) {
   return new Date(ts * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
@@ -86,9 +110,10 @@ function SummaryHeader({ totals, currentEpoch }) {
             HNT locked
           </p>
           <div className="mt-2 flex items-end gap-2">
-            <p className="font-display text-3xl sm:text-4xl font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
-              {fmtHnt(totals.hntLocked, { dp: 0 })}
-            </p>
+            <BigNumber
+              value={fmtHnt(totals.hntLocked)}
+              className="font-display text-3xl sm:text-4xl font-semibold text-content tracking-[-0.02em] tabular-nums leading-none"
+            />
             <p className="pb-0.5 font-display text-sm text-content-secondary tracking-[-0.01em]">HNT</p>
           </div>
           <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.1em] text-content-tertiary">
@@ -104,9 +129,10 @@ function SummaryHeader({ totals, currentEpoch }) {
             Total voting power
           </p>
           <div className="mt-2 flex items-end gap-2">
-            <p className="font-display text-3xl sm:text-4xl font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
-              {fmtHnt(totals.veHnt, { dp: 0 })}
-            </p>
+            <BigNumber
+              value={fmtHnt(totals.veHnt)}
+              className="font-display text-3xl sm:text-4xl font-semibold text-content tracking-[-0.02em] tabular-nums leading-none"
+            />
             <p className="pb-0.5 font-display text-sm text-content-secondary tracking-[-0.01em]">veHNT</p>
           </div>
           <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.1em] text-content-tertiary">
@@ -126,7 +152,8 @@ function SummaryHeader({ totals, currentEpoch }) {
           <p className={`mt-1 font-display text-2xl tracking-[-0.02em] tabular-nums ${
             pendingNum > 0 ? "text-content" : "text-content-tertiary"
           }`}>
-            {fmtHnt(totals.pendingRewardsHnt)} <span className="text-sm font-sans text-content-secondary">HNT</span>
+            <BigNumber value={fmtHnt(totals.pendingRewardsHnt)} />{" "}
+            <span className="text-sm font-sans text-content-secondary">HNT</span>
           </p>
         </div>
         <div className="text-right">
@@ -386,9 +413,10 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
             HNT locked
           </p>
           <div className="mt-1.5 flex items-end gap-1.5">
-            <p className="font-display text-[26px] font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
-              {fmtHnt(amountLockedHnt, { dp: 0 })}
-            </p>
+            <BigNumber
+              value={fmtHnt(amountLockedHnt)}
+              className="font-display text-[26px] font-semibold text-content tracking-[-0.02em] tabular-nums leading-none"
+            />
             <p className="pb-0.5 text-[11px] font-display text-content-secondary">HNT</p>
           </div>
           <p className={`mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${
@@ -402,9 +430,10 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
             Voting power
           </p>
           <div className="mt-1.5 flex items-end gap-1.5">
-            <p className="font-display text-[26px] font-semibold text-content tracking-[-0.02em] tabular-nums leading-none">
-              {fmtHnt(veHnt, { dp: 0, compact: true })}
-            </p>
+            <BigNumber
+              value={fmtHnt(veHnt, { compact: true })}
+              className="font-display text-[26px] font-semibold text-content tracking-[-0.02em] tabular-nums leading-none"
+            />
             <p className="pb-0.5 text-[11px] font-display text-content-secondary">veHNT</p>
           </div>
           {dailyRewardHnt && hasPending && (
@@ -433,11 +462,12 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
                 Pending reward
               </p>
               <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
-                <span className={`font-display text-2xl tracking-[-0.02em] tabular-nums ${
-                  hntPending > 0 ? "text-content" : "text-content-tertiary"
-                }`}>
-                  {fmtHnt(pendingRewards?.hnt)}
-                </span>
+                <BigNumber
+                  value={fmtHnt(pendingRewards?.hnt)}
+                  className={`font-display text-2xl tracking-[-0.02em] tabular-nums ${
+                    hntPending > 0 ? "text-content" : "text-content-tertiary"
+                  }`}
+                />
                 <span className="text-xs font-display text-content-secondary">HNT</span>
                 {pendingRewardsApprox === "current-vehnt" && hasPending && (
                   <Tooltip content="Approximates historical veHNT with current value. Cliff positions may vary slightly from on-chain.">
