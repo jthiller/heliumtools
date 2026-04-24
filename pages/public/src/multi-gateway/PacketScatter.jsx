@@ -24,40 +24,64 @@ function trackVisible(t, { netIdFilter, trackFilter }) {
 }
 
 function colorForTrack(track, isDark) {
-  const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
-  // Use firstFrameType (set once at track creation) rather than the dominant
-  // one so the colour doesn't flicker as later packets shift the mode.
-  return palette[track?.firstFrameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
+  const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
+  const [light, dark] = palette[familyForNetId(track?.netId)];
+  // Band uses the light shade to sit quietly behind the dots (which may be
+  // either shade) without clashing.
+  return light;
 }
 
-// Per-packet dot colour — mirrors the FRAME_TYPES palette in MultiGateway.jsx
-// (emerald / sky / violet families) so the chart reads the same as the table.
-// Tailwind classes can't be used as SVG fills, so we hard-code the matching
-// hex values. Dark-mode variants are lighter to stay legible on dark surfaces.
-const FRAME_TYPE_HEX_LIGHT = {
-  UnconfirmedUp: "#10b981",      // emerald-500
-  ConfirmedUp: "#047857",        // emerald-700 (darker = confirmed)
-  UnconfirmedDown: "#38bdf8",    // sky-400
-  ConfirmedDown: "#0284c7",      // sky-600
-  JoinRequest: "#8b5cf6",        // violet-500
-  JoinAccept: "#6d28d9",         // violet-700
-  RejoinRequest: "#a78bfa",      // violet-400
-  Proprietary: "#9ca3af",        // gray-400
-};
-const FRAME_TYPE_HEX_DARK = {
-  UnconfirmedUp: "#34d399",      // emerald-400
-  ConfirmedUp: "#10b981",        // emerald-500
-  UnconfirmedDown: "#7dd3fc",    // sky-300
-  ConfirmedDown: "#38bdf8",      // sky-400
-  JoinRequest: "#a78bfa",        // violet-400
-  JoinAccept: "#8b5cf6",         // violet-500
-  RejoinRequest: "#c4b5fd",      // violet-300
-  Proprietary: "#d1d5db",        // gray-300
-};
+// Per-packet dot colour: NetID picks the hue family, frame type picks the
+// shade (confirmed uplinks darker than unconfirmed). All Helium NetIDs share
+// one emerald family so an operator sees "their traffic" as visually unified.
+// Non-Helium NetIDs map deterministically to the remaining hues via djb2.
+const HELIUM_NETIDS = new Set(["000024", "00003C", "60002D", "C00053"]);
 
-function colorForFrameType(frameType, isDark) {
-  const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
-  return palette[frameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
+// [unconfirmed / joins, confirmed] shade pairs, light mode then dark mode.
+// Tailwind-derived hex so tone matches the rest of the app.
+const NETID_FAMILIES_LIGHT = {
+  helium: ["#10b981", "#047857"],   // emerald-500 / emerald-700
+  sky:    ["#38bdf8", "#0369a1"],   // sky-400   / sky-700
+  amber:  ["#f59e0b", "#b45309"],   // amber-500 / amber-700
+  rose:   ["#f43f5e", "#be123c"],   // rose-500  / rose-700
+  cyan:   ["#06b6d4", "#0e7490"],   // cyan-500  / cyan-700
+  fuchsia:["#d946ef", "#a21caf"],   // fuchsia-500 / fuchsia-700
+  lime:   ["#84cc16", "#4d7c0f"],   // lime-500  / lime-700
+  indigo: ["#6366f1", "#4338ca"],   // indigo-500 / indigo-700
+};
+const NETID_FAMILIES_DARK = {
+  helium: ["#34d399", "#10b981"],   // emerald-400 / emerald-500
+  sky:    ["#7dd3fc", "#38bdf8"],   // sky-300   / sky-400
+  amber:  ["#fbbf24", "#f59e0b"],   // amber-400 / amber-500
+  rose:   ["#fb7185", "#f43f5e"],   // rose-400  / rose-500
+  cyan:   ["#22d3ee", "#06b6d4"],   // cyan-400  / cyan-500
+  fuchsia:["#e879f9", "#d946ef"],   // fuchsia-400 / fuchsia-500
+  lime:   ["#a3e635", "#84cc16"],   // lime-400  / lime-500
+  indigo: ["#818cf8", "#6366f1"],   // indigo-400 / indigo-500
+};
+// Order matters — first key is reserved for Helium, rest are assigned to
+// other NetIDs in insertion order via djb2 hash.
+const NON_HELIUM_FAMILIES = ["sky", "amber", "rose", "cyan", "fuchsia", "lime", "indigo"];
+
+function djb2(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function familyForNetId(netId) {
+  if (!netId) return "helium";
+  if (HELIUM_NETIDS.has(netId)) return "helium";
+  return NON_HELIUM_FAMILIES[djb2(netId) % NON_HELIUM_FAMILIES.length];
+}
+
+function colorForPacket(packet, isDark) {
+  const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
+  const netId = packet.devAddr ? devAddrToNetId(packet.devAddr)?.netId : null;
+  const [light, dark] = palette[familyForNetId(netId)];
+  // Confirmed uplinks use the darker shade; unconfirmed / everything else
+  // stays on the lighter shade.
+  return packet.frameType === "ConfirmedUp" ? dark : light;
 }
 
 // When a hovered dot is past this fraction of the chart width, anchor the
@@ -327,7 +351,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
           cx={dotProps.cx}
           cy={dotProps.cy}
           r={4}
-          fill={colorForFrameType(dotProps.payload.frameType, isDark)}
+          fill={colorForPacket(dotProps.payload, isDark)}
           fillOpacity={dimmed ? 0.15 : 0.9}
           onMouseEnter={(e) => {
             const dotRect = e.currentTarget.getBoundingClientRect();
@@ -411,7 +435,14 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         </div>
       </div>
 
-      <div className="relative h-64 px-2 py-3" data-chart-host>
+      <div
+        className="relative h-64 px-2 py-3"
+        data-chart-host
+        // Safari occasionally drops SVG <circle> mouseleave when the cursor
+        // exits the dot into blank space fast. Belt-and-suspenders: clear on
+        // the chart host's mouseleave too so the tooltip always dismisses.
+        onMouseLeave={() => setHover(null)}
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
             Loading...
