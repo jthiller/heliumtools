@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -82,6 +82,85 @@ function colorForPacket(packet, isDark) {
   // Confirmed uplinks use the darker shade; unconfirmed / everything else
   // stays on the lighter shade.
   return packet.frameType === "ConfirmedUp" ? dark : light;
+}
+
+function swatchColorForNetId(netId, isDark) {
+  const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
+  return palette[familyForNetId(netId)][0];
+}
+
+// Tiny custom <select> replacement so we can render a colour swatch next to
+// each option — native <option> elements don't support complex children.
+function ColoredSelect({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (!ref.current?.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const selected = options.find((o) => o.value === value) ?? options[0];
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
+      >
+        {selected.swatch && (
+          <span
+            aria-hidden
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: selected.swatch }}
+          />
+        )}
+        <span>{selected.label}</span>
+        <span aria-hidden className="text-content-tertiary">▾</span>
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute right-0 z-20 mt-1 max-h-56 min-w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-1 text-xs shadow-soft"
+        >
+          {options.map((o) => (
+            <li
+              key={o.value}
+              role="option"
+              aria-selected={o.value === value}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+              className={`flex cursor-pointer items-center gap-2 whitespace-nowrap px-2 py-1 hover:bg-surface-inset ${
+                o.value === value ? "text-content-primary" : "text-content-secondary"
+              }`}
+            >
+              {o.swatch ? (
+                <span
+                  aria-hidden
+                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: o.swatch }}
+                />
+              ) : (
+                <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0" />
+              )}
+              <span>{o.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // When a hovered dot is past this fraction of the chart width, anchor the
@@ -296,6 +375,24 @@ export default function PacketScatter({ packets, segmenter, loading }) {
     return [...set].sort();
   }, [tracks]);
 
+  // Disambiguate when two NetIDs resolve to the same operator name (e.g.,
+  // Helium's 000024 and 00003C both display as "Helium").
+  const netIdSelectOptions = useMemo(() => {
+    const operatorCounts = new Map();
+    for (const id of netIdOptions) {
+      const op = netIdToOperator(id) ?? id;
+      operatorCounts.set(op, (operatorCounts.get(op) ?? 0) + 1);
+    }
+    return [
+      { value: "all", label: "All", swatch: null },
+      ...netIdOptions.map((id) => {
+        const op = netIdToOperator(id) ?? id;
+        const label = operatorCounts.get(op) > 1 ? `${op} · ${id}` : op;
+        return { value: id, label, swatch: swatchColorForNetId(id, isDark) };
+      }),
+    ];
+  }, [netIdOptions, isDark]);
+
   const trackOptions = useMemo(() => {
     const list = tracks.filter((t) => {
       if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
@@ -404,18 +501,11 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label className="flex items-center gap-1.5 text-content-secondary">
             NetID
-            <select
+            <ColoredSelect
               value={netIdFilter}
-              onChange={(e) => setNetIdFilter(e.target.value)}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
-            >
-              <option value="all">All</option>
-              {netIdOptions.map((id) => (
-                <option key={id} value={id}>
-                  {netIdToOperator(id) ?? id}
-                </option>
-              ))}
-            </select>
+              onChange={setNetIdFilter}
+              options={netIdSelectOptions}
+            />
           </label>
           <label className="flex items-center gap-1.5 text-content-secondary">
             Device
