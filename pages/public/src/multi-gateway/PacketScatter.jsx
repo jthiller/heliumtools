@@ -317,6 +317,19 @@ function formatTimeTick(ts) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+// Human-readable gap between consecutive packets in a track. `~` prefix
+// signals a rounded estimate — exact precision isn't useful for an
+// observed interval.
+function formatInterval(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  if (ms < 60_000) return `~${Math.round(ms / 1000)}s`;
+  const min = ms / 60_000;
+  if (min < 60) return `~${Math.round(min)}m`;
+  const h = min / 60;
+  if (h < 24) return `~${Math.round(h)}h`;
+  return `~${Math.round(h / 24)}d`;
+}
+
 // We render our own tooltip instead of recharts' <Tooltip> because a custom
 // shape fn breaks the per-item hover wiring recharts' tooltip relies on —
 // without owned dot elements, its shared={false} path can't resolve which
@@ -344,6 +357,10 @@ function HoverTooltip({ hover }) {
         {p.fcnt != null && <><span>FCnt</span><span className="text-right">{p.fcnt}</span></>}
         {p.snr != null && <><span>SNR</span><span className="text-right">{p.snr.toFixed(1)} dB</span></>}
         {p.sf && <><span>SF</span><span className="text-right">{p.sf}</span></>}
+        {p.size != null && <><span>Size</span><span className="text-right">{p.size} B</span></>}
+        {hover.intervalMs != null && (
+          <><span>Interval</span><span className="text-right">{formatInterval(hover.intervalMs)}</span></>
+        )}
       </div>
     </div>
   );
@@ -430,6 +447,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         fcnt: pkt.fcnt,
         snr: pkt.snr,
         sf: pkt.spreading_factor,
+        size: pkt.payload_size,
         frameType: pkt.frame_type,
         trackId: tid,
         netId,
@@ -467,9 +485,15 @@ export default function PacketScatter({ packets, segmenter, loading }) {
               .closest("[data-chart-host]")
               ?.getBoundingClientRect();
             if (!hostRect) return;
+            const track = segmenter.tracks.get(dotProps.payload.trackId);
+            const intervalMs =
+              track && track.count > 1
+                ? (track.lastTs - track.firstTs) / (track.count - 1)
+                : null;
             setHover({
               trackId: dotProps.payload.trackId,
               payload: dotProps.payload,
+              intervalMs,
               x: dotRect.left + dotRect.width / 2 - hostRect.left,
               y: dotRect.top + dotRect.height / 2 - hostRect.top,
               hostWidth: hostRect.width,
@@ -480,7 +504,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         />
       );
     },
-    [hoveredId],
+    [hoveredId, segmenter],
   );
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
