@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -91,34 +91,109 @@ function swatchColorForNetId(netId, isDark) {
   return colorForNetIdShade(netId, false, isDark);
 }
 
-// Tiny custom <select> replacement so we can render a colour swatch next to
-// each option — native <option> elements don't support complex children.
-function ColoredSelect({ value, onChange, options }) {
+// Custom <select> replacement so we can render a colour swatch next to each
+// option — native <option> elements don't support complex children. Follows
+// the WAI-ARIA button+listbox pattern: aria-activedescendant on the trigger,
+// arrow-key navigation, Enter/Space to select, Escape to close. Focus stays
+// on the button throughout so screen readers and keyboard users get a
+// predictable flow.
+function ColoredSelect({ value, onChange, options, label }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(() =>
+    Math.max(0, options.findIndex((o) => o.value === value)),
+  );
+  const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const listRef = useRef(null);
+  const listboxId = useId();
+  const optionId = (i) => `${listboxId}-opt-${i}`;
+
+  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const close = (e) => {
-      if (!ref.current?.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setOpen(false);
+      if (!rootRef.current?.contains(e.target)) setOpen(false);
     };
     document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("mousedown", close);
   }, [open]);
+
+  // When opening, reset the active highlight to the current selection.
+  useEffect(() => {
+    if (!open) return;
+    const i = options.findIndex((o) => o.value === value);
+    if (i >= 0) setActiveIndex(i);
+  }, [open, options, value]);
+
+  // Scroll the active option into view when arrow-navigating.
+  useEffect(() => {
+    if (!open) return;
+    const el = listRef.current?.querySelector(`#${CSS.escape(optionId(activeIndex))}`);
+    el?.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, open]);
+
   const selected = options.find((o) => o.value === value) ?? options[0];
+
+  const commit = (i) => {
+    const opt = options[i];
+    if (!opt) return;
+    onChange(opt.value);
+    setOpen(false);
+    buttonRef.current?.focus();
+  };
+
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActiveIndex((i) => Math.min(options.length - 1, i + 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActiveIndex((i) => Math.max(0, i - 1));
+        break;
+      case "Home":
+        e.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setActiveIndex(options.length - 1);
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        commit(activeIndex);
+        break;
+      case "Escape":
+        e.preventDefault();
+        setOpen(false);
+        buttonRef.current?.focus();
+        break;
+      default:
+    }
+  };
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={open ? optionId(activeIndex) : undefined}
+        aria-label={label}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={onKeyDown}
         className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
       >
         {selected.swatch && (
@@ -133,34 +208,40 @@ function ColoredSelect({ value, onChange, options }) {
       </button>
       {open && (
         <ul
+          ref={listRef}
+          id={listboxId}
           role="listbox"
+          aria-label={label}
           className="absolute right-0 z-20 mt-1 max-h-56 min-w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-1 text-xs shadow-soft"
         >
-          {options.map((o) => (
-            <li
-              key={o.value}
-              role="option"
-              aria-selected={o.value === value}
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-              className={`flex cursor-pointer items-center gap-2 whitespace-nowrap px-2 py-1 hover:bg-surface-inset ${
-                o.value === value ? "text-content-primary" : "text-content-secondary"
-              }`}
-            >
-              {o.swatch ? (
-                <span
-                  aria-hidden
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: o.swatch }}
-                />
-              ) : (
-                <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0" />
-              )}
-              <span>{o.label}</span>
-            </li>
-          ))}
+          {options.map((o, i) => {
+            const isActive = i === activeIndex;
+            const isSelected = o.value === value;
+            return (
+              <li
+                key={o.value}
+                id={optionId(i)}
+                role="option"
+                aria-selected={isSelected}
+                onMouseEnter={() => setActiveIndex(i)}
+                onClick={() => commit(i)}
+                className={`flex cursor-pointer items-center gap-2 whitespace-nowrap px-2 py-1 ${
+                  isActive ? "bg-surface-inset" : ""
+                } ${isSelected ? "text-content-primary" : "text-content-secondary"}`}
+              >
+                {o.swatch ? (
+                  <span
+                    aria-hidden
+                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: o.swatch }}
+                  />
+                ) : (
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0" />
+                )}
+                <span>{o.label}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -396,8 +477,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
     return [...set].sort();
   }, [tracks]);
 
-  // Disambiguate when two NetIDs resolve to the same operator name (e.g.,
-  // Helium's 000024 and 00003C both display as "Helium").
+  // Disambiguate when multiple NetIDs resolve to the same operator name.
   const netIdSelectOptions = useMemo(() => {
     const operatorCounts = new Map();
     for (const id of netIdOptions) {
@@ -537,6 +617,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
           <label className="flex items-center gap-1.5 text-content-secondary">
             NetID
             <ColoredSelect
+              label="NetID filter"
               value={netIdFilter}
               onChange={setNetIdFilter}
               options={netIdSelectOptions}

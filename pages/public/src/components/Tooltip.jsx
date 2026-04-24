@@ -3,7 +3,6 @@ import {
   cloneElement,
   isValidElement,
   useCallback,
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
