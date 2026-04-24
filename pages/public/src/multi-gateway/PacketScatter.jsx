@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -24,40 +24,147 @@ function trackVisible(t, { netIdFilter, trackFilter }) {
 }
 
 function colorForTrack(track, isDark) {
-  const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
-  // Use firstFrameType (set once at track creation) rather than the dominant
-  // one so the colour doesn't flicker as later packets shift the mode.
-  return palette[track?.firstFrameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
+  const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
+  const [light, dark] = palette[familyForNetId(track?.netId)];
+  // Band uses the light shade to sit quietly behind the dots (which may be
+  // either shade) without clashing.
+  return light;
 }
 
-// Per-packet dot colour — mirrors the FRAME_TYPES palette in MultiGateway.jsx
-// (emerald / sky / violet families) so the chart reads the same as the table.
-// Tailwind classes can't be used as SVG fills, so we hard-code the matching
-// hex values. Dark-mode variants are lighter to stay legible on dark surfaces.
-const FRAME_TYPE_HEX_LIGHT = {
-  UnconfirmedUp: "#10b981",      // emerald-500
-  ConfirmedUp: "#047857",        // emerald-700 (darker = confirmed)
-  UnconfirmedDown: "#38bdf8",    // sky-400
-  ConfirmedDown: "#0284c7",      // sky-600
-  JoinRequest: "#8b5cf6",        // violet-500
-  JoinAccept: "#6d28d9",         // violet-700
-  RejoinRequest: "#a78bfa",      // violet-400
-  Proprietary: "#9ca3af",        // gray-400
-};
-const FRAME_TYPE_HEX_DARK = {
-  UnconfirmedUp: "#34d399",      // emerald-400
-  ConfirmedUp: "#10b981",        // emerald-500
-  UnconfirmedDown: "#7dd3fc",    // sky-300
-  ConfirmedDown: "#38bdf8",      // sky-400
-  JoinRequest: "#a78bfa",        // violet-400
-  JoinAccept: "#8b5cf6",         // violet-500
-  RejoinRequest: "#c4b5fd",      // violet-300
-  Proprietary: "#d1d5db",        // gray-300
-};
+// Per-packet dot colour: NetID picks the hue family, frame type picks the
+// shade (confirmed uplinks darker than unconfirmed). All Helium NetIDs share
+// one emerald family so an operator sees "their traffic" as visually unified.
+// Non-Helium NetIDs map deterministically to the remaining hues via djb2.
+const HELIUM_NETIDS = new Set(["000024", "00003C", "60002D", "C00053"]);
 
-function colorForFrameType(frameType, isDark) {
-  const palette = isDark ? FRAME_TYPE_HEX_DARK : FRAME_TYPE_HEX_LIGHT;
-  return palette[frameType] ?? (isDark ? "#d1d5db" : "#9ca3af");
+// [unconfirmed / joins, confirmed] shade pairs, light mode then dark mode.
+// Tailwind-derived hex so tone matches the rest of the app.
+const NETID_FAMILIES_LIGHT = {
+  helium: ["#10b981", "#047857"],   // emerald-500 / emerald-700
+  sky:    ["#38bdf8", "#0369a1"],   // sky-400   / sky-700
+  amber:  ["#f59e0b", "#b45309"],   // amber-500 / amber-700
+  rose:   ["#f43f5e", "#be123c"],   // rose-500  / rose-700
+  cyan:   ["#06b6d4", "#0e7490"],   // cyan-500  / cyan-700
+  fuchsia:["#d946ef", "#a21caf"],   // fuchsia-500 / fuchsia-700
+  lime:   ["#84cc16", "#4d7c0f"],   // lime-500  / lime-700
+  indigo: ["#6366f1", "#4338ca"],   // indigo-500 / indigo-700
+};
+const NETID_FAMILIES_DARK = {
+  helium: ["#34d399", "#10b981"],   // emerald-400 / emerald-500
+  sky:    ["#7dd3fc", "#38bdf8"],   // sky-300   / sky-400
+  amber:  ["#fbbf24", "#f59e0b"],   // amber-400 / amber-500
+  rose:   ["#fb7185", "#f43f5e"],   // rose-400  / rose-500
+  cyan:   ["#22d3ee", "#06b6d4"],   // cyan-400  / cyan-500
+  fuchsia:["#e879f9", "#d946ef"],   // fuchsia-400 / fuchsia-500
+  lime:   ["#a3e635", "#84cc16"],   // lime-400  / lime-500
+  indigo: ["#818cf8", "#6366f1"],   // indigo-400 / indigo-500
+};
+// Order matters — first key is reserved for Helium, rest are assigned to
+// other NetIDs in insertion order via djb2 hash.
+const NON_HELIUM_FAMILIES = ["sky", "amber", "rose", "cyan", "fuchsia", "lime", "indigo"];
+
+function djb2(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function familyForNetId(netId) {
+  if (!netId) return "helium";
+  if (HELIUM_NETIDS.has(netId)) return "helium";
+  return NON_HELIUM_FAMILIES[djb2(netId) % NON_HELIUM_FAMILIES.length];
+}
+
+function colorForNetIdShade(netId, confirmed, isDark) {
+  const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
+  const [light, dark] = palette[familyForNetId(netId)];
+  return confirmed ? dark : light;
+}
+
+// Confirmed uplinks use the darker shade; unconfirmed / everything else
+// stays on the lighter shade.
+function colorForPacket(point) {
+  return point.frameType === "ConfirmedUp" ? point.fillDark : point.fillLight;
+}
+
+function swatchColorForNetId(netId, isDark) {
+  return colorForNetIdShade(netId, false, isDark);
+}
+
+// Tiny custom <select> replacement so we can render a colour swatch next to
+// each option — native <option> elements don't support complex children.
+function ColoredSelect({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (!ref.current?.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const selected = options.find((o) => o.value === value) ?? options[0];
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
+      >
+        {selected.swatch && (
+          <span
+            aria-hidden
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: selected.swatch }}
+          />
+        )}
+        <span>{selected.label}</span>
+        <span aria-hidden className="text-content-tertiary">▾</span>
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute right-0 z-20 mt-1 max-h-56 min-w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-1 text-xs shadow-soft"
+        >
+          {options.map((o) => (
+            <li
+              key={o.value}
+              role="option"
+              aria-selected={o.value === value}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+              className={`flex cursor-pointer items-center gap-2 whitespace-nowrap px-2 py-1 hover:bg-surface-inset ${
+                o.value === value ? "text-content-primary" : "text-content-secondary"
+              }`}
+            >
+              {o.swatch ? (
+                <span
+                  aria-hidden
+                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: o.swatch }}
+                />
+              ) : (
+                <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0" />
+              )}
+              <span>{o.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // When a hovered dot is past this fraction of the chart width, anchor the
@@ -210,6 +317,19 @@ function formatTimeTick(ts) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+// Human-readable gap between consecutive packets in a track. `~` prefix
+// signals a rounded estimate — exact precision isn't useful for an
+// observed interval.
+function formatInterval(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  if (ms < 60_000) return `~${Math.round(ms / 1000)}s`;
+  const min = ms / 60_000;
+  if (min < 60) return `~${Math.round(min)}m`;
+  const h = min / 60;
+  if (h < 24) return `~${Math.round(h)}h`;
+  return `~${Math.round(h / 24)}d`;
+}
+
 // We render our own tooltip instead of recharts' <Tooltip> because a custom
 // shape fn breaks the per-item hover wiring recharts' tooltip relies on —
 // without owned dot elements, its shared={false} path can't resolve which
@@ -237,6 +357,10 @@ function HoverTooltip({ hover }) {
         {p.fcnt != null && <><span>FCnt</span><span className="text-right">{p.fcnt}</span></>}
         {p.snr != null && <><span>SNR</span><span className="text-right">{p.snr.toFixed(1)} dB</span></>}
         {p.sf && <><span>SF</span><span className="text-right">{p.sf}</span></>}
+        {p.size != null && <><span>Size</span><span className="text-right">{p.size} B</span></>}
+        {hover.intervalMs != null && (
+          <><span>Interval</span><span className="text-right">{formatInterval(hover.intervalMs)}</span></>
+        )}
       </div>
     </div>
   );
@@ -272,6 +396,24 @@ export default function PacketScatter({ packets, segmenter, loading }) {
     return [...set].sort();
   }, [tracks]);
 
+  // Disambiguate when two NetIDs resolve to the same operator name (e.g.,
+  // Helium's 000024 and 00003C both display as "Helium").
+  const netIdSelectOptions = useMemo(() => {
+    const operatorCounts = new Map();
+    for (const id of netIdOptions) {
+      const op = netIdToOperator(id) ?? id;
+      operatorCounts.set(op, (operatorCounts.get(op) ?? 0) + 1);
+    }
+    return [
+      { value: "all", label: "All", swatch: null },
+      ...netIdOptions.map((id) => {
+        const op = netIdToOperator(id) ?? id;
+        const label = operatorCounts.get(op) > 1 ? `${op} · ${id}` : op;
+        return { value: id, label, swatch: swatchColorForNetId(id, isDark) };
+      }),
+    ];
+  }, [netIdOptions, isDark]);
+
   const trackOptions = useMemo(() => {
     const list = tracks.filter((t) => {
       if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
@@ -288,26 +430,34 @@ export default function PacketScatter({ packets, segmenter, loading }) {
     }
   }, [trackOptions, trackFilter]);
 
-  // Group packets into per-track arrays for recharts Scatter series
+  // Group packets into per-track arrays for recharts Scatter series. Bake
+  // NetID + colour onto each point so the per-dot shape fn doesn't re-parse
+  // the devAddr or recompute the palette on every hover-triggered re-render.
   const pointsByTrack = useMemo(() => {
     const map = new Map();
     for (const pkt of packets) {
       const tid = pkt._trackId;
       if (!tid) continue;
       if (!map.has(tid)) map.set(tid, []);
-      map.get(tid).push({
+      const netId = pkt.dev_addr ? devAddrToNetId(pkt.dev_addr)?.netId : null;
+      const point = {
         timestamp: pkt.timestamp,
         rssi: pkt.rssi,
         devAddr: pkt.dev_addr,
         fcnt: pkt.fcnt,
         snr: pkt.snr,
         sf: pkt.spreading_factor,
+        size: pkt.payload_size,
         frameType: pkt.frame_type,
         trackId: tid,
-      });
+        netId,
+      };
+      point.fillLight = colorForNetIdShade(netId, false, isDark);
+      point.fillDark = colorForNetIdShade(netId, true, isDark);
+      map.get(tid).push(point);
     }
     return map;
-  }, [packets]);
+  }, [packets, isDark]);
 
   const filterOpts = { netIdFilter, trackFilter };
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
@@ -327,7 +477,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
           cx={dotProps.cx}
           cy={dotProps.cy}
           r={4}
-          fill={colorForFrameType(dotProps.payload.frameType, isDark)}
+          fill={colorForPacket(dotProps.payload)}
           fillOpacity={dimmed ? 0.15 : 0.9}
           onMouseEnter={(e) => {
             const dotRect = e.currentTarget.getBoundingClientRect();
@@ -335,9 +485,15 @@ export default function PacketScatter({ packets, segmenter, loading }) {
               .closest("[data-chart-host]")
               ?.getBoundingClientRect();
             if (!hostRect) return;
+            const track = segmenter.tracks.get(dotProps.payload.trackId);
+            const intervalMs =
+              track && track.count > 1
+                ? (track.lastTs - track.firstTs) / (track.count - 1)
+                : null;
             setHover({
               trackId: dotProps.payload.trackId,
               payload: dotProps.payload,
+              intervalMs,
               x: dotRect.left + dotRect.width / 2 - hostRect.left,
               y: dotRect.top + dotRect.height / 2 - hostRect.top,
               hostWidth: hostRect.width,
@@ -348,7 +504,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         />
       );
     },
-    [hoveredId, isDark],
+    [hoveredId, segmenter],
   );
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
@@ -380,18 +536,11 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label className="flex items-center gap-1.5 text-content-secondary">
             NetID
-            <select
+            <ColoredSelect
               value={netIdFilter}
-              onChange={(e) => setNetIdFilter(e.target.value)}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
-            >
-              <option value="all">All</option>
-              {netIdOptions.map((id) => (
-                <option key={id} value={id}>
-                  {netIdToOperator(id) ?? id}
-                </option>
-              ))}
-            </select>
+              onChange={setNetIdFilter}
+              options={netIdSelectOptions}
+            />
           </label>
           <label className="flex items-center gap-1.5 text-content-secondary">
             Device
@@ -411,7 +560,14 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         </div>
       </div>
 
-      <div className="relative h-64 px-2 py-3" data-chart-host>
+      <div
+        className="relative h-64 px-2 py-3"
+        data-chart-host
+        // Safari occasionally drops SVG <circle> mouseleave when the cursor
+        // exits the dot into blank space fast. Belt-and-suspenders: clear on
+        // the chart host's mouseleave too so the tooltip always dismisses.
+        onMouseLeave={() => setHover(null)}
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
             Loading...
