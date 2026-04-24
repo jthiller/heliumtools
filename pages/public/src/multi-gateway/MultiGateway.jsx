@@ -664,18 +664,31 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   // Initial fetch + reset segmenter on mac change. Reset happens before the
   // fetch resolves AND again just before ingesting, so a stray SSE packet
   // arriving mid-fetch for the old mac can't poison the new segmenter.
+  // `cancelled` guards against a slow response for a previous mac landing
+  // after the user has selected a new gateway.
   useEffect(() => {
+    let cancelled = false;
     segmenterRef.current = createSegmenter();
     setLoading(true);
     fetchGatewayPackets(mac)
       .then((data) => {
+        if (cancelled) return;
         segmenterRef.current = createSegmenter();
         const tagged = data.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: false }));
         const kept = ingestBatch(segmenterRef.current, tagged);
         setPackets(kept);
       })
-      .catch((err) => console.error("Failed to fetch packets:", err))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to fetch packets:", err);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [mac]);
 
   // Append new packets from SSE. Skip multi-channel duplicates so the chart
