@@ -75,18 +75,20 @@ function familyForNetId(netId) {
   return NON_HELIUM_FAMILIES[djb2(netId) % NON_HELIUM_FAMILIES.length];
 }
 
-function colorForPacket(packet, isDark) {
+function colorForNetIdShade(netId, confirmed, isDark) {
   const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
-  const netId = packet.devAddr ? devAddrToNetId(packet.devAddr)?.netId : null;
   const [light, dark] = palette[familyForNetId(netId)];
-  // Confirmed uplinks use the darker shade; unconfirmed / everything else
-  // stays on the lighter shade.
-  return packet.frameType === "ConfirmedUp" ? dark : light;
+  return confirmed ? dark : light;
+}
+
+// Confirmed uplinks use the darker shade; unconfirmed / everything else
+// stays on the lighter shade.
+function colorForPacket(point) {
+  return point.frameType === "ConfirmedUp" ? point.fillDark : point.fillLight;
 }
 
 function swatchColorForNetId(netId, isDark) {
-  const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
-  return palette[familyForNetId(netId)][0];
+  return colorForNetIdShade(netId, false, isDark);
 }
 
 // Tiny custom <select> replacement so we can render a colour swatch next to
@@ -114,6 +116,8 @@ function ColoredSelect({ value, onChange, options }) {
     <div ref={ref} className="relative">
       <button
         type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
       >
@@ -409,14 +413,17 @@ export default function PacketScatter({ packets, segmenter, loading }) {
     }
   }, [trackOptions, trackFilter]);
 
-  // Group packets into per-track arrays for recharts Scatter series
+  // Group packets into per-track arrays for recharts Scatter series. Bake
+  // NetID + colour onto each point so the per-dot shape fn doesn't re-parse
+  // the devAddr or recompute the palette on every hover-triggered re-render.
   const pointsByTrack = useMemo(() => {
     const map = new Map();
     for (const pkt of packets) {
       const tid = pkt._trackId;
       if (!tid) continue;
       if (!map.has(tid)) map.set(tid, []);
-      map.get(tid).push({
+      const netId = pkt.dev_addr ? devAddrToNetId(pkt.dev_addr)?.netId : null;
+      const point = {
         timestamp: pkt.timestamp,
         rssi: pkt.rssi,
         devAddr: pkt.dev_addr,
@@ -425,10 +432,14 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         sf: pkt.spreading_factor,
         frameType: pkt.frame_type,
         trackId: tid,
-      });
+        netId,
+      };
+      point.fillLight = colorForNetIdShade(netId, false, isDark);
+      point.fillDark = colorForNetIdShade(netId, true, isDark);
+      map.get(tid).push(point);
     }
     return map;
-  }, [packets]);
+  }, [packets, isDark]);
 
   const filterOpts = { netIdFilter, trackFilter };
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
@@ -448,7 +459,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
           cx={dotProps.cx}
           cy={dotProps.cy}
           r={4}
-          fill={colorForPacket(dotProps.payload, isDark)}
+          fill={colorForPacket(dotProps.payload)}
           fillOpacity={dimmed ? 0.15 : 0.9}
           onMouseEnter={(e) => {
             const dotRect = e.currentTarget.getBoundingClientRect();
@@ -469,7 +480,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         />
       );
     },
-    [hoveredId, isDark],
+    [hoveredId],
   );
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
