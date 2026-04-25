@@ -50,7 +50,7 @@ import MapGL, { NavigationControl, Source, Layer } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import useDarkMode from "../lib/useDarkMode.js";
-import { createSegmenter, ingest, ingestBatch, listTracks } from "./segmentation.js";
+import { initPackets, ingestPacket } from "./packetWorkerClient.js";
 import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -647,37 +647,40 @@ function OuiCell({ devAddr, ouiLookup }) {
   );
 }
 
-// Wraps the scatter chart + detail panel. Owns packet state, the segmenter,
-// and the frame-type filter so both children read a single source of truth.
+// Wraps the scatter chart + detail panel. Owns packet state, the per-mac
+// tracks summary (sourced from the worker), and the frame-type filter so all
+// children read a single source of truth. Segmenter state itself lives in
+// the Web Worker — see packetWorkerClient.
 // (Kept in this file to avoid exporting GatewayDetail's helper constellation —
 // FRAME_TYPES, FrameTypeBadge, NetIdCell, OuiCell, LiveTime, gatewayName.)
 function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
   const idRef = useRef(0);
-  const segmenterRef = useRef(createSegmenter());
   const [packets, setPackets] = useState([]);
+  const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState(ALL_TYPES_VISIBLE);
 
   const toggleType = (type) =>
     setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
 
-  // Initial fetch + reset segmenter on mac change. Reset happens before the
-  // fetch resolves AND again just before ingesting, so a stray SSE packet
-  // arriving mid-fetch for the old mac can't poison the new segmenter.
-  // `cancelled` guards against a slow response for a previous mac landing
-  // after the user has selected a new gateway.
+  // Initial fetch on mac change. Segmenter state lives in the worker — we
+  // post the freshly-fetched batch over and let the worker hand back the
+  // deduped, track-annotated set. `cancelled` guards against a slow response
+  // for the previous mac landing after the user picked a new one.
   useEffect(() => {
     let cancelled = false;
-    segmenterRef.current = createSegmenter();
     setPinnedPacketId(null);
     setLoading(true);
+    setPackets([]);
+    setTracks([]);
     fetchGatewayPackets(mac)
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
-        segmenterRef.current = createSegmenter();
         const tagged = data.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: false }));
-        const kept = ingestBatch(segmenterRef.current, tagged);
-        setPackets(kept);
+        const res = await initPackets(mac, tagged);
+        if (cancelled) return;
+        setPackets(res.packets);
+        setTracks(res.tracks);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -692,19 +695,27 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
     };
   }, [mac]);
 
-  // Append new packets from SSE. Skip multi-channel duplicates so the chart
-  // and table don't draw phantom dots for the same physical transmission.
+  // Append new packets from SSE. The worker dedupes multi-channel duplicates
+  // and assigns track ids; we just splice the result in.
   useEffect(() => {
-    if (latestPacket && latestPacket.mac === mac) {
+    if (!latestPacket || latestPacket.mac !== mac) return;
+    let cancelled = false;
+    const pkt = { ...latestPacket.metadata, _id: ++idRef.current, _new: true };
+    ingestPacket(mac, pkt).then((res) => {
+      // Cancellation comes first — if the user switched Hotspots while this
+      // ingest was in flight, applying res.tracks would overwrite the new
+      // Hotspot's tracks state with a stale snapshot.
+      if (cancelled) return;
+      if (res.duplicate) return;
       setPackets((prev) => {
-        const pkt = { ...latestPacket.metadata, _id: ++idRef.current, _new: true };
-        const res = ingest(segmenterRef.current, pkt);
-        if (res.duplicate) return prev;
-        pkt._trackId = res.trackId;
-        const next = [...prev, pkt];
+        const next = [...prev, res.packet];
         return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
       });
-    }
+      setTracks(res.tracks);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [latestPacket, mac]);
 
   // Hover state shared across chart, table, and (future) events bar so they
@@ -730,9 +741,12 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
     return () => clearInterval(id);
   }, []);
 
-  // packets-as-dep is what triggers re-render after ingestion; the segmenter
-  // mutates in place but its identity is read off the ref at call time.
-  const tracks = useMemo(() => listTracks(segmenterRef.current), [packets]);
+  // tracks come from the worker as a snapshot on every ingest. Build a Map
+  // here once so PacketScatter can do O(1) lookups by trackId.
+  const tracksById = useMemo(
+    () => new Map(tracks.map((t) => [t.id, t])),
+    [tracks],
+  );
 
   const netIdOptions = useMemo(() => {
     const set = new Set();
@@ -912,7 +926,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
       <PacketScatter
         key={`scatter-${mac}`}
         packets={packets}
-        segmenter={segmenterRef.current}
+        tracksById={tracksById}
         loading={loading}
         netIdFilter={netIdFilter}
         trackFilter={trackFilter}
