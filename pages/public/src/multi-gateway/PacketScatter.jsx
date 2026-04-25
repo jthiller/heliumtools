@@ -361,6 +361,25 @@ function BandOverlay({ hoveredId, pointsByTrack, color }) {
     };
   });
 
+  const bandStyle = {
+    fill: color,
+    fillOpacity: 0.18,
+    stroke: color,
+    strokeOpacity: 0.45,
+    strokeWidth: 1,
+    strokeDasharray: "4 2",
+    pointerEvents: "none",
+  };
+
+  // A single packet has no temporal extent, so a chart-wide band would imply
+  // an interval that doesn't exist.
+  if (sp.length === 1) {
+    const p = sp[0];
+    return (
+      <circle cx={p.x} cy={(p.yUp + p.yDn) / 2} r={(p.yDn - p.yUp) / 2} {...bandStyle} />
+    );
+  }
+
   const first = sp[0];
   const last = sp[sp.length - 1];
   const upperPts = [
@@ -379,18 +398,7 @@ function BandOverlay({ hoveredId, pointsByTrack, color }) {
   const lowerD = catmullRomPath(lowerReversed).replace(/^M /, "L ");
   const d = `${upperD} ${lowerD} Z`;
 
-  return (
-    <path
-      d={d}
-      fill={color}
-      fillOpacity={0.18}
-      stroke={color}
-      strokeOpacity={0.45}
-      strokeWidth={1}
-      strokeDasharray="4 2"
-      pointerEvents="none"
-    />
-  );
+  return <path d={d} {...bandStyle} />;
 }
 
 export function formatTimeTick(ts) {

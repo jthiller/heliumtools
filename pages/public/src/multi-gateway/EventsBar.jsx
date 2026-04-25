@@ -16,7 +16,6 @@ const LANE_H = 14;
 const MARKER_R = 4;
 const VPAD = 6;
 const TICK_H = 18; // axis labels live here, below the markers
-const TOTAL_H = LANE_H * 2 + VPAD * 2 + TICK_H;
 const TICK_COUNT = 5; // evenly spaced across the visible time range
 
 const PLOT_LEFT = 78;   // recharts YAxis width 70 + ScatterChart margin.left 8
@@ -106,11 +105,17 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
     return { joins, downs };
   }, [packets, visibleTypes]);
 
-  const hasEvents = xRange && (events.joins.length > 0 || events.downs.length > 0);
-  const joinY = VPAD + LANE_H / 2;
-  const downY = VPAD + LANE_H + LANE_H / 2;
-  const joinFill = isDark ? JOIN_COLOR.dark : JOIN_COLOR.light;
-  const downFill = isDark ? DOWN_COLOR.dark : DOWN_COLOR.light;
+  // Collapse lanes that have nothing to show. Tick labels (the chart's only
+  // X-axis labels) must keep rendering even when both lanes are empty.
+  const visibleLanes = [
+    { label: "Joins", events: events.joins, fill: isDark ? JOIN_COLOR.dark : JOIN_COLOR.light, shape: trianglePath },
+    { label: "Downs", events: events.downs, fill: isDark ? DOWN_COLOR.dark : DOWN_COLOR.light, shape: diamondPath },
+  ].filter((l) => l.events.length > 0);
+  const lanesTopPad = visibleLanes.length > 0 ? VPAD : 0;
+  const totalH = lanesTopPad + visibleLanes.length * LANE_H + TICK_H;
+  visibleLanes.forEach((l, i) => {
+    l.y = lanesTopPad + i * LANE_H + LANE_H / 2;
+  });
   const xScale = (ts) => {
     if (!xRange) return PLOT_LEFT;
     const t = (ts - xRange.xMin) / (xRange.xMax - xRange.xMin);
@@ -123,67 +128,62 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
   const cursorX = hover && xRange ? xScale(hover.payload.timestamp) : null;
 
   return (
-    <svg
-      ref={svgRef}
-      width="100%"
-      height={TOTAL_H}
-      className="block border-t border-border"
-    >
-      {svgWidth > 0 && hasEvents && (
-        <>
-          <line
-            x1={PLOT_LEFT} x2={svgWidth - PLOT_RIGHT}
-            y1={joinY} y2={joinY}
-            stroke={chartColors?.grid} strokeOpacity={0.4} strokeWidth={0.5}
-          />
-          <line
-            x1={PLOT_LEFT} x2={svgWidth - PLOT_RIGHT}
-            y1={downY} y2={downY}
-            stroke={chartColors?.grid} strokeOpacity={0.4} strokeWidth={0.5}
-          />
-          <text
-            x={PLOT_LEFT - 6} y={joinY + 3}
-            textAnchor="end" fontSize={10}
-            fill={chartColors?.tickText}
-          >Joins</text>
-          <text
-            x={PLOT_LEFT - 6} y={downY + 3}
-            textAnchor="end" fontSize={10}
-            fill={chartColors?.tickText}
-          >Downs</text>
+    // px-2 must mirror PacketScatter's chart wrapper inset so plot bounds line up.
+    <div className="border-t border-border px-2">
+      <svg
+        ref={svgRef}
+        width="100%"
+        height={totalH}
+        className="block"
+      >
+        {svgWidth > 0 && xRange && (
+          <>
+            {visibleLanes.map((l) => (
+              <g key={l.label}>
+                <line
+                  x1={PLOT_LEFT} x2={svgWidth - PLOT_RIGHT}
+                  y1={l.y} y2={l.y}
+                  stroke={chartColors?.grid} strokeOpacity={0.4} strokeWidth={0.5}
+                />
+                <text
+                  x={PLOT_LEFT - 6} y={l.y + 3}
+                  textAnchor="end" fontSize={10}
+                  fill={chartColors?.tickText}
+                >{l.label}</text>
+                <Lane events={l.events} y={l.y} fill={l.fill} shape={l.shape} hover={hover} setHover={setHover} xScale={xScale} />
+              </g>
+            ))}
 
-          {cursorX != null && (
-            <line
-              x1={cursorX} x2={cursorX} y1={0} y2={TOTAL_H}
-              stroke={chartColors?.grid} strokeDasharray="3 3"
-            />
-          )}
+            {cursorX != null && (
+              <line
+                x1={cursorX} x2={cursorX} y1={0} y2={totalH}
+                stroke={chartColors?.grid} strokeDasharray="3 3"
+              />
+            )}
 
-          <Lane events={events.joins} y={joinY} fill={joinFill} shape={trianglePath} hover={hover} setHover={setHover} xScale={xScale} />
-          <Lane events={events.downs} y={downY} fill={downFill} shape={diamondPath} hover={hover} setHover={setHover} xScale={xScale} />
-
-          {/* Time-axis tick labels for the whole chart+events stack — the
-              chart hides its own X labels so they only render here. */}
-          {Array.from({ length: TICK_COUNT }, (_, i) => {
-            const t = i / (TICK_COUNT - 1);
-            const ts = xRange.xMin + t * (xRange.xMax - xRange.xMin);
-            const x = xScale(ts);
-            return (
-              <text
-                key={i}
-                x={x}
-                y={TOTAL_H - 4}
-                textAnchor={i === 0 ? "start" : i === TICK_COUNT - 1 ? "end" : "middle"}
-                fontSize={11}
-                fill={chartColors?.tickText}
-                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-              >
-                {formatTimeTick(ts)}
-              </text>
-            );
-          })}
-        </>
-      )}
-    </svg>
+            {/* The chart hides its own X labels — these are the only time-axis
+                labels for the chart+events stack. */}
+            {Array.from({ length: TICK_COUNT }, (_, i) => {
+              const t = i / (TICK_COUNT - 1);
+              const ts = xRange.xMin + t * (xRange.xMax - xRange.xMin);
+              const x = xScale(ts);
+              return (
+                <text
+                  key={i}
+                  x={x}
+                  y={totalH - 4}
+                  textAnchor={i === 0 ? "start" : i === TICK_COUNT - 1 ? "end" : "middle"}
+                  fontSize={11}
+                  fill={chartColors?.tickText}
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                >
+                  {formatTimeTick(ts)}
+                </text>
+              );
+            })}
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
