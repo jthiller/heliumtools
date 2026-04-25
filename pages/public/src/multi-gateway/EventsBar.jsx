@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { readChartColors } from "../lib/chartColors.js";
-import { formatTimeTick, PLOT_LEFT, PLOT_RIGHT, PULSE_DURATION_MS } from "./PacketScatter.jsx";
+import { formatTimeTick, plotLeftFor, PLOT_RIGHT, PULSE_DURATION_MS } from "./PacketScatter.jsx";
 
 // Two-lane timeline of join + downlink events. Shares its X axis with
-// PacketScatter — PLOT_LEFT and PLOT_RIGHT come from there so the chart's
-// plot area and the events bar line up to the pixel.
+// PacketScatter — PLOT_LEFT (via plotLeftFor) and PLOT_RIGHT come from
+// there so the chart's plot area and the events bar line up to the pixel
+// at every viewport size.
 
 const LANE_H = 14;
 const MARKER_R = 4;
 const VPAD = 6;
 const TICK_H = 18; // axis labels live here, below the markers
-const TICK_COUNT = 5; // evenly spaced across the visible time range
+const MIN_TICK_PX = 80;  // labels read "5m ago" / "now"; ~50px text + gap
+const MAX_TICKS = 6;
+const MIN_TICKS = 2;
 
 const JOIN_TYPES = new Set(["JoinRequest", "JoinAccept", "RejoinRequest", "Proprietary"]);
 const DOWN_TYPES = new Set(["UnconfirmedDown", "ConfirmedDown"]);
@@ -136,20 +139,26 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
   visibleLanes.forEach((l, i) => {
     l.y = lanesTopPad + i * LANE_H + LANE_H / 2;
   });
+  const plotLeft = plotLeftFor(svgWidth);
+  const tickCount = Math.max(
+    MIN_TICKS,
+    Math.min(MAX_TICKS, Math.floor(Math.max(1, svgWidth - plotLeft - PLOT_RIGHT) / MIN_TICK_PX) + 1),
+  );
   const xScale = (ts) => {
-    if (!xRange) return PLOT_LEFT;
+    if (!xRange) return plotLeft;
     const t = (ts - xRange.xMin) / (xRange.xMax - xRange.xMin);
     // Clamp inner width so the scale stays sane while the SVG is being sized
     // (initial layout, narrow containers) — otherwise the term goes negative
     // and markers fly off to the left.
-    const innerWidth = Math.max(1, svgWidth - PLOT_LEFT - PLOT_RIGHT);
-    return PLOT_LEFT + t * innerWidth;
+    const innerWidth = Math.max(1, svgWidth - plotLeft - PLOT_RIGHT);
+    return plotLeft + t * innerWidth;
   };
   const cursorX = hover && xRange ? xScale(hover.payload.timestamp) : null;
 
   return (
-    // px-2 must mirror PacketScatter's chart wrapper inset so plot bounds line up.
-    <div className="border-t border-border px-2">
+    // px-* mirrors PacketScatter's chart wrapper inset so plot bounds line up
+    // (no horizontal padding on small screens, 8px on sm+).
+    <div className="border-t border-border px-0 sm:px-2">
       <svg
         ref={svgRef}
         width="100%"
@@ -161,12 +170,12 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
             {visibleLanes.map((l) => (
               <g key={l.label}>
                 <line
-                  x1={PLOT_LEFT} x2={svgWidth - PLOT_RIGHT}
+                  x1={plotLeft} x2={svgWidth - PLOT_RIGHT}
                   y1={l.y} y2={l.y}
                   stroke={chartColors?.grid} strokeOpacity={0.4} strokeWidth={0.5}
                 />
                 <text
-                  x={PLOT_LEFT - 6} y={l.y + 3}
+                  x={plotLeft - 6} y={l.y + 3}
                   textAnchor="end" fontSize={10}
                   fill={chartColors?.tickText}
                 >{l.label}</text>
@@ -198,10 +207,11 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
               />
             )}
 
-            {/* The chart hides its own X labels — these are the only time-axis
-                labels for the chart+events stack. */}
-            {Array.from({ length: TICK_COUNT }, (_, i) => {
-              const t = i / (TICK_COUNT - 1);
+            {/* Tick count adapts to plot width so labels don't overlap on
+                narrow viewports. The chart hides its own X labels — these
+                are the only time-axis labels for the chart+events stack. */}
+            {Array.from({ length: tickCount }, (_, i) => {
+              const t = i / (tickCount - 1);
               const ts = xRange.xMin + t * (xRange.xMax - xRange.xMin);
               const x = xScale(ts);
               return (
@@ -209,12 +219,12 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
                   key={i}
                   x={x}
                   y={totalH - 4}
-                  textAnchor={i === 0 ? "start" : i === TICK_COUNT - 1 ? "end" : "middle"}
+                  textAnchor={i === 0 ? "start" : i === tickCount - 1 ? "end" : "middle"}
                   fontSize={11}
                   fill={chartColors?.tickText}
                   fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
                 >
-                  {formatTimeTick(ts)}
+                  {formatTimeTick(ts, xRange.xMax)}
                 </text>
               );
             })}

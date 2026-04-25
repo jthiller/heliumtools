@@ -416,20 +416,20 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface-raised shadow-soft">
+    <div className="-mx-4 overflow-hidden border-y border-border bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl sm:border">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
               <th className="w-8 px-2 py-3"></th>
-              <th className="px-4 py-3">Region</th>
-              <th className="px-4 py-3">MAC</th>
-              <th className="px-4 py-3">Public Key</th>
-              <th className="px-4 py-3 text-right">Connected</th>
-              <th className="px-4 py-3 text-right">Last Uplink</th>
-              <th className="px-4 py-3 text-right">Uplinks</th>
-              <th className="px-4 py-3 text-right">Downlinks</th>
-              <th className="px-4 py-3 text-center">On-Chain</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3">Region</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3">MAC</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3">Public Key</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3 text-right">Connected</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3 text-right">Last Uplink</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3 text-right">Uplinks</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3 text-right">Downlinks</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3 text-center">On-Chain</th>
             </tr>
           </thead>
           <tbody>
@@ -442,20 +442,22 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                 }`}
               >
                 <td className="w-8 px-2 py-3">
-                  <Tooltip content={gw.connected ? "Active" : "Inactive"}>
-                    <span
-                      className={`inline-block h-2 w-2 rounded-full ${
-                        gw.connected
-                          ? "bg-emerald-500"
-                          : "bg-content-tertiary"
-                      }`}
-                    />
-                  </Tooltip>
+                  <div className="flex justify-center">
+                    <Tooltip content={gw.connected ? "Active" : "Inactive"}>
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          gw.connected
+                            ? "bg-emerald-500"
+                            : "bg-content-tertiary"
+                        }`}
+                      />
+                    </Tooltip>
+                  </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-2 py-2 sm:px-4 sm:py-3">
                   <RegionBadge region={gw.region} />
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-2 py-2 sm:px-4 sm:py-3">
                   <span className="inline-flex items-center gap-1.5">
                     <span className="font-mono text-xs text-content-secondary">
                       {gw.mac}
@@ -476,7 +478,7 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                     )}
                   </span>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-2 py-2 sm:px-4 sm:py-3">
                   <span className="inline-flex items-center gap-1.5">
                     <Tooltip content={gw.public_key}>
                       <span className="text-xs text-content-primary">
@@ -486,7 +488,7 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                     {gw.public_key && <CopyButton text={gw.public_key} />}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right text-content-secondary">
+                <td className="px-2 py-2 sm:px-4 sm:py-3 text-right text-content-secondary">
                   {gw.connected && gw.connected_at ? (
                     <LiveTime
                       value={gw.connected_at}
@@ -498,16 +500,16 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
                     "Offline"
                   )}
                 </td>
-                <td className="px-4 py-3 text-right text-content-secondary">
+                <td className="px-2 py-2 sm:px-4 sm:py-3 text-right text-content-secondary">
                   <LiveTime value={gw.last_uplink_at} formatter={formatTimeAgo} />
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-xs text-content-secondary">
+                <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-xs text-content-secondary">
                   {gw.uplink_count ?? 0}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-xs text-content-secondary">
+                <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-mono text-xs text-content-secondary">
                   {gw.downlink_count ?? 0}
                 </td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-2 py-2 sm:px-4 sm:py-3 text-center">
                   {(() => {
                     const status = onchainStatus?.[gw.public_key];
                     if (!status) return <span className="text-content-tertiary">—</span>;
@@ -829,9 +831,9 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   }, [packets]);
 
   return (
-    <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
+    <div className="-mx-4 mt-4 border-y border-border bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl sm:border">
       {/* Persistent header — Hotspot identity stays visible across chart + table */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-3 sm:px-4">
         <div className="flex flex-wrap items-baseline gap-2">
           <h3 className="text-sm font-medium text-content-primary">
             {gatewayName(publicKey) || "Recent Packets"}
@@ -855,7 +857,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
       {/* Unified filter rows — both apply to BOTH chart and table.
           Dropdowns and checkboxes split across two lines so the checkbox
           row can sit cleanly without the dropdowns crowding it. */}
-      <div className="border-b border-border px-4 py-2 text-xs">
+      <div className="border-b border-border px-3 py-2 text-xs sm:px-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <label className="flex items-center gap-1.5 text-content-secondary">
             NetID
@@ -999,18 +1001,18 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
-            <th className="px-4 py-2">Time</th>
-            <th className="px-4 py-2">Type</th>
-            <th className="px-4 py-2">NetID</th>
-            <th className="px-4 py-2">DevAddr</th>
-            <th className="px-4 py-2">Helium OUI</th>
-            <th className="px-4 py-2 text-right">FCnt</th>
-            <th className="px-4 py-2 text-right">FPort</th>
-            <th className="px-4 py-2 text-right">RSSI</th>
-            <th className="px-4 py-2 text-right">SNR</th>
-            <th className="px-4 py-2 text-right">Freq</th>
-            <th className="px-4 py-2">SF</th>
-            <th className="px-4 py-2 text-right">Size</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2">Time</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2">Type</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2">NetID</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2">DevAddr</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2">Helium OUI</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">FCnt</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">FPort</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">RSSI</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">SNR</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">Freq</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2">SF</th>
+            <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">Size</th>
           </tr>
         </thead>
         <tbody>
@@ -1041,32 +1043,32 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
                       : ""
                 }`}
               >
-                <td className="px-4 py-2 text-xs">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-xs">
                   <LiveTime value={pkt.timestamp} formatter={formatTimeAgo} />
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2">
                   <FrameTypeBadge frameType={pkt.frame_type} />
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2">
                   <NetIdCell devAddr={pkt.dev_addr} />
                 </td>
-                <td className="px-4 py-2 font-mono text-xs text-content-secondary">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 font-mono text-xs text-content-secondary">
                   {pkt.dev_addr || "-"}
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2">
                   <OuiCell devAddr={pkt.dev_addr} ouiLookup={ouiLookup} />
                 </td>
-                <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-right font-mono text-xs text-content-secondary">
                   {pkt.fcnt ?? "-"}
                 </td>
-                <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-right font-mono text-xs text-content-secondary">
                   {pkt.fport ?? "-"}
                 </td>
-                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.rssi} dBm</td>
-                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.snr?.toFixed(1)} dB</td>
-                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.frequency?.toFixed(1)}</td>
-                <td className="px-4 py-2 font-mono text-xs">{pkt.spreading_factor}</td>
-                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.payload_size} B</td>
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-right font-mono text-xs">{pkt.rssi} dBm</td>
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-right font-mono text-xs">{pkt.snr?.toFixed(1)} dB</td>
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-right font-mono text-xs">{pkt.frequency?.toFixed(1)}</td>
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 font-mono text-xs">{pkt.spreading_factor}</td>
+                <td className="px-2 py-1.5 sm:px-4 sm:py-2 text-right font-mono text-xs">{pkt.payload_size} B</td>
               </tr>
             );
           })}
