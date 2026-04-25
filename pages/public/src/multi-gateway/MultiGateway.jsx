@@ -775,18 +775,24 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   }, [trackOptions, trackFilter]);
 
   const deviceCount = tracks.filter((t) => t.count > 0).length;
-  // Single time-axis domain shared by the scatter and the events bar so they
-  // stay in lockstep when filters narrow the visible range. Computed from
-  // the same filtered packet set the scatter actually plots (uplinks only,
-  // gated by visibleTypes / netIdFilter / trackFilter).
+  // Single time-axis domain shared by the scatter and the events bar.
+  // Uplinks honor the full filter chain (visibleTypes + netIdFilter +
+  // trackFilter), but joins/downs only honor visibleTypes — they don't have
+  // a meaningful NetID or track binding. Including them in the domain keeps
+  // their markers inside the events bar's plot bounds even when their
+  // timestamps fall outside the uplinks' range.
   const xDomain = useMemo(() => {
     let xMin = Infinity;
     let xMax = -Infinity;
     for (const pkt of packets) {
-      if (!pkt._trackId || pkt._trackId === "joins" || pkt._trackId === "downlinks") continue;
-      if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) continue;
-      if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
-      if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
+      if (!pkt.frame_type) continue;
+      if (visibleTypes[pkt.frame_type] === false) continue;
+      const isEvent = pkt._trackId === "joins" || pkt._trackId === "downlinks";
+      if (!isEvent) {
+        if (!pkt._trackId) continue;
+        if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
+        if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
+      }
       if (pkt.timestamp < xMin) xMin = pkt.timestamp;
       if (pkt.timestamp > xMax) xMax = pkt.timestamp;
     }
