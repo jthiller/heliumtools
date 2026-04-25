@@ -919,7 +919,7 @@ function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter,
   }
 
   return (
-    <div className="overflow-x-auto border-t border-border">
+    <div className="overflow-x-auto border-t border-border mt-3">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
