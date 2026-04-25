@@ -107,15 +107,15 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
 
   // Collapse lanes that have nothing to show. Tick labels (the chart's only
   // X-axis labels) must keep rendering even when both lanes are empty.
-  const showJoins = events.joins.length > 0;
-  const showDowns = events.downs.length > 0;
-  const lanesH = (showJoins ? LANE_H : 0) + (showDowns ? LANE_H : 0);
-  const lanesTopPad = lanesH > 0 ? VPAD : 0;
-  const totalH = lanesTopPad + lanesH + TICK_H;
-  const joinY = lanesTopPad + LANE_H / 2;
-  const downY = lanesTopPad + (showJoins ? LANE_H : 0) + LANE_H / 2;
-  const joinFill = isDark ? JOIN_COLOR.dark : JOIN_COLOR.light;
-  const downFill = isDark ? DOWN_COLOR.dark : DOWN_COLOR.light;
+  const visibleLanes = [
+    { label: "Joins", events: events.joins, fill: isDark ? JOIN_COLOR.dark : JOIN_COLOR.light, shape: trianglePath },
+    { label: "Downs", events: events.downs, fill: isDark ? DOWN_COLOR.dark : DOWN_COLOR.light, shape: diamondPath },
+  ].filter((l) => l.events.length > 0);
+  const lanesTopPad = visibleLanes.length > 0 ? VPAD : 0;
+  const totalH = lanesTopPad + visibleLanes.length * LANE_H + TICK_H;
+  visibleLanes.forEach((l, i) => {
+    l.y = lanesTopPad + i * LANE_H + LANE_H / 2;
+  });
   const xScale = (ts) => {
     if (!xRange) return PLOT_LEFT;
     const t = (ts - xRange.xMin) / (xRange.xMax - xRange.xMin);
@@ -136,36 +136,21 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
     >
       {svgWidth > 0 && xRange && (
         <>
-          {showJoins && (
-            <>
+          {visibleLanes.map((l) => (
+            <g key={l.label}>
               <line
                 x1={PLOT_LEFT} x2={svgWidth - PLOT_RIGHT}
-                y1={joinY} y2={joinY}
+                y1={l.y} y2={l.y}
                 stroke={chartColors?.grid} strokeOpacity={0.4} strokeWidth={0.5}
               />
               <text
-                x={PLOT_LEFT - 6} y={joinY + 3}
+                x={PLOT_LEFT - 6} y={l.y + 3}
                 textAnchor="end" fontSize={10}
                 fill={chartColors?.tickText}
-              >Joins</text>
-              <Lane events={events.joins} y={joinY} fill={joinFill} shape={trianglePath} hover={hover} setHover={setHover} xScale={xScale} />
-            </>
-          )}
-          {showDowns && (
-            <>
-              <line
-                x1={PLOT_LEFT} x2={svgWidth - PLOT_RIGHT}
-                y1={downY} y2={downY}
-                stroke={chartColors?.grid} strokeOpacity={0.4} strokeWidth={0.5}
-              />
-              <text
-                x={PLOT_LEFT - 6} y={downY + 3}
-                textAnchor="end" fontSize={10}
-                fill={chartColors?.tickText}
-              >Downs</text>
-              <Lane events={events.downs} y={downY} fill={downFill} shape={diamondPath} hover={hover} setHover={setHover} xScale={xScale} />
-            </>
-          )}
+              >{l.label}</text>
+              <Lane events={l.events} y={l.y} fill={l.fill} shape={l.shape} hover={hover} setHover={setHover} xScale={xScale} />
+            </g>
+          ))}
 
           {cursorX != null && (
             <line
