@@ -52,6 +52,7 @@ import { ScatterplotLayer } from "@deck.gl/layers";
 import useDarkMode from "../lib/useDarkMode.js";
 import { createSegmenter, ingest, ingestBatch, listTracks } from "./segmentation.js";
 import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
+import EventsBar from "./EventsBar.jsx";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -866,6 +867,13 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
         loading={loading}
         netIdFilter={netIdFilter}
         trackFilter={trackFilter}
+        visibleTypes={visibleTypes}
+        hover={hover}
+        setHover={setHover}
+      />
+
+      <EventsBar
+        packets={packets}
         visibleTypes={visibleTypes}
         hover={hover}
         setHover={setHover}
