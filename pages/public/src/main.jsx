@@ -2,8 +2,11 @@ import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing.jsx";
+import { registerSW } from "./lib/registerSW.js";
 import "../fonts/inter.css";
 import "./index.css";
+
+registerSW();
 
 // Lazy-load tool pages — each becomes its own chunk
 const L1MigrationTool = lazy(() => import("./l1-migration/L1MigrationTool.jsx"));

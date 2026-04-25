@@ -12,12 +12,10 @@ import { DC_MINT as DC_MINT_KEY } from "../dc-mint/constants.js";
 import { confirmAndVerify } from "../dc-mint/solanaUtils.js";
 import {
   fetchGateways,
-  fetchGatewayPackets,
   fetchOuis,
   checkOnchainStatus,
   requestIssueTxns,
   requestOnboardTxn,
-  createEventSource,
 } from "../lib/multiGatewayApi.js";
 import { fetchGeo } from "../lib/sharedApi.js";
 import { latLngToCell, cellToBoundary } from "h3-js";
@@ -50,7 +48,12 @@ import MapGL, { NavigationControl, Source, Layer } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import useDarkMode from "../lib/useDarkMode.js";
-import { initPackets, ingestPacket } from "./packetWorkerClient.js";
+import {
+  connectSse,
+  onWorkerEvent,
+  subscribePackets,
+  unsubscribePackets,
+} from "./packetWorkerClient.js";
 import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -132,10 +135,8 @@ function gatewayName(publicKey) {
 function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
   const [sseStatus, setSseStatus] = useState("connecting");
-  const [latestPacket, setLatestPacket] = useState(null);
 
-  // Convert API relative-seconds to absolute timestamps
-  const loadGateways = () =>
+  const refreshGateways = () =>
     fetchGateways()
       .then((data) => {
         const now = Date.now();
@@ -154,120 +155,92 @@ function useMultiGateway() {
       })
       .catch((err) => console.error("Failed to fetch gateways:", err));
 
-  // Initial load
+  // Initial REST load + refresh on visibility return. The worker's SSE
+  // keeps gateway state live even when the tab is backgrounded, but a
+  // server-side connection drop could leave us stale; the visibility
+  // refresh is a belt-and-suspenders REST sync.
   useEffect(() => {
-    loadGateways();
+    refreshGateways();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshGateways();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  // SSE connection with visibility-aware reconnect
-  const esRef = useRef(null);
-
-  const connectSse = () => {
-    if (esRef.current) esRef.current.close();
-    const es = createEventSource();
-    esRef.current = es;
-
-    es.onopen = () => setSseStatus("connected");
-    es.onerror = () => setSseStatus("reconnecting");
-
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        switch (data.type) {
-          case "gateway_connect":
-            setGateways((prev) => {
-              const existing = prev.find((g) => g.mac === data.mac);
-              if (existing) {
-                return prev.map((g) =>
-                  g.mac === data.mac
-                    ? {
-                        ...g,
-                        connected: true,
-                        connected_at: Date.now(),
-                        region: data.region,
-                      }
-                    : g,
-                );
-              }
-              return [
-                ...prev,
-                {
-                  mac: data.mac,
-                  public_key: "",
-                  region: data.region || "",
-                  connected: true,
-                  connected_at: Date.now(),
-                  last_uplink_at: null,
-                  uplink_count: 0,
-                  downlink_count: 0,
-                },
-              ];
-            });
-            break;
-
-          case "gateway_disconnect":
-            setGateways((prev) =>
-              prev.map((g) =>
-                g.mac === data.mac
-                  ? { ...g, connected: false, connected_at: null }
-                  : g,
-              ),
-            );
-            break;
-
-          case "uplink":
-            if (data.metadata) {
-              setLatestPacket({ mac: data.mac, metadata: data.metadata });
-            }
-            setGateways((prev) =>
-              prev.map((g) =>
-                g.mac === data.mac
-                  ? {
-                      ...g,
-                      uplink_count: (g.uplink_count || 0) + 1,
-                      last_uplink_at: Date.now(),
-                    }
-                  : g,
-              ),
-            );
-            break;
-
-          case "downlink":
-            if (data.metadata) {
-              setLatestPacket({ mac: data.mac, metadata: data.metadata });
-            }
-            setGateways((prev) =>
-              prev.map((g) =>
-                g.mac === data.mac
-                  ? { ...g, downlink_count: (g.downlink_count || 0) + 1 }
-                  : g,
-              ),
-            );
-            break;
-        }
-      } catch {
-        // ignore malformed events
-      }
-    };
-  };
-
-  // Initial SSE connection
+  // SSE lives in the worker. Subscribe to its broadcast stream and apply
+  // gateway list updates here.
   useEffect(() => {
     connectSse();
-    return () => esRef.current?.close();
-  }, []);
-
-  // Reconnect + refresh state when tab becomes visible again
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        loadGateways();
-        connectSse();
+    const off = onWorkerEvent((event) => {
+      switch (event.type) {
+        case "sse_status":
+          setSseStatus(event.status);
+          break;
+        case "gateway_connect":
+          setGateways((prev) => {
+            const existing = prev.find((g) => g.mac === event.mac);
+            if (existing) {
+              return prev.map((g) =>
+                g.mac === event.mac
+                  ? {
+                      ...g,
+                      connected: true,
+                      connected_at: Date.now(),
+                      region: event.region,
+                    }
+                  : g,
+              );
+            }
+            return [
+              ...prev,
+              {
+                mac: event.mac,
+                public_key: "",
+                region: event.region || "",
+                connected: true,
+                connected_at: Date.now(),
+                last_uplink_at: null,
+                uplink_count: 0,
+                downlink_count: 0,
+              },
+            ];
+          });
+          break;
+        case "gateway_disconnect":
+          setGateways((prev) =>
+            prev.map((g) =>
+              g.mac === event.mac
+                ? { ...g, connected: false, connected_at: null }
+                : g,
+            ),
+          );
+          break;
+        case "sse_uplink":
+          setGateways((prev) =>
+            prev.map((g) =>
+              g.mac === event.mac
+                ? {
+                    ...g,
+                    uplink_count: (g.uplink_count || 0) + 1,
+                    last_uplink_at: Date.now(),
+                  }
+                : g,
+            ),
+          );
+          break;
+        case "sse_downlink":
+          setGateways((prev) =>
+            prev.map((g) =>
+              g.mac === event.mac
+                ? { ...g, downlink_count: (g.downlink_count || 0) + 1 }
+                : g,
+            ),
+          );
+          break;
       }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () =>
-      document.removeEventListener("visibilitychange", handleVisibility);
+    });
+    return off;
   }, []);
 
   // Memoize derived counts so they are only recomputed when gateways changes,
@@ -289,7 +262,7 @@ function useMultiGateway() {
     };
   }, [gateways]);
 
-  return { gateways, summary, sseStatus, latestPacket };
+  return { gateways, summary, sseStatus };
 }
 
 // ---------------------------------------------------------------------------
@@ -653,7 +626,7 @@ function OuiCell({ devAddr, ouiLookup }) {
 // the Web Worker — see packetWorkerClient.
 // (Kept in this file to avoid exporting GatewayDetail's helper constellation —
 // FRAME_TYPES, FrameTypeBadge, NetIdCell, OuiCell, LiveTime, gatewayName.)
-function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) {
+function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
   const idRef = useRef(0);
   const [packets, setPackets] = useState([]);
   const [tracks, setTracks] = useState([]);
@@ -663,60 +636,53 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   const toggleType = (type) =>
     setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
 
-  // Initial fetch on mac change. Segmenter state lives in the worker — we
-  // post the freshly-fetched batch over and let the worker hand back the
-  // deduped, track-annotated set. `cancelled` guards against a slow response
-  // for the previous mac landing after the user picked a new one.
+  // Subscribe to the worker for this mac. The worker:
+  //   - replays an IDB snapshot (`cached_packets`) so the chart paints fast
+  //   - resolves the subscribe promise with the authoritative network batch
+  //   - streams live SSE-delivered packets as `subscribed_packet` broadcasts
+  // We attach the per-session `_id` here on the main thread so React keys
+  // stay stable (the worker has no notion of session id).
   useEffect(() => {
     let cancelled = false;
     setPinnedPacketId(null);
     setLoading(true);
     setPackets([]);
     setTracks([]);
-    fetchGatewayPackets(mac)
-      .then(async (data) => {
+
+    const tagPackets = (incoming) =>
+      incoming.map((p) => ({ ...p, _id: ++idRef.current }));
+
+    const off = onWorkerEvent((event) => {
+      if (cancelled || event.mac !== mac) return;
+      if (event.type === "cached_packets") {
+        setPackets(tagPackets(event.packets));
+        setTracks(event.tracks);
+      } else if (event.type === "subscribed_packet") {
+        const pkt = { ...event.packet, _id: ++idRef.current };
+        setPackets((prev) => {
+          const next = [...prev, pkt];
+          return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
+        });
+        setTracks(event.tracks);
+      }
+    });
+
+    subscribePackets(mac)
+      .then((res) => {
         if (cancelled) return;
-        const tagged = data.map((pkt) => ({ ...pkt, _id: ++idRef.current, _new: false }));
-        const res = await initPackets(mac, tagged);
-        if (cancelled) return;
-        setPackets(res.packets);
+        setPackets(tagPackets(res.packets));
         setTracks(res.tracks);
       })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error("Failed to fetch packets:", err);
-      })
       .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
+      off();
+      unsubscribePackets(mac);
     };
   }, [mac]);
-
-  // Append new packets from SSE. The worker dedupes multi-channel duplicates
-  // and assigns track ids; we just splice the result in.
-  useEffect(() => {
-    if (!latestPacket || latestPacket.mac !== mac) return;
-    let cancelled = false;
-    const pkt = { ...latestPacket.metadata, _id: ++idRef.current, _new: true };
-    ingestPacket(mac, pkt).then((res) => {
-      // Cancellation comes first — if the user switched Hotspots while this
-      // ingest was in flight, applying res.tracks would overwrite the new
-      // Hotspot's tracks state with a stale snapshot.
-      if (cancelled) return;
-      if (res.duplicate) return;
-      setPackets((prev) => {
-        const next = [...prev, res.packet];
-        return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
-      });
-      setTracks(res.tracks);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [latestPacket, mac]);
 
   // Hover state shared across chart, table, and (future) events bar so they
   // all light up together. `source` lets each surface decide what to render
@@ -1846,7 +1812,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
-  const { gateways, summary, sseStatus, latestPacket } = useMultiGateway();
+  const { gateways, summary, sseStatus } = useMultiGateway();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMac, setSelectedMac] = useState(
     () => searchParams.get("mac") || null,
@@ -1943,7 +1909,6 @@ export default function MultiGateway() {
           <GatewayInspector
             mac={selectedMac}
             publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
-            latestPacket={latestPacket}
             ouiLookup={ouiLookup}
             onClose={() => selectMac(null)}
           />
