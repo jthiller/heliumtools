@@ -73,7 +73,7 @@ const KNOWN_NET_IDS = {
   "000019": "NNNCo",
   "000022": "Comcast",
   "000023": "Ventia",
-  "000024": "Helium",
+  "000024": "Helium (Old)",
   "000030": "SoftBank",
   "000035": "Tencent",
   "000036": "Netze BW",

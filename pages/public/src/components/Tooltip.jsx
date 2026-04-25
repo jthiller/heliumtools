@@ -1,32 +1,32 @@
-import { Children, cloneElement, isValidElement, useId } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Hover/focus tooltip styled to match the app. Drop-in replacement for the
  * native `title` attribute when you need multi-line content, consistent
  * styling, or anything a browser tooltip can't render.
  *
+ * The tooltip body is portaled to document.body on show, so it escapes
+ * ancestor `overflow: hidden` / `overflow: auto` clipping (e.g., inside a
+ * rounded card or a horizontally-scrolling table). Position is computed
+ * from the trigger's viewport rect at show time and re-tracked on scroll
+ * and resize while visible.
+ *
  * Usage:
- *   <Tooltip content="Copy to clipboard">
- *     <button>...</button>
- *   </Tooltip>
+ *   <Tooltip content="Copy to clipboard"><button>...</button></Tooltip>
+ *   <Tooltip content={`Line 1\nLine 2`} placement="bottom"><span>hover me</span></Tooltip>
  *
- *   <Tooltip content={`Line 1\nLine 2`} placement="bottom">
- *     <span>hover me</span>
- *   </Tooltip>
- *
- * Strings render with `\n`-preserving layout (`whitespace-pre-line`). Pass a
- * ReactNode for structured content. Empty/null content makes this a no-op so
- * callers can pass conditional content without defensive wrappers.
- *
- * Accessibility: when the child is a single React element the tooltip
- * injects `aria-describedby` on it, and — for string content — falls back
- * to `aria-label` if the trigger doesn't already have one. This matches
- * the accessible-name role the native `title` attribute used to play for
- * icon-only triggers.
- *
- * Limitation: the wrapper is `position: relative`, so an absolutely-
- * positioned child will anchor to the Tooltip instead of the intended
- * ancestor. In that case keep the native `title` attribute.
+ * Empty/null content makes this a no-op so callers can pass conditional
+ * content without defensive wrappers.
  */
 export default function Tooltip({
   content,
@@ -35,10 +35,40 @@ export default function Tooltip({
   children,
 }) {
   const id = useId();
-  if (content == null || content === "") return children;
+  const triggerRef = useRef(null);
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState(null);
 
-  const positionClasses =
-    placement === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5";
+  const computeCoords = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCoords({
+      cx: rect.left + rect.width / 2,
+      top: rect.top,
+      bottom: rect.bottom,
+    });
+  }, []);
+
+  const show = useCallback(() => {
+    computeCoords();
+    setVisible(true);
+  }, [computeCoords]);
+  const hide = useCallback(() => setVisible(false), []);
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+    computeCoords();
+    const onScroll = () => computeCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [visible, computeCoords]);
+
+  if (content == null || content === "") return children;
 
   const only = Children.count(children) === 1 ? Children.only(children) : null;
   const trigger =
@@ -51,16 +81,37 @@ export default function Tooltip({
         })
       : children;
 
+  const positionStyle =
+    visible && coords
+      ? placement === "bottom"
+        ? { left: coords.cx, top: coords.bottom + 6, transform: "translateX(-50%)" }
+        : { left: coords.cx, top: coords.top - 6, transform: "translate(-50%, -100%)" }
+      : null;
+
   return (
-    <span className="group/tooltip relative inline-flex">
-      {trigger}
+    <>
       <span
-        role="tooltip"
-        id={id}
-        className={`pointer-events-none absolute left-1/2 z-50 w-max max-w-[min(20rem,90vw)] -translate-x-1/2 whitespace-pre-line rounded-md border border-border-muted bg-surface-raised px-2.5 py-1.5 text-xs leading-relaxed text-content opacity-0 shadow-soft transition-opacity duration-150 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100 ${positionClasses} ${className}`}
+        ref={triggerRef}
+        className="inline-flex"
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
       >
-        {content}
+        {trigger}
       </span>
-    </span>
+      {visible && coords &&
+        createPortal(
+          <span
+            role="tooltip"
+            id={id}
+            style={{ position: "fixed", ...positionStyle }}
+            className={`pointer-events-none z-[1000] w-max max-w-[min(20rem,90vw)] whitespace-pre-line rounded-md border border-border-muted bg-surface-raised px-2.5 py-1.5 text-xs leading-relaxed text-content shadow-soft ${className}`}
+          >
+            {content}
+          </span>,
+          document.body,
+        )}
+    </>
   );
 }

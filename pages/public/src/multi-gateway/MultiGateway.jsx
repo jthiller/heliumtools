@@ -50,8 +50,9 @@ import MapGL, { NavigationControl, Source, Layer } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import useDarkMode from "../lib/useDarkMode.js";
-import { createSegmenter, ingest, ingestBatch } from "./segmentation.js";
-import PacketScatter from "./PacketScatter.jsx";
+import { createSegmenter, ingest, ingestBatch, listTracks } from "./segmentation.js";
+import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
+import EventsBar from "./EventsBar.jsx";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -669,6 +670,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   useEffect(() => {
     let cancelled = false;
     segmenterRef.current = createSegmenter();
+    setPinnedPacketId(null);
     setLoading(true);
     fetchGatewayPackets(mac)
       .then((data) => {
@@ -706,46 +708,127 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
     }
   }, [latestPacket, mac]);
 
-  return (
-    <>
-      <PacketScatter
-        packets={packets}
-        segmenter={segmenterRef.current}
-        loading={loading}
-      />
-      <GatewayDetail
-        mac={mac}
-        publicKey={publicKey}
-        ouiLookup={ouiLookup}
-        onClose={onClose}
-        packets={packets}
-        loading={loading}
-        visibleTypes={visibleTypes}
-        toggleType={toggleType}
-      />
-    </>
-  );
-}
+  // Hover state shared across chart, table, and (future) events bar so they
+  // all light up together. `source` lets each surface decide what to render
+  // (e.g. the chart's pixel-anchored tooltip is suppressed when the hover
+  // came from the table because we don't have a screen position for it).
+  const [hover, setHover] = useState(null);
+  // Click-to-pin: chart dot click scrolls the matching row into view and
+  // persists a distinct accent so the user can read other rows without
+  // losing the find. Replaced when a different dot is clicked.
+  const [pinnedPacketId, setPinnedPacketId] = useState(null);
+  const [netIdFilter, setNetIdFilter] = useState("all");
+  const [trackFilter, setTrackFilter] = useState("all");
 
-function GatewayDetail({ mac, publicKey, ouiLookup, onClose, packets, loading, visibleTypes, toggleType }) {
-  const reversedPackets = useMemo(
-    () =>
-      [...packets]
-        .reverse()
-        .filter((pkt) => !pkt.frame_type || visibleTypes[pkt.frame_type] !== false)
-        .slice(0, MAX_PACKETS),
-    [packets, visibleTypes],
+  // packets-as-dep is what triggers re-render after ingestion; the segmenter
+  // mutates in place but its identity is read off the ref at call time.
+  const tracks = useMemo(() => listTracks(segmenterRef.current), [packets]);
+
+  const netIdOptions = useMemo(() => {
+    const set = new Set();
+    for (const t of tracks) if (t.netId) set.add(t.netId);
+    return [...set].sort();
+  }, [tracks]);
+
+  const isDark = useDarkMode();
+
+  // Disambiguate when multiple NetIDs resolve to the same operator name.
+  const netIdSelectOptions = useMemo(() => {
+    const operatorCounts = new Map();
+    for (const id of netIdOptions) {
+      const op = netIdToOperator(id) ?? id;
+      operatorCounts.set(op, (operatorCounts.get(op) ?? 0) + 1);
+    }
+    return [
+      { value: "all", label: "All", swatch: null },
+      ...netIdOptions.map((id) => {
+        const op = netIdToOperator(id) ?? id;
+        const label = operatorCounts.get(op) > 1 ? `${op} · ${id}` : op;
+        return { value: id, label, swatch: swatchColorForNetId(id, isDark) };
+      }),
+    ];
+  }, [netIdOptions, isDark]);
+
+  const trackOptions = useMemo(() => {
+    const list = tracks.filter((t) => {
+      if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
+      return t.count > 0;
+    });
+    list.sort((a, b) => b.count - a.count);
+    return list;
+  }, [tracks, netIdFilter]);
+
+  const trackSelectOptions = useMemo(
+    () => [
+      { value: "all", label: "All", swatch: null },
+      ...trackOptions.map((t) => ({
+        value: t.id,
+        label: `${t.devAddr} · ${t.id} (n=${t.count}, ~${Math.round(t.rssiMean)} dBm)`,
+        swatch: swatchColorForNetId(t.netId, isDark),
+      })),
+    ],
+    [trackOptions, isDark],
   );
+
+  // If the selected device disappears (NetID filter changed, or track was evicted), reset.
+  useEffect(() => {
+    if (trackFilter !== "all" && !trackOptions.some((t) => t.id === trackFilter)) {
+      setTrackFilter("all");
+    }
+  }, [trackOptions, trackFilter]);
+
+  const deviceCount = tracks.filter((t) => t.count > 0).length;
+  // Single time-axis domain shared by the scatter and the events bar so they
+  // stay in lockstep when filters narrow the visible range. Computed from
+  // the same filtered packet set the scatter actually plots (uplinks only,
+  // gated by visibleTypes / netIdFilter / trackFilter).
+  const xDomain = useMemo(() => {
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    for (const pkt of packets) {
+      if (!pkt._trackId || pkt._trackId === "joins" || pkt._trackId === "downlinks") continue;
+      if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) continue;
+      if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
+      if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
+      if (pkt.timestamp < xMin) xMin = pkt.timestamp;
+      if (pkt.timestamp > xMax) xMax = pkt.timestamp;
+    }
+    if (!Number.isFinite(xMin) || !Number.isFinite(xMax)) return null;
+    return [xMin, xMax === xMin ? xMax + 1 : xMax];
+  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+
+  const spanLabel = useMemo(() => {
+    if (packets.length === 0) return null;
+    let minTs = Infinity, maxTs = -Infinity;
+    for (const p of packets) {
+      if (p.timestamp < minTs) minTs = p.timestamp;
+      if (p.timestamp > maxTs) maxTs = p.timestamp;
+    }
+    const ms = maxTs - minTs;
+    if (ms < 60_000) return "<1 min";
+    const min = Math.round(ms / 60_000);
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const m = min - h * 60;
+    return m > 0 ? `${h} h ${m} min` : `${h} h`;
+  }, [packets]);
 
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h3 className="text-sm font-medium text-content-primary">
-          {gatewayName(publicKey) || "Recent Packets"}{" "}
-          <span className="font-mono text-xs text-content-tertiary">
-            {mac}
-          </span>
-        </h3>
+      {/* Persistent header — Hotspot identity stays visible across chart + table */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h3 className="text-sm font-medium text-content-primary">
+            {gatewayName(publicKey) || "Recent Packets"}
+          </h3>
+          <span className="font-mono text-xs text-content-tertiary">{mac}</span>
+          {deviceCount > 0 && (
+            <span className="text-xs text-content-tertiary">
+              · {deviceCount === 1 ? "1 device" : `${deviceCount} devices`}
+              {spanLabel && ` · ${spanLabel}`}
+            </span>
+          )}
+        </div>
         <button
           onClick={onClose}
           className="text-xs text-content-tertiary hover:text-content-secondary"
@@ -754,7 +837,27 @@ function GatewayDetail({ mac, publicKey, ouiLookup, onClose, packets, loading, v
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+      {/* Unified filter row — applies to BOTH chart and table */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2 text-xs">
+        <label className="flex items-center gap-1.5 text-content-secondary">
+          NetID
+          <ColoredSelect
+            label="NetID filter"
+            value={netIdFilter}
+            onChange={setNetIdFilter}
+            options={netIdSelectOptions}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-content-secondary">
+          Device
+          <ColoredSelect
+            label="Device filter"
+            value={trackFilter}
+            onChange={setTrackFilter}
+            options={trackSelectOptions}
+          />
+        </label>
+        <span className="text-border-muted select-none">|</span>
         {ALL_FRAME_TYPES.map((type, i) => {
           const info = FRAME_TYPES[type];
           const prevGroup = i > 0 ? FRAME_TYPES[ALL_FRAME_TYPES[i - 1]].group : info.group;
@@ -764,7 +867,7 @@ function GatewayDetail({ mac, publicKey, ouiLookup, onClose, packets, loading, v
                 <span className="text-border-muted select-none">|</span>
               )}
               <Tooltip content={info.title}>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs">
+                <label className="inline-flex cursor-pointer items-center gap-1.5">
                   <input
                     type="checkbox"
                     checked={visibleTypes[type]}
@@ -784,81 +887,153 @@ function GatewayDetail({ mac, publicKey, ouiLookup, onClose, packets, loading, v
         })}
       </div>
 
-      {loading ? (
-        <div className="p-6 text-center text-sm text-content-tertiary">
-          Loading...
-        </div>
-      ) : packets.length === 0 ? (
-        <div className="p-6 text-center text-sm text-content-tertiary">
-          No packets recorded yet.
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
-                <th className="px-4 py-2">Time</th>
-                <th className="px-4 py-2">Type</th>
-                <th className="px-4 py-2">NetID</th>
-                <th className="px-4 py-2">DevAddr</th>
-                <th className="px-4 py-2">Helium OUI</th>
-                <th className="px-4 py-2 text-right">FCnt</th>
-                <th className="px-4 py-2 text-right">FPort</th>
-                <th className="px-4 py-2 text-right">RSSI</th>
-                <th className="px-4 py-2 text-right">SNR</th>
-                <th className="px-4 py-2 text-right">Freq</th>
-                <th className="px-4 py-2">SF</th>
-                <th className="px-4 py-2 text-right">Size</th>
+      <PacketScatter
+        packets={packets}
+        segmenter={segmenterRef.current}
+        loading={loading}
+        netIdFilter={netIdFilter}
+        trackFilter={trackFilter}
+        visibleTypes={visibleTypes}
+        xDomain={xDomain}
+        hover={hover}
+        setHover={setHover}
+        onPickPacket={setPinnedPacketId}
+      />
+
+      <EventsBar
+        packets={packets}
+        visibleTypes={visibleTypes}
+        xDomain={xDomain}
+        hover={hover}
+        setHover={setHover}
+      />
+
+      <GatewayDetail
+        ouiLookup={ouiLookup}
+        packets={packets}
+        loading={loading}
+        visibleTypes={visibleTypes}
+        netIdFilter={netIdFilter}
+        trackFilter={trackFilter}
+        hover={hover}
+        setHover={setHover}
+        pinnedPacketId={pinnedPacketId}
+      />
+    </div>
+  );
+}
+
+function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
+  const visiblePackets = useMemo(() => {
+    return [...packets].reverse().filter((pkt) => {
+      if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) return false;
+      if (netIdFilter !== "all" && pkt._netId !== netIdFilter) return false;
+      if (trackFilter !== "all" && pkt._trackId !== trackFilter) return false;
+      return true;
+    }).slice(0, MAX_PACKETS);
+  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+
+  const pinnedRowRef = useRef(null);
+  // When the user clicks a chart dot, scroll the matching row into view.
+  // Centred-block keeps the row away from sticky headers / fold edges.
+  useEffect(() => {
+    if (pinnedPacketId == null) return;
+    pinnedRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [pinnedPacketId]);
+
+  if (loading) {
+    return (
+      <div className="border-t border-border p-6 text-center text-sm text-content-tertiary">
+        Loading...
+      </div>
+    );
+  }
+  if (visiblePackets.length === 0) {
+    return (
+      <div className="border-t border-border p-6 text-center text-sm text-content-tertiary">
+        No packets to display.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto border-t border-border mt-3">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
+            <th className="px-4 py-2">Time</th>
+            <th className="px-4 py-2">Type</th>
+            <th className="px-4 py-2">NetID</th>
+            <th className="px-4 py-2">DevAddr</th>
+            <th className="px-4 py-2">Helium OUI</th>
+            <th className="px-4 py-2 text-right">FCnt</th>
+            <th className="px-4 py-2 text-right">FPort</th>
+            <th className="px-4 py-2 text-right">RSSI</th>
+            <th className="px-4 py-2 text-right">SNR</th>
+            <th className="px-4 py-2 text-right">Freq</th>
+            <th className="px-4 py-2">SF</th>
+            <th className="px-4 py-2 text-right">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visiblePackets.map((pkt) => {
+            const trackAccent = hover?.trackId && pkt._trackId === hover.trackId;
+            const isPinned = pinnedPacketId != null && pkt._id === pinnedPacketId;
+            return (
+              <tr
+                key={pkt._id}
+                ref={isPinned ? pinnedRowRef : undefined}
+                onMouseEnter={() => {
+                  if (!pkt._trackId) return; // joins/downlinks not segmented
+                  setHover({
+                    source: "table",
+                    trackId: pkt._trackId,
+                    payload: { ...pkt, devAddr: pkt.dev_addr, frameType: pkt.frame_type },
+                    intervalMs: null,
+                  });
+                }}
+                onMouseLeave={() => setHover(null)}
+                className={`border-t border-border-muted text-content-secondary transition-colors ${
+                  pkt._new ? "animate-pulse-once" : ""
+                } ${
+                  isPinned
+                    ? "bg-accent/25 outline outline-2 -outline-offset-2 outline-accent/60"
+                    : trackAccent
+                      ? "bg-accent/10"
+                      : ""
+                }`}
+              >
+                <td className="px-4 py-2 text-xs">
+                  <LiveTime value={pkt.timestamp} formatter={formatTimeAgo} />
+                </td>
+                <td className="px-4 py-2">
+                  <FrameTypeBadge frameType={pkt.frame_type} />
+                </td>
+                <td className="px-4 py-2">
+                  <NetIdCell devAddr={pkt.dev_addr} />
+                </td>
+                <td className="px-4 py-2 font-mono text-xs text-content-secondary">
+                  {pkt.dev_addr || "-"}
+                </td>
+                <td className="px-4 py-2">
+                  <OuiCell devAddr={pkt.dev_addr} ouiLookup={ouiLookup} />
+                </td>
+                <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
+                  {pkt.fcnt ?? "-"}
+                </td>
+                <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
+                  {pkt.fport ?? "-"}
+                </td>
+                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.rssi} dBm</td>
+                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.snr?.toFixed(1)} dB</td>
+                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.frequency?.toFixed(1)}</td>
+                <td className="px-4 py-2 font-mono text-xs">{pkt.spreading_factor}</td>
+                <td className="px-4 py-2 text-right font-mono text-xs">{pkt.payload_size} B</td>
               </tr>
-            </thead>
-            <tbody>
-              {reversedPackets.map((pkt) => (
-                <tr
-                  key={pkt._id}
-                  className={`border-t border-border-muted text-content-secondary ${pkt._new ? "animate-pulse-once" : ""}`}
-                >
-                  <td className="px-4 py-2 text-xs">
-                    <LiveTime value={pkt.timestamp} formatter={formatTimeAgo} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <FrameTypeBadge frameType={pkt.frame_type} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <NetIdCell devAddr={pkt.dev_addr} />
-                  </td>
-                  <td className="px-4 py-2 font-mono text-xs text-content-secondary">
-                    {pkt.dev_addr || "-"}
-                  </td>
-                  <td className="px-4 py-2">
-                    <OuiCell devAddr={pkt.dev_addr} ouiLookup={ouiLookup} />
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
-                    {pkt.fcnt ?? "-"}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs text-content-secondary">
-                    {pkt.fport ?? "-"}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs">
-                    {pkt.rssi} dBm
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs">
-                    {pkt.snr?.toFixed(1)} dB
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs">
-                    {pkt.frequency?.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-2 font-mono text-xs">
-                    {pkt.spreading_factor}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs">
-                    {pkt.payload_size} B
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

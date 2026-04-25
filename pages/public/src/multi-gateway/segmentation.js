@@ -161,6 +161,12 @@ function trimDedupe(state) {
 }
 
 export function ingest(state, pkt) {
+  // Cache the resolved NetID on every packet that has a dev_addr so downstream
+  // consumers (chart, table filter) read pkt._netId directly instead of
+  // re-parsing on every render.
+  if (pkt.dev_addr && pkt._netId === undefined) {
+    pkt._netId = devAddrToNetId(pkt.dev_addr)?.netId ?? null;
+  }
   if (JOIN_FRAMES.has(pkt.frame_type)) {
     updateTrack(state.joins, pkt);
     return { trackId: JOINS_ID, duplicate: false };
@@ -212,25 +218,3 @@ export function ingestBatch(state, pkts) {
 export function listTracks(state) {
   return [...state.tracks.values()];
 }
-
-// djb2 → hue. Deterministic, stable across renders.
-function hashHue(s) {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-  }
-  return h % 360;
-}
-
-const JOINS_COLOR = "#8b5cf6";       // violet
-const DOWNLINKS_COLOR = "#0ea5e9";   // sky
-
-export function colorForTrack(id, isDark = false) {
-  if (id === JOINS_ID) return JOINS_COLOR;
-  if (id === DOWNLINKS_ID) return DOWNLINKS_COLOR;
-  const h = hashHue(id);
-  const l = isDark ? 60 : 50;
-  return `hsl(${h}, 65%, ${l}%)`;
-}
-
-export const BUCKET_IDS = { joins: JOINS_ID, downlinks: DOWNLINKS_ID };
