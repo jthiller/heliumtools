@@ -1,31 +1,43 @@
-// Thin promise-based wrapper around packetWorker.js. The worker is spawned
-// lazily on first use and lives for the page lifetime — same identity across
-// Hotspot switches, segmenters keyed by mac inside the worker.
+// Main-thread API for packetWorker.js.
+//
+// Two channels go through the same worker port:
+//   - request/response — promise-based, matched by an internal `requestId`.
+//     Used for one-shot operations (subscribePackets, unsubscribePackets).
+//   - broadcasts — events with no requestId. Listeners registered via
+//     `onWorkerEvent` receive every broadcast; consumers filter by `type`.
+//
+// The worker is spawned lazily on first use and lives for the page
+// lifetime. Per-mac state inside the worker is keyed by mac, so a single
+// worker instance handles every Hotspot the user opens.
 
 import PacketWorker from "./packetWorker.js?worker";
 
 let worker = null;
 let nextRequestId = 1;
 const pending = new Map();
+const listeners = new Set();
 
 function ensureWorker() {
   if (worker) return worker;
   worker = new PacketWorker();
   worker.onmessage = (e) => {
-    const { requestId } = e.data;
-    const resolver = pending.get(requestId);
-    if (!resolver) return;
-    pending.delete(requestId);
-    resolver(e.data);
+    const data = e.data;
+    if (data.requestId != null) {
+      const resolver = pending.get(data.requestId);
+      if (!resolver) return;
+      pending.delete(data.requestId);
+      resolver(data);
+      return;
+    }
+    for (const fn of listeners) fn(data);
   };
-  // If the worker faults, drain pending callers with an empty error result
-  // rather than letting them hang forever. Callers downstream guard on the
-  // shape of the response (`packets` / `tracks` arrays), so an empty object
-  // is a safe poison pill: state stays empty, no crash.
+  // Drain pending and listeners on a fatal worker error so the page doesn't
+  // hang. State stays empty (safe poison-pill shape).
   const fail = (msg) => {
     console.error("[multi-gateway worker]", msg);
     for (const [id, resolve] of pending) resolve({ error: msg, packets: [], tracks: [] });
     pending.clear();
+    for (const fn of listeners) fn({ type: "worker_error", message: msg });
   };
   worker.onerror = (e) => fail(e.message || "worker error");
   worker.onmessageerror = () => fail("worker message error");
@@ -41,22 +53,28 @@ function call(message) {
   });
 }
 
-// Initialize segmenter state for `mac` from a freshly fetched packet batch.
-// Replaces any existing state. Returns the kept (deduped) packets with
-// `_trackId` filled in plus a compact tracks summary.
-export function initPackets(mac, packets) {
-  return call({ type: "init", mac, packets });
+// One-shot: ask the worker to start its SSE connection. Idempotent.
+export function connectSse() {
+  ensureWorker().postMessage({ type: "connect_sse" });
 }
 
-// Ingest a single SSE-delivered packet. Returns the annotated packet (with
-// `_trackId`), whether it was a duplicate, and the updated tracks summary.
-export function ingestPacket(mac, packet) {
-  return call({ type: "ingest", mac, packet });
+// Register interest in a specific mac. Worker fetches the initial batch,
+// runs it through the segmenter, and resolves with the kept packets +
+// tracks summary. Live SSE packets for the same mac follow as broadcasts
+// (`type: "subscribed_packet"`). May also broadcast `cached_packets` first
+// if the IDB cache has a stale snapshot we can paint immediately.
+export function subscribePackets(mac) {
+  return call({ type: "subscribe_packets", mac });
 }
 
-// Drop the segmenter state for `mac`. Useful if we ever evict mac state on
-// the client side (currently unused — the worker hangs onto state for the
-// page lifetime).
-export function resetPackets(mac) {
-  return call({ type: "reset", mac });
+export function unsubscribePackets(mac) {
+  return call({ type: "unsubscribe_packets", mac });
+}
+
+// Subscribe to all worker broadcasts. Returns an unsubscribe fn. Consumers
+// switch on `event.type` — see worker source for the wire types.
+export function onWorkerEvent(handler) {
+  ensureWorker();
+  listeners.add(handler);
+  return () => listeners.delete(handler);
 }
