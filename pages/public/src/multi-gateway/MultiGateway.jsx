@@ -51,6 +51,7 @@ import useDarkMode from "../lib/useDarkMode.js";
 import {
   connectSse,
   onWorkerEvent,
+  reconnectSse,
   subscribePackets,
   unsubscribePackets,
 } from "./packetWorkerClient.js";
@@ -156,13 +157,17 @@ function useMultiGateway() {
       .catch((err) => console.error("Failed to fetch gateways:", err));
 
   // Initial REST load + refresh on visibility return. The worker's SSE
-  // keeps gateway state live even when the tab is backgrounded, but a
-  // server-side connection drop could leave us stale; the visibility
-  // refresh is a belt-and-suspenders REST sync.
+  // keeps gateway state live even when the tab is backgrounded, but mobile
+  // browsers occasionally suspend the worker mid-stream — the resumed
+  // EventSource is dead without firing an error. Visibility return both
+  // refreshes the gateway list via REST and pokes the worker to rebuild
+  // its SSE connection from scratch so live updates resume.
   useEffect(() => {
     refreshGateways();
     const onVisible = () => {
-      if (document.visibilityState === "visible") refreshGateways();
+      if (document.visibilityState !== "visible") return;
+      refreshGateways();
+      reconnectSse();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
