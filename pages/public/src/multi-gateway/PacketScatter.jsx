@@ -456,6 +456,7 @@ export default function PacketScatter({
   visibleTypes,
   hover,
   setHover,
+  onPickPacket,
 }) {
   const isDark = useDarkMode();
   const hoveredId = hover?.trackId ?? null;
@@ -543,11 +544,12 @@ export default function PacketScatter({
             });
           }}
           onMouseLeave={() => setHover(null)}
+          onClick={() => onPickPacket?.(dotProps.payload._id)}
           style={{ cursor: "pointer" }}
         />
       );
     },
-    [hoveredId, segmenter, setHover],
+    [hoveredId, segmenter, setHover, onPickPacket],
   );
 
   return (

@@ -670,6 +670,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   useEffect(() => {
     let cancelled = false;
     segmenterRef.current = createSegmenter();
+    setPinnedPacketId(null);
     setLoading(true);
     fetchGatewayPackets(mac)
       .then((data) => {
@@ -712,6 +713,10 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   // (e.g. the chart's pixel-anchored tooltip is suppressed when the hover
   // came from the table because we don't have a screen position for it).
   const [hover, setHover] = useState(null);
+  // Click-to-pin: chart dot click scrolls the matching row into view and
+  // persists a distinct accent so the user can read other rows without
+  // losing the find. Replaced when a different dot is clicked.
+  const [pinnedPacketId, setPinnedPacketId] = useState(null);
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
 
@@ -870,6 +875,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
         visibleTypes={visibleTypes}
         hover={hover}
         setHover={setHover}
+        onPickPacket={setPinnedPacketId}
       />
 
       <EventsBar
@@ -888,12 +894,13 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
         trackFilter={trackFilter}
         hover={hover}
         setHover={setHover}
+        pinnedPacketId={pinnedPacketId}
       />
     </div>
   );
 }
 
-function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover }) {
+function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
   const visiblePackets = useMemo(() => {
     return [...packets].reverse().filter((pkt) => {
       if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) return false;
@@ -902,6 +909,14 @@ function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter,
       return true;
     }).slice(0, MAX_PACKETS);
   }, [packets, visibleTypes, netIdFilter, trackFilter]);
+
+  const pinnedRowRef = useRef(null);
+  // When the user clicks a chart dot, scroll the matching row into view.
+  // Centred-block keeps the row away from sticky headers / fold edges.
+  useEffect(() => {
+    if (pinnedPacketId == null) return;
+    pinnedRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [pinnedPacketId]);
 
   if (loading) {
     return (
@@ -939,10 +954,12 @@ function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter,
         </thead>
         <tbody>
           {visiblePackets.map((pkt) => {
-            const accent = hover?.trackId && pkt._trackId === hover.trackId;
+            const trackAccent = hover?.trackId && pkt._trackId === hover.trackId;
+            const isPinned = pinnedPacketId != null && pkt._id === pinnedPacketId;
             return (
               <tr
                 key={pkt._id}
+                ref={isPinned ? pinnedRowRef : undefined}
                 onMouseEnter={() => {
                   if (!pkt._trackId) return; // joins/downlinks not segmented
                   setHover({
@@ -955,7 +972,13 @@ function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter,
                 onMouseLeave={() => setHover(null)}
                 className={`border-t border-border-muted text-content-secondary transition-colors ${
                   pkt._new ? "animate-pulse-once" : ""
-                } ${accent ? "bg-accent/10" : ""}`}
+                } ${
+                  isPinned
+                    ? "bg-accent/25 outline outline-2 -outline-offset-2 outline-accent/60"
+                    : trackAccent
+                      ? "bg-accent/10"
+                      : ""
+                }`}
               >
                 <td className="px-4 py-2 text-xs">
                   <LiveTime value={pkt.timestamp} formatter={formatTimeAgo} />
