@@ -938,10 +938,20 @@ function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter,
 
   const pinnedRowRef = useRef(null);
   // When the user clicks a chart dot, scroll the matching row into view.
-  // Centred-block keeps the row away from sticky headers / fold edges.
+  // Hand-rolled scroll instead of scrollIntoView: Safari silently drops
+  // smooth scrollIntoView in some flows, but window.scrollTo is reliable
+  // everywhere. The rAF defer also lets the row's ref settle after React
+  // commits the new isPinned state.
   useEffect(() => {
     if (pinnedPacketId == null) return;
-    pinnedRowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const id = requestAnimationFrame(() => {
+      const el = pinnedRowRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const top = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2;
+      window.scrollTo({ top, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(id);
   }, [pinnedPacketId]);
 
   if (loading) {
