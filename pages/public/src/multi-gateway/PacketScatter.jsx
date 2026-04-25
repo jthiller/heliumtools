@@ -393,7 +393,7 @@ function BandOverlay({ hoveredId, pointsByTrack, color }) {
   );
 }
 
-function formatTimeTick(ts) {
+export function formatTimeTick(ts) {
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
@@ -552,7 +552,7 @@ export default function PacketScatter({
 
   return (
     <div
-      className="relative h-64 px-2 py-3"
+      className="relative h-64 px-2 pb-0 pt-3"
       data-chart-host
       // Safari occasionally drops SVG <circle> mouseleave when the cursor
       // exits the dot into blank space fast. Belt-and-suspenders: clear on
@@ -569,16 +569,17 @@ export default function PacketScatter({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+            <ScatterChart margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors?.grid} />
+              {/* Tick labels live below the events bar instead of here, so the
+                  scatter and the events bar visually share one time axis. */}
               <XAxis
                 type="number"
                 dataKey="timestamp"
                 domain={["dataMin", "dataMax"]}
-                tickFormatter={formatTimeTick}
-                tick={{ fontSize: 11, fill: chartColors?.tickText }}
-                stroke={chartColors?.grid}
-                minTickGap={48}
+                tick={false}
+                axisLine={false}
+                height={0}
               />
               <YAxis
                 type="number"

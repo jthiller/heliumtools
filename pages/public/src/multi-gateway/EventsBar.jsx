@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { readChartColors } from "../lib/chartColors.js";
+import { formatTimeTick } from "./PacketScatter.jsx";
 
 // Two-lane timeline of join + downlink events. Shares its X axis with
 // PacketScatter so the vertical correlation cursor lines up across both.
@@ -14,7 +15,9 @@ import { readChartColors } from "../lib/chartColors.js";
 const LANE_H = 14;
 const MARKER_R = 4;
 const VPAD = 6;
-const TOTAL_H = LANE_H * 2 + VPAD * 2;
+const TICK_H = 18; // axis labels live here, below the markers
+const TOTAL_H = LANE_H * 2 + VPAD * 2 + TICK_H;
+const TICK_COUNT = 5; // evenly spaced across the visible time range
 
 const PLOT_LEFT = 78;   // recharts YAxis width 70 + ScatterChart margin.left 8
 const PLOT_RIGHT = 16;  // ScatterChart margin.right
@@ -150,6 +153,27 @@ export default function EventsBar({ packets, visibleTypes, hover, setHover }) {
 
           <Lane events={events.joins} y={joinY} fill={joinFill} shape={trianglePath} hover={hover} setHover={setHover} xScale={xScale} />
           <Lane events={events.downs} y={downY} fill={downFill} shape={diamondPath} hover={hover} setHover={setHover} xScale={xScale} />
+
+          {/* Time-axis tick labels for the whole chart+events stack — the
+              chart hides its own X labels so they only render here. */}
+          {Array.from({ length: TICK_COUNT }, (_, i) => {
+            const t = i / (TICK_COUNT - 1);
+            const ts = xRange.xMin + t * (xRange.xMax - xRange.xMin);
+            const x = xScale(ts);
+            return (
+              <text
+                key={i}
+                x={x}
+                y={TOTAL_H - 4}
+                textAnchor={i === 0 ? "start" : i === TICK_COUNT - 1 ? "end" : "middle"}
+                fontSize={11}
+                fill={chartColors?.tickText}
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              >
+                {formatTimeTick(ts)}
+              </text>
+            );
+          })}
         </>
       )}
     </svg>
