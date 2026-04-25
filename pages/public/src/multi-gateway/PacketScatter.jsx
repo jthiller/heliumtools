@@ -524,38 +524,52 @@ export default function PacketScatter({
   const dotShape = useCallback(
     (dotProps) => {
       const dimmed = hoveredId != null && hoveredId !== dotProps.payload.trackId;
+      const onEnter = (e) => {
+        const hitRect = e.currentTarget.getBoundingClientRect();
+        const hostRect = e.currentTarget
+          .closest("[data-chart-host]")
+          ?.getBoundingClientRect();
+        if (!hostRect) return;
+        const track = segmenter.tracks.get(dotProps.payload.trackId);
+        const intervalMs =
+          track && track.count > 1
+            ? (track.lastTs - track.firstTs) / (track.count - 1)
+            : null;
+        setHover({
+          source: "chart",
+          trackId: dotProps.payload.trackId,
+          payload: dotProps.payload,
+          intervalMs,
+          x: hitRect.left + hitRect.width / 2 - hostRect.left,
+          y: hitRect.top + hitRect.height / 2 - hostRect.top,
+          hostWidth: hostRect.width,
+        });
+      };
+      const onLeave = () => setHover(null);
+      const onPick = () => onPickPacket?.(dotProps.payload._id);
       return (
-        <circle
-          cx={dotProps.cx}
-          cy={dotProps.cy}
-          r={4}
-          fill={colorForPacket(dotProps.payload)}
-          fillOpacity={dimmed ? 0.15 : 0.9}
-          onMouseEnter={(e) => {
-            const dotRect = e.currentTarget.getBoundingClientRect();
-            const hostRect = e.currentTarget
-              .closest("[data-chart-host]")
-              ?.getBoundingClientRect();
-            if (!hostRect) return;
-            const track = segmenter.tracks.get(dotProps.payload.trackId);
-            const intervalMs =
-              track && track.count > 1
-                ? (track.lastTs - track.firstTs) / (track.count - 1)
-                : null;
-            setHover({
-              source: "chart",
-              trackId: dotProps.payload.trackId,
-              payload: dotProps.payload,
-              intervalMs,
-              x: dotRect.left + dotRect.width / 2 - hostRect.left,
-              y: dotRect.top + dotRect.height / 2 - hostRect.top,
-              hostWidth: hostRect.width,
-            });
-          }}
-          onMouseLeave={() => setHover(null)}
-          onClick={() => onPickPacket?.(dotProps.payload._id)}
-          style={{ cursor: "pointer" }}
-        />
+        <g style={{ cursor: "pointer" }}>
+          {/* Visible dot — fully painted, ignores pointer events so the
+              hit overlay below catches clicks even on tiny 4px targets
+              (Safari's hit-testing on small SVG circles is flaky). */}
+          <circle
+            cx={dotProps.cx}
+            cy={dotProps.cy}
+            r={4}
+            fill={colorForPacket(dotProps.payload)}
+            fillOpacity={dimmed ? 0.15 : 0.9}
+            pointerEvents="none"
+          />
+          <circle
+            cx={dotProps.cx}
+            cy={dotProps.cy}
+            r={10}
+            fill="transparent"
+            onMouseEnter={onEnter}
+            onMouseLeave={onLeave}
+            onClick={onPick}
+          />
+        </g>
       );
     },
     [hoveredId, segmenter, setHover, onPickPacket],
