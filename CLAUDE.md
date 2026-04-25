@@ -109,6 +109,31 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 - Supports both Helium B58 and Solana base58 address formats (manual checksum verification, no `@helium/address` dependency in worker)
 - Polls `getSignatureStatuses` in batches of 256, sends in batches of 50
 
+## Multi-Gateway — Key Concepts
+
+### Architecture
+- Live operator dashboard for a fleet of Hotspots: gateway list (top), per-Hotspot inspector card on selection.
+- Inspector card stacks: header → unified filter row → canvas RSSI scatter chart → SVG events bar (joins/downlinks) → packet table. All four share the same hover state so a chart hover highlights the corresponding row in the table and the matching event marker, and vice versa.
+- Live packet ingestion via SSE (`worker/src/tools/multi-gateway/`). Each packet gets `_id` (monotonic, parent-assigned) and `_new: true` for SSE-delivered vs `false` for initial fetch.
+
+### Client-side segmentation (`segmentation.js`)
+- Two devices can share a DevAddr, so the chart groups packets into "tracks" by frame-counter continuity (`FCNT_GAP_MAX = 64`, with wrap support near the 16-bit top). RSSI is a tie-breaker only (`RSSI_HARD_LIMIT_DBM = 15`).
+- Joins/downlinks aren't track-correlatable (joins have no dev_addr; downlinks use a separate counter), so they're bucketed into synthetic `joins` / `downlinks` track ids and rendered in the events bar instead of the scatter chart.
+- Pure module — no React deps; callers hold state in a ref and call `ingest()` / `ingestBatch()`.
+
+### Canvas chart (`PacketScatter.jsx`)
+- Hand-rolled `<canvas>` (replaced recharts; PR #53). Single rAF loop reads from a `stateRef` so prop churn doesn't tear it down.
+- xMax anchored to `Date.now()` per frame for smooth live-time scrolling; xMin stays at the earliest visible packet.
+- Hover band uses a proportionally-damped Catmull-Rom interpolation — both x and y tangent components scale by the same factor when the natural offset would extend past the next point, preventing overshoot/loops on irregular timing without flattening normal curves.
+- Sticky-band hover: `pointInBand()` keeps the highlight while the cursor is inside the band envelope; tooltip anchors to the closest dot in the hovered track.
+- New-packet pulse keys off the parent's `_new` flag; first non-empty load is snapshotted as "already seen" so initial render and Hotspot switches don't pulse en masse.
+- `PLOT_LEFT`, `PLOT_RIGHT`, and `PULSE_DURATION_MS` are exported and consumed by `EventsBar` so the two surfaces' time axes line up to the pixel.
+
+### Layout invariants
+- Chart and events bar share the same `px-2` horizontal inset and the same xDomain prop. Don't change one without checking both.
+- Sibling components rendered with `key={mac}` need *unique* keys among siblings (use `scatter-${mac}`, `events-${mac}`) — duplicate keys leak old DOM on Hotspot switch.
+- `GatewayDetail` is `memo`'d. Hover-induced re-renders still pass through (the table needs hover for row highlighting), but other parent state changes (the 1Hz `nowTick` heartbeat) skip it.
+
 ## Deployment
 
 Both Pages and Worker auto-deploy from the `main` branch — any merge or direct push to `main` ships to production. There is no staging gate between commit and prod, so treat every commit to `main` as a production release. `wrangler deploy --env production` is only needed for out-of-band force deploys (e.g., config rollbacks).
