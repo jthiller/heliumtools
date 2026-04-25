@@ -614,7 +614,7 @@ function HoverTooltip({ hover }) {
 
 export default function PacketScatter({
   packets,
-  segmenter,
+  tracksById,
   loading,
   netIdFilter = "all",
   trackFilter = "all",
@@ -829,7 +829,7 @@ export default function PacketScatter({
   }, []);
 
   const setHoverFor = (pt, scales) => {
-    const track = segmenter.tracks.get(pt.trackId);
+    const track = tracksById.get(pt.trackId);
     const intervalMs = track && track.count > 1
       ? (track.lastTs - track.firstTs) / (track.count - 1)
       : null;
