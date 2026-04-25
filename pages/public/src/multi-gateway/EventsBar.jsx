@@ -112,7 +112,7 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
         newOnes.push({
           id: pkt._id,
           timestamp: pkt.timestamp,
-          lane: JOIN_TYPES.has(pkt.frame_type) ? "joins" : "downs",
+          lane: JOIN_TYPES.has(pkt.frame_type) ? "joins" : "downlinks",
         });
       }
     }
@@ -129,7 +129,7 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
   // X-axis labels) must keep rendering even when both lanes are empty.
   const visibleLanes = [
     { label: "Joins", events: events.joins, fill: isDark ? JOIN_COLOR.dark : JOIN_COLOR.light, shape: trianglePath },
-    { label: "Downs", events: events.downs, fill: isDark ? DOWN_COLOR.dark : DOWN_COLOR.light, shape: diamondPath },
+    { label: "Downlinks", events: events.downs, fill: isDark ? DOWN_COLOR.dark : DOWN_COLOR.light, shape: diamondPath },
   ].filter((l) => l.events.length > 0);
   const lanesTopPad = visibleLanes.length > 0 ? VPAD : 0;
   const totalH = lanesTopPad + visibleLanes.length * LANE_H + TICK_H;
