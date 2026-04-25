@@ -594,7 +594,12 @@ export default function PacketScatter({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+            {/* accessibilityLayer={false} drops the recharts-surface
+                tabindex=0 + keyboard-cursor layer. Safari treats the
+                mid-click focus shift onto the SVG as a cancel and
+                swallows the dot's onClick; we don't expose chart-level
+                keyboard nav anyway. */}
+            <ScatterChart accessibilityLayer={false} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors?.grid} />
               {/* Tick labels live below the events bar instead of here, so the
                   scatter and the events bar visually share one time axis. */}

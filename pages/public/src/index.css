@@ -68,3 +68,12 @@ input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   @apply appearance-none;
 }
+
+/* recharts adds tabindex=0 on its root SVG for keyboard accessibility,
+   which paints a blue focus outline that distracts from the chart's
+   click interaction. We don't expose chart-level keyboard nav, so the
+   outline is just visual noise. */
+.recharts-surface:focus,
+.recharts-surface:focus-visible {
+  outline: none;
+}
