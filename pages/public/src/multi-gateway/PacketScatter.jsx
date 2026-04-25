@@ -454,6 +454,7 @@ export default function PacketScatter({
   netIdFilter = "all",
   trackFilter = "all",
   visibleTypes,
+  xDomain,
   hover,
   setHover,
   onPickPacket,
@@ -578,7 +579,8 @@ export default function PacketScatter({
               <XAxis
                 type="number"
                 dataKey="timestamp"
-                domain={["dataMin", "dataMax"]}
+                domain={xDomain ?? ["dataMin", "dataMax"]}
+                allowDataOverflow
                 tick={false}
                 axisLine={false}
                 height={0}

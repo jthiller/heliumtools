@@ -62,7 +62,7 @@ function Lane({ events, y, fill, shape, hover, setHover, xScale }) {
   });
 }
 
-export default function EventsBar({ packets, visibleTypes, hover, setHover }) {
+export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHover }) {
   const isDark = useDarkMode();
   const chartColors = useMemo(readChartColors, [isDark]);
   const svgRef = useRef(null);
@@ -77,7 +77,11 @@ export default function EventsBar({ packets, visibleTypes, hover, setHover }) {
     return () => ro.disconnect();
   }, []);
 
+  // Domain comes from the parent so it's identical to the scatter's. If the
+  // parent passes nothing (no uplinks visible), fall back to packet extents
+  // so the bar can still render its joins/downlinks meaningfully.
   const xRange = useMemo(() => {
+    if (xDomain) return { xMin: xDomain[0], xMax: xDomain[1] };
     if (packets.length === 0) return null;
     let xMin = Infinity;
     let xMax = -Infinity;
@@ -87,7 +91,7 @@ export default function EventsBar({ packets, visibleTypes, hover, setHover }) {
     }
     if (xMin === xMax) xMax = xMin + 1;
     return { xMin, xMax };
-  }, [packets]);
+  }, [packets, xDomain]);
 
   const events = useMemo(() => {
     const joins = [];
@@ -110,7 +114,11 @@ export default function EventsBar({ packets, visibleTypes, hover, setHover }) {
   const xScale = (ts) => {
     if (!xRange) return PLOT_LEFT;
     const t = (ts - xRange.xMin) / (xRange.xMax - xRange.xMin);
-    return PLOT_LEFT + t * (svgWidth - PLOT_LEFT - PLOT_RIGHT);
+    // Clamp inner width so the scale stays sane while the SVG is being sized
+    // (initial layout, narrow containers) — otherwise the term goes negative
+    // and markers fly off to the left.
+    const innerWidth = Math.max(1, svgWidth - PLOT_LEFT - PLOT_RIGHT);
+    return PLOT_LEFT + t * innerWidth;
   };
   const cursorX = hover && xRange ? xScale(hover.payload.timestamp) : null;
 

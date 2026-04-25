@@ -720,7 +720,9 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
 
-  const tracks = useMemo(() => listTracks(segmenterRef.current), [segmenterRef.current, packets]); // eslint-disable-line react-hooks/exhaustive-deps
+  // packets-as-dep is what triggers re-render after ingestion; the segmenter
+  // mutates in place but its identity is read off the ref at call time.
+  const tracks = useMemo(() => listTracks(segmenterRef.current), [packets]);
 
   const netIdOptions = useMemo(() => {
     const set = new Set();
@@ -776,6 +778,25 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   }, [trackOptions, trackFilter]);
 
   const deviceCount = tracks.filter((t) => t.count > 0).length;
+  // Single time-axis domain shared by the scatter and the events bar so they
+  // stay in lockstep when filters narrow the visible range. Computed from
+  // the same filtered packet set the scatter actually plots (uplinks only,
+  // gated by visibleTypes / netIdFilter / trackFilter).
+  const xDomain = useMemo(() => {
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    for (const pkt of packets) {
+      if (!pkt._trackId || pkt._trackId === "joins" || pkt._trackId === "downlinks") continue;
+      if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) continue;
+      if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
+      if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
+      if (pkt.timestamp < xMin) xMin = pkt.timestamp;
+      if (pkt.timestamp > xMax) xMax = pkt.timestamp;
+    }
+    if (!Number.isFinite(xMin) || !Number.isFinite(xMax)) return null;
+    return [xMin, xMax === xMin ? xMax + 1 : xMax];
+  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
     let minTs = Infinity, maxTs = -Infinity;
@@ -873,6 +894,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
         netIdFilter={netIdFilter}
         trackFilter={trackFilter}
         visibleTypes={visibleTypes}
+        xDomain={xDomain}
         hover={hover}
         setHover={setHover}
         onPickPacket={setPinnedPacketId}
@@ -881,6 +903,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
       <EventsBar
         packets={packets}
         visibleTypes={visibleTypes}
+        xDomain={xDomain}
         hover={hover}
         setHover={setHover}
       />
