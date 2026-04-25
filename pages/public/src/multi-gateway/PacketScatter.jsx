@@ -912,7 +912,7 @@ export default function PacketScatter({
         </div>
       ) : !hasData ? (
         <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
-          No packets to chart yet.
+          No uplinks to chart yet.
         </div>
       ) : (
         <canvas
