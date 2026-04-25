@@ -95,6 +95,19 @@ function ensureSse() {
   };
 }
 
+// Force a fresh SSE connection. Called when the page returns to focus —
+// EventSource's built-in auto-reconnect occasionally gets stuck on mobile
+// (the socket is dead but no error event fires after the tab was
+// backgrounded), so the main thread's visibility listener pokes us to
+// rebuild the connection from scratch.
+function reconnectSse() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  ensureSse();
+}
+
 async function subscribePackets(mac) {
   // Replace any stale state for this mac so a switch can't bleed across.
   segmenters.set(mac, createSegmenter());
@@ -151,6 +164,9 @@ self.onmessage = async (e) => {
     case "unsubscribe_packets":
       unsubscribePackets(msg.mac);
       self.postMessage({ type: "unsubscribe_packets_done", requestId: msg.requestId, mac: msg.mac });
+      break;
+    case "reconnect_sse":
+      reconnectSse();
       break;
   }
 };

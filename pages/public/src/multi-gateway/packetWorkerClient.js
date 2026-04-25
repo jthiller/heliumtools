@@ -58,6 +58,14 @@ export function connectSse() {
   ensureWorker().postMessage({ type: "connect_sse" });
 }
 
+// Force the worker to drop its current EventSource and open a fresh one.
+// Called from the page's visibility listener — mobile browsers occasionally
+// suspend the worker mid-SSE, and the resumed connection is dead without
+// firing an error event. This pokes the worker to rebuild from scratch.
+export function reconnectSse() {
+  ensureWorker().postMessage({ type: "reconnect_sse" });
+}
+
 // Register interest in a specific mac. Worker fetches the initial batch,
 // runs it through the segmenter, and resolves with the kept packets +
 // tracks summary. Live SSE packets for the same mac follow as broadcasts
