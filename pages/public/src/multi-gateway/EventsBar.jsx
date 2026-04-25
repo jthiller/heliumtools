@@ -1,25 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { readChartColors } from "../lib/chartColors.js";
-import { formatTimeTick } from "./PacketScatter.jsx";
+import { formatTimeTick, PLOT_LEFT, PLOT_RIGHT, PULSE_DURATION_MS } from "./PacketScatter.jsx";
 
 // Two-lane timeline of join + downlink events. Shares its X axis with
-// PacketScatter so the vertical correlation cursor lines up across both.
-//
-// We don't render through recharts here because the bar has no Y dimension
-// and the markers are tiny — a plain SVG keeps the surface simple. The trick
-// to staying aligned with the chart's X scale is mirroring its plot-area
-// margins (yAxis width + chart margin.left on the left, chart margin.right
-// on the right). If those margins change in PacketScatter, update them here.
+// PacketScatter — PLOT_LEFT and PLOT_RIGHT come from there so the chart's
+// plot area and the events bar line up to the pixel.
 
 const LANE_H = 14;
 const MARKER_R = 4;
 const VPAD = 6;
 const TICK_H = 18; // axis labels live here, below the markers
 const TICK_COUNT = 5; // evenly spaced across the visible time range
-
-const PLOT_LEFT = 78;   // recharts YAxis width 70 + ScatterChart margin.left 8
-const PLOT_RIGHT = 16;  // ScatterChart margin.right
 
 const JOIN_TYPES = new Set(["JoinRequest", "JoinAccept", "RejoinRequest", "Proprietary"]);
 const DOWN_TYPES = new Set(["UnconfirmedDown", "ConfirmedDown"]);
@@ -105,6 +97,34 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
     return { joins, downs };
   }, [packets, visibleTypes]);
 
+  // Pulse rings for joins/downs that arrive via SSE (parent flags those with
+  // `_new: true`). Mirrors the chart's animation so chart and events bar
+  // signal new data the same way. Each `_id` is processed once.
+  const [pulses, setPulses] = useState([]);
+  const seenRef = useRef(new Set());
+  useEffect(() => {
+    const newOnes = [];
+    const allEvents = [...events.joins, ...events.downs];
+    for (const pkt of allEvents) {
+      if (seenRef.current.has(pkt._id)) continue;
+      seenRef.current.add(pkt._id);
+      if (pkt._new) {
+        newOnes.push({
+          id: pkt._id,
+          timestamp: pkt.timestamp,
+          lane: JOIN_TYPES.has(pkt.frame_type) ? "joins" : "downs",
+        });
+      }
+    }
+    if (!newOnes.length) return;
+    setPulses((prev) => [...prev, ...newOnes]);
+    const ids = new Set(newOnes.map((n) => n.id));
+    const tid = setTimeout(() => {
+      setPulses((prev) => prev.filter((p) => !ids.has(p.id)));
+    }, PULSE_DURATION_MS + 50);
+    return () => clearTimeout(tid);
+  }, [events]);
+
   // Collapse lanes that have nothing to show. Tick labels (the chart's only
   // X-axis labels) must keep rendering even when both lanes are empty.
   const visibleLanes = [
@@ -153,6 +173,23 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
                 <Lane events={l.events} y={l.y} fill={l.fill} shape={l.shape} hover={hover} setHover={setHover} xScale={xScale} />
               </g>
             ))}
+
+            {pulses.map((p) => {
+              const lane = visibleLanes.find((l) => l.label.toLowerCase() === p.lane);
+              if (!lane) return null;
+              return (
+                <circle
+                  key={p.id}
+                  cx={xScale(p.timestamp)}
+                  cy={lane.y}
+                  r={MARKER_R}
+                  fill="none"
+                  stroke={lane.fill}
+                  strokeWidth={2}
+                  className="eventsbar-pulse"
+                />
+              );
+            })}
 
             {cursorX != null && (
               <line

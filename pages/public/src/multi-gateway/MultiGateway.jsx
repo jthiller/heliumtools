@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Fragment, memo, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
@@ -716,6 +716,17 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   const [pinnedPacketId, setPinnedPacketId] = useState(null);
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
+  // Anchors the events bar's right edge to current time. The canvas chart
+  // ignores this and reads Date.now() directly per rAF frame — it stays
+  // 60fps smooth regardless. The events bar isn't on its own animation
+  // loop, so a 1Hz tick is the sweet spot: fast enough that the markers
+  // slide perceptibly with the chart, slow enough to skip a re-render
+  // cascade through GatewayInspector's children every quarter-second.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // packets-as-dep is what triggers re-render after ingestion; the segmenter
   // mutates in place but its identity is read off the ref at call time.
@@ -783,7 +794,6 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   // timestamps fall outside the uplinks' range.
   const xDomain = useMemo(() => {
     let xMin = Infinity;
-    let xMax = -Infinity;
     for (const pkt of packets) {
       if (!pkt.frame_type) continue;
       if (visibleTypes[pkt.frame_type] === false) continue;
@@ -794,11 +804,13 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
         if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
       }
       if (pkt.timestamp < xMin) xMin = pkt.timestamp;
-      if (pkt.timestamp > xMax) xMax = pkt.timestamp;
     }
-    if (!Number.isFinite(xMin) || !Number.isFinite(xMax)) return null;
-    return [xMin, xMax === xMin ? xMax + 1 : xMax];
-  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+    if (!Number.isFinite(xMin)) return null;
+    // Right edge anchored to current time so the chart visibly slides left
+    // as time passes; xMin stays anchored to the earliest visible packet.
+    const xMax = Math.max(xMin + 1, nowTick);
+    return [xMin, xMax];
+  }, [packets, visibleTypes, netIdFilter, trackFilter, nowTick]);
 
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
@@ -840,57 +852,63 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
         </button>
       </div>
 
-      {/* Unified filter row — applies to BOTH chart and table */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2 text-xs">
-        <label className="flex items-center gap-1.5 text-content-secondary">
-          NetID
-          <ColoredSelect
-            label="NetID filter"
-            value={netIdFilter}
-            onChange={setNetIdFilter}
-            options={netIdSelectOptions}
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-content-secondary">
-          Device
-          <ColoredSelect
-            label="Device filter"
-            value={trackFilter}
-            onChange={setTrackFilter}
-            options={trackSelectOptions}
-          />
-        </label>
-        <span className="text-border-muted select-none">|</span>
-        {ALL_FRAME_TYPES.map((type, i) => {
-          const info = FRAME_TYPES[type];
-          const prevGroup = i > 0 ? FRAME_TYPES[ALL_FRAME_TYPES[i - 1]].group : info.group;
-          return (
-            <Fragment key={type}>
-              {info.group !== prevGroup && (
-                <span className="text-border-muted select-none">|</span>
-              )}
-              <Tooltip content={info.title}>
-                <label className="inline-flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={visibleTypes[type]}
-                    onChange={() => toggleType(type)}
-                    className="h-3 w-3 rounded border-border text-accent focus:ring-accent"
-                  />
-                  <info.icon
-                    className={`h-3.5 w-3.5 ${visibleTypes[type] ? info.color : "text-content-tertiary"}`}
-                  />
-                  <span className={visibleTypes[type] ? "text-content-secondary" : "text-content-tertiary"}>
-                    {info.label || info.title}
-                  </span>
-                </label>
-              </Tooltip>
-            </Fragment>
-          );
-        })}
+      {/* Unified filter rows — both apply to BOTH chart and table.
+          Dropdowns and checkboxes split across two lines so the checkbox
+          row can sit cleanly without the dropdowns crowding it. */}
+      <div className="border-b border-border px-4 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <label className="flex items-center gap-1.5 text-content-secondary">
+            NetID
+            <ColoredSelect
+              label="NetID filter"
+              value={netIdFilter}
+              onChange={setNetIdFilter}
+              options={netIdSelectOptions}
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-content-secondary">
+            Device
+            <ColoredSelect
+              label="Device filter"
+              value={trackFilter}
+              onChange={setTrackFilter}
+              options={trackSelectOptions}
+            />
+          </label>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {ALL_FRAME_TYPES.map((type, i) => {
+            const info = FRAME_TYPES[type];
+            const prevGroup = i > 0 ? FRAME_TYPES[ALL_FRAME_TYPES[i - 1]].group : info.group;
+            return (
+              <Fragment key={type}>
+                {info.group !== prevGroup && (
+                  <span className="text-border-muted select-none">|</span>
+                )}
+                <Tooltip content={info.title}>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={visibleTypes[type]}
+                      onChange={() => toggleType(type)}
+                      className="h-3 w-3 rounded border-border text-accent focus:ring-accent"
+                    />
+                    <info.icon
+                      className={`h-3.5 w-3.5 ${visibleTypes[type] ? info.color : "text-content-tertiary"}`}
+                    />
+                    <span className={visibleTypes[type] ? "text-content-secondary" : "text-content-tertiary"}>
+                      {info.label || info.title}
+                    </span>
+                  </label>
+                </Tooltip>
+              </Fragment>
+            );
+          })}
+        </div>
       </div>
 
       <PacketScatter
+        key={`scatter-${mac}`}
         packets={packets}
         segmenter={segmenterRef.current}
         loading={loading}
@@ -904,6 +922,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
       />
 
       <EventsBar
+        key={`events-${mac}`}
         packets={packets}
         visibleTypes={visibleTypes}
         xDomain={xDomain}
@@ -926,7 +945,13 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   );
 }
 
-function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
+// memo: hover state changes ~60Hz during chart hover; without this the
+// table re-renders every mouse move, which is the dominant frame-time cost.
+// memo's default shallow prop check is fine here — packets/visibleTypes are
+// stable refs across hover updates, hover/setHover are the only churning
+// props, and the visiblePackets useMemo + per-row isPinned check handle the
+// rest.
+const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
   const visiblePackets = useMemo(() => {
     return [...packets].reverse().filter((pkt) => {
       if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) return false;
@@ -1049,7 +1074,7 @@ function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter,
       </table>
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Map Modal
