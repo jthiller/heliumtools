@@ -77,13 +77,54 @@ function handleSseMessage(data) {
   }
 }
 
+// Once EventSource enters CLOSED (server returned non-2xx, e.g. a CF gateway
+// timeout) it stops auto-retrying. We rebuild manually after a short delay so
+// status doesn't stick at "reconnecting" forever. Also covers the case where
+// a transient blip keeps firing onerror without ever firing onopen — we
+// schedule an unconditional rebuild as a safety net while still letting the
+// EventSource's own retry win first.
+const RECONNECT_AFTER_CLOSED_MS = 2000;
+const STALE_RECONNECT_MS = 15000;
+let staleTimer = null;
+
+function clearStaleTimer() {
+  if (staleTimer) {
+    clearTimeout(staleTimer);
+    staleTimer = null;
+  }
+}
+
+function armStaleTimer() {
+  clearStaleTimer();
+  staleTimer = setTimeout(() => {
+    // If we've been stuck in not-connected this long, the built-in retry
+    // isn't going to recover. Rebuild from scratch.
+    if (sseStatus !== "connected") reconnectSse();
+  }, STALE_RECONNECT_MS);
+}
+
 function ensureSse() {
   if (eventSource) return;
   setSseStatus("connecting");
+  armStaleTimer();
   const es = createEventSource();
   eventSource = es;
-  es.onopen = () => setSseStatus("connected");
-  es.onerror = () => setSseStatus("reconnecting");
+  es.onopen = () => {
+    clearStaleTimer();
+    setSseStatus("connected");
+  };
+  es.onerror = () => {
+    setSseStatus("reconnecting");
+    if (es.readyState === EventSource.CLOSED) {
+      // Auto-retry has given up. Schedule a manual rebuild.
+      clearStaleTimer();
+      setTimeout(() => {
+        if (eventSource === es) reconnectSse();
+      }, RECONNECT_AFTER_CLOSED_MS);
+    } else {
+      armStaleTimer();
+    }
+  };
   es.onmessage = (event) => {
     let data;
     try {
@@ -95,12 +136,12 @@ function ensureSse() {
   };
 }
 
-// Force a fresh SSE connection. Called when the page returns to focus —
-// EventSource's built-in auto-reconnect occasionally gets stuck on mobile
-// (the socket is dead but no error event fires after the tab was
-// backgrounded), so the main thread's visibility listener pokes us to
-// rebuild the connection from scratch.
+// Force a fresh SSE connection. Called from the page's visibility listener
+// and from our own CLOSED/stale-retry recovery paths — EventSource's
+// built-in auto-reconnect gives up once the server returns a non-2xx, and
+// can also silently stall after a tab suspension on mobile.
 function reconnectSse() {
+  clearStaleTimer();
   if (eventSource) {
     eventSource.close();
     eventSource = null;
