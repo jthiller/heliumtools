@@ -917,7 +917,7 @@ export default function PacketScatter({
       ) : (
         <canvas
           ref={canvasRef}
-          className="absolute cursor-pointer"
+          className={`absolute ${hover?.source === "chart" ? "cursor-pointer" : ""}`}
           style={{ left: 8, top: 12 }}
           onPointerMove={onPointerMove}
           onPointerLeave={() => {
