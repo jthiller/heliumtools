@@ -161,6 +161,12 @@ function trimDedupe(state) {
 }
 
 export function ingest(state, pkt) {
+  // Cache the resolved NetID on every packet that has a dev_addr so downstream
+  // consumers (chart, table filter) read pkt._netId directly instead of
+  // re-parsing on every render.
+  if (pkt.dev_addr && pkt._netId === undefined) {
+    pkt._netId = devAddrToNetId(pkt.dev_addr)?.netId ?? null;
+  }
   if (JOIN_FRAMES.has(pkt.frame_type)) {
     updateTrack(state.joins, pkt);
     return { trackId: JOINS_ID, duplicate: false };

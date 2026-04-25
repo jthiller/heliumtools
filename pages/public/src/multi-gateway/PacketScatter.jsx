@@ -87,7 +87,7 @@ function colorForPacket(point) {
   return point.frameType === "ConfirmedUp" ? point.fillDark : point.fillLight;
 }
 
-function swatchColorForNetId(netId, isDark) {
+export function swatchColorForNetId(netId, isDark) {
   return colorForNetIdShade(netId, false, isDark);
 }
 
@@ -97,7 +97,7 @@ function swatchColorForNetId(netId, isDark) {
 // arrow-key navigation, Enter/Space to select, Escape to close. Focus stays
 // on the button throughout so screen readers and keyboard users get a
 // predictable flow.
-function ColoredSelect({ value, onChange, options, label }) {
+export function ColoredSelect({ value, onChange, options, label }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() =>
     Math.max(0, options.findIndex((o) => o.value === value)),
@@ -393,7 +393,7 @@ function BandOverlay({ hoveredId, pointsByTrack, color }) {
   );
 }
 
-function formatTimeTick(ts) {
+export function formatTimeTick(ts) {
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
@@ -447,17 +447,21 @@ function HoverTooltip({ hover }) {
   );
 }
 
-export default function PacketScatter({ packets, segmenter, loading }) {
+export default function PacketScatter({
+  packets,
+  segmenter,
+  loading,
+  netIdFilter = "all",
+  trackFilter = "all",
+  visibleTypes,
+  xDomain,
+  hover,
+  setHover,
+  onPickPacket,
+}) {
   const isDark = useDarkMode();
-  // `hover` carries both the trackId (for band + label colouring + dimming)
-  // and the full payload/screen-coords we need to render our own tooltip.
-  const [hover, setHover] = useState(null);
   const hoveredId = hover?.trackId ?? null;
-  const [netIdFilter, setNetIdFilter] = useState("all");
-  const [trackFilter, setTrackFilter] = useState("all");
 
-  // Only uplink device tracks are charted. Joins have no dev_addr/fcnt so they
-  // can't be segmented; downlinks have no meaningful RSSI on the gateway side.
   const tracks = useMemo(() => {
     return listTracks(segmenter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -471,55 +475,16 @@ export default function PacketScatter({ packets, segmenter, loading }) {
 
   const chartColors = useMemo(readChartColors, [isDark]);
 
-  const netIdOptions = useMemo(() => {
-    const set = new Set();
-    for (const t of tracks) if (t.netId) set.add(t.netId);
-    return [...set].sort();
-  }, [tracks]);
-
-  // Disambiguate when multiple NetIDs resolve to the same operator name.
-  const netIdSelectOptions = useMemo(() => {
-    const operatorCounts = new Map();
-    for (const id of netIdOptions) {
-      const op = netIdToOperator(id) ?? id;
-      operatorCounts.set(op, (operatorCounts.get(op) ?? 0) + 1);
-    }
-    return [
-      { value: "all", label: "All", swatch: null },
-      ...netIdOptions.map((id) => {
-        const op = netIdToOperator(id) ?? id;
-        const label = operatorCounts.get(op) > 1 ? `${op} · ${id}` : op;
-        return { value: id, label, swatch: swatchColorForNetId(id, isDark) };
-      }),
-    ];
-  }, [netIdOptions, isDark]);
-
-  const trackOptions = useMemo(() => {
-    const list = tracks.filter((t) => {
-      if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
-      return t.count > 0;
-    });
-    list.sort((a, b) => b.count - a.count);
-    return list;
-  }, [tracks, netIdFilter]);
-
-  // If the selected device disappears (NetID filter changed, or track was evicted), reset.
-  useEffect(() => {
-    if (trackFilter !== "all" && !trackOptions.some((t) => t.id === trackFilter)) {
-      setTrackFilter("all");
-    }
-  }, [trackOptions, trackFilter]);
-
-  // Group packets into per-track arrays for recharts Scatter series. Bake
-  // NetID + colour onto each point so the per-dot shape fn doesn't re-parse
-  // the devAddr or recompute the palette on every hover-triggered re-render.
+  // Only uplink packets land on the RSSI chart. Joins/downlinks live in the
+  // events bar instead. visibleTypes still gates which uplink subtypes show.
   const pointsByTrack = useMemo(() => {
     const map = new Map();
     for (const pkt of packets) {
       const tid = pkt._trackId;
       if (!tid) continue;
+      if (visibleTypes && pkt.frame_type && visibleTypes[pkt.frame_type] === false) continue;
       if (!map.has(tid)) map.set(tid, []);
-      const netId = pkt.dev_addr ? devAddrToNetId(pkt.dev_addr)?.netId : null;
+      const netId = pkt._netId ?? null;
       const point = {
         timestamp: pkt.timestamp,
         rssi: pkt.rssi,
@@ -531,19 +496,18 @@ export default function PacketScatter({ packets, segmenter, loading }) {
         frameType: pkt.frame_type,
         trackId: tid,
         netId,
+        _id: pkt._id,
       };
       point.fillLight = colorForNetIdShade(netId, false, isDark);
       point.fillDark = colorForNetIdShade(netId, true, isDark);
       map.get(tid).push(point);
     }
     return map;
-  }, [packets, isDark]);
+  }, [packets, isDark, visibleTypes]);
 
   const filterOpts = { netIdFilter, trackFilter };
   const visibleTracks = tracks.filter((t) => trackVisible(t, filterOpts));
   const hasData = visibleTracks.some((t) => (pointsByTrack.get(t.id)?.length ?? 0) > 0);
-
-  const deviceCount = tracks.filter((t) => t.count > 0).length;
 
   // One stable shape fn across all Scatter series — opacity/color derive from
   // the dot's own payload so the closure only changes on hover/theme, not per
@@ -571,6 +535,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
                 ? (track.lastTs - track.firstTs) / (track.count - 1)
                 : null;
             setHover({
+              source: "chart",
               trackId: dotProps.payload.trackId,
               payload: dotProps.payload,
               intervalMs,
@@ -580,75 +545,23 @@ export default function PacketScatter({ packets, segmenter, loading }) {
             });
           }}
           onMouseLeave={() => setHover(null)}
+          onClick={() => onPickPacket?.(dotProps.payload._id)}
           style={{ cursor: "pointer" }}
         />
       );
     },
-    [hoveredId, segmenter],
+    [hoveredId, segmenter, setHover, onPickPacket],
   );
-  const spanLabel = useMemo(() => {
-    if (packets.length === 0) return null;
-    let minTs = Infinity, maxTs = -Infinity;
-    for (const p of packets) {
-      if (p.timestamp < minTs) minTs = p.timestamp;
-      if (p.timestamp > maxTs) maxTs = p.timestamp;
-    }
-    const ms = maxTs - minTs;
-    if (ms < 60_000) return "<1 min";
-    const min = Math.round(ms / 60_000);
-    if (min < 60) return `${min} min`;
-    const h = Math.floor(min / 60);
-    const m = min - h * 60;
-    return m > 0 ? `${h} h ${m} min` : `${h} h`;
-  }, [packets]);
 
   return (
-    <div className="mt-4 rounded-xl border border-border bg-surface-raised shadow-soft">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <h3 className="text-sm font-medium text-content-primary">
-          {deviceCount === 1 ? "1 Estimated Device" : `${deviceCount} Estimated Devices`}
-          {spanLabel && (
-            <span className="ml-2 text-xs font-normal text-content-tertiary">
-              ({spanLabel})
-            </span>
-          )}
-        </h3>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <label className="flex items-center gap-1.5 text-content-secondary">
-            NetID
-            <ColoredSelect
-              label="NetID filter"
-              value={netIdFilter}
-              onChange={setNetIdFilter}
-              options={netIdSelectOptions}
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-content-secondary">
-            Device
-            <select
-              value={trackFilter}
-              onChange={(e) => setTrackFilter(e.target.value)}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
-            >
-              <option value="all">All</option>
-              {trackOptions.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.devAddr} · {t.id} (n={t.count}, ~{Math.round(t.rssiMean)} dBm)
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div
-        className="relative h-64 px-2 py-3"
-        data-chart-host
-        // Safari occasionally drops SVG <circle> mouseleave when the cursor
-        // exits the dot into blank space fast. Belt-and-suspenders: clear on
-        // the chart host's mouseleave too so the tooltip always dismisses.
-        onMouseLeave={() => setHover(null)}
-      >
+    <div
+      className="relative h-64 px-2 pb-0 pt-3"
+      data-chart-host
+      // Safari occasionally drops SVG <circle> mouseleave when the cursor
+      // exits the dot into blank space fast. Belt-and-suspenders: clear on
+      // the chart host's mouseleave too so the tooltip always dismisses.
+      onMouseLeave={() => setHover(null)}
+    >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
             Loading...
@@ -659,16 +572,18 @@ export default function PacketScatter({ packets, segmenter, loading }) {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+            <ScatterChart margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors?.grid} />
+              {/* Tick labels live below the events bar instead of here, so the
+                  scatter and the events bar visually share one time axis. */}
               <XAxis
                 type="number"
                 dataKey="timestamp"
-                domain={["dataMin", "dataMax"]}
-                tickFormatter={formatTimeTick}
-                tick={{ fontSize: 11, fill: chartColors?.tickText }}
-                stroke={chartColors?.grid}
-                minTickGap={48}
+                domain={xDomain ?? ["dataMin", "dataMax"]}
+                allowDataOverflow
+                tick={false}
+                axisLine={false}
+                height={0}
               />
               <YAxis
                 type="number"
@@ -720,8 +635,7 @@ export default function PacketScatter({ packets, segmenter, loading }) {
             </ScatterChart>
           </ResponsiveContainer>
         )}
-        {hover && <HoverTooltip hover={hover} />}
-      </div>
+      {hover && hover.source === "chart" && <HoverTooltip hover={hover} />}
     </div>
   );
 }
