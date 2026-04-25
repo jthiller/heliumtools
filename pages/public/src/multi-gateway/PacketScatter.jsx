@@ -230,13 +230,18 @@ function halfWidthForSnr(snr) {
   return HALF_WIDTH_MAX_DB - (HALF_WIDTH_MAX_DB - HALF_WIDTH_MIN_DB) * t;
 }
 
-// Plot geometry. Exported because EventsBar shares these same insets so the
-// two surfaces' time axes line up to the pixel; if you change them here,
-// both update together. PLOT_LEFT carries the y-axis label gutter on its
-// left edge; PLOT_RIGHT mirrors a small right inset.
-export const PLOT_LEFT = 78;
+// Plot geometry. Both the chart and the events bar share these insets so
+// their time axes line up to the pixel; if you change one here, both
+// surfaces update together. The y-axis label gutter shrinks on narrow
+// viewports so mobile screens get more plot area.
 export const PLOT_RIGHT = 16;
 const PLOT_TOP = 8;
+export function plotLeftFor(width) {
+  // Mobile value has to clear the widest y-axis label ("-115 dBm") plus a
+  // small margin from the container edge; the wrapper has no horizontal
+  // padding on small screens so the inset comes from the canvas alone.
+  return width < 640 ? 68 : 78;
+}
 const HIT_RADIUS = 12;     // px from cursor to consider a dot hovered
 const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
 const DOT_RADIUS = 4;
@@ -309,7 +314,7 @@ function niceTicks(min, max, count = 5) {
 function buildScales({ width, height, xDomain, yMin, yMax }) {
   if (!width || !height) return null;
   if (yMax === yMin) yMax = yMin + 1;
-  const xLeft = PLOT_LEFT;
+  const xLeft = plotLeftFor(width);
   const xRight = width - PLOT_RIGHT;
   const yTop = PLOT_TOP;
   const yBottom = height;
@@ -544,9 +549,19 @@ function drawFcntLabels(ctx, scales, hoveredPts, color, isDark, progress) {
   ctx.restore();
 }
 
-export function formatTimeTick(ts) {
-  const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+// Relative time label for X-axis ticks. The right edge of the chart is
+// always anchored to "now" (Date.now() / xRange.xMax), so the labels read
+// as offsets into the past — easier to scan at a glance than HH:MM:SS,
+// and shorter so we fit more ticks on a narrow viewport.
+export function formatTimeTick(ts, now) {
+  const diff = Math.max(0, now - ts);
+  if (diff < 5_000) return "now";
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+  const min = diff / 60_000;
+  if (min < 60) return `${Math.round(min)}m ago`;
+  const h = min / 60;
+  if (h < 24) return `${Math.round(h)}h ago`;
+  return `${Math.round(h / 24)}d ago`;
 }
 
 // `~` prefix signals a rounded estimate — exact precision isn't useful for an
@@ -574,7 +589,7 @@ function HoverTooltip({ hover }) {
   const flipRight = hover.x > hover.hostWidth * TOOLTIP_FLIP_THRESHOLD;
   return (
     <div
-      className="pointer-events-none absolute z-10 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs shadow-soft"
+      className="pointer-events-none absolute z-10 rounded-md border border-border bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
       style={{
         left: flipRight ? undefined : hover.x + 12,
         right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,
@@ -693,23 +708,21 @@ export default function PacketScatter({
   const canvasRef = useRef(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
+  // contentRect (vs getBoundingClientRect) excludes padding, so size already
+  // matches the canvas's inner area whatever the wrapper's responsive
+  // padding ends up at.
   useEffect(() => {
     const el = hostRef.current;
     if (!el) return;
-    const apply = () => {
-      const r = el.getBoundingClientRect();
-      setSize({ w: r.width, h: r.height });
-    };
-    const ro = new ResizeObserver(apply);
+    const ro = new ResizeObserver(([entry]) => {
+      setSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+    });
     ro.observe(el);
-    apply();
     return () => ro.disconnect();
   }, []);
 
-  // Canvas inset: mirror the chart wrapper's px-2 + pt-3 so the plot shares
-  // an inner box with the events bar's px-2 SVG.
-  const innerW = Math.max(0, size.w - 16);
-  const innerH = Math.max(0, size.h - 12);
+  const innerW = size.w;
+  const innerH = size.h;
 
   const yTicks = useMemo(() => yRange ? niceTicks(yRange.yMin, yRange.yMax, 5) : [], [yRange]);
 
@@ -820,17 +833,41 @@ export default function PacketScatter({
     const intervalMs = track && track.count > 1
       ? (track.lastTs - track.firstTs) / (track.count - 1)
       : null;
+    // x/y reported in HOST coords (canvas coords + the canvas's offset
+    // inside the wrapper) so the absolute-positioned HoverTooltip lands at
+    // the dot. Canvas inset is responsive (0 on mobile, 8 on sm+) so we
+    // read offsetLeft/offsetTop instead of hard-coding.
+    const canvas = canvasRef.current;
+    const offsetLeft = canvas?.offsetLeft ?? 0;
+    const offsetTop = canvas?.offsetTop ?? 0;
     setHover({
       source: "chart",
       trackId: pt.trackId,
       payload: pt,
       intervalMs,
-      // x/y reported in HOST coords (canvas coords + 8/12 inset) so the
-      // absolute-positioned HoverTooltip lands correctly.
-      x: scales.xScale(pt.timestamp) + 8,
-      y: scales.yScale(pt.rssi) + 12,
+      x: scales.xScale(pt.timestamp) + offsetLeft,
+      y: scales.yScale(pt.rssi) + offsetTop,
       hostWidth: size.w,
     });
+  };
+
+  // Find the visiblePoints entry closest to canvas-local (cx, cy), or null
+  // if nothing is within HIT_RADIUS. Pulled out so onPointerMove and onClick
+  // (the touch-tap path) share the same hit logic.
+  const hitTest = (cx, cy, scales) => {
+    if (cx < scales.xLeft - HIT_RADIUS || cx > scales.xRight + HIT_RADIUS) return null;
+    let bestPt = null;
+    let bestD = HIT_RADIUS_SQ;
+    for (const p of visiblePoints) {
+      const dx = scales.xScale(p.timestamp) - cx;
+      const dy = scales.yScale(p.rssi) - cy;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        bestPt = p;
+      }
+    }
+    return bestPt;
   };
 
   const onPointerMove = (e) => {
@@ -864,34 +901,38 @@ export default function PacketScatter({
       return;
     }
 
-    if (cx < scales.xLeft - HIT_RADIUS || cx > scales.xRight + HIT_RADIUS) {
-      if (hover && hover.source === "chart") setHover(null);
-      return;
-    }
-    let bestPt = null;
-    let bestD = HIT_RADIUS_SQ;
-    for (const p of visiblePoints) {
-      const px = scales.xScale(p.timestamp);
-      const py = scales.yScale(p.rssi);
-      const dx = px - cx;
-      const dy = py - cy;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) {
-        bestD = d;
-        bestPt = p;
-      }
-    }
-    if (bestPt) {
-      if (hover && hover.payload._id === bestPt._id) return;
-      setHoverFor(bestPt, scales);
+    const hit = hitTest(cx, cy, scales);
+    if (hit) {
+      if (hover && hover.payload._id === hit._id) return;
+      setHoverFor(hit, scales);
     } else if (hover && hover.source === "chart") {
       setHover(null);
     }
   };
 
-  const onClick = () => {
-    if (hover && hover.source === "chart") {
-      onPickPacket?.(hover.payload._id);
+  // Tracks the last pointer type so the click handler can skip the
+  // pin-and-scroll for touch — auto-scrolling the page on a tap fights
+  // the user's natural scroll gesture and feels jarring on mobile.
+  const lastPointerTypeRef = useRef("mouse");
+  const onPointerDown = (e) => {
+    lastPointerTypeRef.current = e.pointerType;
+  };
+
+  // Tap path: on mouse, pointermove has already set hover before click runs.
+  // On touch, pointermove may not fire before pointerup (a tap barely moves),
+  // so do the hit-test here ourselves and set hover before pinning.
+  const onClick = (e) => {
+    const scales = getScales();
+    if (!scales) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const hit = hitTest(cx, cy, scales);
+    if (hit) {
+      setHoverFor(hit, scales);
+      // Touch-tap shows the tooltip + dims other tracks but doesn't pin
+      // (which would scroll the page to the matching row).
+      if (lastPointerTypeRef.current !== "touch") onPickPacket?.(hit._id);
     }
   };
 
@@ -900,7 +941,7 @@ export default function PacketScatter({
   return (
     <div
       ref={hostRef}
-      className="relative h-64 px-2 pb-0 pt-3"
+      className="relative h-64 px-0 pb-0 pt-3 sm:px-2"
       data-chart-host
       onMouseLeave={() => {
         if (hover && hover.source === "chart") setHover(null);
@@ -917,10 +958,22 @@ export default function PacketScatter({
       ) : (
         <canvas
           ref={canvasRef}
-          className={`absolute ${hover?.source === "chart" ? "cursor-pointer" : ""}`}
-          style={{ left: 8, top: 12 }}
+          // Inset matches the wrapper's responsive padding (px-0 → no horizontal
+          // inset on mobile, px-2 → 8px on sm+). top-3 mirrors the wrapper's
+          // pt-3. touch-action: pan-y keeps vertical page scroll working but
+          // lets the chart capture horizontal touch drags so the user can
+          // scrub through dots with a finger.
+          className={`absolute left-0 right-0 top-3 sm:left-2 sm:right-2 ${
+            hover?.source === "chart" ? "cursor-pointer" : ""
+          }`}
+          style={{ touchAction: "pan-y" }}
+          onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerLeave={() => {
+          onPointerLeave={(e) => {
+            // Touch end fires pointerleave; clearing hover there would cancel
+            // a tap-to-pin before the click handler runs. Mouse exit still
+            // clears as before.
+            if (e.pointerType === "touch") return;
             if (hover && hover.source === "chart") setHover(null);
           }}
           onClick={onClick}
