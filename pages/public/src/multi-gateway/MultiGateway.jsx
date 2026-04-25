@@ -1886,6 +1886,14 @@ export default function MultiGateway() {
             />
           </div>
         )}
+        {sseStatus === "unavailable" && (
+          <div className="mb-4">
+            <StatusBanner
+              tone="warning"
+              message="Live event stream is temporarily unavailable. Retrying shortly."
+            />
+          </div>
+        )}
 
         <SetupNote />
 
