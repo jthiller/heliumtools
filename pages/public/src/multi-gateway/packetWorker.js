@@ -50,6 +50,24 @@ function setSseStatus(status) {
 }
 
 function handleSseMessage(data) {
+  // The router worker emits a single error payload + closes the stream when
+  // it can't reach any upstream LNS. Surface that as a distinct "unavailable"
+  // status (vs. transient reconnecting) and back off so we stop strobing
+  // every 3s.
+  if (data?.error === "No upstream available") {
+    setSseStatus("unavailable");
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    clearStaleTimer();
+    clearUpstreamDownTimer();
+    upstreamDownTimer = setTimeout(() => {
+      upstreamDownTimer = null;
+      ensureSse();
+    }, UPSTREAM_DOWN_BACKOFF_MS);
+    return;
+  }
   switch (data.type) {
     case "gateway_connect":
     case "gateway_disconnect":
@@ -85,12 +103,25 @@ function handleSseMessage(data) {
 // EventSource's own retry win first.
 const RECONNECT_AFTER_CLOSED_MS = 2000;
 const STALE_RECONNECT_MS = 15000;
+// When the server tells us the upstream LNS is unreachable, EventSource's
+// 3s auto-retry would just hammer the same dead path. Back off to 30s
+// instead so the page doesn't strobe "Reconnecting" while the operator
+// fixes the upstream.
+const UPSTREAM_DOWN_BACKOFF_MS = 30000;
 let staleTimer = null;
+let upstreamDownTimer = null;
 
 function clearStaleTimer() {
   if (staleTimer) {
     clearTimeout(staleTimer);
     staleTimer = null;
+  }
+}
+
+function clearUpstreamDownTimer() {
+  if (upstreamDownTimer) {
+    clearTimeout(upstreamDownTimer);
+    upstreamDownTimer = null;
   }
 }
 
@@ -142,6 +173,7 @@ function ensureSse() {
 // can also silently stall after a tab suspension on mobile.
 function reconnectSse() {
   clearStaleTimer();
+  clearUpstreamDownTimer();
   if (eventSource) {
     eventSource.close();
     eventSource = null;
