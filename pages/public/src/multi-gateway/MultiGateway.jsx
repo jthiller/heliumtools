@@ -611,6 +611,7 @@ function FrameTypeBadge({ frameType }) {
 }
 
 const ALL_FRAME_TYPES = Object.keys(FRAME_TYPES);
+const ALL_TYPES_VISIBLE = Object.fromEntries(ALL_FRAME_TYPES.map((t) => [t, true]));
 // 500 packets ≈ 10–15 min of history per active device — enough for segmentation
 // to establish tracks while keeping recharts + React responsive.
 const MAX_PACKETS = 500;
@@ -653,11 +654,7 @@ function GatewayInspector({ mac, publicKey, latestPacket, ouiLookup, onClose }) 
   const segmenterRef = useRef(createSegmenter());
   const [packets, setPackets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [visibleTypes, setVisibleTypes] = useState(() =>
-    Object.fromEntries(
-      ALL_FRAME_TYPES.map((t) => [t, t !== "JoinRequest"]),
-    ),
-  );
+  const [visibleTypes, setVisibleTypes] = useState(ALL_TYPES_VISIBLE);
 
   const toggleType = (type) =>
     setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
