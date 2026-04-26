@@ -254,7 +254,7 @@ const PULSE_MAX_R = 16; // outer ring radius at end of pulse
 // from a half-opacity peak so the band is a hint rather than a takeover —
 // the hover band still owns the "fully pay attention" state. Slower than
 // the dot pulse so the connection lingers long enough to register.
-const TRACK_PULSE_DURATION_MS = 1500;
+const TRACK_PULSE_DURATION_MS = 2000;
 const TRACK_PULSE_PEAK = 0.5;
 
 // Catmull-Rom interpolation: appends bezier segments through `points`. When
