@@ -30,15 +30,16 @@
     // Durable Object: MultiGatewayHub fans out one upstream-per-region SSE
     // subscription to many browser clients over WebSocket. See
     // worker/src/tools/multi-gateway/hub.js. The class is exported from
-    // src/index.js.
+    // src/index.js. The DO holds no storage today — we still use
+    // new_sqlite_classes (the modern default, available on the Free plan)
+    // so storage is available later without another migration. Note:
+    // `new_classes` (legacy KV-backed storage) requires Workers Paid; the
+    // SQLite backend is what's available on every plan.
     //
-    // We use `new_classes` (legacy KV-style storage) rather than
-    // `new_sqlite_classes` because SQLite-backed DOs require the Workers
-    // Paid plan and the deploy was rejected on the current account. The
-    // hub is a transient fan-out — it doesn't need durable storage today,
-    // only `state.storage.setAlarm()` for the post-hibernation heartbeat,
-    // which is available on both backends. If we ever want richer storage
-    // we can run a separate migration to convert.
+    // The DO binding/migration is also declared in env.production below;
+    // wrangler envs don't inherit top-level keys, so any env that needs the
+    // DO must declare it independently. Local `wrangler dev` uses this
+    // top-level config.
     "durable_objects": {
         "bindings": [
             {
@@ -50,7 +51,7 @@
     "migrations": [
         {
             "tag": "v1-multi-gateway-hub",
-            "new_classes": ["MultiGatewayHub"]
+            "new_sqlite_classes": ["MultiGatewayHub"]
         }
     ],
     // Production Environment
@@ -91,7 +92,7 @@
             "migrations": [
                 {
                     "tag": "v1-multi-gateway-hub",
-                    "new_classes": ["MultiGatewayHub"]
+                    "new_sqlite_classes": ["MultiGatewayHub"]
                 }
             ],
             "name": "heliumtools"
