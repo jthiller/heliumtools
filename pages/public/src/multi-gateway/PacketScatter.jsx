@@ -250,10 +250,10 @@ const BAND_TWEEN_MS = 220; // hover-band grow duration
 // Shared with EventsBar so chart and events bar pulse in unison.
 export const PULSE_DURATION_MS = 700;
 const PULSE_MAX_R = 16; // outer ring radius at end of pulse
-// Auto-pulse the band of a track when a new packet matches it. Fades 0→1→0
-// via a sin(πt) bell so the band briefly flashes without lingering. Longer
-// than the dot pulse so the connection is legible even on slow uplink rates.
-const TRACK_PULSE_DURATION_MS = 1500;
+// Auto-pulse the band of a track when a new packet matches it. Snaps to
+// full opacity then eases out — same shape as the dot pulse, slightly
+// longer so the connection between consecutive points is legible.
+const TRACK_PULSE_DURATION_MS = 1000;
 
 // Catmull-Rom interpolation: appends bezier segments through `points`. When
 // `start=false`, continues from the current pen position with a lineTo to the
@@ -755,8 +755,7 @@ export default function PacketScatter({
   }, [innerW, innerH, effXDomain, yRange]);
 
   // Animation state in refs so frames don't trigger React work.
-  // - progress: hover-band tween 0..1
-  // - seenIds / pulses: tracks new arrivals so we can ring-pulse them once
+  // progress: hover-band tween 0..1.
   const animRef = useRef({ progress: 0, raf: 0, lastT: 0 });
   // pulses: Map<_id, startMs> for active dot pulse rings.
   // trackPulses: Map<trackId, startMs> for active band pulses (new packet
@@ -841,23 +840,20 @@ export default function PacketScatter({
         if (s.hover) drawRefLine(ctx, scales, s.hover.payload.timestamp, s.chartColors?.grid);
         const progress = animRef.current.progress;
         const hoverColor = s.hoveredId ? s.trackColorById.get(s.hoveredId) : null;
-        // Auto-pulse bands: bell-curve fade for tracks that just received a
-        // new packet. Drawn before the hover band so a hovered track stays on
-        // top at full opacity. sin(πt) gives 0→1→0 over the pulse window;
-        // squaring it slightly biases the curve toward a quicker fade-in /
-        // longer fade-out, which reads better at a glance.
-        const trackPulses = seenRef.current.trackPulses;
-        if (trackPulses.size > 0) {
-          for (const [tid, start] of trackPulses) {
-            if (tid === s.hoveredId) continue;
-            const elapsed = (t - start) / TRACK_PULSE_DURATION_MS;
-            if (elapsed <= 0 || elapsed >= 1) continue;
-            const curve = Math.sin(Math.PI * elapsed);
-            const pts = s.pointsByTrack.get(tid);
-            if (!pts || pts.length < 2) continue;
-            const color = s.trackColorById.get(tid);
-            if (color) drawBand(ctx, scales, pts, color, curve);
-          }
+        // Auto-pulse bands for tracks that just received a new packet. Drawn
+        // before the hover band so a hovered track stays on top at full
+        // opacity. (1-t)² is ease-out — band hits full opacity immediately
+        // and decays smoothly, matching the dot pulse rhythm.
+        for (const [tid, start] of seenRef.current.trackPulses) {
+          if (tid === s.hoveredId) continue;
+          const elapsed = (t - start) / TRACK_PULSE_DURATION_MS;
+          if (elapsed >= 1) continue;
+          const remaining = 1 - elapsed;
+          const curve = remaining * remaining;
+          const pts = s.pointsByTrack.get(tid);
+          if (!pts || pts.length < 2) continue;
+          const color = s.trackColorById.get(tid);
+          if (color) drawBand(ctx, scales, pts, color, curve);
         }
         if (s.hoveredId) drawBand(ctx, scales, s.hoveredPoints, hoverColor, progress);
         drawDots(
