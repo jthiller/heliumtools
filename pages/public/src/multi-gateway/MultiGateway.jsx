@@ -993,19 +993,34 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
 
   // Live data prepends new packets at index 0 (visiblePackets is newest-first).
   // Without anchoring, a user scrolled to row N would see their content shift
-  // up by one row each time a new packet arrives. Adjust scrollTop by the
-  // delta so the same logical row stays under the cursor — unless they're
-  // already at the top, in which case follow new arrivals naturally.
-  const prevTotalRef = useRef(total);
+  // up by one row each time a new packet arrives. Find where the previously-
+  // visible top packet sits now and offset scrollTop by that delta — keeping
+  // the same logical row under the user's view.
+  //
+  // Trigger off the last packet's _id (changes IFF a new packet arrived),
+  // not on length: once the buffer hits MAX_PACKETS the length plateaus but
+  // arrivals still shift the visible window. Filter changes (which mutate
+  // visiblePackets but not the parent buffer) leave packets[last]._id alone,
+  // so the anchor doesn't fire on those.
+  const prevLastPacketIdRef = useRef(packets[packets.length - 1]?._id ?? null);
+  const prevFirstVisibleIdRef = useRef(visiblePackets[0]?._id ?? null);
   useLayoutEffect(() => {
-    const prev = prevTotalRef.current;
-    prevTotalRef.current = total;
+    const prevLastPacketId = prevLastPacketIdRef.current;
+    const prevFirstVisibleId = prevFirstVisibleIdRef.current;
+    const nextLastPacketId = packets[packets.length - 1]?._id ?? null;
+    prevLastPacketIdRef.current = nextLastPacketId;
+    prevFirstVisibleIdRef.current = visiblePackets[0]?._id ?? null;
+
+    if (nextLastPacketId === prevLastPacketId) return; // not an arrival
+    if (prevFirstVisibleId == null) return; // empty-to-populated transition
     const el = containerRef.current;
     if (!el) return;
-    if (total <= prev) return;
-    if (el.scrollTop < rowHeight / 2) return;
-    el.scrollTop += (total - prev) * rowHeight;
-  }, [total, rowHeight]);
+    if (el.scrollTop < rowHeight / 2) return; // user is at the top — follow live
+
+    const anchorIdx = visiblePackets.findIndex((p) => p._id === prevFirstVisibleId);
+    if (anchorIdx <= 0) return; // anchor evicted or already at index 0
+    el.scrollTop += anchorIdx * rowHeight;
+  }, [packets, visiblePackets, rowHeight]);
 
   // Pin scroll: when a chart dot is clicked, find that packet's row and
   // scroll it into the middle of the table viewport. Operates on the inner
