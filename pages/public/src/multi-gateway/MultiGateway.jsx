@@ -1,4 +1,4 @@
-import { Fragment, memo, useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Fragment, memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
@@ -592,9 +592,18 @@ function FrameTypeBadge({ frameType }) {
 
 const ALL_FRAME_TYPES = Object.keys(FRAME_TYPES);
 const ALL_TYPES_VISIBLE = Object.fromEntries(ALL_FRAME_TYPES.map((t) => [t, true]));
-// 500 packets ≈ 10–15 min of history per active device — enough for segmentation
-// to establish tracks while keeping recharts + React responsive.
-const MAX_PACKETS = 500;
+// In-memory rolling buffer of packets per inspected Hotspot. Canvas chart
+// handles 10k+ points without strain; the table is virtualized below so DOM
+// row count stays bounded regardless of buffer size.
+const MAX_PACKETS = 10000;
+
+// Virtualized table tunings. Row height is measured from the first rendered
+// row (cell padding + badges make it differ from any fixed value we'd pick),
+// then reused as the slice unit. Viewport caps the table at a screenful so
+// the page-level scroll bar still controls the rest of the dashboard.
+const TABLE_ROW_HEIGHT_FALLBACK = 36;
+const TABLE_VIEWPORT_HEIGHT = 600;
+const TABLE_OVERSCAN_ROWS = 8;
 
 const WELL_KNOWN_REPO = "https://github.com/helium/well-known/";
 
@@ -945,26 +954,86 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
       if (netIdFilter !== "all" && pkt._netId !== netIdFilter) return false;
       if (trackFilter !== "all" && pkt._trackId !== trackFilter) return false;
       return true;
-    }).slice(0, MAX_PACKETS);
+    });
   }, [packets, visibleTypes, netIdFilter, trackFilter]);
 
-  const pinnedRowRef = useRef(null);
-  // When the user clicks a chart dot, scroll the matching row into view.
-  // Hand-rolled scroll instead of scrollIntoView: Safari silently drops
-  // smooth scrollIntoView in some flows, but window.scrollTo is reliable
-  // everywhere. The rAF defer also lets the row's ref settle after React
-  // commits the new isPinned state.
+  // Virtualized rendering: only the rows currently in (or near) the viewport
+  // are mounted. Without this, 10k packets means 10k <tr>s — enough DOM to
+  // visibly stutter on scroll and balloon memory. We measure one rendered
+  // row to get the authoritative height (cell padding + badge sizes make a
+  // fixed constant unreliable), then reuse it as the slice unit.
+  const containerRef = useRef(null);
+  const sampleRowRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [rowHeight, setRowHeight] = useState(TABLE_ROW_HEIGHT_FALLBACK);
+  const total = visiblePackets.length;
+
+  useLayoutEffect(() => {
+    const el = sampleRowRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h && Math.abs(h - rowHeight) > 0.5) setRowHeight(h);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rowHeight]);
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - TABLE_OVERSCAN_ROWS);
+  const endIndex = Math.min(
+    total,
+    Math.ceil((scrollTop + TABLE_VIEWPORT_HEIGHT) / rowHeight) + TABLE_OVERSCAN_ROWS,
+  );
+  const sliceRows = visiblePackets.slice(startIndex, endIndex);
+  const topPad = startIndex * rowHeight;
+  const bottomPad = Math.max(0, (total - endIndex) * rowHeight);
+
+  // Live data prepends new packets at index 0 (visiblePackets is newest-first).
+  // Without anchoring, a user scrolled to row N would see their content shift
+  // up by one row each time a new packet arrives. Find where the previously-
+  // visible top packet sits now and offset scrollTop by that delta — keeping
+  // the same logical row under the user's view.
+  //
+  // Trigger off the last packet's _id (changes IFF a new packet arrived),
+  // not on length: once the buffer hits MAX_PACKETS the length plateaus but
+  // arrivals still shift the visible window. Filter changes (which mutate
+  // visiblePackets but not the parent buffer) leave packets[last]._id alone,
+  // so the anchor doesn't fire on those.
+  const prevLastPacketIdRef = useRef(packets[packets.length - 1]?._id ?? null);
+  const prevFirstVisibleIdRef = useRef(visiblePackets[0]?._id ?? null);
+  useLayoutEffect(() => {
+    const prevLastPacketId = prevLastPacketIdRef.current;
+    const prevFirstVisibleId = prevFirstVisibleIdRef.current;
+    const nextLastPacketId = packets[packets.length - 1]?._id ?? null;
+    prevLastPacketIdRef.current = nextLastPacketId;
+    prevFirstVisibleIdRef.current = visiblePackets[0]?._id ?? null;
+
+    if (nextLastPacketId === prevLastPacketId) return; // not an arrival
+    if (prevFirstVisibleId == null) return; // empty-to-populated transition
+    const el = containerRef.current;
+    if (!el) return;
+    if (el.scrollTop < rowHeight / 2) return; // user is at the top — follow live
+
+    const anchorIdx = visiblePackets.findIndex((p) => p._id === prevFirstVisibleId);
+    if (anchorIdx <= 0) return; // anchor evicted or already at index 0
+    el.scrollTop += anchorIdx * rowHeight;
+  }, [packets, visiblePackets, rowHeight]);
+
+  // Pin scroll: when a chart dot is clicked, find that packet's row and
+  // scroll it into the middle of the table viewport. Operates on the inner
+  // scroll container now that the table no longer drives the page scroll.
   useEffect(() => {
     if (pinnedPacketId == null) return;
-    const id = requestAnimationFrame(() => {
-      const el = pinnedRowRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const top = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2;
-      window.scrollTo({ top, behavior: "smooth" });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [pinnedPacketId]);
+    const idx = visiblePackets.findIndex((p) => p._id === pinnedPacketId);
+    if (idx < 0) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const target = idx * rowHeight - (TABLE_VIEWPORT_HEIGHT - rowHeight) / 2;
+    el.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+  }, [pinnedPacketId, visiblePackets, rowHeight]);
 
   if (loading) {
     return (
@@ -982,9 +1051,14 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
   }
 
   return (
-    <div className="overflow-x-auto border-t border-border mt-3">
+    <div
+      ref={containerRef}
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      style={{ maxHeight: TABLE_VIEWPORT_HEIGHT }}
+      className="overflow-auto border-t border-border mt-3"
+    >
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10">
           <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
             <th className="px-2 py-1.5 sm:px-4 sm:py-2">Time</th>
             <th className="px-2 py-1.5 sm:px-4 sm:py-2">Type</th>
@@ -1001,13 +1075,18 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
           </tr>
         </thead>
         <tbody>
-          {visiblePackets.map((pkt) => {
+          {topPad > 0 && (
+            <tr aria-hidden="true" style={{ height: topPad }}>
+              <td colSpan={12} />
+            </tr>
+          )}
+          {sliceRows.map((pkt, sliceIdx) => {
             const trackAccent = hover?.trackId && pkt._trackId === hover.trackId;
             const isPinned = pinnedPacketId != null && pkt._id === pinnedPacketId;
             return (
               <tr
                 key={pkt._id}
-                ref={isPinned ? pinnedRowRef : undefined}
+                ref={sliceIdx === 0 ? sampleRowRef : undefined}
                 onMouseEnter={() => {
                   if (!pkt._trackId) return; // joins/downlinks not segmented
                   setHover({
@@ -1057,6 +1136,11 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
               </tr>
             );
           })}
+          {bottomPad > 0 && (
+            <tr aria-hidden="true" style={{ height: bottomPad }}>
+              <td colSpan={12} />
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
