@@ -250,6 +250,12 @@ const BAND_TWEEN_MS = 220; // hover-band grow duration
 // Shared with EventsBar so chart and events bar pulse in unison.
 export const PULSE_DURATION_MS = 700;
 const PULSE_MAX_R = 16; // outer ring radius at end of pulse
+// Auto-pulse the band of a track when a new packet matches it. Eases out
+// from a half-opacity peak so the band is a hint rather than a takeover —
+// the hover band still owns the "fully pay attention" state. Slower than
+// the dot pulse so the connection lingers long enough to register.
+const TRACK_PULSE_DURATION_MS = 2000;
+const TRACK_PULSE_PEAK = 0.5;
 
 // Catmull-Rom interpolation: appends bezier segments through `points`. When
 // `start=false`, continues from the current pen position with a lineTo to the
@@ -670,15 +676,25 @@ export default function PacketScatter({
     return map;
   }, [visiblePoints, isDark]);
 
-  // Pre-sorted by timestamp once per hover change; the sort is reused
-  // every rAF frame inside drawBand and on every pointer move inside
-  // pointInBand, so caching it here avoids an n·log·n on the hot path.
-  const hoveredPoints = useMemo(() => {
-    if (!hoveredId) return [];
-    return visiblePoints
-      .filter((p) => p.trackId === hoveredId)
-      .sort((a, b) => a.timestamp - b.timestamp);
-  }, [hoveredId, visiblePoints]);
+  // Per-track point lists, sorted by timestamp. Reused by the hover band
+  // (which only needs the active hovered track) and the auto-pulse band
+  // (which may render several tracks at once when their new packets land
+  // around the same time). Memoising once avoids per-frame n·log·n.
+  const pointsByTrack = useMemo(() => {
+    const map = new Map();
+    for (const p of visiblePoints) {
+      let arr = map.get(p.trackId);
+      if (!arr) {
+        arr = [];
+        map.set(p.trackId, arr);
+      }
+      arr.push(p);
+    }
+    for (const arr of map.values()) arr.sort((a, b) => a.timestamp - b.timestamp);
+    return map;
+  }, [visiblePoints]);
+
+  const hoveredPoints = hoveredId ? pointsByTrack.get(hoveredId) ?? [] : [];
 
   // Y range with ±3 dB padding (mirrors recharts' "dataMin - 3" / "dataMax + 3").
   const yRange = useMemo(() => {
@@ -741,13 +757,14 @@ export default function PacketScatter({
   }, [innerW, innerH, effXDomain, yRange]);
 
   // Animation state in refs so frames don't trigger React work.
-  // - progress: hover-band tween 0..1
-  // - seenIds / pulses: tracks new arrivals so we can ring-pulse them once
+  // progress: hover-band tween 0..1.
   const animRef = useRef({ progress: 0, raf: 0, lastT: 0 });
-  // pulses: Map<_id, startMs> for active pulse rings.
+  // pulses: Map<_id, startMs> for active dot pulse rings.
+  // trackPulses: Map<trackId, startMs> for active band pulses (new packet
+  //   matched to an existing track — show the connection briefly).
   // processed: Set<_id> of packets we've already registered (or skipped because
   // they weren't new), so we don't re-pulse on every render.
-  const seenRef = useRef({ pulses: new Map(), processed: new Set() });
+  const seenRef = useRef({ pulses: new Map(), trackPulses: new Map(), processed: new Set() });
   // Latest render inputs read by the rAF tick. Mirroring data through a ref
   // lets the rAF stay alive across React renders — its useEffect deps are
   // empty, so prop churn (xDomain ticks every 250ms, etc.) doesn't tear
@@ -755,25 +772,39 @@ export default function PacketScatter({
   const stateRef = useRef({});
   stateRef.current = {
     canvasRef, innerW, innerH, chartColors, yTicks, getScales,
-    hover, hoveredId, hoveredPoints, trackColorById, visiblePoints, isDark,
+    hover, hoveredId, hoveredPoints, trackColorById, visiblePoints, pointsByTrack, isDark,
   };
 
   // Pulse only packets that arrived via SSE while the user was watching —
   // the parent flags those with `_new: true`. Initial fetch packets carry
   // `_new: false` and don't pulse. Each id is processed once (start time
   // recorded on first sighting), so re-renders don't restart the animation.
+  // Band pulses fire when a new packet's track already has ≥1 prior point
+  // (i.e., the packet creates or extends a connectable segment). Multiple
+  // arrivals on the same track in one frame collapse into one pulse.
   useEffect(() => {
     const cur = seenRef.current;
     const now = performance.now();
+    const newTrackIds = new Set();
     for (const p of visiblePoints) {
       if (cur.processed.has(p._id)) continue;
       cur.processed.add(p._id);
-      if (p._new) cur.pulses.set(p._id, now);
+      if (p._new) {
+        cur.pulses.set(p._id, now);
+        if (p.trackId) newTrackIds.add(p.trackId);
+      }
+    }
+    for (const tid of newTrackIds) {
+      const pts = pointsByTrack.get(tid);
+      if (pts && pts.length >= 2) cur.trackPulses.set(tid, now);
     }
     for (const [id, start] of cur.pulses) {
       if (now - start > PULSE_DURATION_MS) cur.pulses.delete(id);
     }
-  }, [visiblePoints]);
+    for (const [tid, start] of cur.trackPulses) {
+      if (now - start > TRACK_PULSE_DURATION_MS) cur.trackPulses.delete(tid);
+    }
+  }, [visiblePoints, pointsByTrack]);
 
   // Continuous rAF loop. Reads latest data from stateRef so the loop never
   // tears down — needed for buttery time-axis scrolling at 60fps.
@@ -811,6 +842,22 @@ export default function PacketScatter({
         if (s.hover) drawRefLine(ctx, scales, s.hover.payload.timestamp, s.chartColors?.grid);
         const progress = animRef.current.progress;
         const hoverColor = s.hoveredId ? s.trackColorById.get(s.hoveredId) : null;
+        // Auto-pulse bands for tracks that just received a new packet. Drawn
+        // before the hover band so a hovered track always wins. Peak is
+        // clamped well below 1 so the auto-pulse reads as ambient rather
+        // than as a hover-equivalent; (1-t)² ease-out from there decays
+        // smoothly to invisible.
+        for (const [tid, start] of seenRef.current.trackPulses) {
+          if (tid === s.hoveredId) continue;
+          const elapsed = (t - start) / TRACK_PULSE_DURATION_MS;
+          if (elapsed >= 1) continue;
+          const remaining = 1 - elapsed;
+          const curve = remaining * remaining * TRACK_PULSE_PEAK;
+          const pts = s.pointsByTrack.get(tid);
+          if (!pts || pts.length < 2) continue;
+          const color = s.trackColorById.get(tid);
+          if (color) drawBand(ctx, scales, pts, color, curve);
+        }
         if (s.hoveredId) drawBand(ctx, scales, s.hoveredPoints, hoverColor, progress);
         drawDots(
           ctx, s.visiblePoints, scales, s.hoveredId, s.hover?.payload?._id ?? null,
