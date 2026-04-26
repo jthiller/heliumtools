@@ -11,7 +11,9 @@ const API_BASE = import.meta.env.DEV
 // upstream side and the SseLikeSocket wrapper below for the shape.
 const EVENTS_WS_URL = (() => {
   // Build the absolute WS URL from API_BASE so the dev proxy can forward it.
-  const u = new URL(`${API_BASE}/events`, window.location.href);
+  // Use globalThis.location so this works in both the main thread and inside
+  // packetWorker.js (Web Workers have `self`/`globalThis`, not `window`).
+  const u = new URL(`${API_BASE}/events`, globalThis.location.href);
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
   return u.toString();
 })();
@@ -43,11 +45,22 @@ class SseLikeSocket {
     this.onmessage = null;
     this._ws = new WebSocket(url);
     this._closed = false;
+    // Distinguish a consumer-initiated close() from a server/network drop so
+    // the legacy "No upstream available" path (which calls close() and sets
+    // status to "unavailable") doesn't get its status flipped to "reconnecting"
+    // by a stray onerror right after.
+    this._intentionallyClosed = false;
     this._ws.addEventListener("open", (e) => this.onopen?.(e));
-    this._ws.addEventListener("error", (e) => this.onerror?.(e));
+    this._ws.addEventListener("error", (e) => {
+      if (this._intentionallyClosed) return;
+      this.onerror?.(e);
+    });
     this._ws.addEventListener("close", (e) => {
       this._closed = true;
-      // Surface as an error event so the consumer's reconnect path runs.
+      if (this._intentionallyClosed) return;
+      // Surface unexpected disconnects as an error so the consumer's reconnect
+      // path runs (matches EventSource behaviour, which also fires `error`
+      // — not a separate `close` — on unexpected disconnect).
       this.onerror?.(e);
     });
     this._ws.addEventListener("message", (e) => {
@@ -61,6 +74,7 @@ class SseLikeSocket {
     return this._ws.readyState;
   }
   close() {
+    this._intentionallyClosed = true;
     this._closed = true;
     try { this._ws.close(); } catch { /* already closed */ }
   }

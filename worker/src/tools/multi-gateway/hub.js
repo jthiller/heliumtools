@@ -255,13 +255,11 @@ export class MultiGatewayHub {
         const events = buffer.split("\n\n");
         buffer = events.pop();
         for (const raw of events) {
-          if (this.countSubscribers() === 0) {
-            // Everyone left while data was in flight; stop here.
-            this.shutdownUpstream(region.region);
-            return;
-          }
           const payload = parseSseEvent(raw);
           if (payload === null) continue;
+          // broadcast() no-ops on 0 subscribers; we don't tear down here so a
+          // client that reconnects within IDLE_TEARDOWN_MS sees an unbroken
+          // upstream. Final teardown comes from the alarm (armTeardown).
           this.broadcast(payload);
         }
       }
