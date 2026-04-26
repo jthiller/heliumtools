@@ -9,6 +9,7 @@ import {
 import { handleHotspotClaimerRequest } from "./tools/hotspot-claimer/index.js";
 import { handleHotspotMapRequest } from "./tools/hotspot-map/index.js";
 import { handleMultiGatewayRequest } from "./tools/multi-gateway/index.js";
+import { MultiGatewayHub } from "./tools/multi-gateway/hub.js";
 import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { handleL1MigrationRequest } from "./tools/l1-migration/index.js";
 import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard/index.js";
@@ -62,3 +63,7 @@ export default {
     if (hour === 0) ctx.waitUntil(refreshOuiCache(env));
   },
 };
+
+// Re-export Durable Object classes so the runtime can instantiate them.
+// Bound in wrangler.jsonc via durable_objects.bindings.
+export { MultiGatewayHub };

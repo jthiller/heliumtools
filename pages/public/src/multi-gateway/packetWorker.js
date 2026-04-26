@@ -50,10 +50,14 @@ function setSseStatus(status) {
 }
 
 function handleSseMessage(data) {
-  // The router worker emits a single error payload + closes the stream when
-  // it can't reach any upstream LNS. Surface that as a distinct "unavailable"
-  // status (vs. transient reconnecting) and back off so we stop strobing
-  // every 3s.
+  // Two flavours of "upstream is dead":
+  //   1) Legacy SSE proxy emitted `{error: "No upstream available"}` and
+  //      closed the stream. Still handled for backwards compatibility while
+  //      the worker rolls out.
+  //   2) The DO-backed WebSocket sends `{type:"sse_status", status:"unavailable"}`
+  //      while keeping the socket open — the DO retries upstreams in the
+  //      background and pushes a "connected" status frame when traffic
+  //      resumes, so we don't tear down our own socket here.
   if (data?.error === "No upstream available") {
     setSseStatus("unavailable");
     if (eventSource) {
@@ -66,6 +70,20 @@ function handleSseMessage(data) {
       upstreamDownTimer = null;
       ensureSse();
     }, UPSTREAM_DOWN_BACKOFF_MS);
+    return;
+  }
+  if (data?.type === "sse_status") {
+    if (data.status === "unavailable") {
+      setSseStatus("unavailable");
+      clearStaleTimer();
+      return;
+    }
+    if (data.status === "connected") {
+      setSseStatus("connected");
+      clearStaleTimer();
+      clearUpstreamDownTimer();
+      return;
+    }
     return;
   }
   switch (data.type) {
@@ -146,7 +164,7 @@ function ensureSse() {
   };
   es.onerror = () => {
     setSseStatus("reconnecting");
-    if (es.readyState === EventSource.CLOSED) {
+    if (es.readyState === es.constructor.CLOSED) {
       // Auto-retry has given up. Schedule a manual rebuild.
       clearStaleTimer();
       setTimeout(() => {

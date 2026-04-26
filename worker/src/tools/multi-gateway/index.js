@@ -75,97 +75,26 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
     return jsonResponse({ error: "Gateway not found" }, 404);
   }
 
-  // SSE proxy — merge event streams from all regions
+  // /events — WebSocket fan-out via the MultiGatewayHub Durable Object.
+  //
+  // Why: the Rust LNS caps each region at MAX_SSE_CONNECTIONS=20. Per-client
+  // SSE proxying means each browser tab consumes 6 upstream slots, so the
+  // cap fills with a handful of dashboards open. The DO holds at most one
+  // upstream SSE per region globally and broadcasts to every connected
+  // client. See worker/src/tools/multi-gateway/hub.js.
   if (pathname === "/events" && request.method === "GET") {
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    // The Rust LNS caps each region at MAX_SSE_CONNECTIONS=20 (api.rs).
-    // Each upstream slot is freed only when its stream is dropped — i.e.
-    // when our outbound fetch is aborted or its reader is cancelled. If
-    // we never propagate the inbound client's disconnect, every page load
-    // and every EventSource auto-retry leaks 6 upstream slots that linger
-    // until upstream TCP timeout. The cap fills and subsequent /events
-    // responses 503, which our handler reports as
-    // {"error":"No upstream available"}. Tie request.signal to the
-    // outbound fetches so disconnects release slots immediately.
-    const ac = new AbortController();
-    const onAbort = () => ac.abort();
-    request.signal.addEventListener("abort", onAbort);
-
-    const sources = REGIONS.map(({ port }) =>
-      fetch(`http://${host}:${port}/events`, { headers, signal: ac.signal }),
-    );
-
-    // Pipe each upstream SSE stream into the merged output.
-    // Buffer by SSE event boundary (\n\n) to prevent interleaving
-    // partial events from concurrent streams.
-    Promise.allSettled(sources).then(async (results) => {
-      const readers = [];
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value.ok) {
-          readers.push(result.value.body.getReader());
-        }
-      }
-
-      if (readers.length === 0) {
-        try {
-          await writer.write(
-            encoder.encode('data: {"error":"No upstream available"}\n\n'),
-          );
-          await writer.close();
-        } catch {
-          /* client gone */
-        }
-        request.signal.removeEventListener("abort", onAbort);
-        return;
-      }
-
-      await Promise.allSettled(
-        readers.map(async (reader) => {
-          let buffer = "";
-          while (!ac.signal.aborted) {
-            let chunk;
-            try {
-              chunk = await reader.read();
-            } catch {
-              return; // upstream errored / aborted
-            }
-            if (chunk.done) break;
-            buffer += decoder.decode(chunk.value, { stream: true });
-            const events = buffer.split("\n\n");
-            buffer = events.pop();
-            for (const event of events) {
-              try {
-                await writer.write(encoder.encode(event + "\n\n"));
-              } catch {
-                return; // client disconnected, stop forwarding
-              }
-            }
-          }
-          // Cancel the upstream reader so the underlying fetch releases its
-          // SSE slot promptly instead of waiting on idle TCP GC.
-          try { await reader.cancel(); } catch { /* already cancelled */ }
-        }),
-      );
-
-      try {
-        await writer.close();
-      } catch {
-        /* already closed */
-      }
-      request.signal.removeEventListener("abort", onAbort);
-    });
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        ...corsHeaders,
-      },
-    });
+    if (!env.MULTI_GATEWAY_HUB) {
+      return jsonResponse({ error: "Hub binding missing" }, 500);
+    }
+    const id = env.MULTI_GATEWAY_HUB.idFromName("hub");
+    const stub = env.MULTI_GATEWAY_HUB.get(id);
+    // Forward to the DO's /ws path with the original Upgrade headers intact.
+    // Construct a fresh Request so the URL is rewritten while headers
+    // (including `Upgrade: websocket` and `Sec-WebSocket-Key`) carry over.
+    const target = new URL(request.url);
+    target.pathname = "/ws";
+    const forwarded = new Request(target.toString(), request);
+    return stub.fetch(forwarded);
   }
 
   // On-chain status check (batch)

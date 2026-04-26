@@ -27,6 +27,33 @@
             "id": "aea1fbf2cf5e4d64970043dc302dcc03"
         }
     ],
+    // Durable Object: MultiGatewayHub fans out one upstream-per-region SSE
+    // subscription to many browser clients over WebSocket. See
+    // worker/src/tools/multi-gateway/hub.js. The class is exported from
+    // src/index.js. The DO holds no storage today — we still use
+    // new_sqlite_classes (the modern default, available on the Free plan)
+    // so storage is available later without another migration. Note:
+    // `new_classes` (legacy KV-backed storage) requires Workers Paid; the
+    // SQLite backend is what's available on every plan.
+    //
+    // The DO binding/migration is also declared in env.production below;
+    // wrangler envs don't inherit top-level keys, so any env that needs the
+    // DO must declare it independently. Local `wrangler dev` uses this
+    // top-level config.
+    "durable_objects": {
+        "bindings": [
+            {
+                "name": "MULTI_GATEWAY_HUB",
+                "class_name": "MultiGatewayHub"
+            }
+        ]
+    },
+    "migrations": [
+        {
+            "tag": "v1-multi-gateway-hub",
+            "new_sqlite_classes": ["MultiGatewayHub"]
+        }
+    ],
     // Production Environment
     "env": {
         "production": {
@@ -52,6 +79,20 @@
                 {
                     "binding": "KV",
                     "id": "338f0cc920654b268ca54f11f3c86580"
+                }
+            ],
+            "durable_objects": {
+                "bindings": [
+                    {
+                        "name": "MULTI_GATEWAY_HUB",
+                        "class_name": "MultiGatewayHub"
+                    }
+                ]
+            },
+            "migrations": [
+                {
+                    "tag": "v1-multi-gateway-hub",
+                    "new_sqlite_classes": ["MultiGatewayHub"]
                 }
             ],
             "name": "heliumtools"

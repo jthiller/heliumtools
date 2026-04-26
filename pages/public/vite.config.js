@@ -14,6 +14,10 @@ export default defineConfig({
       "/api": {
         target: process.env.VITE_API_TARGET || "http://localhost:8787",
         changeOrigin: true,
+        // Forward WebSocket upgrades too — the multi-gateway tool's
+        // /api/multi-gateway/events endpoint is now a WebSocket fan-out
+        // backed by the MultiGatewayHub Durable Object.
+        ws: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
       "/oui-notifier/api": {

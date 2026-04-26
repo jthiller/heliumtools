@@ -4,7 +4,19 @@ const API_BASE = import.meta.env.DEV
   ? "/api/multi-gateway"
   : "https://api.heliumtools.org/multi-gateway";
 
-const SSE_URL = `${API_BASE}/events`;
+// The worker now fans events out via a WebSocket-backed Durable Object so a
+// single upstream SSE per region serves every connected dashboard. We still
+// expose an EventSource-shaped object so the rest of the client doesn't care
+// about the wire change. See worker/src/tools/multi-gateway/hub.js for the
+// upstream side and the SseLikeSocket wrapper below for the shape.
+const EVENTS_WS_URL = (() => {
+  // Build the absolute WS URL from API_BASE so the dev proxy can forward it.
+  // Use globalThis.location so this works in both the main thread and inside
+  // packetWorker.js (Web Workers have `self`/`globalThis`, not `window`).
+  const u = new URL(`${API_BASE}/events`, globalThis.location.href);
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  return u.toString();
+})();
 
 export async function fetchGateways() {
   const res = await fetch(`${API_BASE}/gateways`);
@@ -20,8 +32,56 @@ export async function fetchGatewayPackets(mac) {
   return data;
 }
 
+// Wrap the WebSocket in an EventSource-like surface so the existing
+// packetWorker.js consumer (onopen/onerror/onmessage + close + readyState +
+// CLOSED constant) needs no behavioural changes. Each WS text frame is
+// re-emitted as a MessageEvent whose `data` is the JSON string the server
+// sent, matching what EventSource used to deliver as `event.data`.
+class SseLikeSocket {
+  static get CLOSED() { return 3; }
+  constructor(url) {
+    this.onopen = null;
+    this.onerror = null;
+    this.onmessage = null;
+    this._ws = new WebSocket(url);
+    this._closed = false;
+    // Distinguish a consumer-initiated close() from a server/network drop so
+    // the legacy "No upstream available" path (which calls close() and sets
+    // status to "unavailable") doesn't get its status flipped to "reconnecting"
+    // by a stray onerror right after.
+    this._intentionallyClosed = false;
+    this._ws.addEventListener("open", (e) => this.onopen?.(e));
+    this._ws.addEventListener("error", (e) => {
+      if (this._intentionallyClosed) return;
+      this.onerror?.(e);
+    });
+    this._ws.addEventListener("close", (e) => {
+      this._closed = true;
+      if (this._intentionallyClosed) return;
+      // Surface unexpected disconnects as an error so the consumer's reconnect
+      // path runs (matches EventSource behaviour, which also fires `error`
+      // — not a separate `close` — on unexpected disconnect).
+      this.onerror?.(e);
+    });
+    this._ws.addEventListener("message", (e) => {
+      // The server sends raw JSON envelopes per frame; mirror EventSource's
+      // shape where event.data is a string.
+      this.onmessage?.({ data: e.data });
+    });
+  }
+  get readyState() {
+    if (this._closed || this._ws.readyState === WebSocket.CLOSED) return SseLikeSocket.CLOSED;
+    return this._ws.readyState;
+  }
+  close() {
+    this._intentionallyClosed = true;
+    this._closed = true;
+    try { this._ws.close(); } catch { /* already closed */ }
+  }
+}
+
 export function createEventSource() {
-  return new EventSource(SSE_URL);
+  return new SseLikeSocket(EVENTS_WS_URL);
 }
 
 export async function fetchOuis() {
