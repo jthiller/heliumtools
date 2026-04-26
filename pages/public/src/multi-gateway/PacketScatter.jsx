@@ -250,10 +250,12 @@ const BAND_TWEEN_MS = 220; // hover-band grow duration
 // Shared with EventsBar so chart and events bar pulse in unison.
 export const PULSE_DURATION_MS = 700;
 const PULSE_MAX_R = 16; // outer ring radius at end of pulse
-// Auto-pulse the band of a track when a new packet matches it. Snaps to
-// full opacity then eases out — same shape as the dot pulse, slightly
-// longer so the connection between consecutive points is legible.
-const TRACK_PULSE_DURATION_MS = 1000;
+// Auto-pulse the band of a track when a new packet matches it. Eases out
+// from a half-opacity peak so the band is a hint rather than a takeover —
+// the hover band still owns the "fully pay attention" state. Slower than
+// the dot pulse so the connection lingers long enough to register.
+const TRACK_PULSE_DURATION_MS = 1500;
+const TRACK_PULSE_PEAK = 0.5;
 
 // Catmull-Rom interpolation: appends bezier segments through `points`. When
 // `start=false`, continues from the current pen position with a lineTo to the
@@ -841,15 +843,16 @@ export default function PacketScatter({
         const progress = animRef.current.progress;
         const hoverColor = s.hoveredId ? s.trackColorById.get(s.hoveredId) : null;
         // Auto-pulse bands for tracks that just received a new packet. Drawn
-        // before the hover band so a hovered track stays on top at full
-        // opacity. (1-t)² is ease-out — band hits full opacity immediately
-        // and decays smoothly, matching the dot pulse rhythm.
+        // before the hover band so a hovered track always wins. Peak is
+        // clamped well below 1 so the auto-pulse reads as ambient rather
+        // than as a hover-equivalent; (1-t)² ease-out from there decays
+        // smoothly to invisible.
         for (const [tid, start] of seenRef.current.trackPulses) {
           if (tid === s.hoveredId) continue;
           const elapsed = (t - start) / TRACK_PULSE_DURATION_MS;
           if (elapsed >= 1) continue;
           const remaining = 1 - elapsed;
-          const curve = remaining * remaining;
+          const curve = remaining * remaining * TRACK_PULSE_PEAK;
           const pts = s.pointsByTrack.get(tid);
           if (!pts || pts.length < 2) continue;
           const color = s.trackColorById.get(tid);
