@@ -30,9 +30,15 @@
     // Durable Object: MultiGatewayHub fans out one upstream-per-region SSE
     // subscription to many browser clients over WebSocket. See
     // worker/src/tools/multi-gateway/hub.js. The class is exported from
-    // src/index.js. The DO holds no storage today — we still use
-    // new_sqlite_classes (the modern default) so storage is available later
-    // without another migration.
+    // src/index.js.
+    //
+    // We use `new_classes` (legacy KV-style storage) rather than
+    // `new_sqlite_classes` because SQLite-backed DOs require the Workers
+    // Paid plan and the deploy was rejected on the current account. The
+    // hub is a transient fan-out — it doesn't need durable storage today,
+    // only `state.storage.setAlarm()` for the post-hibernation heartbeat,
+    // which is available on both backends. If we ever want richer storage
+    // we can run a separate migration to convert.
     "durable_objects": {
         "bindings": [
             {
@@ -44,7 +50,7 @@
     "migrations": [
         {
             "tag": "v1-multi-gateway-hub",
-            "new_sqlite_classes": ["MultiGatewayHub"]
+            "new_classes": ["MultiGatewayHub"]
         }
     ],
     // Production Environment
@@ -85,7 +91,7 @@
             "migrations": [
                 {
                     "tag": "v1-multi-gateway-hub",
-                    "new_sqlite_classes": ["MultiGatewayHub"]
+                    "new_classes": ["MultiGatewayHub"]
                 }
             ],
             "name": "heliumtools"

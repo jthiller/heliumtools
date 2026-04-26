@@ -11,13 +11,22 @@
 // Single-instance contract:
 //   The DO is addressed with a fixed name ("hub") so all clients land on the
 //   same instance. That instance multiplexes upstream → many client websockets
-//   in memory. There is no DO storage; subscribers are only tracked while the
-//   DO is alive.
+//   in memory. We don't persist subscriber state; the runtime tracks attached
+//   websockets via the Hibernation API (`state.getWebSockets()`).
 //
 // Hibernation:
 //   Client websockets use the WebSocket Hibernation API (acceptWebSocket).
-//   When all clients leave, the upstream is closed and the DO can hibernate
-//   normally; we don't pin it open with timers when idle.
+//   When `pumpUpstream` finishes (upstream EOF / error) and there are no
+//   in-flight `waitUntil`s, Cloudflare may hibernate the DO even while client
+//   websockets are still attached. On hibernation:
+//     - In-memory state (this.upstreams / this.lastBroadcastStatus) is wiped;
+//       on wake, the constructor reinitialises it to empty Maps.
+//     - JS `setTimeout` handles are dropped — only `state.storage.setAlarm`
+//       survives.
+//   To recover, we run a self-rescheduling alarm whenever subscribers exist:
+//   `alarm()` calls `ensureUpstreams()`, and the hibernation entry points
+//   (`webSocketMessage`/`webSocketClose`/`webSocketError`) also re-ensure
+//   upstreams so any client signal kicks the DO back into a healthy state.
 //
 // Wire protocol (client ↔ DO):
 //   - Client connects via WebSocket to /multi-gateway/events.
@@ -41,18 +50,20 @@ function getHost(env) {
 // don't want to keep an upstream slot warm with no subscribers.
 const IDLE_TEARDOWN_MS = 2000;
 
-// Cool-down before we retry a failed upstream region.
-const REGION_RETRY_MS = 15000;
+// Heartbeat cadence for the rescue alarm. Fires while subscribers exist so
+// we re-open any upstream that died between hibernation cycles. Long enough
+// not to hammer the LNS on a sustained outage, short enough that recovery
+// after CF hibernation feels live.
+const ALARM_HEARTBEAT_MS = 15000;
 
 export class MultiGatewayHub {
   constructor(state, env) {
     this.state = state;
     this.env = env;
     // region -> { reader, controller, status: "connecting"|"open"|"down" }
+    // Re-initialised on wake. Authoritative-ness comes from runtime state +
+    // the alarm; we don't persist this.
     this.upstreams = new Map();
-    // region -> timeout handle for retry
-    this.retryTimers = new Map();
-    this.teardownTimer = null;
     this.lastBroadcastStatus = null; // "connected" | "unavailable" | null
   }
 
@@ -77,16 +88,16 @@ export class MultiGatewayHub {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
-    // Hibernation API — Cloudflare evicts us between events but resumes the
-    // websockets when upstream data arrives. We re-open upstreams on
-    // resume via ensureUpstreams() inside handleUpstreamEvent.
+    // Hibernation API — Cloudflare may evict the DO between events but the
+    // websockets stay attached. We bring upstreams back up on wake from any
+    // hibernation handler (see webSocketMessage/Close/Error and alarm()).
     this.state.acceptWebSocket(server);
 
     // Bring up upstreams (no-op if already running) and replay the current
     // upstream-health status to this fresh client so it knows whether to
     // show "connected" or "unavailable" immediately.
     this.ensureUpstreams();
-    this.cancelTeardown();
+    this.armHeartbeat();
     if (this.lastBroadcastStatus) {
       try {
         server.send(JSON.stringify({ type: "sse_status", status: this.lastBroadcastStatus }));
@@ -100,20 +111,59 @@ export class MultiGatewayHub {
 
   // ---------------------------------------------------------------------------
   // WebSocket lifecycle (Hibernation API)
+  //
+  // These are the only signals (besides `alarm()` and an inbound fetch) that
+  // wake the DO from hibernation, so each one re-ensures upstreams while
+  // subscribers remain. The constructor clears in-memory state on wake;
+  // ensureUpstreams() re-establishes anything that was running before.
   // ---------------------------------------------------------------------------
 
   // Inbound messages from clients are unused today; keep the hook so we can
   // add region filters / heartbeats without changing the wire later.
   async webSocketMessage(_ws, _message) {
-    // no-op
+    if (this.countSubscribers() > 0) {
+      this.ensureUpstreams();
+      this.armHeartbeat();
+    }
   }
 
   async webSocketClose(_ws, _code, _reason, _wasClean) {
-    this.checkIdle();
+    // `getWebSockets()` already excludes the closing socket by the time this
+    // fires. If others remain, keep the upstreams warm; otherwise schedule
+    // teardown after a short grace window so a quick reconnect doesn't churn.
+    if (this.countSubscribers() > 0) {
+      this.ensureUpstreams();
+      this.armHeartbeat();
+    } else {
+      this.armTeardown();
+    }
   }
 
   async webSocketError(_ws, _err) {
-    this.checkIdle();
+    if (this.countSubscribers() > 0) {
+      this.ensureUpstreams();
+      this.armHeartbeat();
+    } else {
+      this.armTeardown();
+    }
+  }
+
+  // The alarm is the only timer that survives hibernation. It serves two
+  // jobs:
+  //   1. Heartbeat — while subscribers remain, re-ensure upstreams so any
+  //      that died (LNS bounce, EOF) come back; failed regions get retried
+  //      on the next tick.
+  //   2. Teardown — if no subscribers remain, close upstreams to free the
+  //      per-region cap slot.
+  async alarm() {
+    if (this.countSubscribers() > 0) {
+      this.ensureUpstreams();
+      this.armHeartbeat();
+    } else {
+      this.shutdownAllUpstreams();
+      // No reschedule — DO can hibernate cleanly until the next client
+      // fetch lands.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -124,23 +174,17 @@ export class MultiGatewayHub {
     return this.state.getWebSockets().length;
   }
 
-  checkIdle() {
-    if (this.countSubscribers() > 0) return;
-    // Last subscriber dropped — close upstreams to free the per-region cap
-    // slot. Use a short delay so a quick reconnect (page nav) doesn't churn
-    // the upstream socket.
-    if (this.teardownTimer) return;
-    this.teardownTimer = setTimeout(() => {
-      this.teardownTimer = null;
-      if (this.countSubscribers() === 0) this.shutdownAllUpstreams();
-    }, IDLE_TEARDOWN_MS);
+  // Schedule the heartbeat alarm. setAlarm() with an earlier time wins, so
+  // we always set to (now + heartbeat) — overwriting any pending teardown.
+  armHeartbeat() {
+    this.state.storage.setAlarm(Date.now() + ALARM_HEARTBEAT_MS);
   }
 
-  cancelTeardown() {
-    if (this.teardownTimer) {
-      clearTimeout(this.teardownTimer);
-      this.teardownTimer = null;
-    }
+  // Schedule a teardown pass after the idle grace. If clients reconnect
+  // before then, armHeartbeat() pushes the alarm back out and the teardown
+  // is skipped (alarm() re-checks subscriber count when it fires).
+  armTeardown() {
+    this.state.storage.setAlarm(Date.now() + IDLE_TEARDOWN_MS);
   }
 
   // ---------------------------------------------------------------------------
@@ -150,7 +194,6 @@ export class MultiGatewayHub {
   ensureUpstreams() {
     for (const region of REGIONS) {
       if (this.upstreams.has(region.region)) continue;
-      if (this.retryTimers.has(region.region)) continue;
       this.openUpstream(region);
     }
   }
@@ -177,15 +220,15 @@ export class MultiGatewayHub {
     } catch (err) {
       console.warn("multi-gateway hub: upstream fetch failed", region.region, err?.message);
       this.upstreams.delete(region.region);
-      this.scheduleRetry(region);
       this.broadcastStatusIfChanged();
+      // Don't open-loop on a failing region — the heartbeat alarm will
+      // retry on the next tick.
       return;
     }
     if (!res.ok || !res.body) {
       console.warn("multi-gateway hub: upstream non-OK", region.region, res.status);
       try { controller.abort(); } catch { /* ignore */ }
       this.upstreams.delete(region.region);
-      this.scheduleRetry(region);
       this.broadcastStatusIfChanged();
       return;
     }
@@ -194,8 +237,9 @@ export class MultiGatewayHub {
     entry.status = "open";
     this.broadcastStatusIfChanged();
 
-    // Pump in the background. waitUntil keeps the DO alive between client
-    // events while we have an open upstream.
+    // Pump in the background. waitUntil keeps the DO alive while data flows;
+    // once it resolves the DO can hibernate, and the heartbeat alarm picks
+    // up from there.
     this.state.waitUntil(this.pumpUpstream(region, entry));
   }
 
@@ -221,7 +265,7 @@ export class MultiGatewayHub {
           this.broadcast(payload);
         }
       }
-      // Upstream ended cleanly. Treat as down and retry.
+      // Upstream ended cleanly. Treat as down; heartbeat alarm will retry.
       console.warn("multi-gateway hub: upstream ended", region.region);
     } catch (err) {
       // Aborted on intentional teardown — quiet; otherwise log.
@@ -230,9 +274,10 @@ export class MultiGatewayHub {
     } finally {
       this.upstreams.delete(region.region);
     }
-    // If we still have subscribers, schedule a retry so traffic resumes.
-    if (this.countSubscribers() > 0) this.scheduleRetry(region);
     this.broadcastStatusIfChanged();
+    // If subscribers remain, make sure the heartbeat alarm is armed so we
+    // retry on the next tick (cheap idempotent set).
+    if (this.countSubscribers() > 0) this.armHeartbeat();
   }
 
   shutdownUpstream(regionName) {
@@ -247,25 +292,12 @@ export class MultiGatewayHub {
     for (const regionName of [...this.upstreams.keys()]) {
       this.shutdownUpstream(regionName);
     }
-    for (const t of this.retryTimers.values()) clearTimeout(t);
-    this.retryTimers.clear();
     this.lastBroadcastStatus = null;
   }
 
   recordUpstreamDown(regionName) {
     this.upstreams.delete(regionName);
     this.broadcastStatusIfChanged();
-  }
-
-  scheduleRetry(region) {
-    if (this.retryTimers.has(region.region)) return;
-    const handle = setTimeout(() => {
-      this.retryTimers.delete(region.region);
-      // Only retry if anyone is still listening.
-      if (this.countSubscribers() === 0) return;
-      this.openUpstream(region);
-    }, REGION_RETRY_MS);
-    this.retryTimers.set(region.region, handle);
   }
 
   // ---------------------------------------------------------------------------
