@@ -45,10 +45,10 @@ class SseLikeSocket {
     this.onmessage = null;
     this._ws = new WebSocket(url);
     this._closed = false;
-    // Distinguish a consumer-initiated close() from a server/network drop so
-    // the legacy "No upstream available" path (which calls close() and sets
-    // status to "unavailable") doesn't get its status flipped to "reconnecting"
-    // by a stray onerror right after.
+    // Distinguish a consumer-initiated close() from a server/network drop —
+    // the worker's reconnectSse() calls close() to force a fresh socket,
+    // and we don't want that to flip status to "reconnecting" via a stray
+    // onerror fired right after.
     this._intentionallyClosed = false;
     this._ws.addEventListener("open", (e) => this.onopen?.(e));
     this._ws.addEventListener("error", (e) => {
