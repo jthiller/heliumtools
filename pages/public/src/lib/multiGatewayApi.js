@@ -114,18 +114,6 @@ export async function requestIssueTxns(mac, owner) {
   return data;
 }
 
-export async function requestAddGatewayTxn(mac, owner, payer) {
-  const res = await fetch(`${API_BASE}/gateways/${mac}/add`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, payer: payer || owner }),
-  });
-  const data = await parseJson(res);
-  if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);
-  if (!data) throw new Error("Empty response from server");
-  return data;
-}
-
 export async function requestOnboardTxn(mac, owner, { location, elevation, gain } = {}) {
   const res = await fetch(`${API_BASE}/gateways/${mac}/onboard`, {
     method: "POST",
