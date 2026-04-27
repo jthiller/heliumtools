@@ -20,12 +20,14 @@ const MAX_CACHED = 500;
 const IDB_TIMEOUT_MS = 1000;
 
 function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`indexedDB ${label} timeout`)), ms),
-    ),
-  ]);
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`indexedDB ${label} timeout`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
 }
 
 let dbPromise = null;
