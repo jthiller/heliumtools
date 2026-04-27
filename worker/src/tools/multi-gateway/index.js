@@ -3,10 +3,7 @@ import { getOuiCache } from "./oui-cache.js";
 import { handleBatchOnchainStatus } from "./handlers/onchain.js";
 import { handleIssueAndOnboard, handleOnboard } from "./handlers/issue.js";
 import { REGIONS } from "./regions.js";
-
-function getHost(env) {
-  return env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
-}
+import { getHost } from "./lib/host.js";
 
 async function fetchUpstream(url, headers) {
   const res = await fetch(url, { headers });

@@ -21,6 +21,7 @@ import {
   getCanopyDepth,
 } from "../../../lib/helium-solana.js";
 import { findGateway } from "../lib/findGateway.js";
+import { getHost } from "../lib/host.js";
 
 /**
  * Handler: construct issue + onboard transactions for wallet signing.
@@ -49,7 +50,7 @@ export async function handleIssueAndOnboard(mac, request, env) {
   if (!found) return jsonResponse({ error: "Gateway not found" }, 404);
 
   const gatewayPubkey = found.data.public_key;
-  const host = env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
+  const host = getHost(env);
   const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || env.MULTI_GATEWAY_API_KEY;
   const addRes = await fetch(`http://${host}:${found.port}/gateways/${mac}/add`, {
     method: "POST",
