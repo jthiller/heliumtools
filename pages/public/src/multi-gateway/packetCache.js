@@ -12,6 +12,23 @@ const DB_NAME = "multi-gateway";
 const STORE = "packets";
 const VERSION = 1;
 const MAX_CACHED = 500;
+// Safari has a long-standing bug where IndexedDB transactions inside a Web
+// Worker can stall silently — the request never fires onsuccess/onerror. The
+// open itself succeeds, so the DB shows up in storage inspectors, but reads
+// hang forever. Bound every IDB op by a timeout so a stuck transaction can't
+// block the live data path; the cache is best-effort, not load-bearing.
+const IDB_TIMEOUT_MS = 1000;
+
+function withTimeout(promise, ms, label) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`indexedDB ${label} timeout`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
 
 let dbPromise = null;
 
@@ -42,13 +59,19 @@ export async function hydrateCache() {
 }
 
 export async function readPackets(mac) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).get(mac);
-    req.onsuccess = () => resolve(req.result?.packets ?? []);
-    req.onerror = () => reject(req.error);
-  });
+  return withTimeout(
+    (async () => {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).get(mac);
+        req.onsuccess = () => resolve(req.result?.packets ?? []);
+        req.onerror = () => reject(req.error);
+      });
+    })(),
+    IDB_TIMEOUT_MS,
+    "read",
+  );
 }
 
 function dedupeKey(p) {
@@ -59,20 +82,26 @@ function dedupeKey(p) {
 
 export async function writePackets(mac, incoming) {
   if (!incoming.length) return;
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const getReq = store.get(mac);
-    getReq.onsuccess = () => {
-      const existing = getReq.result?.packets ?? [];
-      const merged = new Map(existing.map((p) => [dedupeKey(p), p]));
-      for (const p of incoming) merged.set(dedupeKey(p), p);
-      const list = [...merged.values()].sort((a, b) => a.timestamp - b.timestamp);
-      const trimmed = list.length > MAX_CACHED ? list.slice(-MAX_CACHED) : list;
-      store.put({ mac, packets: trimmed });
-    };
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  return withTimeout(
+    (async () => {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readwrite");
+        const store = tx.objectStore(STORE);
+        const getReq = store.get(mac);
+        getReq.onsuccess = () => {
+          const existing = getReq.result?.packets ?? [];
+          const merged = new Map(existing.map((p) => [dedupeKey(p), p]));
+          for (const p of incoming) merged.set(dedupeKey(p), p);
+          const list = [...merged.values()].sort((a, b) => a.timestamp - b.timestamp);
+          const trimmed = list.length > MAX_CACHED ? list.slice(-MAX_CACHED) : list;
+          store.put({ mac, packets: trimmed });
+        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    })(),
+    IDB_TIMEOUT_MS,
+    "write",
+  );
 }
