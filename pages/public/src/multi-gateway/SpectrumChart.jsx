@@ -4,11 +4,7 @@ import { readChartColors } from "../lib/chartColors.js";
 import { JOIN_FRAME_TYPES, DOWNLINK_FRAME_TYPES } from "../lib/lorawan.js";
 import { packetMatchesFilters } from "./filters.js";
 import { parseSpreadingFactor, loraAirtimeMs } from "./airtime.js";
-import {
-  colorForNetIdShade,
-  plotLeftFor,
-  PLOT_RIGHT,
-} from "./PacketScatter.jsx";
+import { colorForNetIdShade } from "./PacketScatter.jsx";
 import { JOIN_COLOR, DOWN_COLOR } from "./EventsBar.jsx";
 
 // Spectrum waterfall: X = frequency (MHz), Y = wall-clock time. Each packet
@@ -27,6 +23,10 @@ import { JOIN_COLOR, DOWN_COLOR } from "./EventsBar.jsx";
 const PLOT_TOP = 8;
 // Tick label area below the plot.
 const PLOT_BOTTOM_PAD = 18;
+// Left/right inset inside the canvas. Spectrum has no Y-axis labels, so
+// the gutters are tiny — just enough to breathe.
+const PLOT_LEFT = 8;
+const PLOT_RIGHT = 8;
 
 // User-selectable timeframe. "max" follows the buffer; "1h" only shows up
 // when the buffer actually holds an hour of history.
@@ -114,7 +114,7 @@ function computeClusters(channels) {
 
 function buildScales({ width, height, clusters, timeDomain }) {
   if (!width || !height) return null;
-  const xLeft = plotLeftFor(width);
+  const xLeft = PLOT_LEFT;
   const xRight = width - PLOT_RIGHT;
   const yTop = PLOT_TOP;
   const yBottom = height - PLOT_BOTTOM_PAD;
