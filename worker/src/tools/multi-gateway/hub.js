@@ -40,10 +40,7 @@
 //     (e.g. region filters) can ride the same socket.
 
 import { REGIONS } from "./regions.js";
-
-function getHost(env) {
-  return env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
-}
+import { getHost } from "./lib/host.js";
 
 // Idle window before we tear down upstreams after the last client leaves.
 // Short — clients reconnect within a couple of seconds during nav, and we

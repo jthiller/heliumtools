@@ -45,10 +45,10 @@ class SseLikeSocket {
     this.onmessage = null;
     this._ws = new WebSocket(url);
     this._closed = false;
-    // Distinguish a consumer-initiated close() from a server/network drop so
-    // the legacy "No upstream available" path (which calls close() and sets
-    // status to "unavailable") doesn't get its status flipped to "reconnecting"
-    // by a stray onerror right after.
+    // Distinguish a consumer-initiated close() from a server/network drop —
+    // the worker's reconnectSse() calls close() to force a fresh socket,
+    // and we don't want that to flip status to "reconnecting" via a stray
+    // onerror fired right after.
     this._intentionallyClosed = false;
     this._ws.addEventListener("open", (e) => this.onopen?.(e));
     this._ws.addEventListener("error", (e) => {
@@ -107,18 +107,6 @@ export async function requestIssueTxns(mac, owner) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ owner }),
-  });
-  const data = await parseJson(res);
-  if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);
-  if (!data) throw new Error("Empty response from server");
-  return data;
-}
-
-export async function requestAddGatewayTxn(mac, owner, payer) {
-  const res = await fetch(`${API_BASE}/gateways/${mac}/add`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, payer: payer || owner }),
   });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);

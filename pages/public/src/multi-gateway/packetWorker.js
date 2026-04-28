@@ -50,28 +50,10 @@ function setSseStatus(status) {
 }
 
 function handleSseMessage(data) {
-  // Two flavours of "upstream is dead":
-  //   1) Legacy SSE proxy emitted `{error: "No upstream available"}` and
-  //      closed the stream. Still handled for backwards compatibility while
-  //      the worker rolls out.
-  //   2) The DO-backed WebSocket sends `{type:"sse_status", status:"unavailable"}`
-  //      while keeping the socket open — the DO retries upstreams in the
-  //      background and pushes a "connected" status frame when traffic
-  //      resumes, so we don't tear down our own socket here.
-  if (data?.error === "No upstream available") {
-    setSseStatus("unavailable");
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    clearStaleTimer();
-    clearUpstreamDownTimer();
-    upstreamDownTimer = setTimeout(() => {
-      upstreamDownTimer = null;
-      ensureSse();
-    }, UPSTREAM_DOWN_BACKOFF_MS);
-    return;
-  }
+  // The DO-backed WebSocket sends `{type:"sse_status", status:"unavailable"}`
+  // while keeping the socket open — the DO retries upstreams in the
+  // background and pushes a "connected" status frame when traffic resumes,
+  // so we don't tear down our own socket here.
   if (data?.type === "sse_status") {
     if (data.status === "unavailable") {
       setSseStatus("unavailable");
@@ -81,7 +63,6 @@ function handleSseMessage(data) {
     if (data.status === "connected") {
       setSseStatus("connected");
       clearStaleTimer();
-      clearUpstreamDownTimer();
       return;
     }
     return;
@@ -121,25 +102,12 @@ function handleSseMessage(data) {
 // EventSource's own retry win first.
 const RECONNECT_AFTER_CLOSED_MS = 2000;
 const STALE_RECONNECT_MS = 15000;
-// When the server tells us the upstream LNS is unreachable, EventSource's
-// 3s auto-retry would just hammer the same dead path. Back off to 30s
-// instead so the page doesn't strobe "Reconnecting" while the operator
-// fixes the upstream.
-const UPSTREAM_DOWN_BACKOFF_MS = 30000;
 let staleTimer = null;
-let upstreamDownTimer = null;
 
 function clearStaleTimer() {
   if (staleTimer) {
     clearTimeout(staleTimer);
     staleTimer = null;
-  }
-}
-
-function clearUpstreamDownTimer() {
-  if (upstreamDownTimer) {
-    clearTimeout(upstreamDownTimer);
-    upstreamDownTimer = null;
   }
 }
 
@@ -191,7 +159,6 @@ function ensureSse() {
 // can also silently stall after a tab suspension on mobile.
 function reconnectSse() {
   clearStaleTimer();
-  clearUpstreamDownTimer();
   if (eventSource) {
     eventSource.close();
     eventSource = null;

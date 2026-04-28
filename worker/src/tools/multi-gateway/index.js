@@ -3,10 +3,7 @@ import { getOuiCache } from "./oui-cache.js";
 import { handleBatchOnchainStatus } from "./handlers/onchain.js";
 import { handleIssueAndOnboard, handleOnboard } from "./handlers/issue.js";
 import { REGIONS } from "./regions.js";
-
-function getHost(env) {
-  return env.MULTI_GATEWAY_HOST || "hotspot.heliumtools.org";
-}
+import { getHost } from "./lib/host.js";
 
 async function fetchUpstream(url, headers) {
   const res = await fetch(url, { headers });
@@ -112,26 +109,6 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
   const onboardMatch = pathname.match(/^\/gateways\/([A-Fa-f0-9]{16})\/onboard$/);
   if (onboardMatch && request.method === "POST") {
     return handleOnboard(onboardMatch[1], request, env);
-  }
-
-  // Add gateway transaction proxy (legacy protobuf)
-  const addMatch = pathname.match(/^\/gateways\/([A-Fa-f0-9]{16})\/add$/);
-  if (addMatch && request.method === "POST") {
-    const mac = addMatch[1];
-    const reqBody = await request.text();
-    const writeKey = env.MULTI_GATEWAY_WRITE_API_KEY || apiKey;
-    const addResults = await Promise.allSettled(
-      REGIONS.map(({ port }) =>
-        fetch(`http://${host}:${port}/gateways/${mac}/add`, {
-          method: "POST",
-          headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
-          body: reqBody,
-        }).then(async (res) => res.ok ? await res.json() : null)
-      ),
-    );
-    const addResult = addResults.find(r => r.status === "fulfilled" && r.value)?.value;
-    if (addResult) return jsonResponse(addResult);
-    return jsonResponse({ error: "Gateway not found" }, 404);
   }
 
   if (pathname === "/ouis" && request.method === "GET") {
