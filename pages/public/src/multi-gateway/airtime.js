@@ -32,7 +32,7 @@ export function loraAirtimeMs(sf, bw, payloadBytes, opts = {}) {
 
   const tSym = (2 ** sf) / (bw * 1000);
   const de = lowDataRateOptimize === "auto"
-    ? (sf >= 11 && bw === 125 ? 1 : 0)
+    ? (tSym > 0.016 ? 1 : 0)
     : (lowDataRateOptimize ? 1 : 0);
   const h = explicitHeader ? 0 : 1;
   const crc = crcOn ? 1 : 0;

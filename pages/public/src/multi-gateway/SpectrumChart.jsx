@@ -464,17 +464,18 @@ export default function SpectrumChart({
     };
   }, []);
 
-  // Walk in reverse so the newest rectangle wins on overlap.
+  // Walk in reverse so the newest rectangle wins on overlap. Use the
+  // rendered width (clamped to MIN_RECT_W_PX) so very narrow rectangles
+  // stay clickable across their full visual extent.
   const hitTest = (cx, cy) => {
     const rects = stateRef.current.rectsBase;
     if (!rects) return null;
     for (let i = rects.length - 1; i >= 0; i--) {
       const r = rects[i];
-      if (
-        r.y != null
-        && cx >= r.x && cx <= r.x + r.w
-        && cy >= r.y && cy <= r.y + r.h
-      ) return r;
+      if (r.y == null) continue;
+      const w = Math.max(MIN_RECT_W_PX, r.w);
+      const h = Math.max(MIN_RECT_H_PX, r.h);
+      if (cx >= r.x && cx <= r.x + w && cy >= r.y && cy <= r.y + h) return r;
     }
     return null;
   };
