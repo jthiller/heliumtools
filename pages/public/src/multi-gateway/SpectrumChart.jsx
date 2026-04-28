@@ -23,10 +23,9 @@ import { JOIN_COLOR, DOWN_COLOR } from "./EventsBar.jsx";
 const PLOT_TOP = 8;
 // Tick label area below the plot.
 const PLOT_BOTTOM_PAD = 18;
-// Left/right inset inside the canvas. Spectrum has no Y-axis labels, so
-// the gutters are tiny — just enough to breathe.
-const PLOT_LEFT = 8;
-const PLOT_RIGHT = 8;
+// Spectrum has no Y-axis labels or axis line, so the gutters can be tiny.
+const PLOT_LEFT = 4;
+const PLOT_RIGHT = 4;
 
 // User-selectable timeframe. "max" follows the buffer; "1h" only shows up
 // when the buffer actually holds an hour of history.
@@ -158,7 +157,7 @@ function buildScales({ width, height, clusters, timeDomain }) {
 }
 
 function drawGrid(ctx, scales, colors) {
-  const { xLeft, yTop, yBottom, xScale, clusters } = scales;
+  const { yTop, yBottom, xScale, clusters } = scales;
   // Light dashed verticals at each labeled channel center.
   ctx.save();
   ctx.strokeStyle = colors?.grid ?? "#e5e7eb";
@@ -173,17 +172,6 @@ function drawGrid(ctx, scales, colors) {
       ctx.stroke();
     }
   }
-  ctx.restore();
-
-  // Solid y-axis line.
-  ctx.save();
-  ctx.strokeStyle = colors?.grid ?? "#e5e7eb";
-  ctx.lineWidth = 1;
-  const xLine = Math.round(xLeft) + 0.5;
-  ctx.beginPath();
-  ctx.moveTo(xLine, yTop);
-  ctx.lineTo(xLine, yBottom);
-  ctx.stroke();
   ctx.restore();
 
   // Diagonal-slash break markers between clusters so the axis gap reads as
