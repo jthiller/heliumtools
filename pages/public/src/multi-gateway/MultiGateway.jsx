@@ -905,7 +905,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:divide-x sm:divide-border-muted">
-        <div className="flex flex-[3] flex-col">
+        <div className="flex flex-[7] flex-col">
           <PacketScatter
             key={`scatter-${mac}`}
             packets={packets}
@@ -928,7 +928,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
             setHover={setHover}
           />
         </div>
-        <div className="flex flex-[2] flex-col">
+        <div className="flex flex-[3] flex-col">
           <SpectrumChart
             key={`spectrum-${mac}`}
             packets={packets}
