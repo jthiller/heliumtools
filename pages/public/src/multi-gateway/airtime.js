@@ -18,8 +18,8 @@ export function parseSpreadingFactor(s) {
 }
 
 // Time on air in ms. LoRaWAN defaults: CR=4/5, preamble=8, explicit header,
-// CRC on. Low-data-rate-optimize auto-enables for SF>=11 @ BW=125 (the
-// Tsym > 16ms rule).
+// CRC on. Low-data-rate-optimize auto-enables when Tsym > 16 ms (the rule
+// from Semtech AN1200.13).
 export function loraAirtimeMs(sf, bw, payloadBytes, opts = {}) {
   if (!Number.isFinite(sf) || !Number.isFinite(bw) || !Number.isFinite(payloadBytes)) return 0;
   if (sf < 6 || sf > 12 || bw <= 0 || payloadBytes < 0) return 0;
