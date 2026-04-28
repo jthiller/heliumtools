@@ -417,35 +417,52 @@ export default function SpectrumChart({
     hover,
   };
 
-  // tMaxRef holds the chart's effective "now" when the user is inspecting:
-  //   null    → live mode, tMax = Date.now() each frame
-  //   number  → frozen at this timestamp (hover) OR mid fast-forward back to
-  //             live (after hover ends)
-  // Stored in a ref so rAF reads it without re-creating the loop.
-  const tMaxRef = useRef(null);
+  // Animation state for hover-pause + ease-in-out fast-forward back to live.
+  //   frozen      number when hovered, null otherwise
+  //   ffStart     performance.now() at the start of the fast-forward, else null
+  //   ffFromTMax  the chart's tMax at the start of the fast-forward
+  const animRef = useRef({ frozen: null, ffStart: null, ffFromTMax: null });
 
   const rafRef = useRef(0);
   useEffect(() => {
+    // Cubic smoothstep — ease-in-out with C¹ continuity at both ends.
+    const ease = (t) => t * t * (3 - 2 * t);
+    const FF_DURATION_MS = 350;
+
     const tick = () => {
       const s = stateRef.current;
       const canvas = s.canvasRef.current;
       const now = Date.now();
       const isHovered = s.hover?.source === "spectrum";
+      const a = animRef.current;
       let effectiveNow;
       if (isHovered) {
-        if (tMaxRef.current === null) tMaxRef.current = now;
-        effectiveNow = tMaxRef.current;
-      } else if (tMaxRef.current !== null) {
-        // Fast-forward toward live: each frame, pull 20% closer to real time.
-        // Approaches Date.now() with a ~83ms time constant at 60fps; switches
-        // back to live mode once the gap is below the snap threshold.
-        const gap = now - tMaxRef.current;
-        if (gap < 30) {
-          tMaxRef.current = null;
-          effectiveNow = now;
-        } else {
-          tMaxRef.current += gap * 0.2;
-          effectiveNow = tMaxRef.current;
+        if (a.ffStart !== null) {
+          // Mid fast-forward and the user re-engaged hover — freeze wherever
+          // the chart currently is rather than snap back to the original
+          // freeze point.
+          const elapsed = performance.now() - a.ffStart;
+          const progress = Math.min(1, elapsed / FF_DURATION_MS);
+          a.frozen = a.ffFromTMax + ease(progress) * (now - a.ffFromTMax);
+          a.ffStart = null;
+          a.ffFromTMax = null;
+        } else if (a.frozen === null) {
+          a.frozen = now;
+        }
+        effectiveNow = a.frozen;
+      } else if (a.frozen !== null) {
+        // Hover just ended — kick off the fast-forward from the frozen value.
+        a.ffStart = performance.now();
+        a.ffFromTMax = a.frozen;
+        a.frozen = null;
+        effectiveNow = a.ffFromTMax;
+      } else if (a.ffStart !== null) {
+        const elapsed = performance.now() - a.ffStart;
+        const progress = Math.min(1, elapsed / FF_DURATION_MS);
+        effectiveNow = a.ffFromTMax + ease(progress) * (now - a.ffFromTMax);
+        if (progress >= 1) {
+          a.ffStart = null;
+          a.ffFromTMax = null;
         }
       } else {
         effectiveNow = now;
