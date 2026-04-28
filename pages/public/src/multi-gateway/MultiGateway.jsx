@@ -57,6 +57,8 @@ import {
 } from "./packetWorkerClient.js";
 import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
+import SpectrumChart from "./SpectrumChart.jsx";
+import { packetMatchesFilters } from "./filters.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -902,28 +904,44 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
         </div>
       </div>
 
-      <PacketScatter
-        key={`scatter-${mac}`}
-        packets={packets}
-        tracksById={tracksById}
-        loading={loading}
-        netIdFilter={netIdFilter}
-        trackFilter={trackFilter}
-        visibleTypes={visibleTypes}
-        xDomain={xDomain}
-        hover={hover}
-        setHover={setHover}
-        onPickPacket={setPinnedPacketId}
-      />
-
-      <EventsBar
-        key={`events-${mac}`}
-        packets={packets}
-        visibleTypes={visibleTypes}
-        xDomain={xDomain}
-        hover={hover}
-        setHover={setHover}
-      />
+      <div className="flex flex-col sm:flex-row sm:divide-x sm:divide-border">
+        <div className="flex flex-1 flex-col">
+          <PacketScatter
+            key={`scatter-${mac}`}
+            packets={packets}
+            tracksById={tracksById}
+            loading={loading}
+            netIdFilter={netIdFilter}
+            trackFilter={trackFilter}
+            visibleTypes={visibleTypes}
+            xDomain={xDomain}
+            hover={hover}
+            setHover={setHover}
+            onPickPacket={setPinnedPacketId}
+          />
+          <EventsBar
+            key={`events-${mac}`}
+            packets={packets}
+            visibleTypes={visibleTypes}
+            xDomain={xDomain}
+            hover={hover}
+            setHover={setHover}
+          />
+        </div>
+        <div className="flex-1">
+          <SpectrumChart
+            key={`spectrum-${mac}`}
+            packets={packets}
+            loading={loading}
+            netIdFilter={netIdFilter}
+            trackFilter={trackFilter}
+            visibleTypes={visibleTypes}
+            hover={hover}
+            setHover={setHover}
+            onPickPacket={setPinnedPacketId}
+          />
+        </div>
+      </div>
 
       <GatewayDetail
         ouiLookup={ouiLookup}
@@ -948,12 +966,9 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
 // rest.
 const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
   const visiblePackets = useMemo(() => {
-    return [...packets].reverse().filter((pkt) => {
-      if (pkt.frame_type && visibleTypes[pkt.frame_type] === false) return false;
-      if (netIdFilter !== "all" && pkt._netId !== netIdFilter) return false;
-      if (trackFilter !== "all" && pkt._trackId !== trackFilter) return false;
-      return true;
-    });
+    return [...packets].reverse().filter((pkt) =>
+      packetMatchesFilters(pkt, { visibleTypes, netIdFilter, trackFilter }),
+    );
   }, [packets, visibleTypes, netIdFilter, trackFilter]);
 
   // Virtualized rendering: only the rows currently in (or near) the viewport

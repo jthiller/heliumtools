@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { readChartColors } from "../lib/chartColors.js";
+import { JOIN_FRAME_TYPES, DOWNLINK_FRAME_TYPES } from "../lib/lorawan.js";
 import { formatTimeTick, plotLeftFor, PLOT_RIGHT, PULSE_DURATION_MS } from "./PacketScatter.jsx";
 
 // Two-lane timeline of join + downlink events. Shares its X axis with
@@ -16,13 +17,11 @@ const MIN_TICK_PX = 80;  // labels read "5m ago" / "now"; ~50px text + gap
 const MAX_TICKS = 6;
 const MIN_TICKS = 2;
 
-const JOIN_TYPES = new Set(["JoinRequest", "JoinAccept", "RejoinRequest", "Proprietary"]);
-const DOWN_TYPES = new Set(["UnconfirmedDown", "ConfirmedDown"]);
-
 // Joins/downlinks aren't device-correlatable so they stay on a fixed palette
-// rather than the NetID family used by uplink dots.
-const JOIN_COLOR = { light: "#8b5cf6", dark: "#a78bfa" }; // violet 500 / 400
-const DOWN_COLOR = { light: "#0ea5e9", dark: "#38bdf8" }; // sky 500 / 400
+// rather than the NetID family used by uplink dots. Exported so SpectrumChart
+// can color the same packets consistently across the inspector card.
+export const JOIN_COLOR = { light: "#8b5cf6", dark: "#a78bfa" }; // violet 500 / 400
+export const DOWN_COLOR = { light: "#0ea5e9", dark: "#38bdf8" }; // sky 500 / 400
 
 const trianglePath = (cx, cy, r) =>
   `M ${cx - r} ${cy - r} L ${cx + r} ${cy - r} L ${cx} ${cy + r} Z`;
@@ -94,8 +93,8 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
       const t = pkt.frame_type;
       if (!t) continue;
       if (visibleTypes && visibleTypes[t] === false) continue;
-      if (JOIN_TYPES.has(t)) joins.push(pkt);
-      else if (DOWN_TYPES.has(t)) downs.push(pkt);
+      if (JOIN_FRAME_TYPES.has(t)) joins.push(pkt);
+      else if (DOWNLINK_FRAME_TYPES.has(t)) downs.push(pkt);
     }
     return { joins, downs };
   }, [packets, visibleTypes]);
@@ -115,7 +114,7 @@ export default function EventsBar({ packets, visibleTypes, xDomain, hover, setHo
         newOnes.push({
           id: pkt._id,
           timestamp: pkt.timestamp,
-          lane: JOIN_TYPES.has(pkt.frame_type) ? "joins" : "downlinks",
+          lane: JOIN_FRAME_TYPES.has(pkt.frame_type) ? "joins" : "downlinks",
         });
       }
     }
