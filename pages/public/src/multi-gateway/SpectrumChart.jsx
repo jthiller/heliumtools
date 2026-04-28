@@ -57,6 +57,9 @@ const DEFAULT_FREQ_DOMAIN = [902.3, 914.9];
 
 const MIN_RECT_W_PX = 1.5;
 const MIN_RECT_H_PX = 2;
+// Hit-test fudge factor on the y-axis so very short rectangles (SF7 at a
+// short timeframe is < 3px tall) stay easy to target.
+const HIT_PAD_Y_PX = 4;
 
 function rssiToOpacity(rssi) {
   if (!Number.isFinite(rssi)) return OPACITY_CEIL;
@@ -509,8 +512,8 @@ export default function SpectrumChart({
   }, []);
 
   // Walk in reverse so the newest rectangle wins on overlap. Use the
-  // rendered width (clamped to MIN_RECT_W_PX) so very narrow rectangles
-  // stay clickable across their full visual extent.
+  // rendered width (clamped to MIN_RECT_W_PX) and a small vertical pad so
+  // very short / narrow rectangles stay easy to target.
   const hitTest = (cx, cy) => {
     const rects = stateRef.current.rectsBase;
     if (!rects) return null;
@@ -519,7 +522,10 @@ export default function SpectrumChart({
       if (r.y == null) continue;
       const w = Math.max(MIN_RECT_W_PX, r.w);
       const h = Math.max(MIN_RECT_H_PX, r.h);
-      if (cx >= r.x && cx <= r.x + w && cy >= r.y && cy <= r.y + h) return r;
+      if (
+        cx >= r.x && cx <= r.x + w
+        && cy >= r.y - HIT_PAD_Y_PX && cy <= r.y + h + HIT_PAD_Y_PX
+      ) return r;
     }
     return null;
   };
