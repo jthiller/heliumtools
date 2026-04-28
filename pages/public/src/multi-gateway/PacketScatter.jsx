@@ -596,7 +596,7 @@ function HoverTooltip({ hover }) {
   const flipRight = hover.x > hover.hostWidth * TOOLTIP_FLIP_THRESHOLD;
   return (
     <div
-      className="pointer-events-none absolute z-10 rounded-md border border-border bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
+      className="pointer-events-none absolute z-20 rounded-md border border-border bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
       style={{
         left: flipRight ? undefined : hover.x + 12,
         right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,

@@ -253,7 +253,7 @@ function HoverTooltip({ hover }) {
   const label = p.dev_addr || p.frame_type || "Packet";
   return (
     <div
-      className="pointer-events-none absolute z-10 rounded-md border border-border bg-surface-raised px-2 py-1 text-xs shadow-soft"
+      className="pointer-events-none absolute z-20 rounded-md border border-border bg-surface-raised px-2 py-1 text-xs shadow-soft"
       style={{
         left: flipRight ? undefined : hover.x + 12,
         right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,
