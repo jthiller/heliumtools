@@ -526,7 +526,7 @@ export default function SpectrumChart({
   return (
     <div
       ref={hostRef}
-      className="relative h-64 px-0 pb-0 pt-3 sm:h-full sm:px-2"
+      className="relative h-64 sm:h-full"
       data-chart-host
       onMouseLeave={() => {
         if (hover && hover.source === "spectrum") setHover(null);
@@ -543,7 +543,7 @@ export default function SpectrumChart({
       ) : (
         <canvas
           ref={canvasRef}
-          className={`absolute left-0 right-0 top-3 sm:left-2 sm:right-2 ${
+          className={`absolute inset-0 ${
             hover?.source === "spectrum" ? "cursor-pointer" : ""
           }`}
           style={{ touchAction: "pan-y" }}
