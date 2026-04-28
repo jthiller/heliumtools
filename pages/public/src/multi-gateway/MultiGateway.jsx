@@ -904,7 +904,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:divide-x sm:divide-border">
+      <div className="flex flex-col sm:flex-row sm:divide-x sm:divide-border-muted">
         <div className="flex flex-[3] flex-col">
           <PacketScatter
             key={`scatter-${mac}`}

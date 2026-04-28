@@ -569,18 +569,23 @@ export default function SpectrumChart({
         />
       )}
       {hasData && visibleTimeframeOptions.length > 1 && (
-        <div className="absolute right-2 top-2 z-10 flex overflow-hidden rounded-md border border-border bg-surface text-[11px] shadow-soft">
+        <div
+          role="group"
+          aria-label="Time window"
+          className="absolute right-3 top-3 z-10 flex items-center gap-px rounded-full border border-border/70 bg-surface-raised/85 p-0.5 text-[11px] font-medium tabular-nums shadow-soft backdrop-blur"
+        >
           {visibleTimeframeOptions.map((opt) => {
             const active = opt.id === timeframeId;
             return (
               <button
                 key={opt.id}
                 type="button"
+                aria-pressed={active}
                 onClick={() => setTimeframeId(opt.id)}
-                className={`px-2 py-0.5 ${
+                className={`min-w-[2rem] rounded-full px-2 py-0.5 transition-colors duration-150 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
                   active
-                    ? "bg-accent text-white"
-                    : "text-content-secondary hover:bg-surface-inset"
+                    ? "bg-accent-surface text-accent-text"
+                    : "text-content-tertiary hover:text-content-secondary"
                 }`}
               >
                 {opt.label}
