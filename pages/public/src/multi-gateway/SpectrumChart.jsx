@@ -553,12 +553,13 @@ export default function SpectrumChart({
     const canvas = canvasRef.current;
     const offsetLeft = canvas?.offsetLeft ?? 0;
     const offsetTop = canvas?.offsetTop ?? 0;
+    const effectiveW = Math.max(MIN_RECT_W_PX, rect.w);
     setHover({
       source: "spectrum",
       trackId: null,
       payload: { ...rect.ref, _airtimeMs: rect.airtimeMs },
       intervalMs: null,
-      x: rect.x + rect.w / 2 + offsetLeft,
+      x: rect.x + effectiveW / 2 + offsetLeft,
       y: rect.y + offsetTop,
       hostWidth: size.w,
     });
