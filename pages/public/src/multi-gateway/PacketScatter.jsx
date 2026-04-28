@@ -301,7 +301,7 @@ function catmullRomTo(ctx, points, start = true) {
 
 // Pick "nice" round-number tick values for an axis range. Targets ~`count`
 // ticks and rounds the step to 1, 2, 5, or 10 × power of ten.
-export function niceTicks(min, max, count = 5) {
+function niceTicks(min, max, count = 5) {
   if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return [min];
   const rough = (max - min) / Math.max(1, count - 1);
   const mag = 10 ** Math.floor(Math.log10(rough));
