@@ -26,9 +26,15 @@ const PLOT_TOP = 8;
 // Tick label area below the plot.
 const PLOT_BOTTOM_PAD = 18;
 
-// Sliding time-axis window. The chart is most useful for "what's happening
-// right now"; older packets stay in the table and the scatter.
-const TIME_WINDOW_MAX_MS = 15 * 60 * 1000;
+// User-selectable timeframe. "max" follows the buffer; "1h" only shows up
+// when the buffer actually holds an hour of history.
+const TIMEFRAME_OPTIONS = [
+  { id: "1m", label: "1m", ms: 60_000 },
+  { id: "15m", label: "15m", ms: 15 * 60_000 },
+  { id: "1h", label: "1h", ms: 60 * 60_000 },
+  { id: "max", label: "max", ms: Infinity },
+];
+const DEFAULT_TIMEFRAME = "15m";
 const DEFAULT_TIME_WINDOW_MS = 60_000;
 
 // Frequency quantization: bucket size used to dedupe floating-point noise
@@ -37,9 +43,6 @@ const DEFAULT_TIME_WINDOW_MS = 60_000;
 const CHANNEL_BUCKET_MHZ = 0.05;
 // Pixel gap rendered between adjacent channel columns.
 const COLUMN_GAP_PX = 4;
-// Floor on column display width so a 125 kHz column is still hoverable when
-// the chart is showing many columns at once.
-const MIN_COLUMN_W_PX = 12;
 
 // RSSI → opacity. Floor keeps -130 dBm packets faintly visible.
 const RSSI_FLOOR_DBM = -130;
@@ -94,23 +97,20 @@ function buildScales({ width, height, channels, timeDomain }) {
   if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMax === tMin) return null;
   if (!channels.length) return null;
 
-  // Width allocation proportional to BW, clamped to MIN_COLUMN_W_PX. If
-  // floors add up to more than the plot can hold, fall back to equal
-  // widths — the chart would otherwise show fewer columns than channels.
+  // Strict bandwidth-proportional widths: every column gets the same
+  // pixels-per-kHz, so a 500 kHz downlink column is exactly 4× the width
+  // of a 125 kHz uplink column. The user reads column width as bandwidth
+  // directly.
   const nGaps = Math.max(0, channels.length - 1);
   const totalGap = nGaps * COLUMN_GAP_PX;
   const totalBw = channels.reduce((s, c) => s + c.bwKHz, 0);
-  let pxPerKHz = totalBw > 0 ? (usableWidth - totalGap) / totalBw : 0;
-  let widths = channels.map((c) => Math.max(MIN_COLUMN_W_PX, c.bwKHz * pxPerKHz));
-  const widthSum = widths.reduce((s, w) => s + w, 0);
-  if (widthSum + totalGap > usableWidth) {
-    const equal = Math.max(1, (usableWidth - totalGap) / channels.length);
-    widths = channels.map(() => equal);
-  }
+  if (totalBw <= 0) return null;
+  const pxPerKHz = (usableWidth - totalGap) / totalBw;
+  if (pxPerKHz <= 0) return null;
 
   let cursor = xLeft;
   const placed = channels.map((c, i) => {
-    const w = widths[i];
+    const w = c.bwKHz * pxPerKHz;
     const out = {
       key: c.key,
       freq: c.freq,
@@ -340,20 +340,38 @@ export default function SpectrumChart({
     return t;
   }, [visiblePackets]);
 
+  const [timeframeId, setTimeframeId] = useState(DEFAULT_TIMEFRAME);
+  const timeframeMs = (TIMEFRAME_OPTIONS.find((t) => t.id === timeframeId) ?? TIMEFRAME_OPTIONS[1]).ms;
+
+  // Buffer span drives which timeframe options are offered. ~10 min slack on
+  // the 1h cutoff so the option doesn't flicker while the buffer fills.
+  const bufferSpanMs = useMemo(() => {
+    if (earliestPacketTs == null) return 0;
+    return Date.now() - earliestPacketTs;
+  }, [earliestPacketTs]);
+
+  const visibleTimeframeOptions = useMemo(
+    () => TIMEFRAME_OPTIONS.filter((opt) => opt.id !== "1h" || bufferSpanMs >= 50 * 60_000),
+    [bufferSpanMs],
+  );
+
   const getScales = useCallback(() => {
     if (!innerW || !innerH) return null;
     const now = Date.now();
-    const cutoff = now - TIME_WINDOW_MAX_MS;
-    const tMin = earliestPacketTs == null
-      ? now - DEFAULT_TIME_WINDOW_MS
-      : Math.max(earliestPacketTs, cutoff);
+    let tMin;
+    if (timeframeMs === Infinity) {
+      tMin = earliestPacketTs ?? (now - DEFAULT_TIME_WINDOW_MS);
+    } else {
+      const cutoff = now - timeframeMs;
+      tMin = earliestPacketTs == null ? cutoff : Math.max(earliestPacketTs, cutoff);
+    }
     return buildScales({
       width: innerW,
       height: innerH,
       channels,
       timeDomain: [tMin, now],
     });
-  }, [innerW, innerH, channels, earliestPacketTs]);
+  }, [innerW, innerH, channels, earliestPacketTs, timeframeMs]);
 
   const stateRef = useRef({});
   stateRef.current = {
@@ -500,6 +518,27 @@ export default function SpectrumChart({
           }}
           onClick={onClick}
         />
+      )}
+      {hasData && visibleTimeframeOptions.length > 1 && (
+        <div className="absolute right-2 top-2 z-10 flex overflow-hidden rounded-md border border-border bg-surface text-[11px] shadow-soft">
+          {visibleTimeframeOptions.map((opt) => {
+            const active = opt.id === timeframeId;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setTimeframeId(opt.id)}
+                className={`px-2 py-0.5 ${
+                  active
+                    ? "bg-accent text-white"
+                    : "text-content-secondary hover:bg-surface-inset"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
       )}
       {hover && hover.source === "spectrum" && <HoverTooltip hover={hover} />}
     </div>
