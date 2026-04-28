@@ -11,16 +11,18 @@ import {
 } from "./PacketScatter.jsx";
 import { JOIN_COLOR, DOWN_COLOR } from "./EventsBar.jsx";
 
-// Spectrum waterfall: X = discrete LoRaWAN channels (one column per unique
-// frequency observed), Y = wall-clock time. Each packet draws a rectangle
-// filling its channel column; height = LoRa time-on-air. Newest at bottom
-// (SDR convention). Hover/click coordinate with the scatter and table via
-// the shared `hover` state.
+// Spectrum waterfall: X = frequency (MHz), Y = wall-clock time. Each packet
+// draws a rectangle at its true spectrum bounds — `[freq - bw/2, freq + bw/2]`
+// in MHz — so a 500 kHz transmission physically overlaps its neighboring
+// 125 kHz channels, the way it does on the air. Newest at bottom (SDR
+// convention). Hover/click coordinate with the scatter and table via the
+// shared `hover` state.
 //
-// Column widths are proportional to bandwidth, so a 500 kHz downlink column
-// is visibly wider than a 125 kHz uplink column. Helium gateways are 8-ch,
-// so we typically end up with up to 8 uplink columns plus any downlink
-// channels seen.
+// X axis is piecewise: when packets cluster on widely-separated bands (e.g.
+// US915 uplinks at 902–915 MHz vs downlinks at 923–928 MHz), the dead air
+// in between is compressed to a fixed-width visual break so each cluster
+// gets its own readable region. Single-cluster Hotspots see one continuous
+// axis with no break.
 
 const PLOT_TOP = 8;
 // Tick label area below the plot.
@@ -37,12 +39,13 @@ const TIMEFRAME_OPTIONS = [
 const DEFAULT_TIMEFRAME = "15m";
 const DEFAULT_TIME_WINDOW_MS = 60_000;
 
-// Frequency quantization: bucket size used to dedupe floating-point noise
-// across packets nominally on the same channel. Narrower than any LoRaWAN
-// channel spacing (≥100 kHz everywhere we care about).
+// Frequency clustering: gaps wider than this between adjacent visible
+// channels start a new cluster (axis break).
+const CLUSTER_GAP_MHZ = 5;
+// Pixel gap rendered between adjacent clusters.
+const BREAK_GAP_PX = 14;
+// Buckets for deduping floating-point noise on nominally-same channels.
 const CHANNEL_BUCKET_MHZ = 0.05;
-// Pixel gap rendered between adjacent channel columns.
-const COLUMN_GAP_PX = 4;
 
 // RSSI → opacity. Floor keeps -130 dBm packets faintly visible.
 const RSSI_FLOOR_DBM = -130;
@@ -50,6 +53,10 @@ const RSSI_CEIL_DBM = -50;
 const OPACITY_FLOOR = 0.25;
 const OPACITY_CEIL = 0.95;
 
+// US915 sub-band 2 uplink range — fallback when no packets are visible.
+const DEFAULT_FREQ_DOMAIN = [902.3, 914.9];
+
+const MIN_RECT_W_PX = 1.5;
 const MIN_RECT_H_PX = 2;
 
 function rssiToOpacity(rssi) {
@@ -65,27 +72,47 @@ function colorForPkt(pkt, isDark) {
   return colorForNetIdShade(pkt._netId ?? null, confirmed, isDark);
 }
 
-// Group visible packets into discrete channels, keyed by frequency rounded
-// to CHANNEL_BUCKET_MHZ. Each channel records the BW we'll allocate width
-// to (max BW seen, so a channel that hosts both 125 kHz uplinks and 500 kHz
-// SF8 traffic gets a 500 kHz column).
+// Bucket observed channel center frequencies (one entry per unique channel),
+// recording the widest BW seen on each so axis labels and edge padding are
+// stable.
 function computeChannels(visiblePackets) {
   const map = new Map();
   for (const p of visiblePackets) {
     const key = Math.round(p.frequency / CHANNEL_BUCKET_MHZ) * CHANNEL_BUCKET_MHZ;
     const cur = map.get(key);
-    if (!cur) {
-      map.set(key, { freq: p.frequency, bwKHz: p.bwKHz });
-    } else if (p.bwKHz > cur.bwKHz) {
-      cur.bwKHz = p.bwKHz;
-    }
+    if (!cur) map.set(key, { freq: p.frequency, bwKHz: p.bwKHz });
+    else if (p.bwKHz > cur.bwKHz) cur.bwKHz = p.bwKHz;
   }
-  return [...map.entries()]
-    .map(([key, v]) => ({ key, ...v }))
-    .sort((a, b) => a.freq - b.freq);
+  return [...map.values()].sort((a, b) => a.freq - b.freq);
 }
 
-function buildScales({ width, height, channels, timeDomain }) {
+// Group channels into contiguous clusters separated by gaps wider than
+// CLUSTER_GAP_MHZ, padded outward by half the widest BW so a 500 kHz signal
+// at a cluster edge isn't clipped.
+function computeClusters(channels) {
+  if (channels.length === 0) {
+    return [{ fMin: DEFAULT_FREQ_DOMAIN[0], fMax: DEFAULT_FREQ_DOMAIN[1], channels: [] }];
+  }
+  let bwMaxKHz = 0;
+  for (const c of channels) if (c.bwKHz > bwMaxKHz) bwMaxKHz = c.bwKHz;
+  const pad = Math.max(0.05, bwMaxKHz / 2 / 1000);
+  const clusters = [];
+  let cur = { fMin: channels[0].freq, fMax: channels[0].freq, channels: [channels[0]] };
+  for (let i = 1; i < channels.length; i++) {
+    const ch = channels[i];
+    if (ch.freq - cur.fMax > CLUSTER_GAP_MHZ) {
+      clusters.push({ fMin: cur.fMin - pad, fMax: cur.fMax + pad, channels: cur.channels });
+      cur = { fMin: ch.freq, fMax: ch.freq, channels: [ch] };
+    } else {
+      cur.fMax = ch.freq;
+      cur.channels.push(ch);
+    }
+  }
+  clusters.push({ fMin: cur.fMin - pad, fMax: cur.fMax + pad, channels: cur.channels });
+  return clusters;
+}
+
+function buildScales({ width, height, clusters, timeDomain }) {
   if (!width || !height) return null;
   const xLeft = plotLeftFor(width);
   const xRight = width - PLOT_RIGHT;
@@ -95,62 +122,59 @@ function buildScales({ width, height, channels, timeDomain }) {
   if (usableWidth <= 0) return null;
   const [tMin, tMax] = timeDomain;
   if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMax === tMin) return null;
-  if (!channels.length) return null;
+  if (!clusters.length) return null;
 
-  // Strict bandwidth-proportional widths: every column gets the same
-  // pixels-per-kHz, so a 500 kHz downlink column is exactly 4× the width
-  // of a 125 kHz uplink column. The user reads column width as bandwidth
-  // directly.
-  const nGaps = Math.max(0, channels.length - 1);
-  const totalGap = nGaps * COLUMN_GAP_PX;
-  const totalBw = channels.reduce((s, c) => s + c.bwKHz, 0);
-  if (totalBw <= 0) return null;
-  const pxPerKHz = (usableWidth - totalGap) / totalBw;
-  if (pxPerKHz <= 0) return null;
+  const nGaps = Math.max(0, clusters.length - 1);
+  const totalRange = clusters.reduce((s, c) => s + (c.fMax - c.fMin), 0);
+  if (totalRange <= 0) return null;
+  const pxPerMHz = (usableWidth - nGaps * BREAK_GAP_PX) / totalRange;
+  if (pxPerMHz <= 0) return null;
 
   let cursor = xLeft;
-  const placed = channels.map((c, i) => {
-    const w = c.bwKHz * pxPerKHz;
+  const placed = clusters.map((c, i) => {
+    const w = (c.fMax - c.fMin) * pxPerMHz;
     const out = {
-      key: c.key,
-      freq: c.freq,
-      bwKHz: c.bwKHz,
+      fMin: c.fMin,
+      fMax: c.fMax,
+      channels: c.channels,
       xStart: cursor,
       xEnd: cursor + w,
     };
-    cursor = out.xEnd + (i < channels.length - 1 ? COLUMN_GAP_PX : 0);
+    cursor = out.xEnd + (i < clusters.length - 1 ? BREAK_GAP_PX : 0);
     return out;
   });
-  const byKey = new Map(placed.map((c) => [c.key, c]));
 
+  const xScale = (mhz) => {
+    for (const c of placed) {
+      if (mhz >= c.fMin && mhz <= c.fMax) {
+        return c.xStart + (mhz - c.fMin) / (c.fMax - c.fMin) * (c.xEnd - c.xStart);
+      }
+    }
+    if (mhz < placed[0].fMin) return placed[0].xStart;
+    return placed[placed.length - 1].xEnd;
+  };
   const yScale = (ts) => yTop + ((ts - tMin) / (tMax - tMin)) * (yBottom - yTop);
-  const channelForFreq = (freq) => {
-    const key = Math.round(freq / CHANNEL_BUCKET_MHZ) * CHANNEL_BUCKET_MHZ;
-    return byKey.get(key) ?? null;
-  };
-  return {
-    xLeft, xRight, yTop, yBottom, tMin, tMax,
-    channels: placed,
-    channelForFreq,
-    yScale,
-  };
+  return { xLeft, xRight, yTop, yBottom, tMin, tMax, clusters: placed, xScale, yScale };
 }
 
 function drawGrid(ctx, scales, colors) {
-  const { xLeft, yTop, yBottom, channels } = scales;
-  // Light vertical separators at column boundaries.
+  const { xLeft, yTop, yBottom, xScale, clusters } = scales;
+  // Light dashed verticals at each labeled channel center.
   ctx.save();
   ctx.strokeStyle = colors?.grid ?? "#e5e7eb";
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 3]);
-  for (let i = 0; i < channels.length - 1; i++) {
-    const x = Math.round((channels[i].xEnd + channels[i + 1].xStart) / 2) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x, yTop);
-    ctx.lineTo(x, yBottom);
-    ctx.stroke();
+  for (const c of clusters) {
+    for (const ch of c.channels) {
+      const x = Math.round(xScale(ch.freq)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, yTop);
+      ctx.lineTo(x, yBottom);
+      ctx.stroke();
+    }
   }
   ctx.restore();
+
   // Solid y-axis line.
   ctx.save();
   ctx.strokeStyle = colors?.grid ?? "#e5e7eb";
@@ -161,6 +185,24 @@ function drawGrid(ctx, scales, colors) {
   ctx.lineTo(xLine, yBottom);
   ctx.stroke();
   ctx.restore();
+
+  // Diagonal-slash break markers between clusters so the axis gap reads as
+  // "skipped band", not "no data".
+  if (clusters.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = colors?.tickText ?? "#6b7280";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < clusters.length - 1; i++) {
+      const xMid = (clusters[i].xEnd + clusters[i + 1].xStart) / 2;
+      for (const dx of [-3, 3]) {
+        ctx.beginPath();
+        ctx.moveTo(xMid + dx - 3, yBottom + 6);
+        ctx.lineTo(xMid + dx + 3, yBottom - 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 }
 
 function drawAxisLabels(ctx, scales, colors) {
@@ -169,51 +211,49 @@ function drawAxisLabels(ctx, scales, colors) {
   ctx.fillStyle = colors?.tickText ?? "#6b7280";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  // One label per column. If two adjacent columns would overlap, drop the
-  // even-indexed labels so the surviving ones still read as channel marks.
-  const labels = scales.channels.map((c) => ({
-    text: c.freq.toFixed(1),
-    x: (c.xStart + c.xEnd) / 2,
-  }));
-  ctx.font = "11px ui-sans-serif, system-ui, -apple-system, sans-serif";
+  const labels = [];
+  for (const c of scales.clusters) {
+    for (const ch of c.channels) {
+      labels.push({ text: ch.freq.toFixed(1), x: scales.xScale(ch.freq) });
+    }
+  }
   let widthEstimate = 0;
   for (const l of labels) widthEstimate = Math.max(widthEstimate, ctx.measureText(l.text).width);
   const minSpacing = widthEstimate + 6;
   let lastX = -Infinity;
-  let stride = 1;
-  if (labels.length > 1 && (labels[1].x - labels[0].x) < minSpacing) stride = 2;
-  for (let i = 0; i < labels.length; i++) {
-    if (i % stride !== 0) continue;
-    const l = labels[i];
+  for (const l of labels) {
     if (l.x - lastX < minSpacing) continue;
     ctx.fillText(l.text, l.x, scales.yBottom + 4);
     lastX = l.x;
   }
-  ctx.textAlign = "right";
-  ctx.fillText("MHz", scales.xRight, scales.yBottom + 4);
   ctx.restore();
 }
 
 function drawRects(ctx, rects, scales, hoveredId, dimOthers) {
-  const { yTop, yBottom } = scales;
+  const { xLeft, xRight, yTop, yBottom } = scales;
   ctx.save();
   for (const r of rects) {
     if (r.y == null) continue;
     if (r.y + r.h < yTop || r.y > yBottom) continue;
+    if (r.x + r.w < xLeft || r.x > xRight) continue;
+    const x = Math.max(xLeft, r.x);
+    const xEnd = Math.min(xRight, r.x + r.w);
+    if (xEnd <= x) continue;
     const y = Math.max(yTop, r.y);
     const yEnd = Math.min(yBottom, r.y + r.h);
     if (yEnd <= y) continue;
+    const w = Math.max(MIN_RECT_W_PX, xEnd - x);
     const h = Math.max(MIN_RECT_H_PX, yEnd - y);
     const isHovered = hoveredId !== null && r.id === hoveredId;
     const alphaScale = dimOthers && !isHovered ? 0.35 : 1;
     ctx.fillStyle = r.color;
     ctx.globalAlpha = r.opacity * alphaScale;
-    ctx.fillRect(r.x, y, r.w, h);
+    ctx.fillRect(x, y, w, h);
     if (isHovered) {
       ctx.globalAlpha = 1;
       ctx.strokeStyle = r.color;
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(r.x + 0.5, y + 0.5, r.w - 1, h - 1);
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     }
   }
   ctx.restore();
@@ -287,6 +327,7 @@ export default function SpectrumChart({
   }, [packets, visibleTypes, netIdFilter, trackFilter]);
 
   const channels = useMemo(() => computeChannels(visiblePackets), [visiblePackets]);
+  const clusters = useMemo(() => computeClusters(channels), [channels]);
 
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
@@ -305,34 +346,35 @@ export default function SpectrumChart({
   const innerW = size.w;
   const innerH = size.h;
 
-  // Stable rect geometry: x/w come from the packet's channel column, which
-  // only depends on visiblePackets + width. Cached here so the rAF tick can
-  // just refresh y/h.
+  // Stable rect geometry: x/w come from the packet's true frequency bounds
+  // (`freq ± bw/2`), so a 500 kHz signal physically overlaps adjacent
+  // 125 kHz channels — the way it does on the air. Cached here and reused
+  // every rAF frame; the tick recomputes y/h live.
   const rectsBase = useMemo(() => {
-    if (!innerW || !channels.length) return [];
-    const probe = buildScales({ width: innerW, height: 1, channels, timeDomain: [0, 1] });
+    if (!innerW || !clusters.length) return [];
+    const probe = buildScales({ width: innerW, height: 1, clusters, timeDomain: [0, 1] });
     if (!probe) return [];
     const out = [];
     for (const p of visiblePackets) {
-      const col = probe.channelForFreq(p.frequency);
-      if (!col) continue;
+      const halfBwMhz = p.bwKHz / 2 / 1000;
+      const xL = probe.xScale(p.frequency - halfBwMhz);
+      const xR = probe.xScale(p.frequency + halfBwMhz);
+      const x = Math.min(xL, xR);
+      const w = Math.abs(xR - xL);
       out.push({
         id: p._id,
         timestamp: p.timestamp,
         airtimeMs: p.airtimeMs,
-        x: col.xStart,
-        w: col.xEnd - col.xStart,
+        x,
+        w,
         color: colorForPkt(p.ref, isDark),
         opacity: rssiToOpacity(p.ref.rssi),
         ref: p.ref,
       });
     }
     return out;
-  }, [visiblePackets, channels, innerW, isDark]);
+  }, [visiblePackets, clusters, innerW, isDark]);
 
-  // 15-min sliding window, anchored to Date.now() per frame so the
-  // waterfall scrolls live. Shrinks naturally when the buffer holds less
-  // than 15 minutes of data.
   const earliestPacketTs = useMemo(() => {
     if (visiblePackets.length === 0) return null;
     let t = Infinity;
@@ -343,17 +385,24 @@ export default function SpectrumChart({
   const [timeframeId, setTimeframeId] = useState(DEFAULT_TIMEFRAME);
   const timeframeMs = (TIMEFRAME_OPTIONS.find((t) => t.id === timeframeId) ?? TIMEFRAME_OPTIONS[1]).ms;
 
-  // Buffer span drives which timeframe options are offered. ~10 min slack on
-  // the 1h cutoff so the option doesn't flicker while the buffer fills.
-  const bufferSpanMs = useMemo(() => {
-    if (earliestPacketTs == null) return 0;
-    return Date.now() - earliestPacketTs;
-  }, [earliestPacketTs]);
+  const bufferSpanMs = earliestPacketTs == null ? 0 : Date.now() - earliestPacketTs;
 
+  // A finite window only earns a button once the buffer can actually fill
+  // it — otherwise it would show the same view as "max" and clutter the
+  // selector. "max" always stays available.
   const visibleTimeframeOptions = useMemo(
-    () => TIMEFRAME_OPTIONS.filter((opt) => opt.id !== "1h" || bufferSpanMs >= 50 * 60_000),
+    () => TIMEFRAME_OPTIONS.filter((opt) => opt.ms === Infinity || bufferSpanMs >= opt.ms),
     [bufferSpanMs],
   );
+
+  // Fall back to "max" if the current selection just dropped out of range
+  // (Hotspot switch wipes the buffer; user previously picked a window
+  // longer than what's now in the buffer).
+  useEffect(() => {
+    if (!visibleTimeframeOptions.some((opt) => opt.id === timeframeId)) {
+      setTimeframeId("max");
+    }
+  }, [visibleTimeframeOptions, timeframeId]);
 
   const getScales = useCallback(() => {
     if (!innerW || !innerH) return null;
@@ -368,10 +417,10 @@ export default function SpectrumChart({
     return buildScales({
       width: innerW,
       height: innerH,
-      channels,
+      clusters,
       timeDomain: [tMin, now],
     });
-  }, [innerW, innerH, channels, earliestPacketTs, timeframeMs]);
+  }, [innerW, innerH, clusters, earliestPacketTs, timeframeMs]);
 
   const stateRef = useRef({});
   stateRef.current = {
