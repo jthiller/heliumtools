@@ -928,7 +928,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
             setHover={setHover}
           />
         </div>
-        <div className="flex-[2]">
+        <div className="flex flex-[2] flex-col">
           <SpectrumChart
             key={`spectrum-${mac}`}
             packets={packets}

@@ -538,7 +538,7 @@ export default function SpectrumChart({
   return (
     <div
       ref={hostRef}
-      className="relative h-64 px-0 pb-0 pt-3 sm:px-2"
+      className="relative h-64 px-0 pb-0 pt-3 sm:h-full sm:px-2"
       data-chart-host
       onMouseLeave={() => {
         if (hover && hover.source === "spectrum") setHover(null);
