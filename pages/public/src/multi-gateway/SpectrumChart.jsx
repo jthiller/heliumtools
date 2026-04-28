@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { readChartColors } from "../lib/chartColors.js";
 import { JOIN_FRAME_TYPES, DOWNLINK_FRAME_TYPES } from "../lib/lorawan.js";
+import { getLocalStorageItem, setLocalStorageItem } from "../lib/utils.js";
 import { packetMatchesFilters } from "./filters.js";
 import { parseSpreadingFactor, loraAirtimeMs } from "./airtime.js";
 import { colorForNetIdShade } from "./PacketScatter.jsx";
@@ -36,6 +37,12 @@ const TIMEFRAME_OPTIONS = [
   { id: "max", label: "max", ms: Infinity },
 ];
 const DEFAULT_TIMEFRAME = "1m";
+const TIMEFRAME_STORAGE_KEY = "multi-gateway:spectrum-timeframe";
+
+function loadSavedTimeframe() {
+  const saved = getLocalStorageItem(TIMEFRAME_STORAGE_KEY);
+  return TIMEFRAME_OPTIONS.some((opt) => opt.id === saved) ? saved : DEFAULT_TIMEFRAME;
+}
 const DEFAULT_TIME_WINDOW_MS = 60_000;
 
 // Frequency clustering: gaps wider than this between adjacent visible
@@ -417,8 +424,16 @@ export default function SpectrumChart({
     return t;
   }, [visiblePackets]);
 
-  const [timeframeId, setTimeframeId] = useState(DEFAULT_TIMEFRAME);
+  const [timeframeId, setTimeframeId] = useState(loadSavedTimeframe);
   const timeframeMs = (TIMEFRAME_OPTIONS.find((t) => t.id === timeframeId) ?? TIMEFRAME_OPTIONS[1]).ms;
+
+  // Persist on user click only — auto snap-down to "max" (when the saved
+  // window is wider than the buffer can fill) shouldn't overwrite the
+  // remembered preference.
+  const pickTimeframe = (id) => {
+    setTimeframeId(id);
+    setLocalStorageItem(TIMEFRAME_STORAGE_KEY, id);
+  };
 
   const bufferSpanMs = earliestPacketTs == null ? 0 : Date.now() - earliestPacketTs;
 
@@ -626,7 +641,7 @@ export default function SpectrumChart({
                 key={opt.id}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setTimeframeId(opt.id)}
+                onClick={() => pickTimeframe(opt.id)}
                 className={`min-w-[2rem] rounded-full px-2 py-0.5 transition-colors duration-150 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
                   active
                     ? "bg-accent-surface text-accent-text"
