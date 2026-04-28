@@ -61,6 +61,50 @@ const MIN_RECT_H_PX = 2;
 // short timeframe is < 3px tall) stay easy to target.
 const HIT_PAD_Y_PX = 4;
 
+// Hover-pause / fast-forward catch-up.
+const FF_DURATION_MS = 350;
+const easeInOut = (t) => t * t * (3 - 2 * t);
+
+// Hover-animation state machine. Pure step function so the rAF tick can
+// stay focused on rendering.
+//   state: { mode: "live" }
+//        | { mode: "frozen", at: number }
+//        | { mode: "ff", startTime: number, fromTMax: number }
+function stepHoverAnim(state, isHovered) {
+  const realNow = Date.now();
+  const perfNow = performance.now();
+  const ffValue = (ff) => {
+    const progress = Math.min(1, (perfNow - ff.startTime) / FF_DURATION_MS);
+    return {
+      progress,
+      at: ff.fromTMax + easeInOut(progress) * (realNow - ff.fromTMax),
+    };
+  };
+
+  if (isHovered) {
+    if (state.mode === "ff") {
+      // Re-engaged hover mid fast-forward: freeze where the chart visibly is.
+      const { at } = ffValue(state);
+      return { value: at, next: { mode: "frozen", at } };
+    }
+    if (state.mode !== "frozen") {
+      return { value: realNow, next: { mode: "frozen", at: realNow } };
+    }
+    return { value: state.at, next: state };
+  }
+  if (state.mode === "frozen") {
+    return {
+      value: state.at,
+      next: { mode: "ff", startTime: perfNow, fromTMax: state.at },
+    };
+  }
+  if (state.mode === "ff") {
+    const { progress, at } = ffValue(state);
+    return { value: at, next: progress >= 1 ? { mode: "live" } : state };
+  }
+  return { value: realNow, next: state };
+}
+
 function rssiToOpacity(rssi) {
   if (!Number.isFinite(rssi)) return OPACITY_CEIL;
   const t = Math.max(0, Math.min(1, (rssi - RSSI_FLOOR_DBM) / (RSSI_CEIL_DBM - RSSI_FLOOR_DBM)));
@@ -420,56 +464,16 @@ export default function SpectrumChart({
     hover,
   };
 
-  // Animation state for hover-pause + ease-in-out fast-forward back to live.
-  //   frozen      number when hovered, null otherwise
-  //   ffStart     performance.now() at the start of the fast-forward, else null
-  //   ffFromTMax  the chart's tMax at the start of the fast-forward
-  const animRef = useRef({ frozen: null, ffStart: null, ffFromTMax: null });
+  const animRef = useRef({ mode: "live" });
 
   const rafRef = useRef(0);
   useEffect(() => {
-    // Cubic smoothstep — ease-in-out with C¹ continuity at both ends.
-    const ease = (t) => t * t * (3 - 2 * t);
-    const FF_DURATION_MS = 350;
-
     const tick = () => {
       const s = stateRef.current;
       const canvas = s.canvasRef.current;
-      const now = Date.now();
       const isHovered = s.hover?.source === "spectrum";
-      const a = animRef.current;
-      let effectiveNow;
-      if (isHovered) {
-        if (a.ffStart !== null) {
-          // Mid fast-forward and the user re-engaged hover — freeze wherever
-          // the chart currently is rather than snap back to the original
-          // freeze point.
-          const elapsed = performance.now() - a.ffStart;
-          const progress = Math.min(1, elapsed / FF_DURATION_MS);
-          a.frozen = a.ffFromTMax + ease(progress) * (now - a.ffFromTMax);
-          a.ffStart = null;
-          a.ffFromTMax = null;
-        } else if (a.frozen === null) {
-          a.frozen = now;
-        }
-        effectiveNow = a.frozen;
-      } else if (a.frozen !== null) {
-        // Hover just ended — kick off the fast-forward from the frozen value.
-        a.ffStart = performance.now();
-        a.ffFromTMax = a.frozen;
-        a.frozen = null;
-        effectiveNow = a.ffFromTMax;
-      } else if (a.ffStart !== null) {
-        const elapsed = performance.now() - a.ffStart;
-        const progress = Math.min(1, elapsed / FF_DURATION_MS);
-        effectiveNow = a.ffFromTMax + ease(progress) * (now - a.ffFromTMax);
-        if (progress >= 1) {
-          a.ffStart = null;
-          a.ffFromTMax = null;
-        }
-      } else {
-        effectiveNow = now;
-      }
+      const { value: effectiveNow, next } = stepHoverAnim(animRef.current, isHovered);
+      animRef.current = next;
       const scales = s.getScales(effectiveNow);
       if (canvas && scales) {
         const dpr = window.devicePixelRatio || 1;
