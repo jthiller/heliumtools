@@ -394,21 +394,20 @@ export default function SpectrumChart({
     }
   }, [visibleTimeframeOptions, timeframeId, visiblePackets.length]);
 
-  const getScales = useCallback(() => {
+  const getScales = useCallback((tMaxNow) => {
     if (!innerW || !innerH) return null;
-    const now = Date.now();
     let tMin;
     if (timeframeMs === Infinity) {
-      tMin = earliestPacketTs ?? (now - DEFAULT_TIME_WINDOW_MS);
+      tMin = earliestPacketTs ?? (tMaxNow - DEFAULT_TIME_WINDOW_MS);
     } else {
-      const cutoff = now - timeframeMs;
+      const cutoff = tMaxNow - timeframeMs;
       tMin = earliestPacketTs == null ? cutoff : Math.max(earliestPacketTs, cutoff);
     }
     return buildScales({
       width: innerW,
       height: innerH,
       clusters,
-      timeDomain: [tMin, now],
+      timeDomain: [tMin, tMaxNow],
     });
   }, [innerW, innerH, clusters, earliestPacketTs, timeframeMs]);
 
@@ -418,12 +417,40 @@ export default function SpectrumChart({
     hover,
   };
 
+  // tMaxRef holds the chart's effective "now" when the user is inspecting:
+  //   null    → live mode, tMax = Date.now() each frame
+  //   number  → frozen at this timestamp (hover) OR mid fast-forward back to
+  //             live (after hover ends)
+  // Stored in a ref so rAF reads it without re-creating the loop.
+  const tMaxRef = useRef(null);
+
   const rafRef = useRef(0);
   useEffect(() => {
     const tick = () => {
       const s = stateRef.current;
       const canvas = s.canvasRef.current;
-      const scales = s.getScales();
+      const now = Date.now();
+      const isHovered = s.hover?.source === "spectrum";
+      let effectiveNow;
+      if (isHovered) {
+        if (tMaxRef.current === null) tMaxRef.current = now;
+        effectiveNow = tMaxRef.current;
+      } else if (tMaxRef.current !== null) {
+        // Fast-forward toward live: each frame, pull 20% closer to real time.
+        // Approaches Date.now() with a ~83ms time constant at 60fps; switches
+        // back to live mode once the gap is below the snap threshold.
+        const gap = now - tMaxRef.current;
+        if (gap < 30) {
+          tMaxRef.current = null;
+          effectiveNow = now;
+        } else {
+          tMaxRef.current += gap * 0.2;
+          effectiveNow = tMaxRef.current;
+        }
+      } else {
+        effectiveNow = now;
+      }
+      const scales = s.getScales(effectiveNow);
       if (canvas && scales) {
         const dpr = window.devicePixelRatio || 1;
         const w = s.innerW;
