@@ -254,3 +254,9 @@ export function netIdToOperator(netIdHex) {
   if (!netIdHex) return null;
   return KNOWN_NET_IDS[netIdHex.toUpperCase()] || null;
 }
+
+// Frame-type buckets used across the multi-gateway inspector. Joins and
+// downlinks aren't device-correlatable so they're handled separately from
+// uplinks throughout the UI.
+export const JOIN_FRAME_TYPES = new Set(["JoinRequest", "JoinAccept", "RejoinRequest", "Proprietary"]);
+export const DOWNLINK_FRAME_TYPES = new Set(["UnconfirmedDown", "ConfirmedDown"]);

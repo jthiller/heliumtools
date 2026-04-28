@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import useDarkMode from "../lib/useDarkMode.js";
 import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { readChartColors } from "../lib/chartColors.js";
+import { packetMatchesFilters } from "./filters.js";
 
 // Per-packet dot colour: NetID picks the hue family, frame type picks the
 // shade (confirmed uplinks darker than unconfirmed). All Helium NetIDs share
@@ -47,7 +48,7 @@ function familyForNetId(netId) {
   return NON_HELIUM_FAMILIES[djb2(netId) % NON_HELIUM_FAMILIES.length];
 }
 
-function colorForNetIdShade(netId, confirmed, isDark) {
+export function colorForNetIdShade(netId, confirmed, isDark) {
   const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
   const [light, dark] = palette[familyForNetId(netId)];
   return confirmed ? dark : light;
@@ -595,7 +596,7 @@ function HoverTooltip({ hover }) {
   const flipRight = hover.x > hover.hostWidth * TOOLTIP_FLIP_THRESHOLD;
   return (
     <div
-      className="pointer-events-none absolute z-10 rounded-md border border-border bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
+      className="pointer-events-none absolute z-20 rounded-md border border-border bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
       style={{
         left: flipRight ? undefined : hover.x + 12,
         right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,
@@ -641,9 +642,7 @@ export default function PacketScatter({
     for (const pkt of packets) {
       const tid = pkt._trackId;
       if (!tid || tid === "joins" || tid === "downlinks") continue;
-      if (visibleTypes && pkt.frame_type && visibleTypes[pkt.frame_type] === false) continue;
-      if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
-      if (trackFilter !== "all" && tid !== trackFilter) continue;
+      if (!packetMatchesFilters(pkt, { visibleTypes, netIdFilter, trackFilter })) continue;
       const netId = pkt._netId ?? null;
       out.push({
         timestamp: pkt.timestamp,
