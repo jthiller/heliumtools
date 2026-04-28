@@ -35,7 +35,7 @@ const TIMEFRAME_OPTIONS = [
   { id: "1h", label: "1h", ms: 60 * 60_000 },
   { id: "max", label: "max", ms: Infinity },
 ];
-const DEFAULT_TIMEFRAME = "15m";
+const DEFAULT_TIMEFRAME = "1m";
 const DEFAULT_TIME_WINDOW_MS = 60_000;
 
 // Frequency clustering: gaps wider than this between adjacent visible
@@ -384,13 +384,15 @@ export default function SpectrumChart({
   );
 
   // Fall back to "max" if the current selection just dropped out of range
-  // (Hotspot switch wipes the buffer; user previously picked a window
-  // longer than what's now in the buffer).
+  // (e.g., user previously picked "1h" and the buffer aged below an hour).
+  // Skip while the buffer is empty so the initial default isn't silently
+  // overridden during the cold-load window.
   useEffect(() => {
+    if (visiblePackets.length === 0) return;
     if (!visibleTimeframeOptions.some((opt) => opt.id === timeframeId)) {
       setTimeframeId("max");
     }
-  }, [visibleTimeframeOptions, timeframeId]);
+  }, [visibleTimeframeOptions, timeframeId, visiblePackets.length]);
 
   const getScales = useCallback(() => {
     if (!innerW || !innerH) return null;
