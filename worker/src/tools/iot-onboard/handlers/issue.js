@@ -47,6 +47,7 @@ export async function handleIssue(request, env) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transaction: add_gateway_txn }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {

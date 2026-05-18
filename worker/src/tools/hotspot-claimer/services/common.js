@@ -87,6 +87,7 @@ export async function fetchAccount(env, pubkey) {
       method: "getAccountInfo",
       params: [address, { encoding: "base64" }],
     }),
+    signal: AbortSignal.timeout(10_000),
   });
   const result = await response.json();
   if (!result.result?.value) return null;
@@ -123,6 +124,7 @@ export async function fetchMultipleAccounts(env, pubkeys) {
           method: "getMultipleAccounts",
           params: [chunk, { encoding: "base64" }],
         }),
+        signal: AbortSignal.timeout(15_000),
       });
       const result = await response.json();
       if (result.error) {
@@ -156,6 +158,7 @@ export async function fetchAsset(env, assetId) {
       method: "getAsset",
       params: { id },
     }),
+    signal: AbortSignal.timeout(10_000),
   });
   const data = await resp.json();
   if (data.error) throw new Error(`getAsset: ${data.error.message}`);

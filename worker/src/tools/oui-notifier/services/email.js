@@ -33,6 +33,7 @@ export async function sendEmail(env, { to, subject, text, html }) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
     });
   } catch (err) {
     console.error("Resend request failed", err);

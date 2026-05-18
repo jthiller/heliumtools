@@ -18,7 +18,10 @@ async function getWellKnownList(env) {
     } catch { /* ignore */ }
   }
 
-  const res = await fetch(WELL_KNOWN_OUIS_URL, { headers: { accept: "application/json" } });
+  const res = await fetch(WELL_KNOWN_OUIS_URL, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!res.ok) return [];
   const list = await res.json();
   if (!Array.isArray(list)) return [];

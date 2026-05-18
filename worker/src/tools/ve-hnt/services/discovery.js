@@ -37,6 +37,7 @@ export async function findPositionMints(env, wallet) {
           limit: DAS_PAGE_LIMIT,
         },
       }),
+      signal: AbortSignal.timeout(15_000),
     });
     const data = await resp.json();
     if (data.error) throw new Error(`searchAssets: ${data.error.message}`);

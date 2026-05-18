@@ -2,7 +2,10 @@ import { OUI_API_URL, BALANCE_HISTORY_DAYS } from "../config.js";
 import { safeText } from "../utils.js";
 
 async function fetchJson(url) {
-  const res = await fetch(url, { headers: { accept: "application/json" } });
+  const res = await fetch(url, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!res.ok) {
     const body = await safeText(res);
     throw new Error(`Failed to fetch OUIs (${res.status}): ${body}`);

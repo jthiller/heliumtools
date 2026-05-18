@@ -34,7 +34,8 @@ export async function handleWallet(url, env, request) {
 
   try {
     const response = await fetch(
-      `${ENTITY_API_BASE}/v2/wallet/${address}`
+      `${ENTITY_API_BASE}/v2/wallet/${address}`,
+      { signal: AbortSignal.timeout(10_000) }
     );
 
     if (!response.ok) {

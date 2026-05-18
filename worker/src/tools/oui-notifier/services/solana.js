@@ -17,6 +17,7 @@ export async function fetchEscrowBalanceDC(env, escrowAccount) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {
@@ -112,6 +113,7 @@ export async function fetchEscrowBalancesBatched(env, escrowAccounts) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(batchPayload),
+        signal: AbortSignal.timeout(15_000),
       });
 
       if (!res.ok) {

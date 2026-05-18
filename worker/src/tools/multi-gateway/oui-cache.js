@@ -82,6 +82,7 @@ async function grpcWebCall(path, body) {
       "X-Grpc-Web": "1",
     },
     body,
+    signal: AbortSignal.timeout(10_000),
   });
   // gRPC-web over HTTP/2 — returns 200 with grpc-status header.
   // Note: fails locally in wrangler dev (Miniflare uses HTTP/1.1),
@@ -141,7 +142,7 @@ async function fetchOrgDevaddrs(oui) {
 
 async function fetchWellKnownNames() {
   try {
-    const res = await fetch(WELL_KNOWN_URL);
+    const res = await fetch(WELL_KNOWN_URL, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return {};
     const list = await res.json();
     const map = {};

@@ -56,6 +56,7 @@ export async function handleIssueAndOnboard(mac, request, env) {
     method: "POST",
     headers: { "X-API-Key": writeKey, "Content-Type": "application/json" },
     body: JSON.stringify({ owner: ownerStr, payer: ownerStr }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!addRes.ok) {
     return jsonResponse({ error: "Failed to get gateway add transaction" }, 500);
@@ -108,6 +109,7 @@ export async function handleIssueAndOnboard(mac, request, env) {
         msg: addTxnData.unsigned_msg,
         signature: addTxnData.gateway_signature,
       }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!verifyRes.ok) {

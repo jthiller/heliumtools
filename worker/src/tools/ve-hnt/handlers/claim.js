@@ -30,6 +30,7 @@ async function getRecentBlockhash(env) {
       method: "getLatestBlockhash",
       params: [{ commitment: "confirmed" }],
     }),
+    signal: AbortSignal.timeout(10_000),
   });
   const data = await resp.json();
   if (data.error) throw new Error(`getLatestBlockhash: ${data.error.message}`);
