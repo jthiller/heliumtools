@@ -55,12 +55,19 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runOuiNotifierDaily(env));
-    ctx.waitUntil(runDcPurchaseScheduled(env, ctx));
-    ctx.waitUntil(refreshOnboardFees(env));
+    const run = (name, promise) =>
+      ctx.waitUntil(
+        promise.catch((err) => {
+          console.error(`scheduled task "${name}" failed`, err?.stack || err);
+        }),
+      );
+
+    run("oui-notifier-daily", runOuiNotifierDaily(env));
+    run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
+    run("iot-onboard-fees", refreshOnboardFees(env));
     // OUI data changes infrequently — refresh once daily at midnight UTC
     const hour = new Date(event.scheduledTime).getUTCHours();
-    if (hour === 0) ctx.waitUntil(refreshOuiCache(env));
+    if (hour === 0) run("multi-gateway-oui-cache", refreshOuiCache(env));
   },
 };
 
