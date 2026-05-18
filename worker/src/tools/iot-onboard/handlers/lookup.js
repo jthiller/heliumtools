@@ -4,8 +4,7 @@ import { jsonResponse } from "../../../lib/response.js";
 import { keyToAssetKey, iotInfoKey, ataAddress, DC_MINT } from "../../../lib/helium-solana.js";
 import { fetchAccount } from "../../hotspot-claimer/services/common.js";
 import { getOnboardFees } from "../services/fees.js";
-
-const ONBOARDING_API = "https://onboarding.dewi.org/api/v3/hotspots";
+import { ONBOARDING_API_BASE } from "../config.js";
 
 /**
  * POST /lookup
@@ -60,7 +59,7 @@ async function fetchMakerInfo(onboardingKey, env) {
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const res = await fetch(`${ONBOARDING_API}/${onboardingKey}`, {
+    const res = await fetch(`${ONBOARDING_API_BASE}/hotspots/${onboardingKey}`, {
       signal: controller.signal,
     });
     clearTimeout(timeout);

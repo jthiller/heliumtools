@@ -2,8 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
 import { keyToAssetKey } from "../../../lib/helium-solana.js";
 import { fetchAccount } from "../../hotspot-claimer/services/common.js";
-
-const ONBOARDING_API = "https://onboarding.dewi.org/api/v3";
+import { ONBOARDING_API_BASE } from "../config.js";
 
 /**
  * POST /issue
@@ -43,7 +42,7 @@ export async function handleIssue(request, env) {
 
     // The BLE returns a base64-encoded signed AddGatewayV1 protobuf.
     // Pass it through to the onboarding server as-is.
-    const res = await fetch(`${ONBOARDING_API}/transactions/create-hotspot`, {
+    const res = await fetch(`${ONBOARDING_API_BASE}/transactions/create-hotspot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transaction: add_gateway_txn }),

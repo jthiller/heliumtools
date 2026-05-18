@@ -2,8 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
 import { keyToAssetKey, iotInfoKey } from "../../../lib/helium-solana.js";
 import { fetchAccount } from "../../hotspot-claimer/services/common.js";
-
-const ONBOARDING_API = "https://onboarding.dewi.org/api/v3";
+import { ONBOARDING_API_BASE } from "../config.js";
 
 /**
  * POST /onboard
@@ -61,7 +60,7 @@ export async function handleOnboard(request, env) {
     if (elevation !== undefined && elevation !== null) payload.elevation = elevation;
     if (gain !== undefined && gain !== null) payload.gain = gain;
 
-    const res = await fetch(`${ONBOARDING_API}/transactions/iot/onboard`, {
+    const res = await fetch(`${ONBOARDING_API_BASE}/transactions/iot/onboard`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
