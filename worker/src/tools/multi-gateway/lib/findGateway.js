@@ -11,7 +11,10 @@ export async function findGateway(mac, env) {
 
   const probes = await Promise.allSettled(
     REGIONS.map(({ port }) =>
-      fetch(`http://${host}:${port}/gateways/${mac}`, { headers: { "X-API-Key": apiKey } })
+      fetch(`http://${host}:${port}/gateways/${mac}`, {
+        headers: { "X-API-Key": apiKey },
+        signal: AbortSignal.timeout(5_000),
+      })
         .then(async (res) => res.ok ? { port, data: await res.json() } : null)
     )
   );

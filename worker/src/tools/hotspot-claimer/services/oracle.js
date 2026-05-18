@@ -15,7 +15,7 @@ import {
  */
 async function queryOracle(oracleUrl, assetId) {
   const url = `${oracleUrl}?assetId=${assetId}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) {
     throw new Error(`Oracle ${oracleUrl} returned ${response.status}`);
   }

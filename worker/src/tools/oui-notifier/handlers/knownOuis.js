@@ -29,6 +29,7 @@ async function fetchWellKnownOuis(env) {
     // Fetch from GitHub
     const res = await fetch(WELL_KNOWN_OUIS_URL, {
         headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
         const body = await safeText(res);

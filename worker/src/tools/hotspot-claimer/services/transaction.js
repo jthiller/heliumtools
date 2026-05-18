@@ -72,6 +72,7 @@ async function fetchAssetProof(env, assetId) {
       method: "getAssetProof",
       params: { id: assetId },
     }),
+    signal: AbortSignal.timeout(10_000),
   });
   const data = await resp.json();
   if (data.error) throw new Error(`getAssetProof: ${data.error.message}`);
@@ -150,6 +151,7 @@ async function getRecentBlockhash(env) {
       method: "getLatestBlockhash",
       params: [{ commitment: "confirmed" }],
     }),
+    signal: AbortSignal.timeout(10_000),
   });
   const data = await resp.json();
   return data.result.value.blockhash;
@@ -384,6 +386,7 @@ export async function claimRewardsForToken(
       body: JSON.stringify({
         transaction: serializedTx.toJSON(),
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!resp.ok) {
@@ -428,6 +431,7 @@ export async function claimRewardsForToken(
         },
       ],
     }),
+    signal: AbortSignal.timeout(15_000),
   });
 
   const sendData = await sendResp.json();
@@ -451,6 +455,7 @@ export async function claimRewardsForToken(
             },
           ],
         }),
+        signal: AbortSignal.timeout(10_000),
       });
       const simData = await simResp.json();
       const logs = simData.result?.value?.logs || [];

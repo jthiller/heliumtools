@@ -21,6 +21,7 @@ export async function handlePrice() {
   try {
     const res = await fetch(
       `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${HNT_PRICE_FEED_ID}`,
+      { signal: AbortSignal.timeout(10_000) },
     );
     if (!res.ok) throw new Error(`Pyth API returned ${res.status}`);
 

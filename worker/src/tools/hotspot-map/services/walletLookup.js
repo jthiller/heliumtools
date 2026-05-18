@@ -26,6 +26,7 @@ export async function getWalletHotspots(env, walletAddress) {
           limit: PAGE_SIZE,
         },
       }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     const json = await response.json();

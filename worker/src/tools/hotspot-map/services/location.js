@@ -28,6 +28,7 @@ async function batchGetAssetMetadata(env, assetPubkeys) {
           method: "getAssetBatch",
           params: { ids: batch },
         }),
+        signal: AbortSignal.timeout(15_000),
       });
       const json = await response.json();
       if (json.result) {
@@ -69,6 +70,7 @@ async function batchGetAccounts(env, pubkeys) {
         method: "getMultipleAccounts",
         params: [batch, { encoding: "base64" }],
       }),
+      signal: AbortSignal.timeout(15_000),
     });
     const json = await response.json();
     if (json.error) {

@@ -80,6 +80,7 @@ async function createCoinbaseSession(env, { fiatAmount, partnerUserRef, clientIp
         "Authorization": `Bearer ${jwt}`,
       },
       body: JSON.stringify(tokenRequestBody),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!tokenRes.ok) {

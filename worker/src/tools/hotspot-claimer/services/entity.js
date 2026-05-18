@@ -82,7 +82,8 @@ function parseKeyToAssetAccount(data) {
 async function fetchEntityApiMetadata(keyToAssetKey) {
   try {
     const response = await fetch(
-      `${ENTITY_API_BASE}/v2/hotspot/${keyToAssetKey}`
+      `${ENTITY_API_BASE}/v2/hotspot/${keyToAssetKey}`,
+      { signal: AbortSignal.timeout(10_000) }
     );
     if (!response.ok) return null;
     return await response.json();

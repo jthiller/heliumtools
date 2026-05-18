@@ -48,6 +48,7 @@ export async function getSwapQuote(env, inputMint, outputMint, amount, slippageB
         headers: {
             'x-api-key': apiKey,
         },
+        signal: AbortSignal.timeout(15_000),
     });
     const responseText = await response.text();
 
@@ -109,6 +110,7 @@ export async function buildSwapTransaction(env, quoteResponse, userPublicKey) {
             'x-api-key': apiKey,
         },
         body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(15_000),
     });
 
     const responseText = await response.text();
