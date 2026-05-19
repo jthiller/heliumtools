@@ -643,6 +643,15 @@ function isHotspotClaimable(rewards) {
   return Object.values(rewards).some((r) => r.claimable && r.pending !== "0");
 }
 
+function isHotspotBlockedByNoAta(rewards) {
+  if (!rewards) return false;
+  const anyClaimable = Object.values(rewards).some((r) => r.claimable && r.pending !== "0");
+  if (anyClaimable) return false;
+  return Object.values(rewards).some(
+    (r) => r.pending && r.pending !== "0" && r.reason === "no_ata"
+  );
+}
+
 function WalletRewardCells({ entityKey, walletRewards, rewardsLoading, rewardErrors }) {
   const rewards = walletRewards[entityKey];
   const error = rewardErrors?.[entityKey];
@@ -745,7 +754,22 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
           Claim
         </button>
       )}
-      {!claimState && !claimable && walletRewards[entityKey] && (
+      {!claimState && !claimable && walletRewards[entityKey] && isHotspotBlockedByNoAta(walletRewards[entityKey]) && (
+        <Tooltip content="The owner must claim once via the Helium wallet app to create the destination token account.">
+          <div className="text-right max-w-[180px] ml-auto">
+            <button
+              disabled
+              className="text-xs font-medium text-content-tertiary opacity-50 cursor-not-allowed"
+            >
+              Claim
+            </button>
+            <p className="text-xs text-content-tertiary mt-0.5 truncate">
+              Account has no Associated Token Account
+            </p>
+          </div>
+        </Tooltip>
+      )}
+      {!claimState && !claimable && walletRewards[entityKey] && !isHotspotBlockedByNoAta(walletRewards[entityKey]) && (
         <span className="text-xs text-content-tertiary">—</span>
       )}
     </Tag>
