@@ -643,15 +643,6 @@ function isHotspotClaimable(rewards) {
   return Object.values(rewards).some((r) => r.claimable && r.pending !== "0");
 }
 
-function isHotspotBlockedByNoAta(rewards) {
-  if (!rewards) return false;
-  const anyClaimable = Object.values(rewards).some((r) => r.claimable && r.pending !== "0");
-  if (anyClaimable) return false;
-  return Object.values(rewards).some(
-    (r) => r.pending && r.pending !== "0" && r.reason === "no_ata"
-  );
-}
-
 function WalletRewardCells({ entityKey, walletRewards, rewardsLoading, rewardErrors }) {
   const rewards = walletRewards[entityKey];
   const error = rewardErrors?.[entityKey];
@@ -754,22 +745,7 @@ function WalletActionCell({ entityKey, claimStates, claimResults, claimErrors, w
           Claim
         </button>
       )}
-      {!claimState && !claimable && walletRewards[entityKey] && isHotspotBlockedByNoAta(walletRewards[entityKey]) && (
-        <Tooltip content="The owner must claim once via the Helium wallet app to create the destination token account.">
-          <div className="text-right max-w-[180px] ml-auto">
-            <button
-              disabled
-              className="text-xs font-medium text-content-tertiary opacity-50 cursor-not-allowed"
-            >
-              Claim
-            </button>
-            <p className="text-xs text-content-tertiary mt-0.5 truncate">
-              Account has no Associated Token Account
-            </p>
-          </div>
-        </Tooltip>
-      )}
-      {!claimState && !claimable && walletRewards[entityKey] && !isHotspotBlockedByNoAta(walletRewards[entityKey]) && (
+      {!claimState && !claimable && walletRewards[entityKey] && (
         <span className="text-xs text-content-tertiary">—</span>
       )}
     </Tag>
@@ -839,6 +815,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [initsAvailable, setInitsAvailable] = useState(true);
+  const [ownerAtas, setOwnerAtas] = useState(null);
 
   // Rewards: Map<entityKey, rewardsObj>
   const [walletRewards, setWalletRewards] = useState({});
@@ -887,6 +864,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
         setClaimResults(new Map());
         setClaimAllActive(false);
         setClaimAllError("");
+        setOwnerAtas(null);
         setError("");
       }
       return;
@@ -905,6 +883,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
       setClaimResults(new Map());
       setClaimAllActive(false);
       setClaimAllError("");
+      setOwnerAtas(null);
 
       try {
         const result = await fetchWalletHotspots(addr);
@@ -913,6 +892,9 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
         setHotspotsCount(result.hotspots_count || result.hotspots?.length || 0);
         if (result.initsAvailable !== undefined) {
           setInitsAvailable(result.initsAvailable);
+        }
+        if (result.ownerAtas) {
+          setOwnerAtas(result.ownerAtas);
         }
 
         // Start progressive rewards fetch
@@ -1164,6 +1146,33 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
           {error}
         </div>
       )}
+
+      {ownerAtas && hotspots.length > 0 && (() => {
+        const missing = ["iot", "mobile", "hnt"].filter((tk) => ownerAtas[tk] === false);
+        if (missing.length === 0) return null;
+        const labels = missing.map((tk) => tk.toUpperCase());
+        const list =
+          labels.length === 1
+            ? labels[0]
+            : labels.length === 2
+              ? `${labels[0]} and ${labels[1]}`
+              : `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+        return (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-200 mb-6">
+            This wallet has no Associated Token Account for {list}. Rewards going to the
+            owner can&apos;t be claimed through this tool until the {labels.length > 1 ? "accounts are" : "account is"} created.
+            The owner can do this by claiming once via the{" "}
+            <a
+              href="https://wallet.helium.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:opacity-80"
+            >
+              Helium wallet app
+            </a>.
+          </div>
+        );
+      })()}
 
       {/* Hotspot List */}
       {hotspots.length > 0 && (

@@ -1,12 +1,33 @@
+import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../services/rateLimit.js";
 import {
   MAX_LOOKUPS_PER_MINUTE,
   MAX_RECIPIENT_INITS_PER_DAY,
   ENTITY_API_BASE,
+  TOKENS,
 } from "../config.js";
 import { isValidWalletAddress, todayUTC } from "../utils.js";
 import { extractEntityApiInfo } from "../services/entity.js";
+import { deriveATA, fetchMultipleAccounts } from "../services/common.js";
+
+const TOKEN_KEYS = ["iot", "mobile", "hnt"];
+
+async function checkOwnerAtas(env, ownerAddress) {
+  const ownerPk = new PublicKey(ownerAddress);
+  const atas = TOKEN_KEYS.map((tk) =>
+    deriveATA(ownerPk, new PublicKey(TOKENS[tk].mint))
+  );
+  try {
+    const accounts = await fetchMultipleAccounts(env, atas);
+    const result = {};
+    TOKEN_KEYS.forEach((tk, i) => { result[tk] = accounts[i] !== null; });
+    return result;
+  } catch (err) {
+    console.error("Owner ATA check failed:", err.message);
+    return null;
+  }
+}
 
 /**
  * GET /wallet?address=<solana-wallet>
@@ -67,15 +88,20 @@ export async function handleWallet(url, env, request) {
       };
     });
 
-    // Check init budget
+    // Check init budget and owner ATAs in parallel
     const initKey = `claims:inits:${todayUTC()}`;
-    const initsToday = parseInt((await env.KV.get(initKey)) || "0", 10);
+    const [initsTodayRaw, ownerAtas] = await Promise.all([
+      env.KV.get(initKey),
+      checkOwnerAtas(env, address),
+    ]);
+    const initsToday = parseInt(initsTodayRaw || "0", 10);
     const initsAvailable = initsToday < MAX_RECIPIENT_INITS_PER_DAY;
 
     console.log(JSON.stringify({
       event: "wallet_lookup",
       wallet: address,
       hotspots_count: hotspots.length,
+      owner_atas: ownerAtas,
     }));
 
     return jsonResponse({
@@ -83,6 +109,7 @@ export async function handleWallet(url, env, request) {
       hotspots,
       hotspots_count: data.hotspots_count || hotspots.length,
       initsAvailable,
+      ownerAtas,
     });
   } catch (err) {
     console.error("Wallet lookup error:", err.message, err.stack);
