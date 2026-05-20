@@ -1171,7 +1171,8 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
               className="underline hover:opacity-80"
             >
               Helium wallet app
-            </a>.
+            </a>, or by sending {list} to this account from a wallet
+            which will establish the {plural ? "ATAs" : "ATA"}.
           </div>
         );
       })()}
