@@ -1921,6 +1921,7 @@ export default function MultiGateway() {
     () => searchParams.get("mac") || null,
   );
   const inspectorRef = useRef(null);
+  const pendingDeepLinkScrollRef = useRef(Boolean(selectedMac));
   const [showMap, setShowMap] = useState(false);
   const [ouiLookup, setOuiLookup] = useState(() => () => null);
   const [onchainStatus, setOnchainStatus] = useState({});
@@ -1958,12 +1959,22 @@ export default function MultiGateway() {
   }, []);
 
   // On deep-link load (?mac=…), smooth-scroll the inspector into view so the
-  // gateway list above is visibly scrollable. Click selections don't retrigger
-  // because the effect only runs at mount.
+  // gateway list above is visibly scrollable. We wait for the gateway table to
+  // populate first; otherwise the scroll would target the empty-state position
+  // and the inspector would slide back out of view as rows arrive. Honors
+  // prefers-reduced-motion. Click selections don't retrigger because the
+  // pending ref captures the URL state at mount and is consumed on first run.
   useEffect(() => {
-    if (!selectedMac || !inspectorRef.current) return;
-    inspectorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+    if (!pendingDeepLinkScrollRef.current) return;
+    if (gateways.length === 0) return;
+    if (!inspectorRef.current) return;
+    pendingDeepLinkScrollRef.current = false;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    inspectorRef.current.scrollIntoView({
+      behavior: reduced ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [gateways]);
 
   // Press M to toggle map (ignore when typing in an input)
   useEffect(() => {
