@@ -137,6 +137,7 @@ function gatewayName(publicKey) {
 
 function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
+  const [gatewaysLoaded, setGatewaysLoaded] = useState(false);
   const [sseStatus, setSseStatus] = useState("connecting");
 
   const refreshGateways = () =>
@@ -155,6 +156,7 @@ function useMultiGateway() {
                 : null,
           })),
         );
+        setGatewaysLoaded(true);
       })
       .catch((err) => console.error("Failed to fetch gateways:", err));
 
@@ -269,7 +271,7 @@ function useMultiGateway() {
     };
   }, [gateways]);
 
-  return { gateways, summary, sseStatus };
+  return { gateways, summary, sseStatus, gatewaysLoaded };
 }
 
 // ---------------------------------------------------------------------------
@@ -1915,13 +1917,13 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
-  const { gateways, summary, sseStatus } = useMultiGateway();
+  const { gateways, summary, sseStatus, gatewaysLoaded } = useMultiGateway();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMac, setSelectedMac] = useState(
     () => searchParams.get("mac") || null,
   );
   const inspectorRef = useRef(null);
-  const pendingDeepLinkScrollRef = useRef(Boolean(selectedMac));
+  const initialDeepLinkMacRef = useRef(selectedMac);
   const [showMap, setShowMap] = useState(false);
   const [ouiLookup, setOuiLookup] = useState(() => () => null);
   const [onchainStatus, setOnchainStatus] = useState({});
@@ -1959,20 +1961,26 @@ export default function MultiGateway() {
   }, []);
 
   // On deep-link load (?mac=…), smooth-scroll the inspector into view. Wait
-  // for gateways to populate first so the scroll doesn't land on the empty-
-  // state position and get pushed below the fold by later rows. The ref is
-  // captured at mount and consumed once so click selections don't retrigger.
+  // for the initial gateway fetch to settle so the scroll doesn't target the
+  // empty-state position and get pushed below the fold once rows arrive. If
+  // the user navigates away from the deep-linked mac before the scroll fires,
+  // cancel it so a later gateway update doesn't surprise-scroll their next
+  // selection.
   useEffect(() => {
-    if (!pendingDeepLinkScrollRef.current) return;
-    if (gateways.length === 0) return;
+    if (!initialDeepLinkMacRef.current) return;
+    if (selectedMac !== initialDeepLinkMacRef.current) {
+      initialDeepLinkMacRef.current = null;
+      return;
+    }
+    if (!gatewaysLoaded) return;
     if (!inspectorRef.current) return;
-    pendingDeepLinkScrollRef.current = false;
+    initialDeepLinkMacRef.current = null;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     inspectorRef.current.scrollIntoView({
       behavior: reduced ? "auto" : "smooth",
       block: "start",
     });
-  }, [gateways]);
+  }, [gatewaysLoaded, selectedMac]);
 
   // Press M to toggle map (ignore when typing in an input)
   useEffect(() => {
