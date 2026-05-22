@@ -1958,12 +1958,10 @@ export default function MultiGateway() {
       .catch((err) => console.error("Failed to fetch OUI data:", err));
   }, []);
 
-  // On deep-link load (?mac=…), smooth-scroll the inspector into view so the
-  // gateway list above is visibly scrollable. We wait for the gateway table to
-  // populate first; otherwise the scroll would target the empty-state position
-  // and the inspector would slide back out of view as rows arrive. Honors
-  // prefers-reduced-motion. Click selections don't retrigger because the
-  // pending ref captures the URL state at mount and is consumed on first run.
+  // On deep-link load (?mac=…), smooth-scroll the inspector into view. Wait
+  // for gateways to populate first so the scroll doesn't land on the empty-
+  // state position and get pushed below the fold by later rows. The ref is
+  // captured at mount and consumed once so click selections don't retrigger.
   useEffect(() => {
     if (!pendingDeepLinkScrollRef.current) return;
     if (gateways.length === 0) return;
