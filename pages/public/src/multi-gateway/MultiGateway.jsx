@@ -1921,7 +1921,6 @@ export default function MultiGateway() {
     () => searchParams.get("mac") || null,
   );
   const inspectorRef = useRef(null);
-  const deepLinkScrollPendingRef = useRef(Boolean(selectedMac));
   const [showMap, setShowMap] = useState(false);
   const [ouiLookup, setOuiLookup] = useState(() => () => null);
   const [onchainStatus, setOnchainStatus] = useState({});
@@ -1958,13 +1957,11 @@ export default function MultiGateway() {
       .catch((err) => console.error("Failed to fetch OUI data:", err));
   }, []);
 
-  // First load with ?mac=… in the URL: smooth-scroll the inspector into view
-  // so it's visually clear there's a gateway list above. Runs once; user-click
-  // selections don't trigger it because we snapshot the URL state at mount.
+  // On deep-link load (?mac=…), smooth-scroll the inspector into view so the
+  // gateway list above is visibly scrollable. Click selections don't retrigger
+  // because the effect only runs at mount.
   useEffect(() => {
-    if (!deepLinkScrollPendingRef.current) return;
-    if (!inspectorRef.current) return;
-    deepLinkScrollPendingRef.current = false;
+    if (!selectedMac || !inspectorRef.current) return;
     inspectorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
