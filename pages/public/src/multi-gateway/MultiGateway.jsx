@@ -156,9 +156,9 @@ function useMultiGateway() {
                 : null,
           })),
         );
-        setGatewaysLoaded(true);
       })
-      .catch((err) => console.error("Failed to fetch gateways:", err));
+      .catch((err) => console.error("Failed to fetch gateways:", err))
+      .finally(() => setGatewaysLoaded(true));
 
   // Initial REST load + refresh on visibility return. The worker's SSE
   // keeps gateway state live even when the tab is backgrounded, but mobile
