@@ -1920,6 +1920,8 @@ export default function MultiGateway() {
   const [selectedMac, setSelectedMac] = useState(
     () => searchParams.get("mac") || null,
   );
+  const inspectorRef = useRef(null);
+  const deepLinkScrollPendingRef = useRef(Boolean(selectedMac));
   const [showMap, setShowMap] = useState(false);
   const [ouiLookup, setOuiLookup] = useState(() => () => null);
   const [onchainStatus, setOnchainStatus] = useState({});
@@ -1954,6 +1956,16 @@ export default function MultiGateway() {
         if (data) setOuiLookup(() => buildOuiLookup(data));
       })
       .catch((err) => console.error("Failed to fetch OUI data:", err));
+  }, []);
+
+  // First load with ?mac=… in the URL: smooth-scroll the inspector into view
+  // so it's visually clear there's a gateway list above. Runs once; user-click
+  // selections don't trigger it because we snapshot the URL state at mount.
+  useEffect(() => {
+    if (!deepLinkScrollPendingRef.current) return;
+    if (!inspectorRef.current) return;
+    deepLinkScrollPendingRef.current = false;
+    inspectorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   // Press M to toggle map (ignore when typing in an input)
@@ -2017,12 +2029,14 @@ export default function MultiGateway() {
         </div>
 
         {selectedMac && (
-          <GatewayInspector
-            mac={selectedMac}
-            publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
-            ouiLookup={ouiLookup}
-            onClose={() => selectMac(null)}
-          />
+          <div ref={inspectorRef}>
+            <GatewayInspector
+              mac={selectedMac}
+              publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
+              ouiLookup={ouiLookup}
+              onClose={() => selectMac(null)}
+            />
+          </div>
         )}
       </div>
 
