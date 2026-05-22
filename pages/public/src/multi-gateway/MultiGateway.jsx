@@ -137,6 +137,7 @@ function gatewayName(publicKey) {
 
 function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
+  const [gatewaysLoaded, setGatewaysLoaded] = useState(false);
   const [sseStatus, setSseStatus] = useState("connecting");
 
   const refreshGateways = () =>
@@ -156,7 +157,8 @@ function useMultiGateway() {
           })),
         );
       })
-      .catch((err) => console.error("Failed to fetch gateways:", err));
+      .catch((err) => console.error("Failed to fetch gateways:", err))
+      .finally(() => setGatewaysLoaded(true));
 
   // Initial REST load + refresh on visibility return. The worker's SSE
   // keeps gateway state live even when the tab is backgrounded, but mobile
@@ -269,7 +271,7 @@ function useMultiGateway() {
     };
   }, [gateways]);
 
-  return { gateways, summary, sseStatus };
+  return { gateways, summary, sseStatus, gatewaysLoaded };
 }
 
 // ---------------------------------------------------------------------------
@@ -1915,11 +1917,13 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
-  const { gateways, summary, sseStatus } = useMultiGateway();
+  const { gateways, summary, sseStatus, gatewaysLoaded } = useMultiGateway();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMac, setSelectedMac] = useState(
     () => searchParams.get("mac") || null,
   );
+  const inspectorRef = useRef(null);
+  const initialDeepLinkMacRef = useRef(selectedMac);
   const [showMap, setShowMap] = useState(false);
   const [ouiLookup, setOuiLookup] = useState(() => () => null);
   const [onchainStatus, setOnchainStatus] = useState({});
@@ -1955,6 +1959,28 @@ export default function MultiGateway() {
       })
       .catch((err) => console.error("Failed to fetch OUI data:", err));
   }, []);
+
+  // On deep-link load (?mac=…), smooth-scroll the inspector into view. Wait
+  // for the initial gateway fetch to settle so the scroll doesn't target the
+  // empty-state position and get pushed below the fold once rows arrive. If
+  // the user navigates away from the deep-linked mac before the scroll fires,
+  // cancel it so a later gateway update doesn't surprise-scroll their next
+  // selection.
+  useEffect(() => {
+    if (!initialDeepLinkMacRef.current) return;
+    if (selectedMac !== initialDeepLinkMacRef.current) {
+      initialDeepLinkMacRef.current = null;
+      return;
+    }
+    if (!gatewaysLoaded) return;
+    if (!inspectorRef.current) return;
+    initialDeepLinkMacRef.current = null;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    inspectorRef.current.scrollIntoView({
+      behavior: reduced ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [gatewaysLoaded, selectedMac]);
 
   // Press M to toggle map (ignore when typing in an input)
   useEffect(() => {
@@ -2017,12 +2043,14 @@ export default function MultiGateway() {
         </div>
 
         {selectedMac && (
-          <GatewayInspector
-            mac={selectedMac}
-            publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
-            ouiLookup={ouiLookup}
-            onClose={() => selectMac(null)}
-          />
+          <div ref={inspectorRef}>
+            <GatewayInspector
+              mac={selectedMac}
+              publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
+              ouiLookup={ouiLookup}
+              onClose={() => selectMac(null)}
+            />
+          </div>
         )}
       </div>
 
