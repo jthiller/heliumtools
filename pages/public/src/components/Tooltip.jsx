@@ -27,11 +27,17 @@ import { createPortal } from "react-dom";
  *
  * Empty/null content makes this a no-op so callers can pass conditional
  * content without defensive wrappers.
+ *
+ * `wrapperClassName` replaces the default `inline-flex` on the trigger
+ * wrapper. Override it when the trigger needs to fill its parent (e.g.,
+ * wrapping a `<MiddleEllipsis>` that needs a measurable width to truncate
+ * against, where `block min-w-0` or `flex-1 min-w-0` is appropriate).
  */
 export default function Tooltip({
   content,
   placement = "top",
   className = "",
+  wrapperClassName = "inline-flex",
   children,
 }) {
   const id = useId();
@@ -92,7 +98,7 @@ export default function Tooltip({
     <>
       <span
         ref={triggerRef}
-        className="inline-flex"
+        className={wrapperClassName}
         onMouseEnter={show}
         onMouseLeave={hide}
         onFocus={show}

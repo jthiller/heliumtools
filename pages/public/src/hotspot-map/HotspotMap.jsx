@@ -275,7 +275,7 @@ function CopyableRow({ label, value }) {
     <div className="flex items-center gap-2">
       <span className="text-xs text-content-tertiary shrink-0">{label}</span>
       <div className="flex-1 min-w-0">
-        <Tooltip content={value}>
+        <Tooltip content={value} wrapperClassName="block min-w-0">
           <MiddleEllipsis>
             <span className="text-xs font-mono text-content-secondary">{value}</span>
           </MiddleEllipsis>

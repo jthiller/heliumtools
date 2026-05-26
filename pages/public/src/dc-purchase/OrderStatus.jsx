@@ -200,8 +200,8 @@ export default function OrderStatus() {
               <div className="flex items-start gap-2">
                 {order?.payer ? (
                   <>
-                    <Tooltip content={order.payer}>
-                      <code className="flex-1 min-w-0 text-sm text-content-secondary">
+                    <Tooltip content={order.payer} wrapperClassName="flex-1 min-w-0">
+                      <code className="block text-sm text-content-secondary">
                         <MiddleEllipsis>
                           <span>{order.payer}</span>
                         </MiddleEllipsis>
@@ -223,8 +223,8 @@ export default function OrderStatus() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <Tooltip content={order.escrow}>
-                    <code className="min-w-0 flex-1">
+                  <Tooltip content={order.escrow} wrapperClassName="flex-1 min-w-0">
+                    <code className="block">
                       <MiddleEllipsis>
                         <span>{order.escrow}</span>
                       </MiddleEllipsis>
