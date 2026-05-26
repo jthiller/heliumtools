@@ -221,7 +221,7 @@ export default function DcPurchaseTool() {
                   <div className="flex items-center gap-2 overflow-hidden">
                     <span className="text-xs font-mono uppercase tracking-wider text-content-tertiary shrink-0 w-14">Payer</span>
                     <div className="flex-1 min-w-0 overflow-hidden">
-                      <Tooltip content={resolved.payer}>
+                      <Tooltip content={resolved.payer} wrapperClassName="block min-w-0">
                         <MiddleEllipsis>
                           <code className="text-xs text-content-secondary">{resolved.payer}</code>
                         </MiddleEllipsis>
@@ -240,7 +240,7 @@ export default function DcPurchaseTool() {
                       rel="noreferrer"
                     >
                       <div className="flex-1 min-w-0 overflow-hidden">
-                        <Tooltip content={resolved.escrow}>
+                        <Tooltip content={resolved.escrow} wrapperClassName="block min-w-0">
                           <MiddleEllipsis>
                             <code>{resolved.escrow}</code>
                           </MiddleEllipsis>

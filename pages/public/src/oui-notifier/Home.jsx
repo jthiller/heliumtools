@@ -402,7 +402,7 @@ export default function HomePage() {
                 {payer ? (
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
-                      <Tooltip content={payer}>
+                      <Tooltip content={payer} wrapperClassName="block min-w-0">
                         <MiddleEllipsis>
                           <code className="text-sm text-content-secondary">{payer}</code>
                         </MiddleEllipsis>
@@ -425,7 +425,7 @@ export default function HomePage() {
                     rel="noreferrer"
                   >
                     <span className="min-w-0 overflow-hidden">
-                      <Tooltip content={escrow}>
+                      <Tooltip content={escrow} wrapperClassName="block min-w-0">
                         <MiddleEllipsis>
                           <code>{escrow}</code>
                         </MiddleEllipsis>
