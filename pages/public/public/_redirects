@@ -1,0 +1,13 @@
+# Cloudflare Pages _redirects.
+#
+# /assets/* must 404 cleanly when a hashed chunk is missing — otherwise the
+# default SPA fallback would rewrite the request to index.html with status
+# 200, and the browser would try to evaluate the HTML as a JS module
+# ("'text/html' is not a valid JavaScript MIME type"). Listing this rule
+# before the SPA catch-all means real assets are still served from disk
+# (Pages serves matching static files before consulting _redirects); only
+# missing ones fall through to the 404.
+/assets/*  /assets/:splat  404
+
+# SPA fallback for client-side routes (React Router).
+/*  /index.html  200
