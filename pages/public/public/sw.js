@@ -47,8 +47,11 @@ async function networkFirst(event, cache) {
   const { request } = event;
   try {
     const res = await fetch(request);
-    if (res.ok) {
-      cachePut(event, cache, request, res);
+    // Only fall back to cache on 5xx (transient deploy hiccup) or a fetch
+    // throw. 4xx is a real origin response — surface it instead of masking
+    // with the cached shell.
+    if (res.status < 500) {
+      if (res.ok) cachePut(event, cache, request, res);
       return res;
     }
   } catch (err) {

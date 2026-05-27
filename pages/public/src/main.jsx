@@ -25,6 +25,56 @@ function isChunkLoadError(error) {
   );
 }
 
+// Returns true if we haven't tried reloading this path yet. Marks the
+// attempt in sessionStorage so a persistent error doesn't loop. Fails
+// closed if storage isn't available (private mode, embedded WebView) —
+// we'd rather render the recovery UI than risk an infinite reload.
+function shouldAttemptChunkReload() {
+  const key = `ht-chunk-reload:${window.location.pathname}`;
+  try {
+    if (sessionStorage.getItem(key)) return false;
+    sessionStorage.setItem(key, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ChunkReloadPrompt() {
+  return (
+    <div style={{
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "1rem",
+      padding: "2rem",
+      fontFamily: "system-ui, sans-serif",
+      textAlign: "center",
+    }}>
+      <h2 style={{ margin: 0 }}>Couldn't load the page</h2>
+      <p style={{ margin: 0, color: "#666", maxWidth: "32rem" }}>
+        The site may have just updated. Reloading usually fixes this.
+      </p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        style={{
+          padding: "0.5rem 1.25rem",
+          fontSize: "1rem",
+          cursor: "pointer",
+          border: "1px solid #ccc",
+          borderRadius: "0.375rem",
+          background: "white",
+        }}
+      >
+        Reload
+      </button>
+    </div>
+  );
+}
+
 class ChunkLoadBoundary extends React.Component {
   state = { error: null };
   static getDerivedStateFromError(error) {
@@ -32,14 +82,17 @@ class ChunkLoadBoundary extends React.Component {
   }
   componentDidCatch(error) {
     if (!isChunkLoadError(error)) return;
-    const key = `ht-chunk-reload:${window.location.pathname}`;
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, "1");
+    if (!shouldAttemptChunkReload()) return;
     window.location.reload();
   }
   render() {
-    if (this.state.error && !isChunkLoadError(this.state.error)) throw this.state.error;
-    return this.state.error ? null : this.props.children;
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    if (!isChunkLoadError(error)) throw error;
+    // Chunk-load error. componentDidCatch may be about to reload us; if it
+    // can't (already tried, or storage unavailable), this UI lets the user
+    // trigger the reload manually instead of staring at a blank page.
+    return <ChunkReloadPrompt />;
   }
 }
 
