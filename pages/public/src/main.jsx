@@ -12,8 +12,9 @@ registerSW();
 // the user gets "Failed to fetch dynamically imported module" or, if Pages
 // rewrites the missing asset to index.html, "'text/html' is not a valid
 // JavaScript MIME type". Reload once to pick up the fresh index.html and
-// its new chunk URLs. Keyed by pathname so a later deploy mid-session can
-// recover too, but a non-chunk error doesn't trap us in a reload loop.
+// its new chunk URLs. The retry is keyed by pathname and only attempted
+// once per tab session for that path, so a persistent error doesn't trap
+// us in a reload loop; later failures fall back to the manual prompt.
 function isChunkLoadError(error) {
   const msg = String(error?.message ?? "");
   return (
