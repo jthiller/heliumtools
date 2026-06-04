@@ -189,21 +189,27 @@ export async function getPendingRewards(env, assetId, owner) {
 function computeTokenResult(tokenConfig, oracleResults, { totalClaimed = 0n, destination = null }, ataExists) {
   const validRewards = oracleResults.filter(Boolean);
   if (validRewards.length === 0) {
-    return { pending: "0", claimable: false, reason: "no_oracle_response", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+    // Oracles unreachable: lifetime is unknown, so report the claimed amount as a
+    // conservative lower bound (lifetime is always >= what has been claimed).
+    return { pending: "0", claimable: false, reason: "no_oracle_response", lifetime: totalClaimed.toString(), claimed: totalClaimed.toString(), decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
   }
 
   const medianLifetime = medianBigInt(validRewards.map((r) => BigInt(r.currentRewards)));
+  // lifetime = total ever earned (oracle median); claimed = already withdrawn. Both
+  // are additive fields consumed by the wallet-dashboard; the claimer ignores them.
+  const lifetime = medianLifetime.toString();
+  const claimed = totalClaimed.toString();
 
   const pending = medianLifetime - totalClaimed;
   if (pending <= 0n) {
-    return { pending: "0", claimable: false, reason: "no_pending", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+    return { pending: "0", claimable: false, reason: "no_pending", lifetime, claimed, decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
   }
 
   if (!ataExists) {
-    return { pending: pending.toString(), claimable: false, reason: "no_ata", decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+    return { pending: pending.toString(), claimable: false, reason: "no_ata", lifetime, claimed, decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
   }
 
-  return { pending: pending.toString(), claimable: true, decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
+  return { pending: pending.toString(), claimable: true, lifetime, claimed, decimals: tokenConfig.decimals, label: tokenConfig.label, destination };
 }
 
 /**
@@ -349,7 +355,10 @@ export async function getBulkPendingRewards(env, hotspots, owner) {
       const dest = recipInfo.destination;
 
       if (!ld) {
-        rewards[tokenKey] = { pending: "0", claimable: false, reason: "no_distributor", decimals: tokenConfig.decimals, label: tokenConfig.label, destination: dest };
+        // Keep the additive lifetime/claimed fields present on every branch (they
+        // default to the claimed lower bound here) so consumers can rely on them.
+        const claimedStr = recipInfo.totalClaimed.toString();
+        rewards[tokenKey] = { pending: "0", claimable: false, reason: "no_distributor", lifetime: claimedStr, claimed: claimedStr, decimals: tokenConfig.decimals, label: tokenConfig.label, destination: dest };
         continue;
       }
 

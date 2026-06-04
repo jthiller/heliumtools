@@ -134,6 +134,16 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 - Sibling components rendered with `key={mac}` need *unique* keys among siblings (use `scatter-${mac}`, `events-${mac}`) — duplicate keys leak old DOM on Hotspot switch.
 - `GatewayDetail` is `memo`'d. Hover-induced re-renders still pass through (the table needs hover for row highlighting), but other parent state changes (the 1Hz `nowTick` heartbeat) skip it.
 
+## Wallet Dashboard — Key Concepts
+
+Read-only, full-screen bento overview of any wallet (`/wallet-dashboard/:address`, with `?wallet=` accepted and redirected to the canonical path). No wallet connect. It's a thin **aggregation layer** that reuses other tools' primitives rather than re-implementing on-chain logic.
+
+- **Worker** (`worker/src/tools/wallet-dashboard/`, prefix `/wallet-dashboard`): `GET /summary` (balances + USD prices + fleet stats, KV-cached ~60s), `GET /fleet` (full per-Hotspot list, KV-cached ~120s, shared with /summary), `GET /transactions` (categorized via Helius enhanced API, `getSignaturesForAddress` fallback), `POST /rewards` (batched ≤50 pending+lifetime rewards; reuses the claimer's `getBulkPendingRewards` but KV-caches per-batch ~15min and is cache-first — rewards distribute ~daily). The client also calls `/ve-hnt/positions` directly. The dashboard does NOT use the shared `/hotspot-claimer/wallet/rewards` (that must stay live/uncached for claims).
+- **Prices** (`services/prices.js`): Pyth Hermes multi-feed (HNT/MOBILE/SOL) + **Jupiter Price API v3** by mint for IOT (no Pyth feed) + DC fixed (100,000 DC = $1). **CoinGecko is intentionally avoided — it blocks Worker egress IPs.**
+- **Activity is rewards-derived, never `is_active`** (the Entity API field is always false — see memory). A Hotspot with zero lifetime rewards is "idle". Lifetime/claimed come from the additive fields in `hotspot-claimer/services/oracle.js` `computeTokenResult`.
+- IoT data-only vs full is inferred from the onboarding fee (`< 1,000,000 DC` ⇒ data-only). Coordinates are decoded client-side from each row's H3 `location` (the Entity API lat/long is sparsely populated).
+- **Frontend** (`pages/public/src/wallet-dashboard/`): `WalletDashboard.jsx` (bento shell + URL-as-source-of-truth), `FleetMap.jsx` (deck.gl/MapLibre, adapted from Hotspot Map), `useFleetRewards.js` (progressive 50-batch reward fan-out to the cached `/rewards`, concurrency 3), `cards/*.jsx`, `format.js`. No SolanaProvider (read-only).
+
 ## Deployment
 
 Both Pages and Worker auto-deploy from the `main` branch — any merge or direct push to `main` ships to production. There is no staging gate between commit and prod, so treat every commit to `main` as a production release. `wrangler deploy --env production` is only needed for out-of-band force deploys (e.g., config rollbacks).

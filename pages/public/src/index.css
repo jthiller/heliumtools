@@ -69,6 +69,28 @@ input[type="number"]::-webkit-outer-spin-button {
   @apply appearance-none;
 }
 
+/* Wallet Dashboard: staggered card reveal on first paint. Applied to direct
+   children of .wd-grid; runs once on mount (not on wallet switch). */
+@keyframes wd-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.wd-grid > * {
+  animation: wd-rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.wd-grid > *:nth-child(1) { animation-delay: 0ms; }
+.wd-grid > *:nth-child(2) { animation-delay: 60ms; }
+.wd-grid > *:nth-child(3) { animation-delay: 110ms; }
+.wd-grid > *:nth-child(4) { animation-delay: 150ms; }
+.wd-grid > *:nth-child(5) { animation-delay: 185ms; }
+.wd-grid > *:nth-child(6) { animation-delay: 215ms; }
+.wd-grid > *:nth-child(7) { animation-delay: 245ms; }
+.wd-grid > *:nth-child(8) { animation-delay: 275ms; }
+.wd-grid > *:nth-child(n + 9) { animation-delay: 305ms; }
+@media (prefers-reduced-motion: reduce) {
+  .wd-grid > * { animation: none; }
+}
+
 /* Pulse ring for newly-arrived joins/downs in the multi-gateway EventsBar.
    transform-box: fill-box is what makes transform-origin center on the
    circle's own bounding box rather than the SVG root. */
