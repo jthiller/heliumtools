@@ -46,7 +46,7 @@ export default function GovernanceCard({ positions, loading, error, wallet }) {
   return (
     <Card
       title="Governance (veHNT)"
-      action={<a href="/ve-hnt" className="text-xs font-medium text-accent-text hover:underline">Open →</a>}
+      action={<a href={govHref} className="text-xs font-medium text-accent-text hover:underline">Open →</a>}
     >
       <div className="grid grid-cols-2 gap-4">
         <Stat label="HNT locked" value={fmtToken(Number(totals.hntLocked), { max: 2 })} />

@@ -144,7 +144,7 @@ function deriveFleetStats(hotspots) {
     if (h.network) byNetwork[h.network] = (byNetwork[h.network] || 0) + 1;
     if (h.deviceType) byDeviceType[h.deviceType] = (byDeviceType[h.deviceType] || 0) + 1;
     if (h.location) asserted++;
-    if (h.dcOnboardingFeePaid) onboardingDcTotal += h.dcOnboardingFeePaid;
+    if (h.dcOnboardingFeePaid != null) onboardingDcTotal += h.dcOnboardingFeePaid;
     if (h.country) countries[h.country] = (countries[h.country] || 0) + 1;
     if (h.state) states[h.state] = (states[h.state] || 0) + 1;
     if (h.city) {

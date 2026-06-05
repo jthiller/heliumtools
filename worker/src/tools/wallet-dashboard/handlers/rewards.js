@@ -2,6 +2,7 @@ import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../../lib/rateLimit.js";
 import { RATE_LIMIT, CACHE_TTL, REWARDS_BATCH_SIZE } from "../config.js";
 import { isValidWalletAddress, kvGetJson, kvPutJson } from "../utils.js";
+import { isValidEntityKey } from "../../hotspot-claimer/utils.js";
 import { getBulkPendingRewards } from "../../hotspot-claimer/services/oracle.js";
 
 /**
@@ -37,8 +38,12 @@ export async function handleRewards(request, env) {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
+  // Validate each entry's format (entity key + asset pubkey) and drop malformed
+  // ones rather than 400-ing the whole batch — one bad entry from the client
+  // fan-out shouldn't lose the other 49. (The cache key is a SHA-256 hash, so
+  // oversized input can't bloat KV keys either.)
   const hotspots = (Array.isArray(body?.hotspots) ? body.hotspots : [])
-    .filter((h) => h && h.entityKey && h.assetId)
+    .filter((h) => h && isValidEntityKey(h.entityKey) && isValidWalletAddress(h.assetId))
     .map((h) => ({ entityKey: h.entityKey, assetId: h.assetId }));
 
   if (hotspots.length === 0) return jsonResponse({ results: {}, cached: false });
