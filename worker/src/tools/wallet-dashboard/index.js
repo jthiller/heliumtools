@@ -6,12 +6,14 @@ import { handleRewards } from "./handlers/rewards.js";
 
 /**
  * Wallet Dashboard — read-only aggregation API.
- *   GET /summary?wallet=       balances + USD prices + fleet stats
- *   GET /fleet?wallet=         full per-Hotspot list + stats
- *   GET /transactions?wallet=  categorized recent transactions
+ *   GET  /summary?wallet=       balances + USD prices + fleet stats
+ *   GET  /fleet?wallet=         full per-Hotspot list + stats
+ *   GET  /transactions?wallet=  categorized recent transactions
+ *   POST /rewards               batched + cached pending/lifetime rewards
  *
- * Governance (veHNT) and pending/lifetime rewards are served by the existing
- * /ve-hnt and /hotspot-claimer endpoints, called directly from the client.
+ * Governance (veHNT) is served by the existing /ve-hnt endpoint, called from the
+ * client. The shared /hotspot-claimer/wallet/rewards is intentionally NOT used
+ * here — it stays live/uncached for actual claims; /rewards above is the cached path.
  */
 export async function handleWalletDashboardRequest(request, env) {
   const url = new URL(request.url);

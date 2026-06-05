@@ -24,7 +24,7 @@ export async function fetchTransactions(env, wallet, { before = null, limit = MA
 }
 
 async function fetchEnhanced(wallet, apiKey, { before, limit }) {
-  let url = `${HELIUS_ENHANCED_BASE}/v0/addresses/${wallet}/transactions?api-key=${apiKey}&limit=${limit}`;
+  let url = `${HELIUS_ENHANCED_BASE}/v0/addresses/${wallet}/transactions?api-key=${encodeURIComponent(apiKey)}&limit=${limit}`;
   if (before) url += `&before=${encodeURIComponent(before)}`;
 
   const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });

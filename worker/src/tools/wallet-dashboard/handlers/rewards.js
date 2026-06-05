@@ -40,11 +40,16 @@ export async function handleRewards(request, env) {
 
   // Validate each entry's format (entity key + asset pubkey) and drop malformed
   // ones rather than 400-ing the whole batch — one bad entry from the client
-  // fan-out shouldn't lose the other 49. (The cache key is a SHA-256 hash, so
+  // fan-out shouldn't lose the other 49. Dedupe by entityKey so duplicate entries
+  // don't trigger redundant oracle/RPC work. (The cache key is a SHA-256 hash, so
   // oversized input can't bloat KV keys either.)
-  const hotspots = (Array.isArray(body?.hotspots) ? body.hotspots : [])
-    .filter((h) => h && isValidEntityKey(h.entityKey) && isValidWalletAddress(h.assetId))
-    .map((h) => ({ entityKey: h.entityKey, assetId: h.assetId }));
+  const hotspots = [
+    ...new Map(
+      (Array.isArray(body?.hotspots) ? body.hotspots : [])
+        .filter((h) => h && isValidEntityKey(h.entityKey) && isValidWalletAddress(h.assetId))
+        .map((h) => [h.entityKey, { entityKey: h.entityKey, assetId: h.assetId }]),
+    ).values(),
+  ];
 
   if (hotspots.length === 0) return jsonResponse({ results: {}, cached: false });
   if (hotspots.length > REWARDS_BATCH_SIZE) {

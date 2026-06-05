@@ -36,7 +36,8 @@ const dateFmt = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
 });
 
-/** Format an ISO string or ms/sec timestamp as a short date. */
+/** Format an ISO string, Date, or ms timestamp as a short date. (Unix seconds
+ * must be ×1000 first — see fmtAgoSeconds.) */
 export function fmtDate(value) {
   if (!value) return "—";
   const d = value instanceof Date ? value : new Date(value);
