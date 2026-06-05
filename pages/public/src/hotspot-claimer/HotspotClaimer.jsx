@@ -1147,8 +1147,10 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
         </div>
       )}
 
-      {ownerAtas && hotspots.length > 0 && (() => {
-        const missing = ["iot", "mobile", "hnt"].filter((tk) => ownerAtas[tk] === false);
+      {ownerAtas && hotspots.length > 0 && !rewardsLoading && (() => {
+        const missing = ["iot", "mobile", "hnt"].filter(
+          (tk) => ownerAtas[tk] === false && totals[tk] > 0,
+        );
         if (missing.length === 0) return null;
         const labels = missing.map((tk) => tk.toUpperCase());
         const list =

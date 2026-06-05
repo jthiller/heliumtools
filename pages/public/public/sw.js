@@ -1,20 +1,14 @@
-// Asset-caching Service Worker for heliumtools.org. Stale-while-revalidate
-// for same-origin static assets (HTML, JS, CSS, fonts, images) so repeat
-// loads are instant and the app keeps working through brief network blips.
+// Asset-caching Service Worker for heliumtools.org.
 //
-// Anything that isn't a same-origin GET — API requests, SSE, third-party
-// CDNs — passes through to network unchanged. The multi-gateway tool's
-// live data path stays untouched.
-//
-// Cache name is versioned via build hash so a deploy invalidates the
-// previous cache cleanly.
+// Navigations are network-first so a fresh deploy is picked up immediately
+// and users never get a stale index.html pointing at chunk hashes that no
+// longer exist. The cache fallback also covers transient 5xx during deploys.
+// Hashed static assets are stale-while-revalidate. /api/* passes through.
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `heliumtools-static-${CACHE_VERSION}`;
 
 self.addEventListener("install", (event) => {
-  // skipWaiting so a new SW takes over the page on next reload, not several
-  // minutes later when the previous tab finally closes.
   event.waitUntil(self.skipWaiting());
 });
 
@@ -30,32 +24,66 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-function shouldHandle(request) {
-  if (request.method !== "GET") return false;
+function classify(request) {
+  if (request.method !== "GET") return "skip";
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return false;
-  // Skip API + SSE — they're live data, never cache them.
-  if (url.pathname.startsWith("/api/")) return false;
-  if (url.pathname.startsWith("/multi-gateway/events")) return false;
-  return true;
+  if (url.origin !== self.location.origin) return "skip";
+  if (url.pathname.startsWith("/api/")) return "skip";
+  if (request.mode === "navigate" || request.destination === "document") return "navigation";
+  return "asset";
+}
+
+// Skip 206 partials, opaque redirects, and CORS responses.
+function isStorable(res) {
+  return res && res.status === 200 && res.type === "basic";
+}
+
+function cachePut(event, cache, request, res) {
+  if (!isStorable(res)) return;
+  event.waitUntil(cache.put(request, res.clone()).catch(() => {}));
+}
+
+async function networkFirst(event, cache) {
+  const { request } = event;
+  try {
+    const res = await fetch(request);
+    // Only fall back to cache on 5xx (transient deploy hiccup) or a fetch
+    // throw. 4xx is a real origin response — surface it instead of masking
+    // with the cached shell.
+    if (res.status < 500) {
+      if (res.ok) cachePut(event, cache, request, res);
+      return res;
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") throw err;
+  }
+  const cached = await cache.match(request, { ignoreSearch: true });
+  return cached || Response.error();
+}
+
+async function staleWhileRevalidate(event, cache) {
+  const { request } = event;
+  const cached = await cache.match(request);
+  const networkPromise = (async () => {
+    try {
+      const res = await fetch(request);
+      cachePut(event, cache, request, res);
+      return res;
+    } catch {
+      return null;
+    }
+  })();
+  event.waitUntil(networkPromise);
+  return cached || (await networkPromise) || Response.error();
 }
 
 self.addEventListener("fetch", (event) => {
-  if (!shouldHandle(event.request)) return;
+  const kind = classify(event.request);
+  if (kind === "skip") return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(event.request);
-    const networkPromise = fetch(event.request)
-      .then((res) => {
-        // Don't cache opaque or error responses.
-        if (res && res.ok && res.type === "basic") {
-          cache.put(event.request, res.clone()).catch(() => {});
-        }
-        return res;
-      })
-      .catch(() => null);
-    // Stale-while-revalidate: return the cached copy immediately if we have
-    // one, refresh in the background. If no cache, wait on network.
-    return cached || (await networkPromise) || new Response("offline", { status: 503 });
+    return kind === "navigation"
+      ? networkFirst(event, cache)
+      : staleWhileRevalidate(event, cache);
   })());
 });
