@@ -1,8 +1,23 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon, LockClosedIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon, LockClosedIcon, WalletIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import ShaderDithering from "../components/ShaderDithering.jsx";
 
 const sections = [
+  {
+    title: "Wallet",
+    description: "A full overview of any wallet",
+    tools: [
+      {
+        name: "Wallet Dashboard",
+        description:
+          "Read-only overview for any wallet: fleet map, token balances, unclaimed rewards, governance, recent activity, and an exportable Hotspot list.",
+        href: "/wallet-dashboard",
+        icon: WalletIcon,
+        iconBg: "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400",
+        badge: "New",
+      },
+    ],
+  },
   {
     title: "Network Operators",
     description: "Tools for IoT network OUI operators",
@@ -22,7 +37,7 @@ const sections = [
         href: "/dc-mint",
         icon: BoltIcon,
         iconBg: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
-        badge: "New",
+        badge: null,
       },
       {
         name: "Buy Data Credits",
@@ -47,7 +62,7 @@ const sections = [
         href: "/iot-onboard",
         icon: SignalIcon,
         iconBg: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-        badge: "New",
+        badge: null,
       },
       {
         name: "Add a Hotspot",
@@ -56,7 +71,7 @@ const sections = [
         href: "/multi-gateway",
         icon: SignalIcon,
         iconBg: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
-        badge: "New",
+        badge: null,
       },
       {
         name: "Reward Claimer",
