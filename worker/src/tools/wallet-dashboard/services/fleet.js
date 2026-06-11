@@ -49,11 +49,16 @@ function getNetworks(h) {
   const nets = Array.isArray(attr?.value) ? attr.value.slice() : [];
   if (nets.length) return nets;
   // Fallback when the networks attribute is empty (e.g. issued-but-not-yet-asserted
-  // Hotspots): infer from hotspot_infos. The sub-object's presence means the
-  // Hotspot is registered on that network even if it hasn't asserted a location.
+  // Hotspots): infer from hotspot_infos. Sub-object presence alone isn't proof —
+  // the Entity API returns a husk ({ location: null }) for networks the Hotspot
+  // isn't on — so require a field a real registration always carries (an asserted
+  // location, the onboarding fee, or created_at; mobile records always have
+  // device_type).
   const hi = h.hotspot_infos || {};
   const out = [];
-  if (hi.iot) out.push("iot");
+  if (hi.iot && (hi.iot.location || hi.iot.dc_onboarding_fee_paid != null || hi.iot.created_at)) {
+    out.push("iot");
+  }
   if (hi.mobile && (hi.mobile.location || hi.mobile.device_type)) out.push("mobile");
   return out;
 }
@@ -90,14 +95,15 @@ function mapHotspot(h) {
   // Read the IoT and Mobile sub-objects directly. They carry disjoint fields
   // (IoT: location/city/state/created_at/fee/elevation/gain; Mobile: location/
   // device_type), so a dual-network Hotspot must not be funneled through a single
-  // sub-object — that would drop half its metadata. Prefer IoT for shared/location
-  // fields (it has the rich on-chain data), falling back to Mobile.
+  // sub-object — that would drop half its metadata. Merge per-field, preferring
+  // IoT (it has the rich on-chain data): the Entity API returns an `iot`
+  // sub-object even for mobile-only Hotspots ({ location: null }), so an
+  // object-level `iot || mobile` would latch onto that husk and drop the
+  // Mobile location/geo entirely.
   const iot = h.hotspot_infos?.iot || null;
   const mobile = h.hotspot_infos?.mobile || null;
-  const meta = iot || mobile || {};
-
-  const feeRaw = iot?.dc_onboarding_fee_paid;
-  const dcOnboardingFeePaid = feeRaw == null ? null : Number(feeRaw);
+  const pick = (field) => iot?.[field] ?? mobile?.[field] ?? null;
+  const num = (v) => (v == null ? null : Number(v));
 
   return {
     entityKey,
@@ -106,16 +112,18 @@ function mapHotspot(h) {
     name: h.name || null,
     network,
     networks: networks.length ? networks : network ? [network] : [],
-    location: meta.location || null, // H3 cell index (decoded to lat/lng on the client)
-    city: meta.city || null,
-    state: meta.state || null,
-    country: meta.country || null,
-    street: meta.street || null,
-    createdAt: meta.created_at || null,
-    elevation: meta.elevation != null ? Number(meta.elevation) : null,
-    gain: meta.gain != null ? Number(meta.gain) : null,
-    dcOnboardingFeePaid,
-    deviceType: deriveDeviceType(network, { device_type: mobile?.device_type }, dcOnboardingFeePaid),
+    location: pick("location"), // H3 cell index (decoded to lat/lng on the client)
+    city: pick("city"),
+    state: pick("state"),
+    country: pick("country"),
+    street: pick("street"),
+    createdAt: pick("created_at"),
+    elevation: num(pick("elevation")),
+    gain: num(pick("gain")),
+    // The row's fee (and the fleet onboarding-DC total) counts either network's;
+    // data-only vs full inference is IoT-specific, so it reads only the IoT fee.
+    dcOnboardingFeePaid: num(pick("dc_onboarding_fee_paid")),
+    deviceType: deriveDeviceType(network, { device_type: mobile?.device_type }, num(iot?.dc_onboarding_fee_paid)),
   };
 }
 
