@@ -152,6 +152,14 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
         {idleSet.size > 0 && <LegendRow color={`rgb(${IDLE_COLOR.join(",")})`} label="Idle (no rewards)" />}
       </div>
 
+      {hotspots.length > 0 && mappable.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="rounded-lg border border-border bg-surface-raised/90 px-3 py-2 text-xs text-content-tertiary backdrop-blur">
+            None of this wallet&apos;s Hotspots have an asserted location.
+          </span>
+        </div>
+      )}
+
       {selectedHotspot && (
         <FleetMapDetail
           hotspot={selectedHotspot}

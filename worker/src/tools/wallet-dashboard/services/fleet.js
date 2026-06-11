@@ -90,14 +90,21 @@ function mapHotspot(h) {
   // Read the IoT and Mobile sub-objects directly. They carry disjoint fields
   // (IoT: location/city/state/created_at/fee/elevation/gain; Mobile: location/
   // device_type), so a dual-network Hotspot must not be funneled through a single
-  // sub-object — that would drop half its metadata. Prefer IoT for shared/location
-  // fields (it has the rich on-chain data), falling back to Mobile.
+  // sub-object — that would drop half its metadata. Merge per-field, preferring
+  // IoT (it has the rich on-chain data): the Entity API returns an `iot`
+  // sub-object even for mobile-only Hotspots ({ location: null }), so an
+  // object-level `iot || mobile` would latch onto that husk and drop the
+  // Mobile location/geo entirely.
   const iot = h.hotspot_infos?.iot || null;
   const mobile = h.hotspot_infos?.mobile || null;
-  const meta = iot || mobile || {};
+  const pick = (field) => iot?.[field] ?? mobile?.[field] ?? null;
 
-  const feeRaw = iot?.dc_onboarding_fee_paid;
-  const dcOnboardingFeePaid = feeRaw == null ? null : Number(feeRaw);
+  // Data-only vs full inference is IoT-specific, so it reads only the IoT fee;
+  // the row's fee (and the fleet onboarding-DC total) counts either network's.
+  const iotFeeRaw = iot?.dc_onboarding_fee_paid;
+  const feeRaw = pick("dc_onboarding_fee_paid");
+  const elevation = pick("elevation");
+  const gain = pick("gain");
 
   return {
     entityKey,
@@ -106,16 +113,20 @@ function mapHotspot(h) {
     name: h.name || null,
     network,
     networks: networks.length ? networks : network ? [network] : [],
-    location: meta.location || null, // H3 cell index (decoded to lat/lng on the client)
-    city: meta.city || null,
-    state: meta.state || null,
-    country: meta.country || null,
-    street: meta.street || null,
-    createdAt: meta.created_at || null,
-    elevation: meta.elevation != null ? Number(meta.elevation) : null,
-    gain: meta.gain != null ? Number(meta.gain) : null,
-    dcOnboardingFeePaid,
-    deviceType: deriveDeviceType(network, { device_type: mobile?.device_type }, dcOnboardingFeePaid),
+    location: pick("location"), // H3 cell index (decoded to lat/lng on the client)
+    city: pick("city"),
+    state: pick("state"),
+    country: pick("country"),
+    street: pick("street"),
+    createdAt: pick("created_at"),
+    elevation: elevation != null ? Number(elevation) : null,
+    gain: gain != null ? Number(gain) : null,
+    dcOnboardingFeePaid: feeRaw == null ? null : Number(feeRaw),
+    deviceType: deriveDeviceType(
+      network,
+      { device_type: mobile?.device_type },
+      iotFeeRaw == null ? null : Number(iotFeeRaw),
+    ),
   };
 }
 
