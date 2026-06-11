@@ -7,9 +7,12 @@ const TOKENS = ["hnt", "iot", "mobile"];
 
 export default function RewardsCard({ rewards, progress, done, unavailable, prices, governance, wallet }) {
   const pendingUsd = rewards ? rewardUsd(rewards.pendingUi, prices) : null;
-  // Pending rewards the wallet can't receive yet (missing associated token
-  // account) — the claimer flags these and creating the ATA unblocks them.
-  const needsAta =
+  // Pending > claimable means some rewards aren't claimable right now. Per the
+  // oracle service that's a missing associated token account on the receiving
+  // wallet (owner or custom claim destination), but a failed ATA existence
+  // check is reported the same way, so the note hedges with "typically" and
+  // defers specifics to the claimer.
+  const hasUnclaimable =
     rewards && TOKENS.some((t) => (rewards.pendingUi[t] || 0) > (rewards.claimableUi[t] || 0));
   const scanning = !done && progress?.total > 0;
   const pending = (rewards?.counted ?? 0) === 0 && !done;
@@ -38,9 +41,10 @@ export default function RewardsCard({ rewards, progress, done, unavailable, pric
       <div className="font-display text-3xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
         {unavailable ? "—" : pending ? "…" : fmtUsd(pendingUsd)}
       </div>
-      {needsAta && (
+      {hasUnclaimable && (
         <p className="mt-1 text-xs text-content-tertiary">
-          Some rewards need a token account in this wallet before they can be claimed.
+          Some pending rewards can&apos;t be claimed yet, typically because the receiving
+          wallet needs a token account for them.
         </p>
       )}
 

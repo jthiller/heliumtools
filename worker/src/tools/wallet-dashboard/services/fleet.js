@@ -98,13 +98,7 @@ function mapHotspot(h) {
   const iot = h.hotspot_infos?.iot || null;
   const mobile = h.hotspot_infos?.mobile || null;
   const pick = (field) => iot?.[field] ?? mobile?.[field] ?? null;
-
-  // Data-only vs full inference is IoT-specific, so it reads only the IoT fee;
-  // the row's fee (and the fleet onboarding-DC total) counts either network's.
-  const iotFeeRaw = iot?.dc_onboarding_fee_paid;
-  const feeRaw = pick("dc_onboarding_fee_paid");
-  const elevation = pick("elevation");
-  const gain = pick("gain");
+  const num = (v) => (v == null ? null : Number(v));
 
   return {
     entityKey,
@@ -119,14 +113,12 @@ function mapHotspot(h) {
     country: pick("country"),
     street: pick("street"),
     createdAt: pick("created_at"),
-    elevation: elevation != null ? Number(elevation) : null,
-    gain: gain != null ? Number(gain) : null,
-    dcOnboardingFeePaid: feeRaw == null ? null : Number(feeRaw),
-    deviceType: deriveDeviceType(
-      network,
-      { device_type: mobile?.device_type },
-      iotFeeRaw == null ? null : Number(iotFeeRaw),
-    ),
+    elevation: num(pick("elevation")),
+    gain: num(pick("gain")),
+    // The row's fee (and the fleet onboarding-DC total) counts either network's;
+    // data-only vs full inference is IoT-specific, so it reads only the IoT fee.
+    dcOnboardingFeePaid: num(pick("dc_onboarding_fee_paid")),
+    deviceType: deriveDeviceType(network, { device_type: mobile?.device_type }, num(iot?.dc_onboarding_fee_paid)),
   };
 }
 
