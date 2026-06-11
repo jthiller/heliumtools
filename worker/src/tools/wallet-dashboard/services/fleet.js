@@ -49,11 +49,16 @@ function getNetworks(h) {
   const nets = Array.isArray(attr?.value) ? attr.value.slice() : [];
   if (nets.length) return nets;
   // Fallback when the networks attribute is empty (e.g. issued-but-not-yet-asserted
-  // Hotspots): infer from hotspot_infos. The sub-object's presence means the
-  // Hotspot is registered on that network even if it hasn't asserted a location.
+  // Hotspots): infer from hotspot_infos. Sub-object presence alone isn't proof —
+  // the Entity API returns a husk ({ location: null }) for networks the Hotspot
+  // isn't on — so require a field a real registration always carries (an asserted
+  // location, the onboarding fee, or created_at; mobile records always have
+  // device_type).
   const hi = h.hotspot_infos || {};
   const out = [];
-  if (hi.iot) out.push("iot");
+  if (hi.iot && (hi.iot.location || hi.iot.dc_onboarding_fee_paid != null || hi.iot.created_at)) {
+    out.push("iot");
+  }
   if (hi.mobile && (hi.mobile.location || hi.mobile.device_type)) out.push("mobile");
   return out;
 }
