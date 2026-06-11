@@ -52,7 +52,7 @@ function HeroStat({ label, value, valueClass = "text-content", sub }) {
 export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, prices }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
-  const unclaimedUsd = rewards ? rewardUsd(rewards.claimableUi, prices) : null;
+  const unclaimedUsd = rewards ? rewardUsd(rewards.pendingUi, prices) : null;
   const fleetCount = summary?.fleet?.count;
 
   return (
