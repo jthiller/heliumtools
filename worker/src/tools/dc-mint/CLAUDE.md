@@ -79,9 +79,9 @@ prefix router in `worker/src/index.js`.
   `useConnection`). Takes `onClose`, `onSuccess(sig)`, `defaultDcAmount`. Builds a
   DC-target mint (`dc_amount` only), warns if the wallet has no DC ATA (~0.002 SOL
   rent to create one), and on success calls back so the host can refresh balances.
-- `constants.js` — exports `HNT_MINT` and `DC_MINT` as `PublicKey`s. `DC_MINT` is
-  the DC token mint `dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm`; `DC_MINT` is
-  imported by multi-gateway (as `DC_MINT_KEY`).
+- `constants.js` — exports `HNT_MINT` and `DC_MINT` as `PublicKey`s. The latter is
+  the DC token mint `dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm`, imported by
+  multi-gateway (as `DC_MINT_KEY`).
 - `solanaUtils.js` — `confirmAndVerify(connection, signature)` confirms then
   re-fetches via `getTransaction` (retry x5 with backoff, because `getTransaction`
   indexing lags `confirmTransaction` on some RPC nodes) and throws a descriptive
