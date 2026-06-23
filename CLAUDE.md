@@ -44,8 +44,11 @@ When hoisting, mirror the path on both sides: `worker/src/tools/shared/<handler>
 Each tool has its own `CLAUDE.md` next to its code, documenting both its worker and
 frontend halves, cross-tool relationships, on-chain programs, and gotchas. The file
 lives at the tool's logic center-of-gravity (worker dir for worker-heavy tools, the
-frontend dir for frontend-heavy ones). Read the per-tool doc before working on a tool;
-the sections below in this root file are a higher-level overview.
+frontend dir for frontend-heavy ones). Read the per-tool doc before working on a tool,
+and keep it current: when a change alters a tool's endpoints, constants, on-chain
+program IDs, cross-tool wiring, or documented behavior, update its `CLAUDE.md` in the
+same commit (and add a row to the table below when you add a tool). The sections below
+in this root file are a higher-level overview.
 
 | Tool | Doc | Notes |
 |---|---|---|
