@@ -24,7 +24,7 @@ export async function handleIssue(request, env) {
   if (!ownerStr) return jsonResponse({ error: "Missing owner address" }, 400);
   if (!gateway_pubkey) return jsonResponse({ error: "Missing gateway_pubkey" }, 400);
   if (!add_gateway_txn) {
-    return jsonResponse({ error: "Missing add_gateway_txn (hex-encoded BLE response)" }, 400);
+    return jsonResponse({ error: "Missing add_gateway_txn (base64-encoded BLE response)" }, 400);
   }
 
   try {

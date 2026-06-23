@@ -17,7 +17,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Tools needing Solana wallets are wrapped in `SolanaProvider` in `main.jsx`
 
 ### Worker (`worker/`)
-- Cloudflare Worker with D1 binding (`DB`), KV binding (`KV`), R2 binding (`FIRMWARE`) for hosted Hotspot images
+- Cloudflare Worker with D1 binding (`DB`), KV binding (`KV`), and a `MultiGatewayHub` Durable Object binding (`MULTI_GATEWAY_HUB`, used by Multi-Gateway). No R2 binding — IoT-onboard recovery firmware images live in a public R2 bucket referenced by a hard-coded `*.r2.dev` URL in the frontend
 - Entry point: `src/index.js` (HTTP routes + `scheduled()` handler)
 - Tools organized under `src/tools/` (e.g., `src/tools/oui-notifier/`)
 - Schema: `worker/schema.sql`
@@ -38,6 +38,28 @@ When hoisting, mirror the path on both sides: `worker/src/tools/shared/<handler>
 - **Production**: D1 `heliumtools-prod`, email from `alerts@heliumtools.org`, routes to `api.heliumtools.org`
 - Secrets (`RESEND_API_KEY`, `SOLANA_RPC_URL`, `ADMIN_TOKEN`) set via `wrangler secret put` — **never commit or log these values**
 - **Solana RPC**: Helius staked endpoint (Business plan, 200 RPS limit). Batch rate constants tuned in `worker/src/tools/oui-notifier/services/solana.js`
+
+## Per-tool documentation
+
+Each tool has its own `CLAUDE.md` next to its code, documenting both its worker and
+frontend halves, cross-tool relationships, on-chain programs, and gotchas. The file
+lives at the tool's logic center-of-gravity (worker dir for worker-heavy tools, the
+frontend dir for frontend-heavy ones). Read the per-tool doc before working on a tool;
+the sections below in this root file are a higher-level overview.
+
+| Tool | Doc | Notes |
+|---|---|---|
+| Wallet Dashboard | `worker/src/tools/wallet-dashboard/CLAUDE.md` | Read-only aggregation over other tools |
+| OUI Notifier | `worker/src/tools/oui-notifier/CLAUDE.md` | + `README.md` (full endpoint/API reference) |
+| DC Mint | `worker/src/tools/dc-mint/CLAUDE.md` | HNT→DC burn; `DcMintModal` reused by other tools |
+| Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **disabled / Coming Soon** |
+| IoT Hotspot Onboarding | `worker/src/tools/iot-onboard/CLAUDE.md` | Web Bluetooth + dewi.org onboarding proxy |
+| Multi-Gateway | `worker/src/tools/multi-gateway/CLAUDE.md` | Live packet dashboard; runs the `jthiller/multi-gateway` fork |
+| Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
+| L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
+| veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
+| Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
+| Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
 
 ## Common Commands
 
@@ -93,7 +115,7 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 - Maker lookup proxied through worker: queries `onboarding.dewi.org`, checks maker DC balance on-chain. Pass `user_pays: true` to onboard endpoint only when maker DC is insufficient — otherwise omit `payer` so the maker covers SOL fees too.
 - Helium → Solana address conversion: bs58 decode, slice bytes `[2, 34)` (skip version + net_type, drop checksum)
 - Two onboard modes: **full** (PoC eligible, 4M DC) and **data-only** (1M DC)
-- Stale-firmware Hotspots return short ASCII error strings instead of signed binary; surfaced as `StaleFirmwareError` with a link to the firmware image hosted in R2
+- Stale-firmware Hotspots return short ASCII error strings instead of signed binary; surfaced as `StaleFirmwareError` with a link to a recovery firmware image (a hard-coded public `*.r2.dev` URL in the frontend, not served by the worker)
 - Location assertion uses H3 resolution-12 cells; on-chain fees cached in KV with 6h cron refresh (`services/fees.js`)
 
 ### Helium-Solana Shared Library (`worker/src/lib/helium-solana.js`)
