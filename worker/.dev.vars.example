@@ -1,0 +1,58 @@
+# worker/.dev.vars.example
+#
+# Template for the Worker's local-dev secrets. Copy to .dev.vars and fill in real
+# values, then run `wrangler dev`:
+#
+#     cp .dev.vars.example .dev.vars
+#
+# .dev.vars is gitignored; THIS file is committed, so it must only ever contain
+# placeholders — never paste real keys here. In production these same values are
+# set via `wrangler secret put <NAME> --env production` (they live in no file).
+#
+# Keep this template in sync: when you add, rename, or remove an env var the Worker
+# reads (env.X), update this file in the same change.
+
+# --- Solana RPC (all on-chain tools) ---
+# Mainnet RPC endpoint from a staked provider. Required by every on-chain tool.
+SOLANA_RPC_URL="https://your-rpc-provider.example/api-key/REPLACE_ME"
+
+# --- Email + OUI Notifier ---
+# Resend API key for outbound alert email.
+RESEND_API_KEY="re_REPLACE_ME"
+# Bearer token guarding the OUI-notifier admin route
+# (worker/src/tools/oui-notifier/httpHandlers.js). Optional locally — the admin
+# route returns 503 if this is unset; not needed for general dev or cron.
+ADMIN_TOKEN=""
+
+# --- DC Purchase (Coinbase Onramp) ---
+COINBASE_CDP_API_KEY="REPLACE_ME"
+COINBASE_CDP_API_SECRET="REPLACE_ME"
+COINBASE_ONRAMP_PROJECT_ID="REPLACE_ME"        # kept for parity; not currently read by the Worker
+COINBASE_ONRAMP_WEBHOOK_SECRET="REPLACE_ME"
+COINBASE_SANDBOX="true"                         # "true" = sandbox, "false"/unset = live
+# Max USD allowed per DC purchase.
+DC_PURCHASE_MAX_USD="100"
+# Optional — redirect target after an onramp order completes.
+#COINBASE_ONRAMP_REDIRECT_BASE_URL="https://heliumtools.org/dc-purchase/order"
+
+# --- Token prices (Jupiter) ---
+# Jupiter Price API key (used for IOT and other mints without a Pyth feed).
+JUPITER_API_KEY="REPLACE_ME"
+
+# --- Treasury wallet (receives USDC, executes swaps) ---
+# Base58 Solana keypair. The PRIVATE key is a production signing key — use a
+# dev/sandbox wallet locally and never commit or share the real one.
+TREASURY_PUBLIC_KEY="REPLACE_ME"
+TREASURY_PRIVATE_KEY="REPLACE_ME"
+
+# --- Hotspot Rewards Claimer ---
+# Base58 private key of the wallet that pays claim fees. Production signing key —
+# substitute a dev wallet locally.
+HOTSPOT_CLAIM_PAYER_WALLET_PRIVATE_KEY="REPLACE_ME"
+
+# --- Multi-Gateway Aggregator ---
+MULTI_GATEWAY_API_KEY="REPLACE_ME"
+MULTI_GATEWAY_WRITE_API_KEY="REPLACE_ME"
+# Optional — SSE upstream host. Defaults to hotspot.heliumtools.org
+# (worker/src/tools/multi-gateway/lib/host.js) if unset.
+#MULTI_GATEWAY_HOST="hotspot.heliumtools.org"
