@@ -21,14 +21,7 @@ export const IOT_MINT = 'iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns';
 export const JUPITER_QUOTE_API_URL = 'https://api.jup.ag/swap/v1/quote';
 export const JUPITER_SWAP_API_URL = 'https://api.jup.ag/swap/v1/swap';
 
-// HNT price oracle (Pyth HNT/USD on Solana Mainnet)
-export const HNT_PRICE_ORACLE = 'G6LTK242sYw8e6SrxFh25e5wGmj29Xh12g9119yY5MvP';
-
 // Token decimals
 export const HNT_DECIMALS = 8;
 export const DC_DECIMALS = 0; // DC has no decimals
 export const USDC_DECIMALS = 6;
-
-// Solscan base URLs
-export const SOLSCAN_TX_URL = 'https://solscan.io/tx';
-export const SOLSCAN_ACCOUNT_URL = 'https://solscan.io/account';
