@@ -37,6 +37,7 @@ When hoisting, mirror the path on both sides: `worker/src/tools/shared/<handler>
 - **Dev**: D1 `heliumtools-dev`, email from `alerts-dev@heliumtools.org`
 - **Production**: D1 `heliumtools-prod`, email from `alerts@heliumtools.org`, routes to `api.heliumtools.org`
 - Secrets (`RESEND_API_KEY`, `SOLANA_RPC_URL`, `ADMIN_TOKEN`) set via `wrangler secret put` — **never commit or log these values**
+- **Always keep `worker/.dev.vars.example` in sync** — when you add, rename, or remove any env var the Worker reads (in `.dev.vars`, `wrangler.jsonc` `vars`, or code via `env.X`), update `worker/.dev.vars.example` in the same change. It is the committed, source-of-truth list of every variable, and must contain only placeholders — never real values.
 - **Solana RPC**: Helius staked endpoint (Business plan, 200 RPS limit). Batch rate constants tuned in `worker/src/tools/oui-notifier/services/solana.js`
 
 ## Common Commands
