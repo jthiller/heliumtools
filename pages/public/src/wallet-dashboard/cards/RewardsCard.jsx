@@ -1,12 +1,15 @@
 import { Card, ProgressBar } from "./primitives.jsx";
-import { fmtToken, fmtUsd, rewardUsd } from "../format.js";
+import { fmtToken, fmtUsd, govPendingHnt, unclaimedTotalUsd } from "../format.js";
 
 // Hotspots earn HNT now (post-HIP-138); IOT/MOBILE are legacy subDAO tokens and
 // are only shown when a wallet still holds unclaimed legacy amounts.
 const TOKENS = ["hnt", "iot", "mobile"];
 
-export default function RewardsCard({ rewards, progress, done, unavailable, prices, governance, wallet }) {
-  const pendingUsd = rewards ? rewardUsd(rewards.pendingUi, prices) : null;
+export default function RewardsCard({ rewards, progress, done, unavailable, prices, governance, govLoading, wallet }) {
+  // Headline folds veHNT delegation pending into the fleet pending total, so a
+  // wallet with veHNT rewards but no (or idle) Hotspots doesn't read $0.00.
+  const govPending = govPendingHnt(governance);
+  const totalPendingUsd = unclaimedTotalUsd(rewards, governance, prices);
   // Pending > claimable means some rewards aren't claimable right now. Per the
   // oracle service that's a missing associated token account on the receiving
   // wallet (owner or custom claim destination), but a failed ATA existence
@@ -15,12 +18,13 @@ export default function RewardsCard({ rewards, progress, done, unavailable, pric
   const hasUnclaimable =
     rewards && TOKENS.some((t) => (rewards.pendingUi[t] || 0) > (rewards.claimableUi[t] || 0));
   const scanning = !done && progress?.total > 0;
-  const pending = (rewards?.counted ?? 0) === 0 && !done;
+  // Show "…" only while something is still in flight AND we have nothing yet;
+  // once either source reports a value we render the running total. Both fleet
+  // rewards and veHNT load independently, so gate on both finishing.
+  const showEllipsis = (!done || govLoading) && totalPendingUsd === 0;
   const claimHref = wallet
     ? `/hotspot-claimer?mode=wallet&wallet=${encodeURIComponent(wallet)}`
     : "/hotspot-claimer";
-  const gov = governance?.totals;
-  const govPending = gov && Number(gov.positionCount) > 0 ? Number(gov.pendingRewardsHnt || 0) : 0;
 
   return (
     <Card
@@ -30,7 +34,7 @@ export default function RewardsCard({ rewards, progress, done, unavailable, pric
           ? "Rewards temporarily unavailable"
           : scanning
             ? `Scanning ${progress.done}/${progress.total} Hotspots…`
-            : "Pending across your fleet"
+            : "Pending rewards"
       }
       action={
         <a href={claimHref} className="text-xs font-medium text-accent-text hover:underline">
@@ -39,7 +43,7 @@ export default function RewardsCard({ rewards, progress, done, unavailable, pric
       }
     >
       <div className="font-display text-3xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-        {unavailable ? "—" : pending ? "…" : fmtUsd(pendingUsd)}
+        {unavailable ? "—" : showEllipsis ? "…" : fmtUsd(totalPendingUsd)}
       </div>
       {hasUnclaimable && (
         <p className="mt-1 text-xs text-content-tertiary">

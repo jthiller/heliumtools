@@ -6,7 +6,7 @@ import {
 } from "@heroicons/react/24/outline";
 import CopyButton from "../../components/CopyButton.jsx";
 import { Skeleton } from "./primitives.jsx";
-import { fmtUsd, fmtCount, fmtDate, truncateString, accountUrl, rewardUsd } from "../format.js";
+import { fmtUsd, fmtCount, fmtDate, truncateString, accountUrl, unclaimedTotalUsd } from "../format.js";
 
 function CopyLinkButton() {
   const [copied, setCopied] = useState(false);
@@ -49,10 +49,13 @@ function HeroStat({ label, value, valueClass = "text-content", sub }) {
   );
 }
 
-export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, prices }) {
+export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, prices, governance, govLoading }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
-  const unclaimedUsd = rewards ? rewardUsd(rewards.pendingUi, prices) : null;
+  // Wallet-wide unclaimed value: Hotspot pending + veHNT delegation pending.
+  const unclaimedUsd = unclaimedTotalUsd(rewards, governance, prices);
+  // "…" only while a source is still loading and we have nothing yet.
+  const unclaimedLoading = (!rewardsDone || govLoading) && unclaimedUsd === 0;
   const fleetCount = summary?.fleet?.count;
 
   return (
@@ -99,7 +102,7 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
           />
           <HeroStat
             label="Unclaimed"
-            value={rewardsUnavailable ? "—" : counted === 0 && !rewardsDone ? "…" : fmtUsd(unclaimedUsd)}
+            value={rewardsUnavailable ? "—" : unclaimedLoading ? "…" : fmtUsd(unclaimedUsd)}
             valueClass="text-emerald-600 dark:text-emerald-400"
           />
         </div>

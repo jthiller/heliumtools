@@ -186,3 +186,34 @@ export function rewardUsd(uiByToken, prices) {
   }
   return usd;
 }
+
+/**
+ * Pending veHNT delegation rewards in HNT (UI units). Returns 0 when the wallet
+ * holds no positions. Single source for the governance-totals access + position
+ * guard so callers don't each re-derive it.
+ */
+export function govPendingHnt(governance) {
+  const totals = governance?.totals;
+  if (!totals || Number(totals.positionCount) <= 0) return 0;
+  return Number(totals.pendingRewardsHnt || 0);
+}
+
+/**
+ * USD value of pending veHNT delegation rewards (always paid in HNT post
+ * HIP-138). Returns 0 when there are no positions or the HNT price isn't
+ * loaded, so it folds cleanly into the headline unclaimed-rewards total.
+ */
+export function govPendingUsd(governance, prices) {
+  const hnt = govPendingHnt(governance);
+  const price = prices?.hnt;
+  return price != null && hnt > 0 ? hnt * price : 0;
+}
+
+/**
+ * Total unclaimed rewards in USD: Hotspot (fleet) pending + veHNT delegation
+ * pending. The one definition of the dashboard's headline "Unclaimed" figure,
+ * so the hero stat and the rewards card always agree on what it includes.
+ */
+export function unclaimedTotalUsd(rewards, governance, prices) {
+  return rewardUsd(rewards?.pendingUi, prices) + govPendingUsd(governance, prices);
+}
