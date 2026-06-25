@@ -40,7 +40,11 @@ re-implementing on-chain logic.
   IoT data-only vs full is inferred from the onboarding fee (`< IOT_DATA_ONLY_FEE_MAX`
   ⇒ data-only). Coordinates are NOT taken from the Entity API lat/long (sparsely
   populated) — the client decodes the H3 `location`.
-- `services/balances.js` — `getTokenAccountsByOwner` + `getBalance` (native SOL).
+- `services/balances.js` — derives each SPL token's canonical ATA and reads them
+  in one `getMultipleAccounts` (NOT `getTokenAccountsByOwner` — that would let a
+  spam/airdrop wallet's thousands of token accounts bloat the response) + `getBalance`
+  (native SOL). An ATA's existence doubles as the `ataEstablished` flag; a missing
+  ATA reports a 0 balance.
 - `services/prices.js` — Pyth Hermes multi-feed (HNT/MOBILE/SOL) + Jupiter Price
   API v3 (by mint) fallback for IOT (no Pyth feed) + DC fixed (100,000 DC = $1).
   CoinGecko is intentionally avoided (blocks Worker egress IPs). KV-cached ~60s.
