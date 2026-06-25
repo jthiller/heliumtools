@@ -210,6 +210,8 @@ export default function WalletDashboard() {
             rewardsDone={rewardsState.done}
             rewardsUnavailable={rewardsUnavailable}
             prices={prices}
+            governance={governance}
+            govLoading={govLoading}
           />
 
           {/* Map + right-hand stack */}
@@ -244,6 +246,7 @@ export default function WalletDashboard() {
               unavailable={rewardsUnavailable}
               prices={prices}
               governance={governance}
+              govLoading={govLoading}
               wallet={wallet}
             />
           </div>
