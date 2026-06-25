@@ -162,8 +162,9 @@ region) and ~4 dashboards saturated the fork's per-region cap of 20.
 
 `MultiGateway.jsx` is the shell: gateway list, inspector card, on-chain
 onboarding wizard, fleet map (deck.gl/MapLibre), and the upstream/fork footer
-links. It's `memo`'d so the 1Hz `nowTick` heartbeat doesn't re-render the whole
-tree.
+links. The inspector card (`GatewayDetail`) is the `memo`'d component — it skips
+re-rendering on the ~60Hz hover churn. The 1Hz `nowTick` heartbeat lives in the
+chart subtree and is rate-limited (not memo-gated) to avoid a re-render cascade.
 
 - `packetWorkerClient.js` — main-thread API for the packet Web Worker.
   Request/response calls (`subscribePackets`/`unsubscribePackets`) are matched by

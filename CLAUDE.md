@@ -118,7 +118,7 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 - Some returned txns are fully pre-signed (maker + ECC verifier); others need the user's wallet. `signAndBroadcast` in `IotOnboard.jsx` inspects `header.numRequiredSignatures` to decide.
 - Maker lookup proxied through worker: queries `onboarding.dewi.org`, checks maker DC balance on-chain. Pass `user_pays: true` to onboard endpoint only when maker DC is insufficient — otherwise omit `payer` so the maker covers SOL fees too.
 - Helium → Solana address conversion: bs58 decode, slice bytes `[2, 34)` (skip version + net_type, drop checksum)
-- Two onboard modes: **full** (PoC eligible, 4M DC) and **data-only** (1M DC)
+- Two onboard modes: **full** (PoC eligible, base 1M + 100k location DC) and **data-only** (base 50k + 50k location DC)
 - Stale-firmware Hotspots return short ASCII error strings instead of signed binary; surfaced as `StaleFirmwareError` with a link to a recovery firmware image (a hard-coded public `*.r2.dev` URL in the frontend, not served by the worker)
 - Location assertion uses H3 resolution-12 cells; on-chain fees cached in KV with 6h cron refresh (`services/fees.js`)
 
@@ -153,7 +153,7 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 - Hover band uses a proportionally-damped Catmull-Rom interpolation — both x and y tangent components scale by the same factor when the natural offset would extend past the next point, preventing overshoot/loops on irregular timing without flattening normal curves.
 - Sticky-band hover: `pointInBand()` keeps the highlight while the cursor is inside the band envelope; tooltip anchors to the closest dot in the hovered track.
 - New-packet pulse keys off the parent's `_new` flag; first non-empty load is snapshotted as "already seen" so initial render and Hotspot switches don't pulse en masse.
-- `PLOT_LEFT`, `PLOT_RIGHT`, and `PULSE_DURATION_MS` are exported and consumed by `EventsBar` so the two surfaces' time axes line up to the pixel.
+- `plotLeftFor`, `PLOT_RIGHT`, and `PULSE_DURATION_MS` are exported and consumed by `EventsBar` so the two surfaces' time axes line up to the pixel.
 
 ### Layout invariants
 - Chart and events bar share the same `px-2` horizontal inset and the same xDomain prop. Don't change one without checking both.

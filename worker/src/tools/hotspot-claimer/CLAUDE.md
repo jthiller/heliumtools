@@ -43,7 +43,7 @@ Entry point: `index.js` → routes to handlers under `handlers/`.
 
 ### Claim Transaction
 - Instruction: `distributeCompressionRewardsV0` (Anchor discriminator from `global:distribute_compression_rewards_v0`)
-- Args: `data_hash`, `creator_hash`, `root`, `index` (from compressed NFT proof) + `currentRewards` per oracle
+- Args: `data_hash`, `creator_hash`, `root`, `index` (from compressed NFT proof) — no reward amounts. Each oracle's `currentRewards` is set by a separate `setCurrentRewardsWrapperV1` instruction (one per oracle, on the Rewards Oracle program), encoded as `{ oracle_index: u16, current_rewards: u64 }`, prepended before `distributeCompressionRewardsV0` in the transaction.
 - Oracle accounts are `isSigner: true, isWritable: true` (required by `#[account(mut)]` on-chain)
 - Uses Address Lookup Table (`HELIUM_COMMON_LUT`) to compress account list
 - Payer wallet signs and pays SOL fees; rewards go to recipient's ATA
@@ -71,7 +71,7 @@ Entry point: `index.js` → routes to handlers under `handlers/`.
 | Rewards Oracle | `rorcfdX4h9m9swCKgcypaHJ8NGYVANBpmV9EHn3cYrF` |
 | Entity Manager | `hemjuPXBpNvggtaUnN1MwT3wrdhttKEfosTcc2P9Pg8` |
 | Sub-DAOs | `hdaoVTCqhfHHo75XdAMxBKdUqvq1i5bF23sisBqVgGR` |
-| Bubblegum (cNFT) | `BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPe` |
+| Circuit Breaker | `circAbx64bbsscPbQzZAUvuXpHqrCe6fLMzc2uKXz9g` |
 | SPL Account Compression | `cmtDvXumGCrqC1Age74AVPhSRVXJMd8PJS91L8KbNCK` |
 
 ## Past Bugs

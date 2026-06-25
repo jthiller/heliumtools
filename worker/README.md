@@ -29,7 +29,7 @@ npm run deploy
 
 ## Environment Variables
 
-The worker uses the following environment variables (configured in `wrangler.toml` or via secrets):
+The worker uses the following environment variables (configured in `wrangler.jsonc` or via secrets):
 
 -   `FROM_EMAIL`: Email address to send alerts from.
 -   `APP_BASE_URL`: Base URL for the application.
@@ -40,6 +40,6 @@ The worker uses the following environment variables (configured in `wrangler.tom
 -   `COINBASE_CDP_API_SECRET`: Coinbase Developer Platform API secret.
 -   `COINBASE_ONRAMP_WEBHOOK_SECRET`: Secret for verifying Coinbase webhook signatures.
 -   `COINBASE_ONRAMP_REDIRECT_BASE_URL`: Base URL for redirect after Coinbase checkout.
--   `COINBASE_ONRAMP_PROJECT_ID`: Coinbase Onramp project identifier.
+-   `COINBASE_ONRAMP_PROJECT_ID`: Coinbase Onramp project identifier. Kept for parity; not currently read by the Worker.
 -   `TREASURY_PUBLIC_KEY`: Solana address that receives USDC and executes swaps/mints for Data Credit purchases.
 -   `DC_PURCHASE_MAX_USD`: Optional cap per order (default 1000) for Coinbase guest checkout creation.

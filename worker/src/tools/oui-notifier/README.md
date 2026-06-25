@@ -140,7 +140,7 @@ curl "https://api.heliumtools.org/oui-notifier/ouis"
 ### `GET /known-ouis`
 Fetch well-known OUIs that have **less than 7 days of DC remaining**.
 
-This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json) that are projected to run out of Data Credits in under 7 days, based on their 1-day burn rate, enriched with stats from the local database.
+This endpoint returns only OUIs from the [Helium well-known list](https://github.com/helium/well-known/blob/main/lists/ouis.json) that are projected to run out of Data Credits in under 7 days, based on the higher of their 1-day and 30-day burn rates (`Math.max`, the more conservative estimate), enriched with stats from the local database.
 
 **Example:**
 ```bash
@@ -309,7 +309,7 @@ The worker runs a scheduled job every 6 hours (UTC 00:00, 06:00, 12:00, 18:00).
 **Every run (4x/day):**
 1. **Syncs all OUIs** from `entities.nft.helium.io`
 2. **Records balance snapshots** for every OUI in the `oui_balances` table
-3. **Records balances** for each subscribed escrow in the `balances` table
+3. **Updates each verified subscription** with its latest `last_balance_dc` and `last_notified_level` (computed from that OUI's `oui_balances` history). The legacy per-subscription `balances` table is no longer written to.
 
 **Once per day (first run of the day for each subscription):**
 4. **Sends webhook payload** (if URL configured) with:
