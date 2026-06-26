@@ -111,8 +111,11 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   the participation denominator — when it has been computed (omitted otherwise).
 - `GET /vote/votes?id=` — voter roster **grouped by voter** (one row per wallet:
   total veHNT summed across their positions, distinct choices, `positions` count,
-  `flipped`, and `proxyName` for registered delegates) + per-choice aggregates +
-  `snapshotAt` (`unavailable:true` if the roster fetch failed that cycle).
+  `flipped`, and `proxyName` for registered delegates) + per-choice aggregates
+  (`perChoice[]`: `weight`/`veHnt` and `voters` = distinct voters backing that
+  choice, counted over **all** voters not just the returned top N; a split voter
+  counts toward each choice) + `snapshotAt` (`unavailable:true` if the roster
+  fetch failed that cycle).
 - `GET /vote/activity?id=` — recent transactions (newest first) + `snapshotAt`.
   Each vote/relinquish row is decoded to carry `action`, `choices` (direction),
   `weight`/`veHnt` (size, summed over the positions the tx voted), and `voter`;
@@ -211,7 +214,8 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   pass bar atop the outcome card: For as a share of votes **cast** against a fixed
   `APPROVAL_THRESHOLD_PCT` = 66% "to pass" line, with an On-track/Below verdict;
   only for yes-no proposals), outcome bars (each choice as a share of **voted**
-  veHNT), **`VoteProgress`** ("Turnout" card — each choice as a share of **total
+  veHNT, with its **distinct voter count** from `votes.perChoice[].voters`),
+  **`VoteProgress`** ("Turnout" card — each choice as a share of **total
   circulating** veHNT in one stacked bar, plus an unvoted remainder and the
   overall participation %; hidden until `proposal.circulating` exists; a quorum
   marker + verdict appear when `QUORUM_THRESHOLD_PCT` is set — currently `null`

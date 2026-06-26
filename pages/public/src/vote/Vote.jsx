@@ -127,7 +127,7 @@ function StatusPill({ status }) {
   );
 }
 
-function ChoiceBar({ choice, isWinner, isResolved }) {
+function ChoiceBar({ choice, isWinner, isResolved, voterCount }) {
   const tone = choiceTone(choice.name, choice.index);
   return (
     <div className="py-2.5">
@@ -145,6 +145,11 @@ function ChoiceBar({ choice, isWinner, isResolved }) {
         <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
           <span className="text-sm font-semibold text-content">{choice.percent.toFixed(2)}%</span>
           <span className="text-[11px] text-content-tertiary">{fmtVeHnt(choice.veHnt)} veHNT</span>
+          {voterCount != null && (
+            <span className="text-[11px] text-content-tertiary">
+              · {numberFormatter.format(voterCount)} {voterCount === 1 ? "voter" : "voters"}
+            </span>
+          )}
         </div>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-surface-inset">
@@ -343,6 +348,13 @@ function OutcomeCard({ proposal, votes }) {
     () => [...choices].sort((a, b) => b.percent - a.percent),
     [choices],
   );
+  // Distinct voters per choice, from the roster aggregation (the proposal
+  // account only carries weights, not voter identities).
+  const votersByChoice = useMemo(() => {
+    const m = new Map();
+    for (const pc of votes?.perChoice || []) m.set(pc.index, pc.voters);
+    return m;
+  }, [votes]);
 
   return (
     <div className="rounded-2xl bg-surface-raised shadow-soft">
@@ -378,6 +390,7 @@ function OutcomeCard({ proposal, votes }) {
             choice={choice}
             isWinner={winners.has(choice.index)}
             isResolved={isResolved}
+            voterCount={votersByChoice.get(choice.index)}
           />
         ))}
       </div>
