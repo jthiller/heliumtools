@@ -112,9 +112,11 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   vote/relinquish/proxied variants) into a merged `[{ts, action, choice, marker}]`
   timeline. Scans **both top-level and inner (CPI) instructions** — proxy/crank
   votes arrive as inner instructions — and attributes batched votes by the marker
-  in the instruction's accounts; if nothing decodes it falls back to bare
-  transaction timestamps (so the timeline is never empty when a marker flipped).
-  KV-cached.
+  in the instruction's accounts (and a uniform batch — every VSR vote in the tx
+  sharing one action+choice — is attributed even without account matching). When
+  a transaction's choice can't be decoded it falls back to the marker's current
+  direction (its stored `choices`), so each entry always shows a vote direction,
+  not just "voted". KV-cached.
 - `services/content.js` — best-effort off-chain `uri` body fetch with an SSRF
   guard (https only; no IP-literal / localhost / internal hosts) and a streamed
   byte cap.

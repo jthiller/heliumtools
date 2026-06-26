@@ -76,7 +76,17 @@ function actionsForMarker(tx, marker) {
   const decoded = [...top, ...inner].map(decodeVsrInstruction).filter(Boolean);
   if (decoded.length === 0) return [];
   const matching = decoded.filter((d) => d.accounts.includes(marker));
-  const chosen = matching.length > 0 ? matching : decoded.length === 1 ? decoded : [];
+  let chosen;
+  if (matching.length > 0) {
+    chosen = matching;
+  } else if (decoded.length === 1) {
+    chosen = decoded; // single vote in the tx — attribute it
+  } else {
+    // Batched (many positions in one tx) and account-matching was inconclusive:
+    // if every VSR vote in the tx is the same action+choice, it's unambiguous.
+    const uniform = decoded.every((d) => d.action === decoded[0].action && d.choice === decoded[0].choice);
+    chosen = uniform ? [decoded[0]] : [];
+  }
   return chosen.map((d) => ({ action: d.action, choice: d.choice }));
 }
 
@@ -85,7 +95,7 @@ function actionsForMarker(tx, marker) {
  * nothing decodes (an unrecognized CPI shape), fall back to bare timestamped
  * entries so the timeline shows *when* the voter acted rather than nothing.
  */
-async function markerActions(env, marker) {
+async function markerActions(env, marker, fallbackChoice) {
   const sigs = await getSignaturesForAddress(env, marker, { limit: 1000 });
   const perSig = await mapLimit([...sigs].reverse(), MARKER_TX_CONCURRENCY, async (s) => {
     try {
@@ -97,16 +107,24 @@ async function markerActions(env, marker) {
   });
 
   const decoded = perSig.flatMap(({ s, acts }) =>
-    acts.map((a) => ({ ts: s.blockTime ?? null, signature: s.signature, marker, ...a })),
+    acts.map((a) => ({
+      ts: s.blockTime ?? null,
+      signature: s.signature,
+      marker,
+      action: a.action,
+      // Decoded choice when we have it; else the marker's current direction.
+      choice: a.choice ?? fallbackChoice,
+    })),
   );
   if (decoded.length > 0) return decoded;
-  // Fallback: surface the transaction timestamps even without decoded choices.
+  // Nothing decoded (unrecognized CPI shape) — still show *when* the voter acted,
+  // with the marker's current direction so the row isn't just "VOTED".
   return perSig.map(({ s }) => ({
     ts: s.blockTime ?? null,
     signature: s.signature,
     marker,
-    action: null,
-    choice: null,
+    action: "vote",
+    choice: fallbackChoice,
   }));
 }
 
@@ -124,7 +142,9 @@ export async function getVoterHistory(env, proposal, voter) {
   // position is a single vote), and capping bounds the getTransaction fan-out.
   const markers = (await getVoterMarkers(env, proposal, voter, { flippedOnly: true }))
     .slice(0, MAX_VOTER_HISTORY_MARKERS);
-  const perMarker = await mapLimit(markers, MARKER_TX_CONCURRENCY, (m) => markerActions(env, m));
+  const perMarker = await mapLimit(markers, MARKER_TX_CONCURRENCY, (m) =>
+    markerActions(env, m.marker, m.choices?.[0] ?? null),
+  );
   const actions = perMarker.flat().sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
 
   const body = { proposal, voter, actions };
