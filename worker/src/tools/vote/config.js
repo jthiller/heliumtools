@@ -40,9 +40,17 @@ export const MAX_MARKERS_RETURNED = 500;
 export const DEFAULT_ACTIVITY_LIMIT = 25;
 export const MAX_ACTIVITY_LIMIT = 100;
 
-// Off-chain proposal body: cap the bytes we fetch/return so a hostile or huge
-// uri can't blow up the worker or the client.
+// Off-chain proposal body: cap the bytes we read/return so a hostile or huge
+// uri can't blow up the worker or the client. MAX_CONTENT_BYTES is the real
+// memory bound enforced while streaming; MAX_CONTENT_CHARS caps the slice we
+// store/return.
+export const MAX_CONTENT_BYTES = 64 * 1024;
 export const MAX_CONTENT_CHARS = 8000;
+
+// Defensive ceiling on how many VoteMarkerV0 accounts we decode in one /votes
+// request. Real Helium proposals have far fewer; this only bounds CPU if an
+// arbitrary proposal id ever points at a pathologically large marker set.
+export const MAX_MARKERS_SCANNED = 10000;
 
 // IP rate limit (per minute) across all vote endpoints.
 export const MAX_REQUESTS_PER_MINUTE = 60;

@@ -8,6 +8,8 @@ import {
   deriveStatus,
   proposalTiming,
   weightToVeHnt,
+  kvGetJson,
+  kvPutJson,
 } from "../utils.js";
 import {
   PROPOSAL_PROGRAM,
@@ -28,10 +30,8 @@ export async function handleProposal(url, env) {
   const address = id.toBase58();
 
   const cacheKey = `vote:proposal:${address}`;
-  if (env.KV) {
-    const cached = await env.KV.get(cacheKey, "json");
-    if (cached) return jsonResponse(cached);
-  }
+  const cached = await kvGetJson(env, cacheKey);
+  if (cached) return jsonResponse(cached);
 
   try {
     const account = await getAccount(env, id);
@@ -73,11 +73,7 @@ export async function handleProposal(url, env) {
       content,
     };
 
-    if (env.KV) {
-      await env.KV.put(cacheKey, JSON.stringify(body), {
-        expirationTtl: PROPOSAL_CACHE_TTL,
-      });
-    }
+    await kvPutJson(env, cacheKey, body, PROPOSAL_CACHE_TTL);
     console.log(JSON.stringify({
       event: "vote_proposal",
       proposal: address,

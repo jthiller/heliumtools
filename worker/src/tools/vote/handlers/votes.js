@@ -3,11 +3,12 @@ import { jsonResponse } from "../../../lib/response.js";
 import { VSR_PROGRAM } from "../../../lib/helium-solana.js";
 import { getProgramAccounts } from "../services/rpc.js";
 import { decodeVoteMarker } from "../services/decode.js";
-import { parseProposalId, weightToVeHnt } from "../utils.js";
+import { parseProposalId, weightToVeHnt, kvGetJson, kvPutJson } from "../utils.js";
 import {
   DEFAULT_PROPOSAL,
   VOTE_MARKER_DISCRIMINATOR,
   MAX_MARKERS_RETURNED,
+  MAX_MARKERS_SCANNED,
   VOTES_CACHE_TTL,
 } from "../config.js";
 
@@ -32,16 +33,26 @@ export async function handleVotes(url, env) {
   const address = id.toBase58();
 
   const cacheKey = `vote:votes:${address}`;
-  if (env.KV) {
-    const cached = await env.KV.get(cacheKey, "json");
-    if (cached) return jsonResponse(cached);
-  }
+  const cached = await kvGetJson(env, cacheKey);
+  if (cached) return jsonResponse(cached);
 
   try {
-    const accounts = await getProgramAccounts(env, VSR_PROGRAM, [
+    let accounts = await getProgramAccounts(env, VSR_PROGRAM, [
       { offset: 0, bytesBase58: MARKER_DISC_B58 },
       { offset: PROPOSAL_OFFSET, bytesBase58: address },
     ]);
+
+    // Defensive CPU bound — real proposals never approach this.
+    const scanCapped = accounts.length > MAX_MARKERS_SCANNED;
+    if (scanCapped) {
+      console.log(JSON.stringify({
+        event: "vote_votes_scan_capped",
+        proposal: address,
+        found: accounts.length,
+        cap: MAX_MARKERS_SCANNED,
+      }));
+      accounts = accounts.slice(0, MAX_MARKERS_SCANNED);
+    }
 
     const perChoice = new Map(); // choiceIndex -> bigint weight
     const voters = new Set();
@@ -74,6 +85,7 @@ export async function handleVotes(url, env) {
       totalWeight: totalWeight.toString(),
       totalVeHnt: weightToVeHnt(totalWeight),
       truncated: markers.length > returned.length,
+      scanCapped,
       returned: returned.length,
       perChoice: Array.from(perChoice.entries())
         .map(([index, weight]) => ({
@@ -92,11 +104,7 @@ export async function handleVotes(url, env) {
       })),
     };
 
-    if (env.KV) {
-      await env.KV.put(cacheKey, JSON.stringify(body), {
-        expirationTtl: VOTES_CACHE_TTL,
-      });
-    }
+    await kvPutJson(env, cacheKey, body, VOTES_CACHE_TTL);
     console.log(JSON.stringify({
       event: "vote_votes",
       proposal: address,

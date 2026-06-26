@@ -1,6 +1,6 @@
 import { jsonResponse } from "../../../lib/response.js";
 import { getSignaturesForAddress } from "../services/rpc.js";
-import { parseProposalId } from "../utils.js";
+import { parseProposalId, isValidSignature, kvGetJson, kvPutJson } from "../utils.js";
 import {
   DEFAULT_PROPOSAL,
   DEFAULT_ACTIVITY_LIMIT,
@@ -24,11 +24,14 @@ export async function handleActivity(url, env) {
   if (!Number.isFinite(limit) || limit <= 0) limit = DEFAULT_ACTIVITY_LIMIT;
   limit = Math.min(limit, MAX_ACTIVITY_LIMIT);
   const before = url.searchParams.get("before") || null;
+  if (before && !isValidSignature(before)) {
+    return jsonResponse({ error: "Invalid cursor." }, 400);
+  }
 
   // Only the head (no cursor) is cached — paginated pages are one-shot.
   const cacheKey = `vote:activity:${address}:${limit}`;
-  if (!before && env.KV) {
-    const cached = await env.KV.get(cacheKey, "json");
+  if (!before) {
+    const cached = await kvGetJson(env, cacheKey);
     if (cached) return jsonResponse(cached);
   }
 
@@ -48,11 +51,7 @@ export async function handleActivity(url, env) {
       cursor: activity.length === limit ? activity[activity.length - 1].signature : null,
     };
 
-    if (!before && env.KV) {
-      await env.KV.put(cacheKey, JSON.stringify(body), {
-        expirationTtl: ACTIVITY_CACHE_TTL,
-      });
-    }
+    if (!before) await kvPutJson(env, cacheKey, body, ACTIVITY_CACHE_TTL);
     return jsonResponse(body);
   } catch (err) {
     console.error("vote activity error", err?.message, err?.stack);

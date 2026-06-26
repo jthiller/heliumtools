@@ -29,7 +29,10 @@ function fmtVeHnt(n, { compact = true } = {}) {
     return (v / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "M";
   }
   if (compact && v >= 10_000) {
-    return Math.round(v / 1000).toLocaleString() + "k";
+    const k = Math.round(v / 1000);
+    return k >= 1000
+      ? (k / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "M"
+      : k.toLocaleString() + "k";
   }
   if (v < 1) return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
   return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -135,9 +138,10 @@ function OutcomeCard({ proposal, votes }) {
       ? proposal.winningChoices
       : proposal.leadingIndex >= 0 ? [proposal.leadingIndex] : [],
   );
+  const choices = proposal.choices || [];
   const sorted = useMemo(
-    () => [...proposal.choices].sort((a, b) => b.percent - a.percent),
-    [proposal.choices],
+    () => [...choices].sort((a, b) => b.percent - a.percent),
+    [choices],
   );
 
   return (
@@ -343,21 +347,26 @@ export default function Vote() {
   const refresh = useCallback(async () => {
     const id = idRef.current;
     setRefreshing(true);
-    const [p, v, a] = await Promise.allSettled([
-      fetchProposal(id),
-      fetchVotes(id),
-      fetchActivity(id),
-    ]);
-    if (idRef.current !== id) return; // a newer proposal was selected meanwhile
-    if (p.status === "fulfilled") { setProposal(p.value); setProposalError(null); }
-    else setProposalError(p.reason);
-    if (v.status === "fulfilled") { setVotes(v.value); setVotesError(null); }
-    else setVotesError(v.reason);
-    if (a.status === "fulfilled") { setActivity(a.value); setActivityError(null); }
-    else setActivityError(a.reason);
-    setUpdatedAt(Date.now());
-    setRefreshing(false);
-    setLoading(false);
+    try {
+      const [p, v, a] = await Promise.allSettled([
+        fetchProposal(id),
+        fetchVotes(id),
+        fetchActivity(id),
+      ]);
+      if (idRef.current !== id) return; // a newer proposal was selected meanwhile
+      if (p.status === "fulfilled") { setProposal(p.value); setProposalError(null); }
+      else setProposalError(p.reason);
+      if (v.status === "fulfilled") { setVotes(v.value); setVotesError(null); }
+      else setVotesError(v.reason);
+      if (a.status === "fulfilled") { setActivity(a.value); setActivityError(null); }
+      else setActivityError(a.reason);
+      setUpdatedAt(Date.now());
+    } finally {
+      if (idRef.current === id) {
+        setRefreshing(false);
+        setLoading(false);
+      }
+    }
   }, []);
 
   // Initial load + reset when the proposal changes.
