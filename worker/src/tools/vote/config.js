@@ -106,5 +106,27 @@ export const MAX_CONTENT_CHARS = 8000;
 // arbitrary proposal id ever points at a pathologically large marker set.
 export const MAX_MARKERS_SCANNED = 10000;
 
+// --- Circulating veHNT (participation denominator) -----------------------
+// "% of available vote that participated" needs the total veHNT voting power
+// across ALL HNT positions, not just voters. We enumerate every PositionV0 in
+// the HNT registrar (getProgramAccounts, sliced to the voting-power fields) and
+// sum each position's current voting power (reusing the ve-hnt tool's formula).
+// It's a heavy call, so it's computed on a slow cron cadence, single-flight, and
+// KV-cached — viewers only ever read the cached number, and a failure never
+// blocks the snapshot.
+//
+// Anchor account discriminator = sha256("account:PositionV0")[..8]. The HNT
+// registrar pubkey sits at offset 8 (right after the discriminator), so the two
+// memcmp filters together select exactly the HNT positions.
+export const POSITION_DISCRIMINATOR = [152, 131, 154, 46, 158, 42, 31, 233];
+// dataSlice over PositionV0: bytes [72,108) cover lockup (start/end/kind),
+// amount_deposited_native, voting_mint_config_idx, and genesis_end — everything
+// computeVeHnt needs, and nothing else, to keep the response small at scale.
+export const POSITION_VP_SLICE = { offset: 72, length: 36 };
+// Recompute at most this often (veHNT drifts slowly); cron ticks in between are
+// cheap cache hits. Stored at 2× this TTL so it survives a skipped recompute.
+export const CIRCULATING_CACHE_TTL = 60 * 60;
+export const CIRCULATING_LOCK_TTL = 90;
+
 // IP rate limit (per minute) across all vote endpoints.
 export const MAX_REQUESTS_PER_MINUTE = 60;

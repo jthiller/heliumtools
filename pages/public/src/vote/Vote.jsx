@@ -157,6 +157,30 @@ function ChoiceBar({ choice, isWinner, isResolved }) {
   );
 }
 
+// Share of total circulating veHNT that has voted. `circulating` is the
+// network-wide voting power (computed server-side); absent until the worker has
+// first computed it, in which case we render nothing rather than a bogus 100%.
+function Participation({ totalVeHnt, circulating }) {
+  const total = circulating?.veHnt;
+  if (!(total > 0) || !(totalVeHnt > 0)) return null;
+  const pct = (totalVeHnt / total) * 100;
+  return (
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between gap-2 text-[11px]">
+        <span className="font-medium text-content-secondary tabular-nums">{pct.toFixed(1)}% participation</span>
+        <Tooltip content={`${fmtVeHnt(total)} veHNT of voting power exists across all HNT positions${circulating.positions ? ` (${numberFormatter.format(circulating.positions)} positions)` : ""}. This is the share that has voted.`}>
+          <span className="text-content-tertiary border-b border-dotted border-content-tertiary cursor-help">
+            of {fmtVeHnt(total)} circulating
+          </span>
+        </Tooltip>
+      </div>
+      <div className="mt-1.5 h-1.5 rounded-full bg-surface-inset overflow-hidden">
+        <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function OutcomeCard({ proposal, votes }) {
   const isResolved = ["passed", "failed", "completed"].includes(proposal.status);
   const winners = new Set(
@@ -181,6 +205,7 @@ function OutcomeCard({ proposal, votes }) {
             {fmtVeHnt(proposal.totalVeHnt)}
             <span className="ml-1.5 text-sm font-sans text-content-secondary">veHNT</span>
           </p>
+          <Participation totalVeHnt={proposal.totalVeHnt} circulating={proposal.circulating} />
         </div>
         <div className="px-6 py-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
