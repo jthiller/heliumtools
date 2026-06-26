@@ -66,9 +66,11 @@ export async function getVoterMarkers(env, id, voter, { flippedOnly = false } = 
     ? `proposal = ? AND voter = ? AND flipped = 1`
     : `proposal = ? AND voter = ?`;
   const { results } = await env.DB.prepare(
-    `SELECT marker FROM vote_events WHERE ${where}`,
+    `SELECT marker, choices_json FROM vote_events WHERE ${where}`,
   ).bind(id, voter).all();
-  return (results || []).map((r) => r.marker);
+  // `choices` is the marker's current decoded choice — used as the reliable
+  // direction fallback when a transaction's instruction can't be decoded.
+  return (results || []).map((r) => ({ marker: r.marker, choices: safeParse(r.choices_json) }));
 }
 
 /** Set of marker pubkeys flagged as flipped, for joining onto the roster. */
