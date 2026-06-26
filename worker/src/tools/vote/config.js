@@ -24,12 +24,39 @@ export const VOTE_MARKER_DISCRIMINATOR = [83, 205, 59, 215, 144, 234, 43, 70];
 // (HNT) has 8 decimals, so weight / 1e8 = human veHNT.
 export const VOTE_WEIGHT_DECIMALS = 8;
 
-// KV cache TTLs (seconds) — short, because this page is "live".
-export const PROPOSAL_CACHE_TTL = 15;
-export const VOTES_CACHE_TTL = 20;
-export const ACTIVITY_CACHE_TTL = 15;
+// --- Server-side polling model -------------------------------------------
+// The worker polls the RPC on a cron and stores a combined snapshot; viewers
+// only ever read the stored snapshot, so per-viewer traffic never hits the RPC.
+
+// Cron that drives snapshotting. MUST match the entry added to
+// wrangler.jsonc triggers.crons. Branched on in src/index.js scheduled().
+export const VOTE_SNAPSHOT_CRON = "*/15 * * * *";
+
+// How long a stored snapshot survives without a refresh (safety net if the
+// cron stops). Refreshed every cron tick, so for tracked proposals it never
+// actually expires.
+export const SNAPSHOT_TTL = 3 * 24 * 60 * 60;
+// A snapshot older than this is "stale": the next viewer triggers a
+// single-flight background refresh. Comfortably above the 15-min cron cadence
+// so steady-state viewers never refresh.
+export const SNAPSHOT_STALE_MS = 20 * 60 * 1000;
+// Short TTL on the single-flight refresh lock (prevents RPC stampedes).
+export const REFRESH_LOCK_TTL = 30;
+
 // The off-chain proposal body (uri) changes rarely; cache it much longer.
 export const CONTENT_CACHE_TTL = 6 * 60 * 60;
+
+// --- History (D1 time-series) --------------------------------------------
+// Each snapshot is bucketed to a 15-min boundary and written once per bucket
+// (INSERT OR IGNORE), so the chart has regular points regardless of who
+// triggered the refresh. Retained for two weeks (covers a 7-day vote + slack).
+export const HISTORY_BUCKET_SECONDS = 15 * 60;
+export const HISTORY_RETENTION_DAYS = 14;
+export const HISTORY_CACHE_TTL = 60;
+
+// A non-default proposal stays on the cron's snapshot list for this long after
+// it was last viewed, then drops off.
+export const TRACK_TTL_DAYS = 8;
 
 // getProgramAccounts can return one VoteMarkerV0 per voting position. We compute
 // aggregates over every marker but only return the heaviest N to the client to

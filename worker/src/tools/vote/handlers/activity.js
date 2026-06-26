@@ -1,59 +1,46 @@
 import { jsonResponse } from "../../../lib/response.js";
-import { getSignaturesForAddress } from "../services/rpc.js";
-import { parseProposalId, isValidSignature, kvGetJson, kvPutJson } from "../utils.js";
+import { parseProposalId, isValidSignature } from "../utils.js";
+import { getOrRefreshSnapshot, VoteError } from "../services/snapshot.js";
+import { buildActivityData } from "../services/builders.js";
 import {
   DEFAULT_PROPOSAL,
   DEFAULT_ACTIVITY_LIMIT,
   MAX_ACTIVITY_LIMIT,
-  ACTIVITY_CACHE_TTL,
 } from "../config.js";
 
 /**
- * GET /vote/activity?id=<pubkey>&limit=&before=
- * Time-ordered recent on-chain activity for the proposal. Every vote writes the
- * proposal account, so its signature history is the live vote/lifecycle feed
- * (newest first). VoteMarkerV0 carries no timestamp, so this is the only
- * pure-RPC source of per-vote timing. Paginated by signature cursor.
+ * GET /vote/activity?id=<pubkey>&before=&limit=
+ * The recent-activity feed (newest first), served from the stored snapshot. An
+ * explicit `before` cursor ("load more") falls through to a one-off live fetch —
+ * the default page never paginates, so this stays off the viewer hot path.
  */
-export async function handleActivity(url, env) {
+export async function handleActivity(url, env, ctx) {
   const id = parseProposalId(url.searchParams.get("id") || DEFAULT_PROPOSAL);
   if (!id) return jsonResponse({ error: "Invalid proposal address." }, 400);
   const address = id.toBase58();
 
-  let limit = parseInt(url.searchParams.get("limit") || "", 10);
-  if (!Number.isFinite(limit) || limit <= 0) limit = DEFAULT_ACTIVITY_LIMIT;
-  limit = Math.min(limit, MAX_ACTIVITY_LIMIT);
   const before = url.searchParams.get("before") || null;
   if (before && !isValidSignature(before)) {
     return jsonResponse({ error: "Invalid cursor." }, 400);
   }
 
-  // Only the head (no cursor) is cached — paginated pages are one-shot.
-  const cacheKey = `vote:activity:${address}:${limit}`;
-  if (!before) {
-    const cached = await kvGetJson(env, cacheKey);
-    if (cached) return jsonResponse(cached);
-  }
-
   try {
-    const sigs = await getSignaturesForAddress(env, id, { limit, before });
-    const activity = sigs.map((s) => ({
-      signature: s.signature,
-      blockTime: s.blockTime ?? null,
-      slot: s.slot ?? null,
-      success: !s.err,
-      memo: s.memo || null,
-    }));
+    if (before) {
+      let limit = parseInt(url.searchParams.get("limit") || "", 10);
+      if (!Number.isFinite(limit) || limit <= 0) limit = DEFAULT_ACTIVITY_LIMIT;
+      limit = Math.min(limit, MAX_ACTIVITY_LIMIT);
+      const data = await buildActivityData(env, id, address, { limit, before });
+      return jsonResponse(data);
+    }
 
-    const body = {
-      proposal: address,
-      activity,
-      cursor: activity.length === limit ? activity[activity.length - 1].signature : null,
-    };
-
-    if (!before) await kvPutJson(env, cacheKey, body, ACTIVITY_CACHE_TTL);
-    return jsonResponse(body);
+    const snap = await getOrRefreshSnapshot(env, address, ctx);
+    if (!snap) return jsonResponse({ warming: true }, 202);
+    if (!snap.activity) {
+      return jsonResponse({ proposal: address, activity: [], cursor: null, snapshotAt: snap.snapshotAt });
+    }
+    return jsonResponse({ ...snap.activity, snapshotAt: snap.snapshotAt });
   } catch (err) {
+    if (err instanceof VoteError) return jsonResponse({ error: err.message }, err.status);
     console.error("vote activity error", err?.message, err?.stack);
     return jsonResponse({ error: "Failed to load activity." }, 500);
   }

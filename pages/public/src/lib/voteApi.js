@@ -30,3 +30,8 @@ export function fetchActivity(id, { limit, before } = {}) {
   if (before) params.before = before;
   return get("/activity", params);
 }
+
+/** Recorded tally time-series for charting the vote's arc over time. */
+export function fetchHistory(id) {
+  return get("/history", id ? { id } : {});
+}

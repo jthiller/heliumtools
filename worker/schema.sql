@@ -57,3 +57,18 @@ CREATE TABLE IF NOT EXISTS oui_balances (
   UNIQUE (oui, date),
   FOREIGN KEY (oui) REFERENCES ouis(oui)
 );
+
+-- Vote tool: time-series of a governance proposal's tally. One row per proposal
+-- per 15-minute bucket, written by the snapshot cron (worker/src/tools/vote).
+-- The worker also self-provisions this via CREATE TABLE IF NOT EXISTS, so it
+-- works on a fresh D1 without a manual migration.
+CREATE TABLE IF NOT EXISTS vote_snapshots (
+  proposal TEXT NOT NULL,
+  ts INTEGER NOT NULL,            -- unix seconds, bucketed to 15 min
+  total_weight TEXT NOT NULL,     -- u128 veHNT (native units) as a string
+  total_vehnt REAL NOT NULL,      -- human veHNT (total_weight / 1e8)
+  unique_voters INTEGER,
+  marker_count INTEGER,
+  choices_json TEXT NOT NULL,     -- [{ index, weight, veHnt }]
+  PRIMARY KEY (proposal, ts)
+);

@@ -23,7 +23,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Schema: `worker/schema.sql`
 - Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
 - Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
-- Cron runs 4x/day: 00:00, 06:00, 12:00, 18:00 UTC
+- Cron: the 6-hourly tasks (OUI notifier, DC purchase, IoT fees) run at 00:00, 06:00, 12:00, 18:00 UTC. A separate **15-min** trigger (`*/15 * * * *`) drives the Vote tool's snapshot/history poll only — `scheduled()` in `src/index.js` branches on `event.cron` (and a `minute === 0` backstop) so the 6-hourly tasks never fire on the 15-min tick.
 
 ### When to put something in `shared/` vs a specific tool
 Default to the tool's own directory. Hoist to `shared/` only when:
@@ -62,7 +62,7 @@ in this root file are a higher-level overview.
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
-| Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind page** — live vote activity + outcomes; reads governance accounts via our RPC |
+| Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind page** — live vote activity, outcomes + 7-day trend chart. Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC) |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
 
