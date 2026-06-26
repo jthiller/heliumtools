@@ -73,8 +73,8 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   {warming:true}` while the first snapshot builds.
 - `GET /vote/votes?id=` — voter roster **grouped by voter** (one row per wallet:
   total veHNT summed across their positions, distinct choices, `positions` count,
-  `flipped`) + per-choice aggregates + `snapshotAt` (`unavailable:true` if the
-  roster fetch failed that cycle).
+  `flipped`, and `proxyName` for registered delegates) + per-choice aggregates +
+  `snapshotAt` (`unavailable:true` if the roster fetch failed that cycle).
 - `GET /vote/activity?id=` — recent vote transactions (newest first) +
   `snapshotAt`.
 - `GET /vote/history?id=` — per-vote cumulative time-series for the chart.
@@ -114,6 +114,10 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `services/content.js` — best-effort off-chain `uri` body fetch with an SSRF
   guard (https only; no IP-literal / localhost / internal hosts) and a streamed
   byte cap.
+- `services/proxies.js` — `getProxyMap(env)`: fetches the public
+  `helium/helium-vote-proxies` `proxies.json` registry (wallet → name) and caches
+  it. Proxy/delegate names are off-chain; a proxied `VoteMarkerV0.voter` is the
+  proxy wallet, so the roster looks the voter up directly. Best-effort + KV-cached.
 - `utils.js` — `parseProposalId`, `resolveProposal` (shared handler
   parse/default/validate), `weightToVeHnt`, `tallyChoices`, `deriveStatus`,
   `proposalTiming`.
@@ -178,6 +182,7 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `vote:content:<id>` — cached off-chain body (`CONTENT_CACHE_TTL`).
 - `vote:histcache:<id>` — cached `/history` response (`HISTORY_CACHE_TTL`).
 - `vote:vhist:<proposal>:<voter>` — cached per-voter flip timeline (`VOTER_HISTORY_CACHE_TTL`).
+- `vote:proxymap` — cached proxy wallet→name registry (`PROXY_MAP_CACHE_TTL`).
 - `rl:vote:*` — IP rate-limit counter.
 
 ### D1 (`DB` binding) — `vote_events`

@@ -13,6 +13,7 @@ import {
 } from "./builders.js";
 import { recordProposalVotes } from "./recording.js";
 import { getFlippedMarkers } from "./history.js";
+import { getProxyMap } from "./proxies.js";
 import {
   DEFAULT_PROPOSAL,
   SNAPSHOT_TTL,
@@ -78,13 +79,16 @@ export async function refreshSnapshot(env, id) {
       activity: a.status === "fulfilled" ? a.value : null,
     };
 
-    // Flag roster rows whose voter changed a vote on any of their positions
-    // (from the prior cron's recording — the icon may lag a flip by one cycle,
-    // which is fine). Drop the internal per-position marker list from the wire.
+    // Enrich roster rows: flag voters who changed a vote on any position (from
+    // the prior cron's recording — the icon may lag a flip by one cycle), and
+    // resolve registered proxy/delegate names. Drop the internal per-position
+    // marker list from the wire.
     if (snapshot.votes) {
-      const flipped = await getFlippedMarkers(env, id);
+      const [flipped, proxyMap] = await Promise.all([getFlippedMarkers(env, id), getProxyMap(env)]);
       for (const v of snapshot.votes.votes) {
         v.flipped = Array.isArray(v.markers) && v.markers.some((mk) => flipped.has(mk));
+        const proxy = proxyMap[v.voter];
+        if (proxy) v.proxyName = proxy.name;
         delete v.markers;
       }
     }
