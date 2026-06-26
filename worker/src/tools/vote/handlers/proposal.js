@@ -1,88 +1,25 @@
 import { jsonResponse } from "../../../lib/response.js";
-import { getAccount } from "../services/rpc.js";
-import { decodeProposal } from "../services/decode.js";
-import { getProposalContent } from "../services/content.js";
-import {
-  parseProposalId,
-  tallyChoices,
-  deriveStatus,
-  proposalTiming,
-  weightToVeHnt,
-  kvGetJson,
-  kvPutJson,
-} from "../utils.js";
-import {
-  PROPOSAL_PROGRAM,
-  DEFAULT_PROPOSAL,
-  VOTE_WEIGHT_DECIMALS,
-  PROPOSAL_CACHE_TTL,
-} from "../config.js";
+import { parseProposalId } from "../utils.js";
+import { getOrRefreshSnapshot, VoteError } from "../services/snapshot.js";
+import { DEFAULT_PROPOSAL } from "../config.js";
 
 /**
  * GET /vote/proposal?id=<pubkey>
- * Decode the on-chain ProposalV0 and return the authoritative outcome:
- * choices with accumulated veHNT weight + percentages, leading/winning choice,
- * derived status, timing, and the (best-effort) off-chain body.
+ * The authoritative outcome (choices + veHNT weights + percentages + status),
+ * served from the worker's stored snapshot — no per-viewer RPC. The snapshot is
+ * refreshed by the cron (and single-flight on cold/stale); `snapshotAt` tells
+ * the client how fresh it is.
  */
-export async function handleProposal(url, env) {
+export async function handleProposal(url, env, ctx) {
   const id = parseProposalId(url.searchParams.get("id") || DEFAULT_PROPOSAL);
   if (!id) return jsonResponse({ error: "Invalid proposal address." }, 400);
-  const address = id.toBase58();
-
-  const cacheKey = `vote:proposal:${address}`;
-  const cached = await kvGetJson(env, cacheKey);
-  if (cached) return jsonResponse(cached);
 
   try {
-    const account = await getAccount(env, id);
-    if (!account) return jsonResponse({ error: "Proposal not found." }, 404);
-    if (account.owner !== PROPOSAL_PROGRAM.toBase58()) {
-      return jsonResponse(
-        { error: "Account is not a Helium governance proposal." },
-        400,
-      );
-    }
-
-    const proposal = decodeProposal(account.buf);
-    const { totalWeight, results, leadingIndex } = tallyChoices(proposal.choices);
-    const status = deriveStatus(proposal.state, proposal.choices);
-    const { startTs, endTs } = proposalTiming(proposal.state);
-    const content = await getProposalContent(env, address, proposal.uri);
-
-    const body = {
-      address,
-      name: proposal.name,
-      uri: proposal.uri,
-      tags: proposal.tags,
-      namespace: proposal.namespace,
-      owner: proposal.owner,
-      proposalConfig: proposal.proposalConfig,
-      state: proposal.state.kind,
-      status,
-      createdAt: proposal.createdAt,
-      startTs,
-      endTs,
-      maxChoicesPerVoter: proposal.maxChoicesPerVoter,
-      decimals: VOTE_WEIGHT_DECIMALS,
-      totalWeight: totalWeight.toString(),
-      totalVeHnt: weightToVeHnt(totalWeight),
-      leadingIndex,
-      winningChoices:
-        proposal.state.kind === "resolved" ? proposal.state.winningChoices : null,
-      choices: results,
-      content,
-    };
-
-    await kvPutJson(env, cacheKey, body, PROPOSAL_CACHE_TTL);
-    console.log(JSON.stringify({
-      event: "vote_proposal",
-      proposal: address,
-      status,
-      choiceCount: results.length,
-      totalVeHnt: body.totalVeHnt,
-    }));
-    return jsonResponse(body);
+    const snap = await getOrRefreshSnapshot(env, id.toBase58(), ctx);
+    if (!snap || !snap.proposal) return jsonResponse({ warming: true }, 202);
+    return jsonResponse({ ...snap.proposal, snapshotAt: snap.snapshotAt });
   } catch (err) {
+    if (err instanceof VoteError) return jsonResponse({ error: err.message }, err.status);
     console.error("vote proposal error", err?.message, err?.stack);
     return jsonResponse({ error: "Failed to load proposal." }, 500);
   }

@@ -7,16 +7,30 @@ import {
   XCircleIcon,
   CheckBadgeIcon,
 } from "@heroicons/react/24/outline";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from "recharts";
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import Tooltip from "../components/Tooltip.jsx";
+import { readChartColors } from "../lib/chartColors.js";
+import useDarkMode from "../lib/useDarkMode.js";
 import { numberFormatter, truncateString } from "../lib/utils.js";
-import { fetchProposal, fetchVotes, fetchActivity } from "../lib/voteApi.js";
+import { fetchProposal, fetchVotes, fetchActivity, fetchHistory } from "../lib/voteApi.js";
 
 // The vote this blind page is built for. /vote with no id falls back to it.
 const DEFAULT_PROPOSAL = "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo";
-const POLL_MS = 20_000;
+// The worker snapshots on a ~15-min cron and serves everyone from cache, so
+// there's no value in viewers polling fast — these just refresh the view.
+const POLL_MS = 60_000;
+const HISTORY_POLL_MS = 5 * 60_000;
 
 // ─── formatting ────────────────────────────────────────────────────────────
 
@@ -82,6 +96,16 @@ function choiceTone(name, index) {
     return { text: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500" };
   }
   return NEUTRAL_TONES[index % NEUTRAL_TONES.length];
+}
+
+// recharts strokes take hex, not Tailwind classes — keep this palette aligned
+// with choiceTone above.
+const NEUTRAL_HEX = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#ec4899"];
+function choiceHex(name, index) {
+  const n = (name || "").toLowerCase();
+  if (n.startsWith("for") || n.startsWith("yes")) return "#10b981";
+  if (n.startsWith("against") || n.startsWith("no")) return "#f43f5e";
+  return NEUTRAL_HEX[index % NEUTRAL_HEX.length];
 }
 
 // ─── results ─────────────────────────────────────────────────────────────────
@@ -322,6 +346,121 @@ function ActivityFeed({ activity, error }) {
   );
 }
 
+// ─── trend chart ──────────────────────────────────────────────────────────────
+
+function fmtAxisTime(ms) {
+  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function VoteTrendChart({ history, proposal }) {
+  const dark = useDarkMode();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const colors = useMemo(() => readChartColors(), [dark]);
+  const points = history?.points || [];
+
+  const series = (proposal?.choices || []).map((c) => ({
+    key: `c${c.index}`,
+    name: c.name,
+    color: choiceHex(c.name, c.index),
+  }));
+
+  const data = useMemo(
+    () =>
+      points.map((pt) => {
+        const row = { t: pt.ts * 1000 };
+        for (const c of pt.choices || []) row[`c${c.index}`] = c.veHnt;
+        return row;
+      }),
+    [points],
+  );
+
+  if (data.length === 0) {
+    return (
+      <section className="rounded-2xl border border-border bg-surface-raised px-6 py-10 text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary mb-1">
+          Vote trend
+        </p>
+        <p className="text-sm text-content-secondary">
+          Collecting data — the worker records a point every ~15 minutes. The
+          chart fills in as the vote progresses.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-border bg-surface-raised">
+      <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
+        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
+          Vote trend · veHNT over time
+        </h2>
+        <span className="font-mono text-[10px] text-content-tertiary tabular-nums">
+          {data.length} point{data.length === 1 ? "" : "s"}
+        </span>
+      </header>
+      <div className="px-2 py-4" style={{ height: 280 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 4 }}>
+            <CartesianGrid stroke={colors?.grid} strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={fmtAxisTime}
+              stroke={colors?.tickText}
+              tick={{ fontSize: 11 }}
+              minTickGap={40}
+            />
+            <YAxis
+              tickFormatter={(v) => fmtVeHnt(v)}
+              stroke={colors?.tickText}
+              tick={{ fontSize: 11 }}
+              width={48}
+            />
+            <RechartsTooltip
+              contentStyle={{
+                background: colors?.tooltipBg,
+                border: `1px solid ${colors?.tooltipBorder}`,
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              labelStyle={{ color: colors?.tooltipText }}
+              itemStyle={{ color: colors?.tooltipText }}
+              labelFormatter={(t) => new Date(t).toLocaleString()}
+              formatter={(val, key) => {
+                const s = series.find((x) => x.key === key);
+                return [`${fmtVeHnt(val)} veHNT`, s?.name || key];
+              }}
+            />
+            {series.map((s) => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                name={s.name}
+                stroke={s.color}
+                dot={false}
+                strokeWidth={2}
+                isAnimationActive={false}
+                connectNulls
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 px-5 pb-4">
+        {series.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5 text-[11px] text-content-secondary">
+            <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+            {s.name}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function Vote() {
@@ -331,6 +470,7 @@ export default function Vote() {
   const [proposal, setProposal] = useState(null);
   const [votes, setVotes] = useState(null);
   const [activity, setActivity] = useState(null);
+  const [history, setHistory] = useState(null);
   const [proposalError, setProposalError] = useState(null);
   const [votesError, setVotesError] = useState(null);
   const [activityError, setActivityError] = useState(null);
@@ -369,13 +509,26 @@ export default function Vote() {
     }
   }, []);
 
+  // History changes slowly (one point per ~15 min), so poll it on its own,
+  // gentler cadence. Failures are non-fatal — the chart just stays as-is.
+  const refreshHistory = useCallback(async () => {
+    const id = idRef.current;
+    try {
+      const h = await fetchHistory(id);
+      if (idRef.current === id) setHistory(h);
+    } catch {
+      /* keep prior history */
+    }
+  }, []);
+
   // Initial load + reset when the proposal changes.
   useEffect(() => {
-    setProposal(null); setVotes(null); setActivity(null);
+    setProposal(null); setVotes(null); setActivity(null); setHistory(null);
     setProposalError(null); setVotesError(null); setActivityError(null);
     setLoading(true);
     refresh();
-  }, [proposalId, refresh]);
+    refreshHistory();
+  }, [proposalId, refresh, refreshHistory]);
 
   // Auto-refresh while the tab is visible.
   useEffect(() => {
@@ -384,6 +537,13 @@ export default function Vote() {
     }, POLL_MS);
     return () => clearInterval(interval);
   }, [refresh]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!document.hidden) refreshHistory();
+    }, HISTORY_POLL_MS);
+    return () => clearInterval(interval);
+  }, [refreshHistory]);
 
   // Light heartbeat so relative timestamps and "updated ago" stay fresh.
   useEffect(() => {
@@ -407,18 +567,31 @@ export default function Vote() {
           <StatusBanner tone="error" message={proposalError.message || "Failed to load proposal."} />
         )}
 
-        {proposal && (
+        {proposal?.warming && (
+          <div className="rounded-2xl border border-dashed border-border px-8 py-16 text-center">
+            <p className="text-sm text-content-secondary">
+              Warming up — the worker is fetching this proposal for the first time.
+              It’ll appear in a few seconds.
+            </p>
+          </div>
+        )}
+
+        {proposal && !proposal.warming && (
           <div className="space-y-6">
             {/* Title block */}
             <div>
               <div className="flex items-center justify-between gap-3 mb-3">
                 <StatusPill status={proposal.status} />
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-[11px] text-content-tertiary tabular-nums">
-                    {updatedAgo != null
-                      ? `updated ${updatedAgo < 5 ? "just now" : `${updatedAgo}s ago`}`
-                      : ""}
-                  </span>
+                  <Tooltip content="Polled on-chain by the worker on a schedule (~every 15 min) and served from cache — so viewing this page doesn't hit the RPC.">
+                    <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
+                      {proposal.snapshotAt
+                        ? `data ${relTime(Math.floor(proposal.snapshotAt / 1000))}`
+                        : updatedAgo != null
+                          ? `updated ${updatedAgo < 5 ? "just now" : `${updatedAgo}s ago`}`
+                          : ""}
+                    </span>
+                  </Tooltip>
                   <button
                     onClick={() => refresh()}
                     disabled={refreshing}
@@ -459,6 +632,8 @@ export default function Vote() {
             </div>
 
             <OutcomeCard proposal={proposal} votes={votes} />
+
+            <VoteTrendChart history={history} proposal={proposal} />
 
             <div className="grid gap-6 lg:grid-cols-2">
               <VoterRoster proposal={proposal} votes={votes} error={votesError} />

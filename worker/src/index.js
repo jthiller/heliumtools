@@ -14,7 +14,7 @@ import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { handleL1MigrationRequest } from "./tools/l1-migration/index.js";
 import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
-import { handleVoteRequest } from "./tools/vote/index.js";
+import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
@@ -65,6 +65,17 @@ export default {
           console.error(`scheduled task "${name}" failed`, err?.stack || err);
         }),
       );
+
+    // High-frequency vote-snapshot tick (every 15 min): refresh the stored
+    // snapshot + append history so viewers never hit the RPC. Runs in isolation
+    // — the heavier 6-hourly tasks below must NOT fire on this cadence.
+    if (event.cron === VOTE_SNAPSHOT_CRON) {
+      run("vote-snapshots", runVoteSnapshots(env));
+      return;
+    }
+    // Safety backstop: the 6-hourly tasks only ever run at minute 0, so even if
+    // the cron string didn't match above they can't fire on a :15/:30/:45 tick.
+    if (new Date(event.scheduledTime).getUTCMinutes() !== 0) return;
 
     run("oui-notifier-daily", runOuiNotifierDaily(env));
     run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));

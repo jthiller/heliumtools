@@ -103,7 +103,12 @@
             "0 0 * * *", // UTC 00:00 (midnight)
             "0 6 * * *", // UTC 06:00
             "0 12 * * *", // UTC 12:00 (noon)
-            "0 18 * * *" // UTC 18:00
+            "0 18 * * *", // UTC 18:00
+            // Vote tool: snapshot tracked proposals + record history every 15
+            // min so viewers read cached data and never hit the RPC. Branched on
+            // in scheduled() (VOTE_SNAPSHOT_CRON); the 6-hourly tasks above do
+            // NOT run on this tick.
+            "*/15 * * * *"
         ]
     },
     "observability": {
