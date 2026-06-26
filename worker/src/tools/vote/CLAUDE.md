@@ -61,6 +61,42 @@ is folded at **read** time, so the chart steps at each real vote.
   proposal resolves, so this can't backfill an already-resolved proposal — but
   events already recorded persist.
 
+## Flip detection — `flipped` is decoded, never counted
+
+A voter "flipped" a position iff its `VoteMarkerV0` shows **more than one distinct
+vote choice** across the marker's on-chain history (voted one way, re-voted
+another). The flip (⇄) icon and the expandable per-voter timeline both key off
+this.
+
+The marker PDA (`["marker", mint, proposal]`) is **reused on re-vote**, so it
+accumulates transactions — but the account only ever stores the *current* choice.
+Two signals are tempting and both **wrong**:
+- **Transaction count** (`> 1 tx ⇒ flipped`): false-positives every proxy, whose
+  batched vote across many positions plus later crank touches leave several
+  transactions on each marker with no choice change. (This shipped briefly and
+  flagged a 453-position proxy that never flipped.)
+- **Change-detection only** (choice differs from what we last stored): misses any
+  flip that happened **before** we started recording — that marker looks like a
+  single vote in our table and its choice never changes again, so it's never
+  flagged. (This also shipped briefly and dropped a genuine flipper.)
+
+So the authoritative signal is to **decode the marker's vote instructions**
+(`services/flips.js`, reusing `actionsForMarker`) and count distinct choices.
+This is the only source of truth for `flipped`:
+- **New markers** are recorded `flip_resolved = 0`; the cron's `resolveProposalFlips`
+  decodes them in bounded batches (`FLIP_RESOLVE_PER_RUN`, concurrency
+  `FLIP_RESOLVE_CONCURRENCY`, shared `getTransaction` cache). Single-signature
+  markers short-circuit to not-flipped with no `getTransaction`.
+- **Confirmed flips during tracking** (a recorded marker whose choice changed) are
+  written `flipped = flip_resolved = 1` directly by the recorder — we watched it
+  change, no decode needed.
+- A **one-time backfill** re-decodes every pre-existing row: the `flip_resolved`
+  column defaults to 0, so the resolver re-queues all legacy markers and corrects
+  any flag from the earlier heuristics. It spreads over several cron ticks; the
+  roster reflects each resolved marker on the next refresh (one-cycle lag).
+- **Limitation:** the timeline (`getVoterHistory`) only parses markers already
+  flagged `flipped = 1`, so a flip is surfaced once the resolver has decoded it.
+
 ## Architecture
 
 ### Worker (API) — prefix `/vote`
@@ -95,25 +131,25 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   veHNT across each wallet's positions), `emptyVotesData`, and `VoteError`.
 - `services/snapshot.js` — `refreshSnapshot` (single-flight build + KV write +
   track), `getOrRefreshSnapshot` (viewer read-through), `runVoteSnapshots`
-  (cron: refresh + record), tracked-set helpers.
+  (cron: refresh + record + **resolve flips**), tracked-set helpers.
 - `services/recording.js` — incremental per-vote recorder (see History above).
-  Also sets each event's `flipped` flag by **change detection only**: a flip is
-  a recorded marker whose choice now differs from what we stored (the `pending`
-  filter only lets through new or changed markers, and `getRecordedMarkers`
-  returns marker→choices so the recorder re-processes a changed marker in place,
-  upserting `flipped = true`). Multiple transactions on a marker is **not** a
-  flip — a proxy's batched vote plus crank touches produce extra txns with no
-  choice change, so the old "`>1` tx ⇒ flipped" heuristic false-positived every
-  proxy and was dropped. A KV-gated one-time `resetLegacyFlips` (flag
-  `vote:flipreset:v1`) clears the stale flags written by that heuristic; genuine
-  flips re-accrue from change detection thereafter. `runVoteSnapshots` calls it
-  **before** the per-proposal refresh so the cron's first post-deploy snapshot
-  already reflects the cleared flags (the roster enriches from
-  `getFlippedMarkers`).
-- `services/history.js` — D1 `vote_events` (self-provisioning, incl. the
-  `flipped` column + ALTER migration), `getRecordedMarkers` (marker→choices),
-  `getFlippedMarkers`, `resetAllFlips` (one-time `flipped`→0 cleanup),
-  `insertVoteEvents` (upsert), `getHistory` (cumulative fold + downsample).
+  Sets each event's `flipped`/`flip_resolved` at record time: a marker already in
+  the table whose choice now differs is a **confirmed** flip (we watched it
+  change) → `flipped = flip_resolved = 1`; a freshly-seen marker's flip status is
+  **unknown** (its pre-tracking history may hold a change we never saw) → recorded
+  `flip_resolved = 0` for the resolver to decide. Transaction count is never used.
+- `services/flips.js` — the **flip resolver** (see "Flip detection" below). The
+  authoritative flip signal: decode a marker's vote instructions and flag it iff
+  it shows **> 1 distinct vote choice** over its history. `resolveProposalFlips`
+  processes a bounded batch of `flip_resolved = 0` markers per cron tick (a
+  one-time backfill over existing votes spreads across a few ticks), with a shared
+  `getTransaction` cache (proxy batch votes share signatures). Reuses
+  `actionsForMarker` from `voteHistory.js`.
+- `services/history.js` — D1 `vote_events` (self-provisioning, incl. `flipped` +
+  `flip_resolved` columns + ALTER migrations), `getRecordedMarkers`
+  (marker→choices), `getFlippedMarkers`, `getUnresolvedMarkers` /
+  `setMarkerFlips` (resolver I/O), `insertVoteEvents` (upsert), `getHistory`
+  (cumulative fold + downsample).
 - `services/voteHistory.js` — `getVoterHistory(env, proposal, voter)`: looks up
   the voter's *flipped* markers (D1, capped at `MAX_VOTER_HISTORY_MARKERS`),
   parses each marker's transactions, decoding each VSR
@@ -198,17 +234,19 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `vote:histcache:<id>` — cached `/history` response (`HISTORY_CACHE_TTL`).
 - `vote:vhist:<proposal>:<voter>` — cached per-voter flip timeline (`VOTER_HISTORY_CACHE_TTL`).
 - `vote:proxymap` — cached proxy wallet→name registry (`PROXY_MAP_CACHE_TTL`).
-- `vote:flipreset:v1` — permanent flag; marks the one-time legacy-flip cleanup done.
 - `rl:vote:*` — IP rate-limit counter.
 
 ### D1 (`DB` binding) — `vote_events`
 One row per vote, `PRIMARY KEY (proposal, marker)`: `ts` (exact vote blockTime),
 `voter`, `choices_json` (`[index,...]`), `weight` (u128 string), `flipped` (1 if
-the voter changed their vote). Self-provisions via `CREATE TABLE IF NOT EXISTS`
-(+ an `ALTER TABLE ADD COLUMN flipped` migration; also in `worker/schema.sql`).
-Rows for a changed marker are upserted in place (INSERT OR REPLACE).
-Cumulative is computed at read time. (The earlier bucketed `vote_snapshots` table
-is superseded; it's harmless if it lingers in an existing DB.)
+the position changed its vote choice), `flip_resolved` (1 once the flip resolver
+has decoded this marker's history). Self-provisions via `CREATE TABLE IF NOT
+EXISTS` (+ `ALTER TABLE ADD COLUMN` migrations for `flipped` and `flip_resolved`;
+also in `worker/schema.sql`). Because `flip_resolved` defaults to 0, the migration
+re-queues every existing row for accurate re-decoding by the resolver. Rows for a
+changed marker are upserted in place (INSERT OR REPLACE). Cumulative is computed
+at read time. (The earlier bucketed `vote_snapshots` table is superseded; it's
+harmless if it lingers in an existing DB.)
 
 ## Gotchas
 - **u128 weights are 16 bytes LE** — BigInt; format via `weightToVeHnt` (÷1e8).

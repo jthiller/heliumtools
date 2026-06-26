@@ -64,6 +64,17 @@ export const MAX_VOTER_HISTORY_MARKERS = 25;
 export const MARKER_TIME_CONCURRENCY = 8;
 export const MAX_NEW_MARKERS_PER_RUN = 500;
 
+// Flip resolution: deciding whether a position actually CHANGED its vote (more
+// than one distinct choice across its on-chain history) requires decoding the
+// marker's transactions — transaction count alone conflates real flips with a
+// proxy's batched vote + crank touches. Each cron tick resolves a bounded batch
+// of not-yet-resolved markers (a one-time backfill over existing votes spreads
+// across a few ticks); new markers are resolved as they're recorded. Concurrency
+// across markers, with a per-run shared getTransaction cache (proxy batch votes
+// share signatures, so the unique tx fetches stay small).
+export const FLIP_RESOLVE_PER_RUN = 400;
+export const FLIP_RESOLVE_CONCURRENCY = 6;
+
 // A non-default proposal stays on the cron's snapshot list for this long after
 // it was last viewed, then drops off.
 export const TRACK_TTL_DAYS = 8;
