@@ -88,8 +88,11 @@ export const PROXY_MAP_CACHE_TTL = 6 * 60 * 60;
 // client to bound the response size.
 export const MAX_VOTERS_RETURNED = 500;
 
-// getSignaturesForAddress page size for the activity feed.
+// getSignaturesForAddress page size for the activity feed. Each entry is decoded
+// (getTransaction) to surface its vote direction + size, so this also bounds the
+// per-refresh getTransaction fan-out; ACTIVITY_DECODE_CONCURRENCY caps parallelism.
 export const DEFAULT_ACTIVITY_LIMIT = 25;
+export const ACTIVITY_DECODE_CONCURRENCY = 6;
 
 // Off-chain proposal body: cap the bytes we read/return so a hostile or huge
 // uri can't blow up the worker or the client. MAX_CONTENT_BYTES is the real

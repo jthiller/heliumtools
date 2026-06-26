@@ -399,14 +399,61 @@ function VoterRoster({ proposal, votes, error }) {
 
 // ─── activity feed ────────────────────────────────────────────────────────────
 
-function ActivityFeed({ activity, error }) {
+function ActivityRow({ a, proposal }) {
+  const isVote = a.action === "vote" || a.action === "relinquish";
+  const hasChoices = isVote && Array.isArray(a.choices) && a.choices.length > 0;
+  const name = hasChoices && proposal ? choiceNames(a.choices, proposal) : null;
+  const tone = name ? choiceTone(proposal.choices[a.choices[0]]?.name, a.choices[0] ?? 0) : null;
+  return (
+    <li className="flex items-center justify-between gap-3 px-5 py-2.5">
+      <div className="flex items-center gap-2 min-w-0">
+        {a.success ? (
+          <CheckCircleIcon className="h-4 w-4 shrink-0 text-emerald-500" />
+        ) : (
+          <XCircleIcon className="h-4 w-4 shrink-0 text-rose-500" />
+        )}
+        <div className="min-w-0">
+          {isVote && (
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-content-tertiary">
+                {a.action === "relinquish" ? "relinquished" : "voted"}
+              </span>
+              {name && <span className={`text-xs font-medium ${tone.text}`}>{name}</span>}
+            </div>
+          )}
+          <a
+            href={`https://solscan.io/tx/${a.signature}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 font-mono text-[11px] text-content-tertiary hover:text-content-secondary truncate"
+          >
+            {truncateString(a.signature, 6, 6)}
+            <ArrowTopRightOnSquareIcon className="h-3 w-3 shrink-0" />
+          </a>
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-0.5 shrink-0 text-right">
+        {a.veHnt > 0 && (
+          <span className="font-mono text-[11px] text-content-secondary tabular-nums">
+            {fmtVeHnt(a.veHnt)} veHNT
+          </span>
+        )}
+        <span className="font-mono text-[10px] text-content-tertiary tabular-nums">
+          {relTime(a.blockTime)}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+function ActivityFeed({ activity, error, proposal }) {
   return (
     <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
           Recent activity
         </h2>
-        <Tooltip content="On-chain transactions that touched this proposal (votes, resolution). Each vote writes the proposal account.">
+        <Tooltip content="On-chain transactions that touched this proposal (votes, resolution). Vote rows show the choice and the veHNT cast.">
           <span className="font-mono text-[10px] uppercase tracking-wide text-content-tertiary border-b border-dotted border-content-tertiary cursor-help">
             on-chain
           </span>
@@ -421,27 +468,7 @@ function ActivityFeed({ activity, error }) {
       ) : (
         <ul className="max-h-[28rem] overflow-y-auto divide-y divide-border-muted">
           {activity.activity.map((a) => (
-            <li key={a.signature} className="flex items-center justify-between gap-3 px-5 py-2.5">
-              <div className="flex items-center gap-2 min-w-0">
-                {a.success ? (
-                  <CheckCircleIcon className="h-4 w-4 shrink-0 text-emerald-500" />
-                ) : (
-                  <XCircleIcon className="h-4 w-4 shrink-0 text-rose-500" />
-                )}
-                <a
-                  href={`https://solscan.io/tx/${a.signature}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-xs text-content-secondary hover:text-content truncate"
-                >
-                  {truncateString(a.signature, 6, 6)}
-                </a>
-                <ArrowTopRightOnSquareIcon className="h-3 w-3 shrink-0 text-content-tertiary" />
-              </div>
-              <span className="font-mono text-[11px] text-content-tertiary tabular-nums shrink-0">
-                {relTime(a.blockTime)}
-              </span>
-            </li>
+            <ActivityRow key={a.signature} a={a} proposal={proposal} />
           ))}
         </ul>
       )}
@@ -740,7 +767,7 @@ export default function Vote() {
 
             <div className="grid gap-6 lg:grid-cols-2">
               <VoterRoster proposal={proposal} votes={votes} error={votesError} />
-              <ActivityFeed activity={activity} error={activityError} />
+              <ActivityFeed activity={activity} error={activityError} proposal={proposal} />
             </div>
 
             {proposal.content?.text && (

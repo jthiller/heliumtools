@@ -111,8 +111,10 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   total veHNT summed across their positions, distinct choices, `positions` count,
   `flipped`, and `proxyName` for registered delegates) + per-choice aggregates +
   `snapshotAt` (`unavailable:true` if the roster fetch failed that cycle).
-- `GET /vote/activity?id=` — recent vote transactions (newest first) +
-  `snapshotAt`.
+- `GET /vote/activity?id=` — recent transactions (newest first) + `snapshotAt`.
+  Each vote/relinquish row is decoded to carry `action`, `choices` (direction),
+  `weight`/`veHnt` (size, summed over the positions the tx voted), and `voter`;
+  non-vote txns (cranks/admin) carry just `signature`/`blockTime`/`success`.
 - `GET /vote/history?id=` — per-vote cumulative time-series for the chart.
 - `GET /vote/voter-history?id=&voter=` — one voter's merged vote/flip timeline
   across their positions (`[{ts, action, choice, marker}]`), parsed from each
@@ -126,9 +128,15 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `services/decode.js` — manual Borsh decoders for `ProposalV0` /
   `VoteMarkerV0`; a `Reader` cursor handles the variable-length proposal layout.
 - `services/builders.js` — RPC→object builders (`buildProposalData`,
-  `buildActivityData`), `fetchProposalMarkers` (shared by the roster and the
-  recorder), `aggregateVotes` (pure: markers → **per-voter** roster, summing
-  veHNT across each wallet's positions), `emptyVotesData`, and `VoteError`.
+  `buildActivityData` — decodes each recent tx for vote direction + size, taking
+  the snapshot's `markers` for per-position weights), `fetchProposalMarkers`
+  (shared by the roster and the recorder), `aggregateVotes` (pure: markers →
+  **per-voter** roster, summing veHNT across each wallet's positions),
+  `emptyVotesData`, and `VoteError`.
+- `services/voteDecode.js` — shared VSR instruction decoding (`decodeVsrInstruction`,
+  `decodeVoteInstructions`, `actionsForMarker`); the single source of the vote/
+  relinquish discriminators, consumed by the timeline, flip resolver, and activity
+  feed.
 - `services/snapshot.js` — `refreshSnapshot` (single-flight build + KV write +
   track), `getOrRefreshSnapshot` (viewer read-through), `runVoteSnapshots`
   (cron: refresh + record + **resolve flips**), tracked-set helpers.
@@ -144,7 +152,7 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   processes a bounded batch of `flip_resolved = 0` markers per cron tick (a
   one-time backfill over existing votes spreads across a few ticks), with a shared
   `getTransaction` cache (proxy batch votes share signatures). Reuses
-  `actionsForMarker` from `voteHistory.js`.
+  `actionsForMarker` from `voteDecode.js`.
 - `services/history.js` — D1 `vote_events` (self-provisioning, incl. `flipped` +
   `flip_resolved` columns + ALTER migrations), `getRecordedMarkers`
   (marker→choices), `getFlippedMarkers`, `getUnresolvedMarkers` /

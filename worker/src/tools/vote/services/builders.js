@@ -4,9 +4,10 @@
 
 import bs58 from "bs58";
 import { VSR_PROGRAM } from "../../../lib/helium-solana.js";
-import { getAccount, getProgramAccounts, getSignaturesForAddress } from "./rpc.js";
+import { getAccount, getProgramAccounts, getSignaturesForAddress, getTransaction } from "./rpc.js";
 import { decodeProposal, decodeVoteMarker } from "./decode.js";
 import { getProposalContent } from "./content.js";
+import { decodeVoteInstructions } from "./voteDecode.js";
 import { tallyChoices, deriveStatus, proposalTiming, weightToVeHnt } from "../utils.js";
 import {
   PROPOSAL_PROGRAM,
@@ -15,7 +16,22 @@ import {
   MAX_VOTERS_RETURNED,
   MAX_MARKERS_SCANNED,
   DEFAULT_ACTIVITY_LIMIT,
+  ACTIVITY_DECODE_CONCURRENCY,
 } from "../config.js";
+
+/** Run `fn` over `items` with bounded concurrency, preserving order. */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
 
 /** Carries an HTTP status so callers can surface 404/400 rather than 500. */
 export class VoteError extends Error {
@@ -169,16 +185,80 @@ export function aggregateVotes({ markers, scanCapped }, address) {
   };
 }
 
-/** Time-ordered recent transactions on the proposal account (newest first). */
-export async function buildActivityData(env, address) {
+/**
+ * Summarize a transaction's vote action for the activity feed: the direction
+ * (which choices), the size (summed veHNT of the positions it voted), and the
+ * voter. Returns null for a tx with no VSR vote/relinquish instruction (e.g. a
+ * crank or proposal-admin tx) so the row renders as a bare transaction.
+ *
+ * Size comes from the affected markers' weights, looked up in `weightByMarker`
+ * (built from the snapshot's markers) — the instruction itself carries only the
+ * choice, not the weight. A flip tx (relinquish old + vote new on one marker)
+ * counts that marker once via `seen`.
+ */
+function summarizeVoteTx(tx, weightByMarker) {
+  const decoded = decodeVoteInstructions(tx);
+  if (decoded.length === 0) return null;
+
+  const seen = new Set();
+  let weight = 0n;
+  let voter = null;
+  let hasVote = false;
+  const voteChoices = new Set();
+  const relinquishChoices = new Set();
+
+  for (const d of decoded) {
+    if (d.action === "vote") {
+      hasVote = true;
+      if (d.choice != null) voteChoices.add(d.choice);
+    } else if (d.choice != null) {
+      relinquishChoices.add(d.choice);
+    }
+    const marker = d.accounts.find((acc) => weightByMarker.has(acc));
+    if (marker && !seen.has(marker)) {
+      seen.add(marker);
+      const info = weightByMarker.get(marker);
+      weight += info.weight;
+      voter = voter || info.voter;
+    }
+  }
+
+  const choices = [...(voteChoices.size ? voteChoices : relinquishChoices)].sort((a, b) => a - b);
+  return {
+    action: hasVote ? "vote" : "relinquish",
+    choices,
+    weight: weight.toString(),
+    veHnt: weightToVeHnt(weight),
+    voter,
+  };
+}
+
+/**
+ * Time-ordered recent transactions on the proposal account (newest first), each
+ * enriched with its vote direction + size by decoding the transaction. `markers`
+ * (from the same snapshot cycle) supplies per-position weights for the size.
+ */
+export async function buildActivityData(env, address, markers = []) {
   const sigs = await getSignaturesForAddress(env, address, { limit: DEFAULT_ACTIVITY_LIMIT });
-  const activity = sigs.map((s) => ({
-    signature: s.signature,
-    blockTime: s.blockTime ?? null,
-    slot: s.slot ?? null,
-    success: !s.err,
-    memo: s.memo || null,
-  }));
+  const weightByMarker = new Map(
+    (markers || []).map((m) => [m.pubkey, { weight: m.weight, voter: m.voter }]),
+  );
+  const activity = await mapLimit(sigs, ACTIVITY_DECODE_CONCURRENCY, async (s) => {
+    const base = {
+      signature: s.signature,
+      blockTime: s.blockTime ?? null,
+      slot: s.slot ?? null,
+      success: !s.err,
+      memo: s.memo || null,
+    };
+    if (s.err) return base; // failed tx — nothing was voted
+    try {
+      const summary = summarizeVoteTx(await getTransaction(env, s.signature), weightByMarker);
+      return summary ? { ...base, ...summary } : base;
+    } catch {
+      return base; // undecodable tx — still show the bare row
+    }
+  });
   return { proposal: address, activity };
 }
 
