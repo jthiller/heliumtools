@@ -161,7 +161,7 @@ function ConnectionProgress({ lines }) {
 function StartPage({ onScan, scanning, activity }) {
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-surface-raised p-8 text-center space-y-6">
+      <div className="rounded-xl bg-surface-raised shadow-soft p-8 text-center space-y-6">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
           <SignalIcon className="h-8 w-8" />
         </div>
@@ -231,7 +231,7 @@ function useLoading(fn) {
 function DiagnosticsPanel({ pubkey, onboardingKey, ethernetOnline, diagnostics, onRefresh, onIdentify }) {
   const [refresh, refreshing] = useLoading(onRefresh);
   return (
-    <div className="rounded-xl border border-border bg-surface-raised">
+    <div className="rounded-xl bg-surface-raised shadow-soft">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <h3 className="font-display font-semibold text-content">Diagnostics</h3>
         <div className="flex gap-2">
@@ -304,7 +304,7 @@ function WifiPanel({
   };
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised">
+    <div className="rounded-xl bg-surface-raised shadow-soft">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <h3 className="font-display font-semibold text-content">WiFi</h3>
         <button
@@ -684,7 +684,7 @@ function OnboardPanel({ ble }) {
   // --- Render ---
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised">
+    <div className="rounded-xl bg-surface-raised shadow-soft">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <h3 className="font-display font-semibold text-content">On-Chain Onboarding</h3>
         {lookupLoading && <ArrowPathIcon className="h-4 w-4 animate-spin text-content-tertiary" />}
@@ -1036,7 +1036,7 @@ export default function IotOnboard() {
         {ble.status === 'connected' && (
           <div className="space-y-6">
             {/* Connected header — compact bar with Hotspot identity */}
-            <div className="rounded-xl border border-border bg-surface-raised px-5 py-4 flex items-center justify-between">
+            <div className="rounded-xl bg-surface-raised shadow-soft px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                   <SignalIcon className="h-5 w-5" />

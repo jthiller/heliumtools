@@ -381,7 +381,7 @@ function DetailCard({ hotspots, onClose }) {
     : null;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden max-h-[40vh] md:max-h-[60vh] overflow-y-auto">
+    <div className="rounded-xl bg-surface-raised shadow-soft overflow-hidden max-h-[40vh] md:max-h-[60vh] overflow-y-auto">
       {/* Shared location header */}
       <div className="flex items-start justify-between px-4 py-3 border-b border-border-muted">
         <div className="space-y-1.5">
@@ -420,7 +420,7 @@ function MapTooltip({ hotspot, tooltipRef, initialPos }) {
   return (
     <div
       ref={tooltipRef}
-      className="pointer-events-none absolute z-50 rounded-lg border border-border bg-surface-raised px-3 py-2 shadow-lg"
+      className="pointer-events-none absolute z-50 rounded-lg bg-surface-raised px-3 py-2 shadow-lg"
       style={{ left: initialPos.x + 12, top: initialPos.y - 12 }}
     >
       <div className="flex items-center gap-2">
@@ -505,7 +505,7 @@ function WalletPreview({ results, selected, onSelectedChange, label, onLabelChan
   const allSelected = selectedCount === selectableCount && selectableCount > 0;
 
   return (
-    <div className="pointer-events-auto rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden flex flex-col max-h-[480px]">
+    <div className="pointer-events-auto rounded-xl bg-surface-raised shadow-soft overflow-hidden flex flex-col max-h-[480px]">
       {/* Success banner */}
       <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-100">
         <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 dark:bg-emerald-600 shrink-0">
@@ -1211,7 +1211,7 @@ export default function HotspotMap() {
 
           // Desktop input panel wraps content in a card
           const inputPanel = showInput && (
-            <div className="rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden">
+            <div className="rounded-xl bg-surface-raised shadow-soft overflow-hidden">
               {inputContent}
             </div>
           );
@@ -1308,7 +1308,7 @@ export default function HotspotMap() {
           );
 
           const resultsPanel = showResults && (
-            <div className="rounded-xl border border-border bg-surface-raised shadow-soft overflow-hidden flex flex-col min-h-0">
+            <div className="rounded-xl bg-surface-raised shadow-soft overflow-hidden flex flex-col min-h-0">
               {resultsContent}
               {resultsListContent}
             </div>
