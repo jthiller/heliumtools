@@ -2,11 +2,14 @@
 // has participated." The proposal/registrar carry no total, so we enumerate
 // every HNT PositionV0 on-chain and sum each one's CURRENT voting power.
 //
-// This is a heavy getProgramAccounts (one entry per position network-wide), so
-// it is computed on a slow cadence (CIRCULATING_CACHE_TTL), single-flight, and
-// KV-cached. Viewers only read the cached number; the cron triggers refreshes;
-// a failure here never blocks the vote snapshot (the caller try/catches and the
-// participation line just doesn't render).
+// getProgramAccounts can't paginate, so the scan is SHARDED into 256 queries by
+// the position mint's first byte — each returns ~1/256 of positions, bounding
+// every response regardless of total scale (the single-shot scan risked being
+// rejected/timing out at scale). It's still computed on a slow cadence
+// (CIRCULATING_CACHE_TTL), single-flight, and KV-cached. Viewers only read the
+// cached number; the cron triggers refreshes; a failure here never blocks the
+// vote snapshot (the caller try/catches and the participation line just doesn't
+// render).
 //
 // The on-chain veHNT formula and the position/registrar layouts are owned by the
 // ve-hnt tool — we reuse those pure functions rather than duplicate the math
@@ -25,11 +28,40 @@ import {
   POSITION_VP_SLICE,
   CIRCULATING_CACHE_TTL,
   CIRCULATING_LOCK_TTL,
+  CIRCULATING_MINT_BYTE_OFFSET,
+  CIRCULATING_SHARDS,
+  CIRCULATING_SHARD_CONCURRENCY,
 } from "../config.js";
 
 const CACHE_KEY = "vote:circulating";
 const LOCK_KEY = "vote:circulating:lock";
 const POSITION_DISC_B58 = bs58.encode(Buffer.from(POSITION_DISCRIMINATOR));
+
+/** Run `fn` over `items` with bounded concurrency. */
+async function mapLimit(items, limit, fn) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+// One shard of the position scan: HNT positions whose mint's first byte == byte.
+function fetchPositionShard(env, byte) {
+  return getProgramAccounts(
+    env,
+    VSR_PROGRAM,
+    [
+      { offset: 0, bytesBase58: POSITION_DISC_B58 },
+      { offset: 8, bytesBase58: HNT_REGISTRAR_KEY.toBase58() },
+      { offset: CIRCULATING_MINT_BYTE_OFFSET, bytesBase58: bs58.encode(Buffer.from([byte])) },
+    ],
+    { timeoutMs: 30_000, dataSlice: POSITION_VP_SLICE },
+  );
+}
 
 // Decode only the voting-power inputs from a POSITION_VP_SLICE window (bytes
 // [72,108) of PositionV0). Field offsets are relative to the slice start.
@@ -51,38 +83,52 @@ export function getCirculatingVeHnt(env) {
 }
 
 /**
- * Enumerate every HNT position and sum current voting power. Returns
- * { veHntNative, veHnt, positions, asOf } or null on failure.
+ * Enumerate every HNT position (sharded over the 256 possible mint-first-bytes)
+ * and sum current voting power. Returns { veHntNative, veHnt, positions, asOf }
+ * or null on failure. A partial scan (any shard failing even after a retry)
+ * returns null rather than caching an under-count that would inflate the
+ * participation %.
  */
 async function computeCirculatingVeHnt(env) {
   const reg = await getAccount(env, HNT_REGISTRAR_KEY);
   if (!reg) return null;
   const registrar = decodeRegistrar(reg.buf);
-
-  const accounts = await getProgramAccounts(
-    env,
-    VSR_PROGRAM,
-    [
-      { offset: 0, bytesBase58: POSITION_DISC_B58 },
-      { offset: 8, bytesBase58: HNT_REGISTRAR_KEY.toBase58() },
-    ],
-    { timeoutMs: 60_000, dataSlice: POSITION_VP_SLICE },
-  );
-
   const nowTs = Math.floor(Date.now() / 1000);
+
   let total = 0n;
   let counted = 0;
-  for (const { buf } of accounts) {
-    if (!buf || buf.length < POSITION_VP_SLICE.length) continue;
+  let failedShards = 0;
+
+  await mapLimit([...Array(CIRCULATING_SHARDS).keys()], CIRCULATING_SHARD_CONCURRENCY, async (byte) => {
+    let accounts;
     try {
-      const pos = decodePositionPower(buf);
-      const vmc = registrar.votingMints[pos.votingMintConfigIdx] || registrar.votingMints[0];
-      if (!vmc) continue;
-      total += computeVeHnt(pos, vmc, nowTs).veHnt;
-      counted++;
+      accounts = await fetchPositionShard(env, byte);
     } catch {
-      /* skip an undecodable position */
+      try {
+        accounts = await fetchPositionShard(env, byte); // one retry for a transient failure
+      } catch {
+        failedShards++;
+        return;
+      }
     }
+    // No await in this loop, so each shard's accumulation is atomic w.r.t. others.
+    for (const { buf } of accounts) {
+      if (!buf || buf.length < POSITION_VP_SLICE.length) continue;
+      try {
+        const pos = decodePositionPower(buf);
+        const vmc = registrar.votingMints[pos.votingMintConfigIdx] || registrar.votingMints[0];
+        if (!vmc) continue;
+        total += computeVeHnt(pos, vmc, nowTs).veHnt;
+        counted++;
+      } catch {
+        /* skip an undecodable position */
+      }
+    }
+  });
+
+  if (failedShards > 0) {
+    console.log(JSON.stringify({ event: "vote_circulating_incomplete", failedShards, counted }));
+    return null; // don't cache a partial (under-counted) sum
   }
 
   const result = { veHntNative: total.toString(), veHnt: weightToVeHnt(total), positions: counted, asOf: Date.now() };

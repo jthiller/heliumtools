@@ -140,16 +140,20 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   relinquish discriminators, consumed by the timeline, flip resolver, and activity
   feed.
 - `services/circulating.js` — total circulating veHNT (the participation
-  denominator). `refreshCirculatingVeHnt` enumerates every HNT `PositionV0`
-  (`getProgramAccounts` on VSR, filtered by the `PositionV0` discriminator +
-  HNT registrar at offset 8, `dataSlice`d to the voting-power fields) and sums
-  each position's current voting power, **reusing `computeVeHnt` + `decodeRegistrar`
-  from the ve-hnt tool** (the on-chain formula must not be duplicated). Heavy, so
-  it's single-flight + KV-cached (`CIRCULATING_CACHE_TTL`); the cron refreshes it
-  (cheap cache hit on most ticks), the snapshot only *reads* the cached figure,
-  and any failure is swallowed so the snapshot never breaks. `getCirculatingVeHnt`
-  is the cached read. (Cross-tool import; hoist the veHNT math to a shared lib if a
-  third consumer appears.)
+  denominator). `refreshCirculatingVeHnt` enumerates every HNT `PositionV0` and
+  sums each position's current voting power, **reusing `computeVeHnt` +
+  `decodeRegistrar` from the ve-hnt tool** (the on-chain formula must not be
+  duplicated). `getProgramAccounts` can't paginate, so the scan is **sharded into
+  `CIRCULATING_SHARDS` (256) queries by the mint's first byte** (offset 40,
+  uniformly distributed) — each filtered also by the `PositionV0` discriminator +
+  HNT registrar (offset 8) and `dataSlice`d to the voting-power fields — bounding
+  every response at scale. A position is in exactly one shard, so the union is
+  exact; if any shard fails (after one retry) it returns null rather than caching
+  an under-count. Heavy, so it's single-flight + KV-cached (`CIRCULATING_CACHE_TTL`);
+  the cron refreshes it (cheap cache hit on most ticks), the snapshot only *reads*
+  the cached figure (`getCirculatingVeHnt`), and any failure is swallowed so the
+  snapshot never breaks. (Cross-tool import; hoist the veHNT math to a shared lib
+  if a third consumer appears.)
 - `services/snapshot.js` — `refreshSnapshot` (single-flight build + KV write +
   track), `getOrRefreshSnapshot` (viewer read-through), `runVoteSnapshots`
   (cron: refresh + record + **resolve flips**), tracked-set helpers.
