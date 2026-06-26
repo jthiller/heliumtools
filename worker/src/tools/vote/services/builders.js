@@ -12,7 +12,7 @@ import {
   PROPOSAL_PROGRAM,
   VOTE_WEIGHT_DECIMALS,
   VOTE_MARKER_DISCRIMINATOR,
-  MAX_MARKERS_RETURNED,
+  MAX_VOTERS_RETURNED,
   MAX_MARKERS_SCANNED,
   DEFAULT_ACTIVITY_LIMIT,
 } from "../config.js";
@@ -114,27 +114,39 @@ export async function fetchProposalMarkers(env, address) {
  * them to both this and the history recorder without a second getProgramAccounts.
  */
 export function aggregateVotes({ markers, scanCapped }, address) {
-  const perChoice = new Map();
-  const voters = new Set();
+  const perChoice = new Map();      // choiceIndex -> total weight (across all positions)
+  const byVoter = new Map();        // voter -> aggregated record
   let totalWeight = 0n;
+
   for (const m of markers) {
     totalWeight += m.weight;
-    voters.add(m.voter);
     for (const c of m.choices) {
       perChoice.set(c, (perChoice.get(c) || 0n) + m.weight);
     }
+    let v = byVoter.get(m.voter);
+    if (!v) {
+      v = { voter: m.voter, weight: 0n, choices: new Map(), markers: [], positions: 0, proxy: false };
+      byVoter.set(m.voter, v);
+    }
+    v.weight += m.weight;
+    v.positions += 1;
+    v.markers.push(m.pubkey);
+    if (m.proxyIndex > 0) v.proxy = true;
+    // Track this voter's weight per choice (a wallet's positions can back
+    // different choices — a "split", distinct from a temporal flip).
+    for (const c of m.choices) v.choices.set(c, (v.choices.get(c) || 0n) + m.weight);
   }
 
-  const sorted = [...markers].sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
-  const returned = sorted.slice(0, MAX_MARKERS_RETURNED);
+  const voters = [...byVoter.values()].sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
+  const returned = voters.slice(0, MAX_VOTERS_RETURNED);
 
   return {
     proposal: address,
     markerCount: markers.length,
-    uniqueVoters: voters.size,
+    uniqueVoters: byVoter.size,
     totalWeight: totalWeight.toString(),
     totalVeHnt: weightToVeHnt(totalWeight),
-    truncated: markers.length > returned.length,
+    truncated: voters.length > returned.length,
     scanCapped,
     returned: returned.length,
     perChoice: Array.from(perChoice.entries())
@@ -144,13 +156,15 @@ export function aggregateVotes({ markers, scanCapped }, address) {
         veHnt: weightToVeHnt(weight),
       }))
       .sort((a, b) => a.index - b.index),
-    votes: returned.map((m) => ({
-      voter: m.voter,
-      mint: m.mint,
-      choices: m.choices,
-      weight: m.weight.toString(),
-      veHnt: weightToVeHnt(m.weight),
-      proxyIndex: m.proxyIndex,
+    votes: returned.map((v) => ({
+      voter: v.voter,
+      weight: v.weight.toString(),
+      veHnt: weightToVeHnt(v.weight),
+      positions: v.positions,
+      proxy: v.proxy,
+      // Distinct choices this voter's positions back, heaviest first.
+      choices: [...v.choices.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([i]) => i),
+      markers: v.markers,
     })),
   };
 }

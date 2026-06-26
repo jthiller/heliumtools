@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import {
   ArrowTopRightOnSquareIcon,
   ArrowPathIcon,
+  ArrowsRightLeftIcon,
+  ChevronDownIcon,
   CheckCircleIcon,
   XCircleIcon,
   CheckBadgeIcon,
@@ -23,7 +25,7 @@ import Tooltip from "../components/Tooltip.jsx";
 import { readChartColors } from "../lib/chartColors.js";
 import useDarkMode from "../lib/useDarkMode.js";
 import { numberFormatter, truncateString } from "../lib/utils.js";
-import { fetchProposal, fetchVotes, fetchActivity, fetchHistory } from "../lib/voteApi.js";
+import { fetchProposal, fetchVotes, fetchActivity, fetchHistory, fetchVoterHistory } from "../lib/voteApi.js";
 
 // The vote this blind page is built for. /vote with no id falls back to it.
 const DEFAULT_PROPOSAL = "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo";
@@ -216,6 +218,125 @@ function choiceNames(indices, proposal) {
     .join(", ");
 }
 
+function VoteTimeline({ actions, proposal }) {
+  if (!actions || actions.length === 0) {
+    return <p className="text-xs text-content-tertiary">No detailed history available.</p>;
+  }
+  return (
+    <ol className="space-y-1.5">
+      {actions.map((a, i) => {
+        const name = a.choice != null ? proposal.choices[a.choice]?.name ?? `#${a.choice}` : null;
+        const tone = name ? choiceTone(name, a.choice ?? 0) : null;
+        return (
+          <li key={`${a.signature}-${i}`} className="flex items-center justify-between gap-3 text-xs">
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-content-tertiary">
+                {a.action === "vote" ? "voted" : "relinquished"}
+              </span>
+              {name && <span className={`font-medium ${tone.text}`}>{name}</span>}
+            </span>
+            <a
+              href={`https://solscan.io/tx/${a.signature}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-[11px] text-content-tertiary hover:text-content-secondary tabular-nums shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {a.ts ? new Date(a.ts * 1000).toLocaleString() : "—"}
+            </a>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function VoterRow({ v, proposal }) {
+  const tone = choiceTone(proposal.choices[v.choices[0]]?.name, v.choices[0] ?? 0);
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(false);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !history && !loading) {
+      setLoading(true);
+      setErr(false);
+      fetchVoterHistory(proposal.address, v.voter)
+        .then(setHistory)
+        .catch(() => setErr(true))
+        .finally(() => setLoading(false));
+    }
+  };
+
+  return (
+    <>
+      <tr
+        className={`border-t border-border-muted hover:bg-surface-inset/40 ${v.flipped ? "cursor-pointer" : ""}`}
+        onClick={v.flipped ? toggle : undefined}
+      >
+        <td className="px-5 py-2">
+          <div className="flex items-center gap-1.5">
+            <a
+              href={`https://solscan.io/account/${v.voter}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-content-secondary hover:text-content"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {truncateString(v.voter, 4, 4)}
+            </a>
+            <CopyButton text={v.voter} size="h-3 w-3" />
+            {v.proxy && (
+              <Tooltip content="Cast via a vote proxy / delegation">
+                <span className="font-mono text-[9px] uppercase tracking-wide text-content-tertiary border border-border-muted rounded px-1">
+                  proxy
+                </span>
+              </Tooltip>
+            )}
+            {v.positions > 1 && (
+              <Tooltip content={`Total across ${v.positions} veHNT positions`}>
+                <span className="font-mono text-[9px] uppercase tracking-wide text-content-tertiary tabular-nums">
+                  ×{v.positions}
+                </span>
+              </Tooltip>
+            )}
+          </div>
+        </td>
+        <td className="px-3 py-2">
+          <span className="inline-flex items-center gap-1.5">
+            <span className={`font-medium ${tone.text}`}>{choiceNames(v.choices, proposal)}</span>
+            {v.flipped && (
+              <Tooltip content="Changed their vote — click to see the history">
+                <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+                  <ArrowsRightLeftIcon className="h-3.5 w-3.5" />
+                  <ChevronDownIcon className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
+                </span>
+              </Tooltip>
+            )}
+          </span>
+        </td>
+        <td className="px-5 py-2 text-right font-mono tabular-nums text-content">{fmtVeHnt(v.veHnt)}</td>
+      </tr>
+      {open && (
+        <tr className="bg-surface-inset/30">
+          <td colSpan={3} className="px-5 py-3">
+            {loading ? (
+              <p className="text-xs text-content-tertiary">Loading vote history…</p>
+            ) : err ? (
+              <p className="text-xs text-content-tertiary">Couldn't load vote history.</p>
+            ) : (
+              <VoteTimeline actions={history?.actions} proposal={proposal} />
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function VoterRoster({ proposal, votes, error }) {
   return (
     <section className="rounded-2xl border border-border bg-surface-raised">
@@ -225,7 +346,7 @@ function VoterRoster({ proposal, votes, error }) {
         </h2>
         {votes && (
           <span className="font-mono text-[11px] text-content-tertiary tabular-nums">
-            {numberFormatter.format(votes.markerCount)} position{votes.markerCount === 1 ? "" : "s"}
+            {numberFormatter.format(votes.uniqueVoters)} voter{votes.uniqueVoters === 1 ? "" : "s"}
             {votes.truncated && ` · top ${numberFormatter.format(votes.returned)}`}
           </span>
         )}
@@ -251,41 +372,9 @@ function VoterRoster({ proposal, votes, error }) {
               </tr>
             </thead>
             <tbody>
-              {votes.votes.map((v) => {
-                const tone = choiceTone(proposal.choices[v.choices[0]]?.name, v.choices[0] ?? 0);
-                return (
-                  <tr key={v.mint} className="border-t border-border-muted hover:bg-surface-inset/40">
-                    <td className="px-5 py-2">
-                      <div className="flex items-center gap-1.5">
-                        <a
-                          href={`https://solscan.io/account/${v.voter}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono text-xs text-content-secondary hover:text-content"
-                        >
-                          {truncateString(v.voter, 4, 4)}
-                        </a>
-                        <CopyButton text={v.voter} size="h-3 w-3" />
-                        {v.proxyIndex > 0 && (
-                          <Tooltip content="Cast via a vote proxy / delegation">
-                            <span className="font-mono text-[9px] uppercase tracking-wide text-content-tertiary border border-border-muted rounded px-1">
-                              proxy
-                            </span>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`font-medium ${tone.text}`}>
-                        {choiceNames(v.choices, proposal)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-2 text-right font-mono tabular-nums text-content">
-                      {fmtVeHnt(v.veHnt)}
-                    </td>
-                  </tr>
-                );
-              })}
+              {votes.votes.map((v) => (
+                <VoterRow key={v.voter} v={v} proposal={proposal} />
+              ))}
             </tbody>
           </table>
         </div>

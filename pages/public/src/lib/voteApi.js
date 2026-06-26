@@ -31,3 +31,10 @@ export function fetchActivity(id) {
 export function fetchHistory(id) {
   return get("/history", id ? { id } : {});
 }
+
+/** One voter's vote/flip timeline (vote+relinquish actions with timestamps). */
+export function fetchVoterHistory(id, voter) {
+  const params = { voter };
+  if (id) params.id = id;
+  return get("/voter-history", params);
+}

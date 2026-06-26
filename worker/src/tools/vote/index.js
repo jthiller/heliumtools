@@ -5,6 +5,7 @@ import { handleProposal } from "./handlers/proposal.js";
 import { handleVotes } from "./handlers/votes.js";
 import { handleActivity } from "./handlers/activity.js";
 import { handleHistory } from "./handlers/history.js";
+import { handleVoterHistory } from "./handlers/voterHistory.js";
 import { runVoteSnapshots } from "./services/snapshot.js";
 
 // Re-exported so src/index.js scheduled() can drive the cron snapshotter.
@@ -16,6 +17,7 @@ export { runVoteSnapshots, VOTE_SNAPSHOT_CRON };
  *   GET /vote/votes?id=     — voter roster (VoteMarkerV0)
  *   GET /vote/activity?id=  — recent vote transactions
  *   GET /vote/history?id=   — recorded tally time-series (for charting)
+ *   GET /vote/voter-history?id=&voter= — one voter's vote/flip timeline
  *
  * All read-only. Viewers are served from a worker-maintained snapshot (refreshed
  * by cron); the RPC is only touched server-side, never per viewer.
@@ -43,6 +45,7 @@ export async function handleVoteRequest(request, env, ctx) {
     case "/votes": return handleVotes(url, env, ctx);
     case "/activity": return handleActivity(url, env, ctx);
     case "/history": return handleHistory(url, env);
+    case "/voter-history": return handleVoterHistory(url, env);
     default: return jsonResponse({ error: "Not found" }, 404);
   }
 }

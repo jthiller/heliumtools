@@ -36,22 +36,31 @@ export async function recordProposalVotes(env, id, { markers = null, limit = MAX
   if (!markers) ({ markers } = await fetchProposalMarkers(env, id));
   if (markers.length === 0) return 0; // resolved/closed or no votes yet
 
+  // Process markers that are new OR whose choice changed since we recorded them
+  // (a flip). recorded: Map(marker -> stored choices_json).
   const recorded = await getRecordedMarkers(env, id);
-  let pending = markers.filter((m) => !recorded.has(m.pubkey));
+  let pending = markers.filter((m) => {
+    const stored = recorded.get(m.pubkey);
+    return stored === undefined || stored !== JSON.stringify(m.choices);
+  });
   if (pending.length === 0) return 0;
   if (pending.length > limit) pending = pending.slice(0, limit);
 
   const rows = (await mapLimit(pending, MARKER_TIME_CONCURRENCY, async (m) => {
     try {
       // A marker account has only a couple of txns, so one page is plenty; the
-      // oldest signature with a blockTime is the vote's creation time.
+      // oldest signature with a blockTime is the vote's creation time, and >1
+      // vote-action tx means the voter changed their vote.
       const sigs = await getSignaturesForAddress(env, m.pubkey, { limit: 1000 });
       let ts = null;
       for (let i = sigs.length - 1; i >= 0; i--) {
         if (sigs[i].blockTime != null) { ts = sigs[i].blockTime; break; }
       }
       if (ts == null) return null; // no blockTime available — retried next tick
-      return { marker: m.pubkey, ts, voter: m.voter, choices: m.choices, weight: m.weight.toString() };
+      // Flipped if it already had prior actions when first seen, or its choice
+      // changed since we recorded it (it was already in the table).
+      const flipped = sigs.length > 1 || recorded.has(m.pubkey);
+      return { marker: m.pubkey, ts, voter: m.voter, choices: m.choices, weight: m.weight.toString(), flipped };
     } catch {
       return null;
     }

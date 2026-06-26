@@ -57,3 +57,11 @@ export async function getSignaturesForAddress(env, address, { limit, before } = 
   // Generous timeout — the recorder fetches up to 1000 signatures per marker.
   return (await rpc(env, "getSignaturesForAddress", [addr, opts], { timeoutMs: 20_000 })) || [];
 }
+
+/** getTransaction (jsonParsed, v0-aware) → the parsed transaction, or null. */
+export async function getTransaction(env, signature) {
+  return rpc(env, "getTransaction", [
+    signature,
+    { maxSupportedTransactionVersion: 0, encoding: "jsonParsed", commitment: "confirmed" },
+  ], { timeoutMs: 15_000 });
+}
