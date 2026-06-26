@@ -20,7 +20,7 @@ import { MARKER_TIME_CONCURRENCY, MAX_NEW_MARKERS_PER_RUN } from "../config.js";
 // from what we stored).
 const FLIP_RESET_FLAG = "vote:flipreset:v1";
 
-async function resetLegacyFlips(env) {
+export async function resetLegacyFlips(env) {
   if (!env.DB || !env.KV) return;
   if (await kvGetJson(env, FLIP_RESET_FLAG)) return;
   const cleared = await resetAllFlips(env);

@@ -106,7 +106,10 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   choice change, so the old "`>1` tx ⇒ flipped" heuristic false-positived every
   proxy and was dropped. A KV-gated one-time `resetLegacyFlips` (flag
   `vote:flipreset:v1`) clears the stale flags written by that heuristic; genuine
-  flips re-accrue from change detection thereafter.
+  flips re-accrue from change detection thereafter. `runVoteSnapshots` calls it
+  **before** the per-proposal refresh so the cron's first post-deploy snapshot
+  already reflects the cleared flags (the roster enriches from
+  `getFlippedMarkers`).
 - `services/history.js` — D1 `vote_events` (self-provisioning, incl. the
   `flipped` column + ALTER migration), `getRecordedMarkers` (marker→choices),
   `getFlippedMarkers`, `resetAllFlips` (one-time `flipped`→0 cleanup),
