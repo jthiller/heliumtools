@@ -207,12 +207,16 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   by wallet-dashboard).
 
 ### Frontend
-- `pages/public/src/vote/Vote.jsx` — status pill, outcome bars, **`VoteTrendChart`**
-  (recharts; one `stepAfter` line per choice, cumulative veHNT at precise vote
-  times, seeded with a zero point at voting-open; `memo`'d so live-data polls
-  don't reconcile it), voter roster (rows flagged `flipped` show a ⇄ icon and
-  expand to that voter's vote timeline via `/voter-history`), activity feed,
-  collapsible details. Polls
+- `pages/public/src/vote/Vote.jsx` — status pill, outcome bars (each choice as a
+  share of **voted** veHNT), **`VoteProgress`** ("Turnout" card — each choice as a
+  share of **total circulating** veHNT in one stacked bar, plus an unvoted
+  remainder and the overall participation %; hidden until `proposal.circulating`
+  exists), **`VoteTrendChart`** (recharts; one `stepAfter` line per choice,
+  cumulative veHNT at precise vote times, seeded with a zero point at voting-open;
+  `memo`'d so live-data polls don't reconcile it), voter roster (rows flagged
+  `flipped` show a ⇄ icon and expand to that voter's vote timeline via
+  `/voter-history`), activity feed (vote rows show direction + size), collapsible
+  details. Polls
   live data every 60s and history every 5 min while visible; freshness from
   `snapshotAt`. No wallet connect. Routes `/vote` and `/vote/:proposalId` in
   `main.jsx` — **deliberately absent from `Landing.jsx`** (blind page).
