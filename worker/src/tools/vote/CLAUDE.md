@@ -166,6 +166,25 @@ Self-provisions via `CREATE TABLE IF NOT EXISTS` (also in `worker/schema.sql`).
 Cumulative is computed at read time. (The earlier bucketed `vote_snapshots` table
 is superseded; it's harmless if it lingers in an existing DB.)
 
+## Storage
+
+### KV
+- `vote:snap:<id>` — combined snapshot `{ snapshotAt, proposal, votes, activity }`
+  (`SNAPSHOT_TTL`). The single source viewers read.
+- `vote:lock:<id>` — single-flight refresh lock (`REFRESH_LOCK_TTL`).
+- `vote:tracked` — `{ id: lastSeenMs }` set the cron iterates (default always
+  included).
+- `vote:content:<id>` — cached off-chain body (`CONTENT_CACHE_TTL`).
+- `vote:histcache:<id>` — cached `/history` response (`HISTORY_CACHE_TTL`).
+- `rl:vote:*` — IP rate-limit counter.
+
+### D1 (`DB` binding) — `vote_snapshots`
+One row per `(proposal, ts)` where `ts` is bucketed to 15 min: `total_weight`
+(u128 string), `total_vehnt` (real), `unique_voters`, `marker_count`,
+`choices_json` (`[{index,weight,veHnt}]`). Self-provisions via
+`CREATE TABLE IF NOT EXISTS` (also in `worker/schema.sql`); pruned to
+`HISTORY_RETENTION_DAYS`.
+
 ## Gotchas
 - **u128 weights are 16 bytes LE** — BigInt; format via `weightToVeHnt` (÷1e8).
 - **`VoteMarkerV0` fields after `choices` are variably positioned** — parse the

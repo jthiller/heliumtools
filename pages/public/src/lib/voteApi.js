@@ -31,3 +31,8 @@ export function fetchActivity(id) {
 export function fetchHistory(id) {
   return get("/history", id ? { id } : {});
 }
+
+/** Recorded tally time-series for charting the vote's arc over time. */
+export function fetchHistory(id) {
+  return get("/history", id ? { id } : {});
+}
