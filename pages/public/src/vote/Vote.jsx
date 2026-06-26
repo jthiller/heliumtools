@@ -157,25 +157,80 @@ function ChoiceBar({ choice, isWinner, isResolved }) {
   );
 }
 
-// Share of total circulating veHNT that has voted. `circulating` is the
-// network-wide voting power (computed server-side); absent until the worker has
-// first computed it, in which case we render nothing rather than a bogus 100%.
-function Participation({ totalVeHnt, circulating }) {
-  const total = circulating?.veHnt;
-  if (!(total > 0) || !(totalVeHnt > 0)) return null;
-  const pct = (totalVeHnt / total) * 100;
+// Turnout: how much of the TOTAL circulating veHNT has voted, broken down by
+// choice, with the unvoted remainder. `circulating` is the network-wide voting
+// power (computed server-side); absent until the worker has first computed it,
+// in which case the whole card is hidden rather than showing a bogus 100%.
+function VoteProgress({ proposal }) {
+  const circulating = proposal.circulating?.veHnt;
+  if (!(circulating > 0)) return null;
+
+  const voted = proposal.totalVeHnt || 0;
+  const pct = Math.min(100, (voted / circulating) * 100);
+  const remainder = Math.max(0, circulating - voted);
+  const share = (v) => Math.min(100, (v / circulating) * 100);
+  // Heaviest choices first; only choices with weight get a segment/legend row.
+  const segs = (proposal.choices || []).filter((c) => c.veHnt > 0).sort((a, b) => b.veHnt - a.veHnt);
+  const positions = proposal.circulating?.positions;
+
   return (
-    <div className="mt-3">
-      <div className="flex items-baseline justify-between gap-2 text-[11px]">
-        <span className="font-medium text-content-secondary tabular-nums">{pct.toFixed(1)}% participation</span>
-        <Tooltip content={`${fmtVeHnt(total)} veHNT of voting power exists across all HNT positions${circulating.positions ? ` (${numberFormatter.format(circulating.positions)} positions)` : ""}. This is the share that has voted.`}>
-          <span className="text-content-tertiary border-b border-dotted border-content-tertiary cursor-help">
-            of {fmtVeHnt(total)} circulating
+    <div className="rounded-2xl bg-surface-raised shadow-soft">
+      <header className="flex items-baseline justify-between gap-3 px-6 py-3.5 border-b border-border-muted">
+        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
+          Turnout
+        </h2>
+        <Tooltip content={`Total veHNT voting power across all HNT positions${positions ? ` (${numberFormatter.format(positions)} positions)` : ""}. Vote progress is measured against this.`}>
+          <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
+            {fmtVeHnt(circulating)} veHNT circulating
           </span>
         </Tooltip>
-      </div>
-      <div className="mt-1.5 h-1.5 rounded-full bg-surface-inset overflow-hidden">
-        <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, pct)}%` }} />
+      </header>
+      <div className="px-6 py-5">
+        <p className="font-display text-3xl font-semibold text-content tabular-nums leading-none">
+          {pct.toFixed(1)}%
+          <span className="ml-2 text-sm font-sans font-normal text-content-secondary">
+            of voting power has voted
+          </span>
+        </p>
+
+        {/* Stacked progress bar: each choice's share of the full circulating
+            total, left-to-right; the unfilled track is the unvoted remainder. */}
+        <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-surface-inset" role="img"
+          aria-label={`${pct.toFixed(1)}% of circulating veHNT has voted`}>
+          {segs.map((c) => (
+            <div
+              key={c.index}
+              className={`${choiceTone(c.name, c.index).bar} h-full first:rounded-l-full`}
+              style={{ width: `${share(c.veHnt)}%` }}
+              title={`${c.name}: ${fmtVeHnt(c.veHnt)} veHNT (${share(c.veHnt).toFixed(1)}%)`}
+            />
+          ))}
+        </div>
+
+        <ul className="mt-4 space-y-1.5">
+          {segs.map((c) => (
+            <li key={c.index} className="flex items-center justify-between gap-3 text-xs">
+              <span className="flex items-center gap-2 min-w-0">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${choiceTone(c.name, c.index).bar}`} />
+                <span className="text-content truncate">{c.name}</span>
+              </span>
+              <span className="flex items-center gap-3 shrink-0 tabular-nums">
+                <span className="text-content-secondary">{fmtVeHnt(c.veHnt)}</span>
+                <span className="w-14 text-right text-content-tertiary">{share(c.veHnt).toFixed(1)}%</span>
+              </span>
+            </li>
+          ))}
+          <li className="flex items-center justify-between gap-3 text-xs">
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-surface-inset ring-1 ring-inset ring-border" />
+              <span className="text-content-tertiary truncate">Not voted</span>
+            </span>
+            <span className="flex items-center gap-3 shrink-0 tabular-nums">
+              <span className="text-content-secondary">{fmtVeHnt(remainder)}</span>
+              <span className="w-14 text-right text-content-tertiary">{(100 - pct).toFixed(1)}%</span>
+            </span>
+          </li>
+        </ul>
       </div>
     </div>
   );
@@ -205,7 +260,6 @@ function OutcomeCard({ proposal, votes }) {
             {fmtVeHnt(proposal.totalVeHnt)}
             <span className="ml-1.5 text-sm font-sans text-content-secondary">veHNT</span>
           </p>
-          <Participation totalVeHnt={proposal.totalVeHnt} circulating={proposal.circulating} />
         </div>
         <div className="px-6 py-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
@@ -787,6 +841,8 @@ export default function Vote() {
             </div>
 
             <OutcomeCard proposal={proposal} votes={votes} />
+
+            <VoteProgress proposal={proposal} />
 
             <VoteTrendChart history={history} proposal={proposal} />
 
