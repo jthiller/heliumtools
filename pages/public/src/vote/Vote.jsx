@@ -231,7 +231,7 @@ function VoteTimeline({ actions, proposal }) {
           <li key={`${a.signature}-${i}`} className="flex items-center justify-between gap-3 text-xs">
             <span className="flex items-center gap-1.5 min-w-0">
               <span className="font-mono text-[10px] uppercase tracking-wide text-content-tertiary">
-                {a.action === "vote" ? "voted" : "relinquished"}
+                {a.action === "relinquish" ? "relinquished" : "voted"}
               </span>
               {name && <span className={`font-medium ${tone.text}`}>{name}</span>}
             </span>
