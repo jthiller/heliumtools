@@ -307,7 +307,7 @@ function HoverTooltip({ hover }) {
   const label = p.dev_addr || p.frame_type || "Packet";
   return (
     <div
-      className="pointer-events-none absolute z-20 rounded-md border border-border bg-surface-raised px-2 py-1 text-xs shadow-soft"
+      className="pointer-events-none absolute z-20 rounded-md bg-surface-raised px-2 py-1 text-xs shadow-soft"
       style={{
         left: flipRight ? undefined : hover.x + 12,
         right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,
@@ -633,7 +633,7 @@ export default function SpectrumChart({
         <div
           role="group"
           aria-label="Time window"
-          className="absolute right-3 top-3 z-10 flex items-center gap-px rounded-full border border-border/70 bg-surface-raised/85 p-0.5 text-[11px] font-medium tabular-nums shadow-soft backdrop-blur"
+          className="absolute right-3 top-3 z-10 flex items-center gap-px rounded-full bg-surface-raised/85 p-0.5 text-[11px] font-medium tabular-nums shadow-soft backdrop-blur"
         >
           {visibleTimeframeOptions.map((opt) => {
             const active = opt.id === timeframeId;

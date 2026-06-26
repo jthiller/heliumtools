@@ -146,7 +146,7 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
       </DeckGL>
 
       {/* Legend */}
-      <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1 rounded-lg border border-border bg-surface-raised/90 px-3 py-2 text-xs backdrop-blur">
+      <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1 rounded-lg bg-surface-raised/90 px-3 py-2 text-xs shadow-soft backdrop-blur">
         <LegendRow color={`rgb(${IOT_COLOR.join(",")})`} label="IoT" />
         <LegendRow color={`rgb(${MOBILE_COLOR.join(",")})`} label="Mobile" />
         {idleSet.size > 0 && <LegendRow color={`rgb(${IDLE_COLOR.join(",")})`} label="Idle (no rewards)" />}
@@ -154,7 +154,7 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
 
       {hotspots.length > 0 && mappable.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="rounded-lg border border-border bg-surface-raised/90 px-3 py-2 text-xs text-content-tertiary backdrop-blur">
+          <span className="rounded-lg bg-surface-raised/90 px-3 py-2 text-xs text-content-tertiary shadow-soft backdrop-blur">
             None of this wallet&apos;s Hotspots have an asserted location.
           </span>
         </div>
@@ -183,7 +183,7 @@ function LegendRow({ color, label }) {
 function FleetMapDetail({ hotspot, rewards, onClose }) {
   const earning = isEarning(rewards);
   return (
-    <div className="absolute bottom-3 left-3 right-3 max-w-sm rounded-xl border border-border bg-surface-raised/95 p-3 text-sm shadow-lg backdrop-blur sm:right-auto">
+    <div className="absolute bottom-3 left-3 right-3 max-w-sm rounded-xl bg-surface-raised/95 p-3 text-sm shadow-lg backdrop-blur sm:right-auto">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate font-medium text-content">{hotspot.name || "Unnamed Hotspot"}</div>

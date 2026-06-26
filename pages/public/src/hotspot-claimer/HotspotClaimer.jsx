@@ -200,7 +200,7 @@ function LastClaimCard({ lastClaim }) {
   if (successClaims.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+    <div className="rounded-xl bg-surface-raised shadow-soft p-6 mt-4">
       <h3 className="text-sm font-semibold text-content mb-1">
         Recent Claim
       </h3>
@@ -236,7 +236,7 @@ function RewardsCard({
 }) {
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+      <div className="rounded-xl bg-surface-raised shadow-soft p-6 mt-4">
         <div className="flex items-center gap-2 text-sm text-content-secondary">
           <Spinner />
           Querying oracles for pending rewards...
@@ -250,7 +250,7 @@ function RewardsCard({
   const anyClaimable = Object.values(rewards).some((r) => r.claimable);
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+    <div className="rounded-xl bg-surface-raised shadow-soft p-6 mt-4">
       <h3 className="text-sm font-semibold text-content mb-3">
         Pending Rewards
       </h3>
@@ -361,7 +361,7 @@ function HotspotCard({ hotspot, destination, rewardsLoaded, onNavigateToWallet }
   const recipientAddress = hasCustomRecipient ? destination : hotspot.owner;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6">
+    <div className="rounded-xl bg-surface-raised shadow-soft p-6">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-content truncate">
@@ -774,7 +774,7 @@ function WalletClaimSummary({ claimResults, claimErrors, claimStates }) {
   if (successClaims.length === 0 && totalErrors === 0) return null;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-6 mt-4">
+    <div className="rounded-xl bg-surface-raised shadow-soft p-6 mt-4">
       <h3 className="text-sm font-semibold text-content mb-3">
         Claim Results
         {successClaims.length > 0 && (
@@ -1181,7 +1181,7 @@ function WalletMode({ initialAddress, onAddressChange, onNavigateToHotspot }) {
 
       {/* Hotspot List */}
       {hotspots.length > 0 && (
-        <div className="rounded-xl border border-border bg-surface-raised overflow-hidden">
+        <div className="rounded-xl bg-surface-raised shadow-soft overflow-hidden">
           {/* Header */}
           <div className="px-4 sm:px-6 py-4 border-b border-border-muted flex items-center justify-between">
             <div>

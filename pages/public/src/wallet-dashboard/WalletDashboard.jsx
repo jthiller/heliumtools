@@ -215,7 +215,7 @@ export default function WalletDashboard() {
           />
 
           {/* Map + right-hand stack */}
-          <div className="flex min-h-[440px] flex-col overflow-hidden rounded-2xl border border-border bg-surface-raised lg:col-span-8">
+          <div className="flex min-h-[440px] flex-col overflow-hidden rounded-2xl bg-surface-raised shadow-soft lg:col-span-8">
             <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <h2 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-content">Fleet map</h2>
               <a href="/hotspot-map" className="text-xs font-medium text-accent-text hover:underline">

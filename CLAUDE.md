@@ -15,6 +15,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Tool listing hardcoded in `src/pages/Landing.jsx` features array
 - Each tool has its own directory: `src/oui-notifier/`, `src/dc-purchase/`, `src/l1-migration/`, `src/iot-onboard/`, `src/multi-gateway/`
 - Tools needing Solana wallets are wrapped in `SolanaProvider` in `main.jsx`
+- **Boxes use shadow, not borders.** Raised content cards/panels/modals/popovers are defined by the layered `shadow-soft` utility (and `shadow-soft-lg` for hover/floating elevation), not a `border border-border`. The shadow is a dark-mode-aware CSS variable (`--shadow-card` / `--shadow-card-lg` in `index.css`). Borders still belong on non-box elements: inputs, buttons, pills/tags, internal dividers (`border-b`, `divide-*`), and recessed `bg-surface-inset` panels.
 
 ### Worker (`worker/`)
 - Cloudflare Worker with D1 binding (`DB`), KV binding (`KV`), and a `MultiGatewayHub` Durable Object binding (`MULTI_GATEWAY_HUB`, used by Multi-Gateway). No R2 binding — IoT-onboard recovery firmware images live in a public R2 bucket referenced by a hard-coded `*.r2.dev` URL in the frontend

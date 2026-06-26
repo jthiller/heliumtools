@@ -9,7 +9,7 @@ export function Card({ title, subtitle, action, className = "", bodyClassName = 
   return (
     <section
       className={classNames(
-        "flex flex-col rounded-2xl border border-border bg-surface-raised overflow-hidden",
+        "flex flex-col rounded-2xl bg-surface-raised shadow-soft overflow-hidden",
         className,
       )}
     >

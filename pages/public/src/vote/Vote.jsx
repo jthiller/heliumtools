@@ -171,7 +171,7 @@ function OutcomeCard({ proposal, votes }) {
   );
 
   return (
-    <div className="rounded-2xl border border-border bg-surface-raised">
+    <div className="rounded-2xl bg-surface-raised shadow-soft">
       <div className="grid grid-cols-2 divide-x divide-border-muted border-b border-border-muted">
         <div className="px-6 py-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
@@ -353,7 +353,7 @@ function VoterRow({ v, proposal }) {
 
 function VoterRoster({ proposal, votes, error }) {
   return (
-    <section className="rounded-2xl border border-border bg-surface-raised">
+    <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
           Voters
@@ -401,7 +401,7 @@ function VoterRoster({ proposal, votes, error }) {
 
 function ActivityFeed({ activity, error }) {
   return (
-    <section className="rounded-2xl border border-border bg-surface-raised">
+    <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
           Recent activity
@@ -494,7 +494,7 @@ const VoteTrendChart = memo(function VoteTrendChart({ history, proposal }) {
 
   if (data.length === 0) {
     return (
-      <section className="rounded-2xl border border-border bg-surface-raised px-6 py-10 text-center">
+      <section className="rounded-2xl bg-surface-raised shadow-soft px-6 py-10 text-center">
         <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary mb-1">
           Vote trend
         </p>
@@ -507,7 +507,7 @@ const VoteTrendChart = memo(function VoteTrendChart({ history, proposal }) {
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-surface-raised">
+    <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
           Vote trend · veHNT over time
@@ -744,7 +744,7 @@ export default function Vote() {
             </div>
 
             {proposal.content?.text && (
-              <details className="rounded-2xl border border-border bg-surface-raised">
+              <details className="rounded-2xl bg-surface-raised shadow-soft">
                 <summary className="cursor-pointer px-6 py-4 font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary hover:text-content-secondary">
                   Proposal details
                 </summary>

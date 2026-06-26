@@ -182,7 +182,7 @@ export function ColoredSelect({ value, onChange, options, label }) {
           id={listboxId}
           role="listbox"
           aria-label={label}
-          className="absolute right-0 z-20 mt-1 max-h-56 min-w-full overflow-y-auto rounded-md border border-border bg-surface-raised py-1 text-xs shadow-soft"
+          className="absolute right-0 z-20 mt-1 max-h-56 min-w-full overflow-y-auto rounded-md bg-surface-raised py-1 text-xs shadow-soft"
         >
           {options.map((o, i) => {
             const isActive = i === activeIndex;
@@ -596,7 +596,7 @@ function HoverTooltip({ hover }) {
   const flipRight = hover.x > hover.hostWidth * TOOLTIP_FLIP_THRESHOLD;
   return (
     <div
-      className="pointer-events-none absolute z-20 rounded-md border border-border bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
+      className="pointer-events-none absolute z-20 rounded-md bg-surface-raised/90 px-3 py-2 text-xs shadow-soft "
       style={{
         left: flipRight ? undefined : hover.x + 12,
         right: flipRight ? `calc(100% - ${hover.x - 12}px)` : undefined,

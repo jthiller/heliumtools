@@ -44,7 +44,8 @@ export default {
         mobile: rgb("--color-mobile"),
       },
       boxShadow: {
-        soft: "0 10px 30px rgba(15, 23, 42, 0.08)",
+        soft: "var(--shadow-card)",
+        "soft-lg": "var(--shadow-card-lg)",
       },
       backgroundImage: {
         "grid-slate":
