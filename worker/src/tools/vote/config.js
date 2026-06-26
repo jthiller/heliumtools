@@ -126,7 +126,15 @@ export const POSITION_VP_SLICE = { offset: 72, length: 36 };
 // Recompute at most this often (veHNT drifts slowly); cron ticks in between are
 // cheap cache hits. Stored at 2× this TTL so it survives a skipped recompute.
 export const CIRCULATING_CACHE_TTL = 60 * 60;
-export const CIRCULATING_LOCK_TTL = 90;
+export const CIRCULATING_LOCK_TTL = 120;
+// getProgramAccounts can't paginate, so the position scan is SHARDED by the
+// first byte of the position mint (offset 40, uniformly distributed) into 256
+// queries — each returns ~1/256 of positions, keeping every response small
+// regardless of total scale. Run with bounded concurrency. A position belongs
+// to exactly one shard (its mint's first byte), so the union is exact.
+export const CIRCULATING_MINT_BYTE_OFFSET = 40;
+export const CIRCULATING_SHARDS = 256;
+export const CIRCULATING_SHARD_CONCURRENCY = 8;
 
 // IP rate limit (per minute) across all vote endpoints.
 export const MAX_REQUESTS_PER_MINUTE = 60;
