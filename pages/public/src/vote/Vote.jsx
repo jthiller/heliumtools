@@ -157,6 +157,85 @@ function ChoiceBar({ choice, isWinner, isResolved }) {
   );
 }
 
+// --- Governance thresholds for this proposal ---------------------------------
+// Approval: a choice passes with a two-thirds (66%) supermajority of votes CAST.
+// Quorum: minimum participation as a share of total circulating veHNT — set this
+// once we have the figure and the quorum line/verdict light up automatically.
+const APPROVAL_THRESHOLD_PCT = 66;
+const QUORUM_THRESHOLD_PCT = null; // e.g. 33 ⇒ "33% of circulating must vote"
+
+// The choice that "approval" refers to (the For/Yes side of a yes-no proposal).
+function approvalChoice(choices) {
+  return (choices || []).find((c) => /^(for|yes|approve|in favor)/i.test(c.name || "")) || null;
+}
+
+// Election-night approval meter: For as a share of votes CAST against a fixed
+// 66% "to pass" line — like watching a tally climb toward 270. Only shown for
+// yes-no proposals (where a For/Yes choice exists).
+function ApprovalMeter({ proposal }) {
+  const voted = proposal.totalVeHnt || 0;
+  const forChoice = approvalChoice(proposal.choices);
+  if (!forChoice || !(voted > 0)) return null;
+
+  const forPct = (forChoice.veHnt / voted) * 100;
+  const passing = forPct >= APPROVAL_THRESHOLD_PCT;
+  const isResolved = ["passed", "failed", "completed"].includes(proposal.status);
+  const label = isResolved
+    ? (passing ? "Passed" : "Did not pass")
+    : (passing ? "On track to pass" : "Below threshold");
+
+  // Order the combined bar For → others → Against so the green grows from the
+  // left toward the 66% line and the red anchors the right, election-night style.
+  const choices = proposal.choices || [];
+  const isAgainst = (c) => /^(against|no)\b/i.test(c.name || "");
+  const ordered = [
+    forChoice,
+    ...choices.filter((c) => c !== forChoice && !isAgainst(c)),
+    ...choices.filter((c) => c !== forChoice && isAgainst(c)),
+  ].filter((c) => c.veHnt > 0);
+
+  return (
+    <div className="px-6 py-5 border-b border-border-muted">
+      <div className="flex items-center justify-between gap-3">
+        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${
+          passing
+            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+            : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+        }`}>
+          {label}
+        </span>
+        <span className="text-xs text-content-secondary tabular-nums">
+          <span className="font-semibold text-content">{forPct.toFixed(1)}%</span>
+          {" "}{forChoice.name} · {APPROVAL_THRESHOLD_PCT}% to pass
+        </span>
+      </div>
+      <div className="relative mt-2.5">
+        <div className="flex h-4 w-full overflow-hidden rounded-full bg-surface-inset"
+          role="img" aria-label={`${forChoice.name} ${forPct.toFixed(1)}% of votes cast; ${APPROVAL_THRESHOLD_PCT}% needed to pass`}>
+          {ordered.map((c) => (
+            <div
+              key={c.index}
+              className={`${choiceTone(c.name, c.index).bar} h-full`}
+              style={{ width: `${(c.veHnt / voted) * 100}%` }}
+              title={`${c.name}: ${((c.veHnt / voted) * 100).toFixed(1)}% of votes cast`}
+            />
+          ))}
+        </div>
+        {/* Fixed 66% "to pass" line — the marker never moves. */}
+        <div className="pointer-events-none absolute inset-y-0" style={{ left: `${APPROVAL_THRESHOLD_PCT}%` }}>
+          <div className="h-full w-0.5 -translate-x-1/2 bg-content ring-1 ring-surface-raised/60" />
+        </div>
+      </div>
+      <div className="relative mt-1 h-3">
+        <span className="absolute -translate-x-1/2 font-mono text-[10px] text-content-tertiary tabular-nums"
+          style={{ left: `${APPROVAL_THRESHOLD_PCT}%` }}>
+          {APPROVAL_THRESHOLD_PCT}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Turnout: how much of the TOTAL circulating veHNT has voted, broken down by
 // choice, with the unvoted remainder. `circulating` is the network-wide voting
 // power (computed server-side); absent until the worker has first computed it,
@@ -192,19 +271,35 @@ function VoteProgress({ proposal }) {
             of voting power has voted
           </span>
         </p>
+        {QUORUM_THRESHOLD_PCT != null && (
+          <p className="mt-1 text-xs text-content-secondary">
+            {pct >= QUORUM_THRESHOLD_PCT
+              ? `Quorum met (${QUORUM_THRESHOLD_PCT}% needed)`
+              : `${(QUORUM_THRESHOLD_PCT - pct).toFixed(1)}% short of the ${QUORUM_THRESHOLD_PCT}% quorum`}
+          </p>
+        )}
 
         {/* Stacked progress bar: each choice's share of the full circulating
-            total, left-to-right; the unfilled track is the unvoted remainder. */}
-        <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-surface-inset" role="img"
-          aria-label={`${pct.toFixed(1)}% of circulating veHNT has voted`}>
-          {segs.map((c) => (
-            <div
-              key={c.index}
-              className={`${choiceTone(c.name, c.index).bar} h-full first:rounded-l-full`}
-              style={{ width: `${share(c.veHnt)}%` }}
-              title={`${c.name}: ${fmtVeHnt(c.veHnt)} veHNT (${share(c.veHnt).toFixed(1)}%)`}
-            />
-          ))}
+            total, left-to-right; the unfilled track is the unvoted remainder.
+            When a quorum is configured, a fixed marker shows the line. */}
+        <div className="relative mt-4">
+          <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-inset" role="img"
+            aria-label={`${pct.toFixed(1)}% of circulating veHNT has voted`}>
+            {segs.map((c) => (
+              <div
+                key={c.index}
+                className={`${choiceTone(c.name, c.index).bar} h-full first:rounded-l-full`}
+                style={{ width: `${share(c.veHnt)}%` }}
+                title={`${c.name}: ${fmtVeHnt(c.veHnt)} veHNT (${share(c.veHnt).toFixed(1)}%)`}
+              />
+            ))}
+          </div>
+          {QUORUM_THRESHOLD_PCT != null && (
+            <div className="pointer-events-none absolute inset-y-0" style={{ left: `${Math.min(100, QUORUM_THRESHOLD_PCT)}%` }}
+              title={`Quorum: ${QUORUM_THRESHOLD_PCT}% of circulating veHNT`}>
+              <div className="h-3 w-0.5 -translate-x-1/2 bg-content ring-1 ring-surface-raised/60" />
+            </div>
+          )}
         </div>
 
         <ul className="mt-4 space-y-1.5">
@@ -251,6 +346,7 @@ function OutcomeCard({ proposal, votes }) {
 
   return (
     <div className="rounded-2xl bg-surface-raised shadow-soft">
+      <ApprovalMeter proposal={proposal} />
       <div className="grid grid-cols-2 divide-x divide-border-muted border-b border-border-muted">
         <div className="px-6 py-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">

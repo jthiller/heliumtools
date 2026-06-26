@@ -207,11 +207,15 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   by wallet-dashboard).
 
 ### Frontend
-- `pages/public/src/vote/Vote.jsx` — status pill, outcome bars (each choice as a
-  share of **voted** veHNT), **`VoteProgress`** ("Turnout" card — each choice as a
-  share of **total circulating** veHNT in one stacked bar, plus an unvoted
-  remainder and the overall participation %; hidden until `proposal.circulating`
-  exists), **`VoteTrendChart`** (recharts; one `stepAfter` line per choice,
+- `pages/public/src/vote/Vote.jsx` — status pill, **`ApprovalMeter`** (election-night
+  pass bar atop the outcome card: For as a share of votes **cast** against a fixed
+  `APPROVAL_THRESHOLD_PCT` = 66% "to pass" line, with an On-track/Below verdict;
+  only for yes-no proposals), outcome bars (each choice as a share of **voted**
+  veHNT), **`VoteProgress`** ("Turnout" card — each choice as a share of **total
+  circulating** veHNT in one stacked bar, plus an unvoted remainder and the
+  overall participation %; hidden until `proposal.circulating` exists; a quorum
+  marker + verdict appear when `QUORUM_THRESHOLD_PCT` is set — currently `null`
+  pending the figure), **`VoteTrendChart`** (recharts; one `stepAfter` line per choice,
   cumulative veHNT at precise vote times, seeded with a zero point at voting-open;
   `memo`'d so live-data polls don't reconcile it), voter roster (rows flagged
   `flipped` show a ⇄ icon and expand to that voter's vote timeline via
