@@ -1,22 +1,8 @@
-// Thin Solana JSON-RPC helpers for the vote tool. All requests go through the
-// worker's own SOLANA_RPC_URL (Helius staked endpoint) — never the browser.
+// Tool-specific Solana RPC wrappers for the vote tool, over the shared `rpc`
+// primitive. All requests go through the worker's own SOLANA_RPC_URL — never the
+// browser.
 
-/**
- * Make a single Solana JSON-RPC call against env.SOLANA_RPC_URL.
- * Returns the `result` field, or throws on RPC error.
- */
-export async function rpc(env, method, params, { timeoutMs = 15_000 } = {}) {
-  if (!env.SOLANA_RPC_URL) throw new Error("SOLANA_RPC_URL is not configured");
-  const res = await fetch(env.SOLANA_RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(`${method}: ${json.error.message}`);
-  return json.result;
-}
+import { rpc } from "../../../lib/solanaRpc.js";
 
 /**
  * getAccountInfo → Buffer (base64-decoded) or null if the account is missing.
@@ -26,7 +12,7 @@ export async function getAccount(env, pubkey) {
   const result = await rpc(env, "getAccountInfo", [
     address,
     { encoding: "base64", commitment: "confirmed" },
-  ]);
+  ], { timeoutMs: 15_000 });
   const value = result?.value;
   if (!value) return null;
   return { buf: Buffer.from(value.data[0], "base64"), owner: value.owner };
@@ -68,5 +54,6 @@ export async function getSignaturesForAddress(env, address, { limit, before } = 
   if (limit) opts.limit = limit;
   if (before) opts.before = before;
   const addr = typeof address === "string" ? address : address.toBase58();
-  return (await rpc(env, "getSignaturesForAddress", [addr, opts])) || [];
+  // Generous timeout — the recorder fetches up to 1000 signatures per marker.
+  return (await rpc(env, "getSignaturesForAddress", [addr, opts], { timeoutMs: 20_000 })) || [];
 }

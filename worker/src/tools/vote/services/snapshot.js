@@ -3,22 +3,29 @@
 // stored snapshot and only triggers a (single-flight) refresh when it's cold or
 // stale. In steady state the cron is the sole RPC caller — viewers never are.
 
-import { kvGetJson, kvPutJson } from "../utils.js";
-import { buildProposalData, buildVotesData, buildActivityData, VoteError } from "./builders.js";
-import { appendSnapshot } from "./history.js";
+import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
+import {
+  buildProposalData,
+  buildActivityData,
+  fetchProposalMarkers,
+  aggregateVotes,
+  VoteError,
+} from "./builders.js";
+import { recordProposalVotes } from "./recording.js";
 import {
   DEFAULT_PROPOSAL,
   SNAPSHOT_TTL,
   SNAPSHOT_STALE_MS,
   REFRESH_LOCK_TTL,
   TRACK_TTL_DAYS,
+  MAX_NEW_MARKERS_PER_RUN,
 } from "../config.js";
 
 const snapKey = (id) => `vote:snap:${id}`;
 const lockKey = (id) => `vote:lock:${id}`;
 const TRACK_KEY = "vote:tracked";
 
-export function getSnapshot(env, id) {
+function getSnapshot(env, id) {
   return kvGetJson(env, snapKey(id));
 }
 
@@ -45,40 +52,43 @@ async function releaseLock(env, id) {
 }
 
 /**
- * Build a fresh snapshot and persist it (KV snapshot + D1 history point).
- * Single-flight: returns undefined if another refresh holds the lock.
+ * Build a fresh snapshot and persist it. Single-flight: returns undefined if
+ * another refresh holds the lock; otherwise `{ snapshot, markers }` so the
+ * caller can record history from the same markers (no second getProgramAccounts).
  * Throws VoteError (404/400) when the proposal itself is invalid.
  */
 export async function refreshSnapshot(env, id) {
   if (!(await acquireLock(env, id))) return undefined;
   try {
-    const [p, v, a] = await Promise.allSettled([
-      buildProposalData(env, id, id),
-      buildVotesData(env, id, id),
-      buildActivityData(env, id, id),
+    const [p, m, a] = await Promise.allSettled([
+      buildProposalData(env, id),
+      fetchProposalMarkers(env, id),
+      buildActivityData(env, id),
     ]);
 
     // The proposal tally is the core; if it failed we don't store a snapshot.
     if (p.status !== "fulfilled") throw p.reason;
 
+    const markersResult = m.status === "fulfilled" ? m.value : null;
     const snapshot = {
       snapshotAt: Date.now(),
       proposal: p.value,
-      votes: v.status === "fulfilled" ? v.value : null,
+      votes: markersResult ? aggregateVotes(markersResult, id) : null,
       activity: a.status === "fulfilled" ? a.value : null,
     };
 
     await kvPutJson(env, snapKey(id), snapshot, SNAPSHOT_TTL);
-    try {
-      await appendSnapshot(env, id, snapshot);
-    } catch (e) {
-      console.error("vote history append failed", id, e?.message);
-    }
     await trackProposal(env, id);
-    return snapshot;
+    return { snapshot, markers: markersResult ? markersResult.markers : null };
   } finally {
     await releaseLock(env, id);
   }
+}
+
+/** Refresh, then record any new votes from the markers we just fetched. */
+async function refreshAndRecord(env, id) {
+  const r = await refreshSnapshot(env, id);
+  if (r && r.markers) await recordProposalVotes(env, id, { markers: r.markers });
 }
 
 /**
@@ -91,14 +101,18 @@ export async function getOrRefreshSnapshot(env, id, ctx) {
   if (fresh) return snap;
 
   if (snap) {
-    // Stale: serve immediately, refresh in the background (shared via lock).
-    if (ctx) ctx.waitUntil(refreshSnapshot(env, id).catch((e) => console.error("vote bg refresh", id, e?.message)));
+    // Stale: serve immediately, refresh + record in the background.
+    if (ctx) ctx.waitUntil(refreshAndRecord(env, id).catch((e) => console.error("vote bg refresh", id, e?.message)));
     return snap;
   }
 
   // Cold start (no snapshot yet) — build now. VoteError (404/400) propagates.
-  const refreshed = await refreshSnapshot(env, id);
-  return refreshed || null;
+  const r = await refreshSnapshot(env, id);
+  // First-ever view records the history (back to vote-open) in the background.
+  if (r && r.markers && ctx) {
+    ctx.waitUntil(recordProposalVotes(env, id, { markers: r.markers }).catch((e) => console.error("vote record", id, e?.message)));
+  }
+  return r ? r.snapshot : null;
 }
 
 // --- tracked set: DEFAULT_PROPOSAL plus any recently-viewed proposal ---------
@@ -125,9 +139,16 @@ export async function getTrackedProposals(env) {
 /** Cron entry point — refresh every tracked proposal, recording history. */
 export async function runVoteSnapshots(env) {
   const ids = await getTrackedProposals(env);
+  // Cap the TOTAL new votes timed this invocation (one getSignaturesForAddress
+  // each) across all proposals, so concurrent backfills can't blow the Workers
+  // per-invocation subrequest limit. The remainder is picked up next tick.
+  let budget = MAX_NEW_MARKERS_PER_RUN;
   for (const id of ids) {
     try {
-      await refreshSnapshot(env, id);
+      const r = await refreshSnapshot(env, id);
+      if (r && r.markers && budget > 0) {
+        budget -= await recordProposalVotes(env, id, { markers: r.markers, limit: budget });
+      }
     } catch (e) {
       // VoteError (e.g. a tracked id whose proposal vanished) or RPC failure —
       // log and continue with the next proposal.

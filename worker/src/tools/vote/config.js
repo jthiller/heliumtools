@@ -15,9 +15,9 @@ export const PROPOSAL_PROGRAM = new PublicKey(
 // The vote this blind page is built for. Used when no :proposalId is supplied.
 export const DEFAULT_PROPOSAL = "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo";
 
-// Anchor account discriminators = sha256("account:<Name>")[..8].
-// Verified by local computation against the published IDLs.
-export const PROPOSAL_DISCRIMINATOR = [254, 194, 16, 171, 214, 20, 192, 81];
+// Anchor account discriminator = sha256("account:VoteMarkerV0")[..8], used as
+// the getProgramAccounts type filter. Verified against the published IDL.
+// (ProposalV0 is identified by its program owner, not a discriminator.)
 export const VOTE_MARKER_DISCRIMINATOR = [83, 205, 59, 215, 144, 234, 43, 70];
 
 // Vote weights are veHNT in native units. The HNT registrar's governing mint
@@ -47,12 +47,16 @@ export const REFRESH_LOCK_TTL = 30;
 export const CONTENT_CACHE_TTL = 6 * 60 * 60;
 
 // --- History (D1 time-series) --------------------------------------------
-// Each snapshot is bucketed to a 15-min boundary and written once per bucket
-// (INSERT OR IGNORE), so the chart has regular points regardless of who
-// triggered the refresh. Retained for two weeks (covers a 7-day vote + slack).
-export const HISTORY_BUCKET_SECONDS = 15 * 60;
-export const HISTORY_RETENTION_DAYS = 14;
+// One immutable event per vote, at its exact blockTime; the cron appends new
+// votes each tick (first run records all past votes back to vote-open). The
+// cumulative curve is folded at read time and the response is downsampled so a
+// very large vote stays under a sane payload size.
 export const HISTORY_CACHE_TTL = 60;
+export const MAX_HISTORY_POINTS = 1500;
+// Recording: how many marker creation-times to look up concurrently, and the
+// max new votes timed per cron run (a big first run spreads over a few ticks).
+export const MARKER_TIME_CONCURRENCY = 8;
+export const MAX_NEW_MARKERS_PER_RUN = 500;
 
 // A non-default proposal stays on the cron's snapshot list for this long after
 // it was last viewed, then drops off.
@@ -63,9 +67,8 @@ export const TRACK_TTL_DAYS = 8;
 // bound the response size.
 export const MAX_MARKERS_RETURNED = 500;
 
-// getSignaturesForAddress page size for the live activity feed.
+// getSignaturesForAddress page size for the activity feed.
 export const DEFAULT_ACTIVITY_LIMIT = 25;
-export const MAX_ACTIVITY_LIMIT = 100;
 
 // Off-chain proposal body: cap the bytes we read/return so a hostile or huge
 // uri can't blow up the worker or the client. MAX_CONTENT_BYTES is the real

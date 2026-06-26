@@ -1,35 +1,9 @@
 // Vote tool — pure helpers shared by the handlers.
 
 import { PublicKey } from "@solana/web3.js";
-import { VOTE_WEIGHT_DECIMALS } from "./config.js";
+import { VOTE_WEIGHT_DECIMALS, DEFAULT_PROPOSAL } from "./config.js";
 
 const WEIGHT_SCALE = 10n ** BigInt(VOTE_WEIGHT_DECIMALS);
-
-/** Read JSON from KV, swallowing errors — the cache must never fail a request. */
-export async function kvGetJson(env, key) {
-  if (!env.KV) return null;
-  try {
-    return await env.KV.get(key, "json");
-  } catch {
-    return null;
-  }
-}
-
-/** Write JSON to KV with a TTL, swallowing errors (best-effort cache). */
-export async function kvPutJson(env, key, value, ttlSeconds) {
-  if (!env.KV) return;
-  try {
-    await env.KV.put(key, JSON.stringify(value), { expirationTtl: ttlSeconds });
-  } catch {
-    // best-effort
-  }
-}
-
-/** Loose base58 signature shape check (Solana tx signatures are 87-88 chars). */
-const BASE58_SIG = /^[1-9A-HJ-NP-Za-km-z]{43,90}$/;
-export function isValidSignature(s) {
-  return typeof s === "string" && BASE58_SIG.test(s);
-}
 
 /** Parse a base58 string into a PublicKey, or return null if invalid. */
 export function parseProposalId(input) {
@@ -39,6 +13,16 @@ export function parseProposalId(input) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve the `id` query param (falling back to the default proposal) into
+ * `{ id, address }`, or null if it's not a valid address. Shared by every
+ * handler so the parse/default/validate rule lives in one place.
+ */
+export function resolveProposal(url) {
+  const id = parseProposalId(url.searchParams.get("id") || DEFAULT_PROPOSAL);
+  return id ? { id, address: id.toBase58() } : null;
 }
 
 /**

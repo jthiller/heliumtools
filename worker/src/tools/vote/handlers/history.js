@@ -1,19 +1,18 @@
 import { jsonResponse } from "../../../lib/response.js";
-import { parseProposalId } from "../utils.js";
+import { resolveProposal } from "../utils.js";
 import { getHistory } from "../services/history.js";
-import { DEFAULT_PROPOSAL } from "../config.js";
 
 /**
  * GET /vote/history?id=<pubkey>
- * The recorded time-series of the proposal's tally (one point per 15-min
- * bucket), for charting the vote's arc. Served from D1 (KV-cached) — never RPC.
+ * The recorded per-vote cumulative time-series (one point per vote, at its exact
+ * on-chain time), for charting the vote's arc. Served from D1 (KV-cached) — no RPC.
  */
 export async function handleHistory(url, env) {
-  const id = parseProposalId(url.searchParams.get("id") || DEFAULT_PROPOSAL);
-  if (!id) return jsonResponse({ error: "Invalid proposal address." }, 400);
+  const p = resolveProposal(url);
+  if (!p) return jsonResponse({ error: "Invalid proposal address." }, 400);
 
   try {
-    const body = await getHistory(env, id.toBase58());
+    const body = await getHistory(env, p.address);
     return jsonResponse(body);
   } catch (err) {
     console.error("vote history error", err?.message, err?.stack);
