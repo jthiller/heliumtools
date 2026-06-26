@@ -8,8 +8,25 @@
 
 import { fetchProposalMarkers } from "./builders.js";
 import { getSignaturesForAddress } from "./rpc.js";
-import { getRecordedMarkers, insertVoteEvents } from "./history.js";
+import { getRecordedMarkers, insertVoteEvents, resetAllFlips } from "./history.js";
+import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
 import { MARKER_TIME_CONCURRENCY, MAX_NEW_MARKERS_PER_RUN } from "../config.js";
+
+// One-time cleanup, gated by a permanent KV flag so it runs at most once. An
+// earlier recorder flagged any marker with more than one transaction as flipped,
+// which false-positives on proxy votes (a batched vote plus crank touches add
+// txns without any choice change). Clear those stale flags; genuine flips are
+// re-detected going forward by change detection (a marker's choice differing
+// from what we stored).
+const FLIP_RESET_FLAG = "vote:flipreset:v1";
+
+export async function resetLegacyFlips(env) {
+  if (!env.DB || !env.KV) return;
+  if (await kvGetJson(env, FLIP_RESET_FLAG)) return;
+  const cleared = await resetAllFlips(env);
+  await kvPutJson(env, FLIP_RESET_FLAG, { done: true });
+  console.log(JSON.stringify({ event: "vote_flip_reset", cleared }));
+}
 
 /** Run `fn` over `items` with bounded concurrency, preserving order. */
 async function mapLimit(items, limit, fn) {
@@ -33,6 +50,8 @@ async function mapLimit(items, limit, fn) {
 export async function recordProposalVotes(env, id, { markers = null, limit = MAX_NEW_MARKERS_PER_RUN } = {}) {
   if (!env.DB || limit <= 0) return 0;
 
+  await resetLegacyFlips(env);
+
   if (!markers) ({ markers } = await fetchProposalMarkers(env, id));
   if (markers.length === 0) return 0; // resolved/closed or no votes yet
 
@@ -49,17 +68,18 @@ export async function recordProposalVotes(env, id, { markers = null, limit = MAX
   const rows = (await mapLimit(pending, MARKER_TIME_CONCURRENCY, async (m) => {
     try {
       // A marker account has only a couple of txns, so one page is plenty; the
-      // oldest signature with a blockTime is the vote's creation time, and >1
-      // vote-action tx means the voter changed their vote.
+      // oldest signature with a blockTime is the vote's creation time.
       const sigs = await getSignaturesForAddress(env, m.pubkey, { limit: 1000 });
       let ts = null;
       for (let i = sigs.length - 1; i >= 0; i--) {
         if (sigs[i].blockTime != null) { ts = sigs[i].blockTime; break; }
       }
       if (ts == null) return null; // no blockTime available — retried next tick
-      // Flipped if it already had prior actions when first seen, or its choice
-      // changed since we recorded it (it was already in the table).
-      const flipped = sigs.length > 1 || recorded.has(m.pubkey);
+      // A flip is an actual *choice change*: the marker was already recorded and
+      // its choice now differs from what we stored (the `pending` filter above
+      // only lets through new markers or changed ones). Multiple transactions
+      // alone — e.g. a proxy's batched vote plus crank touches — is NOT a flip.
+      const flipped = recorded.has(m.pubkey);
       return { marker: m.pubkey, ts, voter: m.voter, choices: m.choices, weight: m.weight.toString(), flipped };
     } catch {
       return null;

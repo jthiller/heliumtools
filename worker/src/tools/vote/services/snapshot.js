@@ -11,7 +11,7 @@ import {
   aggregateVotes,
   VoteError,
 } from "./builders.js";
-import { recordProposalVotes } from "./recording.js";
+import { recordProposalVotes, resetLegacyFlips } from "./recording.js";
 import { getFlippedMarkers } from "./history.js";
 import { getProxyMap } from "./proxies.js";
 import {
@@ -154,6 +154,10 @@ export async function getTrackedProposals(env) {
 
 /** Cron entry point — refresh every tracked proposal, recording history. */
 export async function runVoteSnapshots(env) {
+  // One-time legacy-flip cleanup BEFORE any refresh, so the snapshot built this
+  // tick already reflects cleared flags (refreshSnapshot enriches the roster
+  // from getFlippedMarkers). No-op after the first run (KV-gated).
+  await resetLegacyFlips(env);
   const ids = await getTrackedProposals(env);
   // Cap the TOTAL new votes timed this invocation (one getSignaturesForAddress
   // each) across all proposals, so concurrent backfills can't blow the Workers

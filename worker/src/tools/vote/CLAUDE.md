@@ -97,14 +97,23 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   track), `getOrRefreshSnapshot` (viewer read-through), `runVoteSnapshots`
   (cron: refresh + record), tracked-set helpers.
 - `services/recording.js` — incremental per-vote recorder (see History above).
-  Also sets each event's `flipped` flag: true when a marker first seen already
-  had >1 vote-action tx, or when a recorded marker's choice later changes
-  (change-detection — `getRecordedMarkers` returns marker→choices so the recorder
-  re-processes flipped markers in place).
+  Also sets each event's `flipped` flag by **change detection only**: a flip is
+  a recorded marker whose choice now differs from what we stored (the `pending`
+  filter only lets through new or changed markers, and `getRecordedMarkers`
+  returns marker→choices so the recorder re-processes a changed marker in place,
+  upserting `flipped = true`). Multiple transactions on a marker is **not** a
+  flip — a proxy's batched vote plus crank touches produce extra txns with no
+  choice change, so the old "`>1` tx ⇒ flipped" heuristic false-positived every
+  proxy and was dropped. A KV-gated one-time `resetLegacyFlips` (flag
+  `vote:flipreset:v1`) clears the stale flags written by that heuristic; genuine
+  flips re-accrue from change detection thereafter. `runVoteSnapshots` calls it
+  **before** the per-proposal refresh so the cron's first post-deploy snapshot
+  already reflects the cleared flags (the roster enriches from
+  `getFlippedMarkers`).
 - `services/history.js` — D1 `vote_events` (self-provisioning, incl. the
   `flipped` column + ALTER migration), `getRecordedMarkers` (marker→choices),
-  `getFlippedMarkers`, `insertVoteEvents` (upsert), `getHistory` (cumulative
-  fold + downsample).
+  `getFlippedMarkers`, `resetAllFlips` (one-time `flipped`→0 cleanup),
+  `insertVoteEvents` (upsert), `getHistory` (cumulative fold + downsample).
 - `services/voteHistory.js` — `getVoterHistory(env, proposal, voter)`: looks up
   the voter's *flipped* markers (D1, capped at `MAX_VOTER_HISTORY_MARKERS`),
   parses each marker's transactions, decoding each VSR
@@ -189,6 +198,7 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `vote:histcache:<id>` — cached `/history` response (`HISTORY_CACHE_TTL`).
 - `vote:vhist:<proposal>:<voter>` — cached per-voter flip timeline (`VOTER_HISTORY_CACHE_TTL`).
 - `vote:proxymap` — cached proxy wallet→name registry (`PROXY_MAP_CACHE_TTL`).
+- `vote:flipreset:v1` — permanent flag; marks the one-time legacy-flip cleanup done.
 - `rl:vote:*` — IP rate-limit counter.
 
 ### D1 (`DB` binding) — `vote_events`
