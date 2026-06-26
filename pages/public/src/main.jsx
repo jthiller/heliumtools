@@ -107,6 +107,7 @@ const MultiGateway = lazy(() => import("./multi-gateway/MultiGateway.jsx"));
 const DcMintTool = lazy(() => import("./dc-mint/DcMintTool.jsx"));
 const IotOnboard = lazy(() => import("./iot-onboard/IotOnboard.jsx"));
 const VeHnt = lazy(() => import("./ve-hnt/VeHnt.jsx"));
+const Vote = lazy(() => import("./vote/Vote.jsx"));
 const WalletDashboard = lazy(() => import("./wallet-dashboard/WalletDashboard.jsx"));
 const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
 
@@ -126,6 +127,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
             <Route path="/iot-onboard" element={<SolanaProvider><IotOnboard /></SolanaProvider>} />
             <Route path="/ve-hnt" element={<SolanaProvider><VeHnt /></SolanaProvider>} />
+            {/* Blind page (intentionally not linked from the landing page):
+                live governance vote activity + outcomes, read via our worker RPC. */}
+            <Route path="/vote" element={<Vote />} />
+            <Route path="/vote/:proposalId" element={<Vote />} />
             <Route path="/wallet-dashboard" element={<WalletDashboard />} />
             <Route path="/wallet-dashboard/:address" element={<WalletDashboard />} />
           </Routes>

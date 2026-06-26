@@ -14,6 +14,7 @@ import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { handleL1MigrationRequest } from "./tools/l1-migration/index.js";
 import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
+import { handleVoteRequest } from "./tools/vote/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
@@ -28,6 +29,7 @@ const routes = [
   { prefix: "/l1-migration", handler: handleL1MigrationRequest },
   { prefix: "/iot-onboard", handler: handleIotOnboardRequest },
   { prefix: "/ve-hnt", handler: handleVeHntRequest },
+  { prefix: "/vote", handler: handleVoteRequest },
   { prefix: "/wallet-dashboard", handler: handleWalletDashboardRequest },
   { prefix: "/shared", handler: handleSharedRequest },
 ];

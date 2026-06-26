@@ -62,6 +62,7 @@ in this root file are a higher-level overview.
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
+| Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind page** — live vote activity + outcomes; reads governance accounts via our RPC |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
 
