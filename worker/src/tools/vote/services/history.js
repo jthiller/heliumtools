@@ -23,18 +23,30 @@ async function ensureSchema(env) {
        choices_json TEXT NOT NULL,
        weight TEXT NOT NULL,
        flipped INTEGER NOT NULL DEFAULT 0,
+       flip_resolved INTEGER NOT NULL DEFAULT 0,
        PRIMARY KEY (proposal, marker)
      )`,
   ).run();
   await env.DB.prepare(
     `CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts)`,
   ).run();
-  // Migrate an older table created before `flipped` existed (ignore if present).
-  try {
-    await env.DB.prepare(`ALTER TABLE vote_events ADD COLUMN flipped INTEGER NOT NULL DEFAULT 0`).run();
-  } catch {
-    /* column already exists */
+  // Migrate older tables (each ALTER throws harmlessly if the column exists).
+  // `flip_resolved` defaults to 0, so every pre-existing row is re-decoded by
+  // the flip resolver, correcting flags from the old transaction-count heuristic.
+  for (const col of [
+    `ADD COLUMN flipped INTEGER NOT NULL DEFAULT 0`,
+    `ADD COLUMN flip_resolved INTEGER NOT NULL DEFAULT 0`,
+  ]) {
+    try {
+      await env.DB.prepare(`ALTER TABLE vote_events ${col}`).run();
+    } catch {
+      /* column already exists */
+    }
   }
+  // Resolver scans for unresolved markers per proposal — index keeps it cheap.
+  await env.DB.prepare(
+    `CREATE INDEX IF NOT EXISTS idx_vote_events_unresolved ON vote_events (proposal, flip_resolved)`,
+  ).run();
   schemaReady = true;
 }
 
@@ -74,19 +86,33 @@ export async function getVoterMarkers(env, id, voter, { flippedOnly = false } = 
 }
 
 /**
- * Clear every flipped flag (one-time data cleanup). An earlier recorder marked
- * any marker with more than one transaction as flipped, which false-positives
- * on proxy votes (a batched vote plus crank touches produce multiple txns with
- * no choice change). After this, genuine flips are re-detected by change
- * detection in the recorder. Returns the number of rows cleared.
+ * Marker pubkeys whose flip status hasn't been decoded yet (`flip_resolved = 0`),
+ * for the resolver to process in bounded batches. Includes every legacy row
+ * after the migration (so the one-time backfill re-decodes them all).
  */
-export async function resetAllFlips(env) {
-  if (!env.DB) return 0;
+export async function getUnresolvedMarkers(env, id, limit) {
+  if (!env.DB) return [];
   await ensureSchema(env);
-  const { meta } = await env.DB.prepare(
-    `UPDATE vote_events SET flipped = 0 WHERE flipped = 1`,
-  ).run();
-  return meta?.changes ?? 0;
+  const { results } = await env.DB.prepare(
+    `SELECT marker FROM vote_events WHERE proposal = ? AND flip_resolved = 0 LIMIT ?`,
+  ).bind(id, limit).all();
+  return (results || []).map((r) => r.marker);
+}
+
+/**
+ * Persist resolver verdicts: set each marker's `flipped` to the decoded value
+ * and mark it resolved so it isn't re-decoded. `rows`: { marker, flipped:bool }.
+ */
+export async function setMarkerFlips(env, id, rows) {
+  if (!env.DB || rows.length === 0) return;
+  await ensureSchema(env);
+  await env.DB.batch(
+    rows.map((r) =>
+      env.DB.prepare(
+        `UPDATE vote_events SET flipped = ?, flip_resolved = 1 WHERE proposal = ? AND marker = ?`,
+      ).bind(r.flipped ? 1 : 0, id, r.marker),
+    ),
+  );
 }
 
 /** Set of marker pubkeys flagged as flipped, for joining onto the roster. */
@@ -102,7 +128,9 @@ export async function getFlippedMarkers(env, id) {
 /**
  * Upsert vote events (one per marker) in one D1 batch. INSERT OR REPLACE so a
  * marker whose choice changed (a flip) updates in place. `rows`: { marker, ts,
- * voter, choices:[idx], weight:string, flipped:bool }.
+ * voter, choices:[idx], weight:string, flipped:bool, flipResolved:bool }.
+ * A change-detection flip is recorded resolved (`flipped = flipResolved = 1`);
+ * a freshly-seen marker is recorded unresolved so the flip resolver decodes it.
  */
 export async function insertVoteEvents(env, id, rows) {
   if (!env.DB || rows.length === 0) return;
@@ -111,9 +139,12 @@ export async function insertVoteEvents(env, id, rows) {
     rows.map((r) =>
       env.DB.prepare(
         `INSERT OR REPLACE INTO vote_events
-           (proposal, marker, ts, voter, choices_json, weight, flipped)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, r.marker, r.ts, r.voter ?? null, JSON.stringify(r.choices), r.weight, r.flipped ? 1 : 0),
+           (proposal, marker, ts, voter, choices_json, weight, flipped, flip_resolved)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id, r.marker, r.ts, r.voter ?? null, JSON.stringify(r.choices), r.weight,
+        r.flipped ? 1 : 0, r.flipResolved ? 1 : 0,
+      ),
     ),
   );
 }

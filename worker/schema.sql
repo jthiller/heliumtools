@@ -70,7 +70,9 @@ CREATE TABLE IF NOT EXISTS vote_events (
   voter TEXT,
   choices_json TEXT NOT NULL,     -- [choiceIndex, ...]
   weight TEXT NOT NULL,           -- u128 veHNT (native units) as a string
-  flipped INTEGER NOT NULL DEFAULT 0, -- 1 if the voter changed their vote
+  flipped INTEGER NOT NULL DEFAULT 0,       -- 1 if the position changed its vote choice
+  flip_resolved INTEGER NOT NULL DEFAULT 0, -- 1 once the flip resolver decoded this marker's history
   PRIMARY KEY (proposal, marker)
 );
 CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts);
+CREATE INDEX IF NOT EXISTS idx_vote_events_unresolved ON vote_events (proposal, flip_resolved);

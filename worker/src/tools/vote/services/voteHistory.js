@@ -69,8 +69,11 @@ function decodeVsrInstruction(ix) {
  * batches votes for many positions, the marker must appear in the instruction's
  * accounts; if exactly one VSR vote instruction exists we attribute it even when
  * account matching is inconclusive (single-vote tx).
+ *
+ * Exported so the flip resolver (services/flips.js) can reuse the same
+ * attribution logic to decide whether a marker shows >1 distinct vote choice.
  */
-function actionsForMarker(tx, marker) {
+export function actionsForMarker(tx, marker) {
   const top = tx?.transaction?.message?.instructions || [];
   const inner = (tx?.meta?.innerInstructions || []).flatMap((g) => g.instructions || []);
   const decoded = [...top, ...inner].map(decodeVsrInstruction).filter(Boolean);

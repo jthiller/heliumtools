@@ -11,7 +11,8 @@ import {
   aggregateVotes,
   VoteError,
 } from "./builders.js";
-import { recordProposalVotes, resetLegacyFlips } from "./recording.js";
+import { recordProposalVotes } from "./recording.js";
+import { resolveProposalFlips } from "./flips.js";
 import { getFlippedMarkers } from "./history.js";
 import { getProxyMap } from "./proxies.js";
 import {
@@ -21,6 +22,7 @@ import {
   REFRESH_LOCK_TTL,
   TRACK_TTL_DAYS,
   MAX_NEW_MARKERS_PER_RUN,
+  FLIP_RESOLVE_PER_RUN,
 } from "../config.js";
 
 const snapKey = (id) => `vote:snap:${id}`;
@@ -154,10 +156,6 @@ export async function getTrackedProposals(env) {
 
 /** Cron entry point — refresh every tracked proposal, recording history. */
 export async function runVoteSnapshots(env) {
-  // One-time legacy-flip cleanup BEFORE any refresh, so the snapshot built this
-  // tick already reflects cleared flags (refreshSnapshot enriches the roster
-  // from getFlippedMarkers). No-op after the first run (KV-gated).
-  await resetLegacyFlips(env);
   const ids = await getTrackedProposals(env);
   // Cap the TOTAL new votes timed this invocation (one getSignaturesForAddress
   // each) across all proposals, so concurrent backfills can't blow the Workers
@@ -173,6 +171,20 @@ export async function runVoteSnapshots(env) {
       // VoteError (e.g. a tracked id whose proposal vanished) or RPC failure —
       // log and continue with the next proposal.
       console.error("vote snapshot failed", id, e?.message);
+    }
+  }
+
+  // Decode flip status for not-yet-resolved markers, also capped per invocation.
+  // The first runs after deploy back-fill every existing marker (flip_resolved
+  // defaults to 0), correcting flags; steady state only touches new markers. The
+  // roster picks up resolved flips on the next refresh (one-cycle lag, as noted).
+  let flipBudget = FLIP_RESOLVE_PER_RUN;
+  for (const id of ids) {
+    if (flipBudget <= 0) break;
+    try {
+      flipBudget -= await resolveProposalFlips(env, id, { limit: flipBudget });
+    } catch (e) {
+      console.error("vote flip resolve failed", id, e?.message);
     }
   }
   console.log(JSON.stringify({ event: "vote_snapshots", count: ids.length }));
