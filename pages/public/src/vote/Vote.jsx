@@ -279,15 +279,29 @@ function VoterRow({ v, proposal }) {
       >
         <td className="px-5 py-2">
           <div className="flex items-center gap-1.5">
-            <a
-              href={`https://solscan.io/account/${v.voter}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-xs text-content-secondary hover:text-content"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {truncateString(v.voter, 4, 4)}
-            </a>
+            {v.proxyName ? (
+              <Tooltip content={v.voter}>
+                <a
+                  href={`https://solscan.io/account/${v.voter}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-content hover:text-accent-text truncate max-w-[12rem]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {v.proxyName}
+                </a>
+              </Tooltip>
+            ) : (
+              <a
+                href={`https://solscan.io/account/${v.voter}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs text-content-secondary hover:text-content"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {truncateString(v.voter, 4, 4)}
+              </a>
+            )}
             <CopyButton text={v.voter} size="h-3 w-3" />
             {v.proxy && (
               <Tooltip content="Cast via a vote proxy / delegation">

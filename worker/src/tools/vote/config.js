@@ -68,6 +68,10 @@ export const MAX_NEW_MARKERS_PER_RUN = 500;
 // it was last viewed, then drops off.
 export const TRACK_TTL_DAYS = 8;
 
+// Proxy/delegate name registry (helium-vote-proxies) — changes only on PR merge,
+// so cache it for hours.
+export const PROXY_MAP_CACHE_TTL = 6 * 60 * 60;
+
 // The roster groups markers (one per voting position) by voter; we compute
 // aggregates over every marker but only return the heaviest N voters to the
 // client to bound the response size.
