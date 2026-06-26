@@ -106,7 +106,8 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   `getFlippedMarkers`, `insertVoteEvents` (upsert), `getHistory` (cumulative
   fold + downsample).
 - `services/voteHistory.js` — `getVoterHistory(env, proposal, voter)`: looks up
-  the voter's markers (D1), parses each marker's transactions, decoding each VSR
+  the voter's *flipped* markers (D1, capped at `MAX_VOTER_HISTORY_MARKERS`),
+  parses each marker's transactions, decoding each VSR
   vote/relinquish instruction's `choice` (u16 at offset 8 — uniform across all
   vote/relinquish/proxied variants) into a merged `[{ts, action, choice, marker}]`
   timeline. KV-cached.

@@ -53,12 +53,20 @@ export async function getRecordedMarkers(env, id) {
   return new Map((results || []).map((r) => [r.marker, r.choices_json]));
 }
 
-/** The marker pubkeys a given voter holds on a proposal (one per position). */
-export async function getVoterMarkers(env, id, voter) {
+/**
+ * The marker pubkeys a given voter holds on a proposal (one per position).
+ * `flippedOnly` restricts to positions that changed their vote — the only ones
+ * worth parsing for the flip timeline, which also bounds the work for a wallet
+ * with many positions.
+ */
+export async function getVoterMarkers(env, id, voter, { flippedOnly = false } = {}) {
   if (!env.DB) return [];
   await ensureSchema(env);
+  const where = flippedOnly
+    ? `proposal = ? AND voter = ? AND flipped = 1`
+    : `proposal = ? AND voter = ?`;
   const { results } = await env.DB.prepare(
-    `SELECT marker FROM vote_events WHERE proposal = ? AND voter = ?`,
+    `SELECT marker FROM vote_events WHERE ${where}`,
   ).bind(id, voter).all();
   return (results || []).map((r) => r.marker);
 }

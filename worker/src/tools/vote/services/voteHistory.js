@@ -14,7 +14,7 @@ import { VSR_PROGRAM } from "../../../lib/helium-solana.js";
 import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
 import { getSignaturesForAddress, getTransaction } from "./rpc.js";
 import { getVoterMarkers } from "./history.js";
-import { VOTER_HISTORY_CACHE_TTL } from "../config.js";
+import { VOTER_HISTORY_CACHE_TTL, MAX_VOTER_HISTORY_MARKERS } from "../config.js";
 
 const VSR = VSR_PROGRAM.toBase58();
 const key = (disc) => disc.join(",");
@@ -93,7 +93,10 @@ export async function getVoterHistory(env, proposal, voter) {
   const cached = await kvGetJson(env, cacheKey);
   if (cached) return cached;
 
-  const markers = await getVoterMarkers(env, proposal, voter);
+  // Only the voter's flipped positions are worth a timeline (a non-flipped
+  // position is a single vote), and capping bounds the getTransaction fan-out.
+  const markers = (await getVoterMarkers(env, proposal, voter, { flippedOnly: true }))
+    .slice(0, MAX_VOTER_HISTORY_MARKERS);
   const perMarker = await mapLimit(markers, MARKER_TX_CONCURRENCY, (m) => markerActions(env, m));
   const actions = perMarker.flat().sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
 
