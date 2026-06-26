@@ -291,7 +291,7 @@ function LiveTime({ value, formatter }) {
 
 function SummaryCard({ title, value }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-raised p-4 shadow-soft">
+    <div className="rounded-xl bg-surface-raised p-4 shadow-soft">
       <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
         {title}
       </p>
@@ -305,7 +305,7 @@ function SummaryCard({ title, value }) {
 function SetupNote() {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-6 rounded-xl border border-border bg-surface-raised shadow-soft">
+    <div className="mt-6 rounded-xl bg-surface-raised shadow-soft">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-content-secondary hover:text-content-primary"
@@ -388,7 +388,7 @@ function RegionBadge({ region }) {
 function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboard, onAssertLocation }) {
   if (gateways.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-surface-raised p-8 text-center shadow-soft">
+      <div className="rounded-xl bg-surface-raised p-8 text-center shadow-soft">
         <p className="text-sm text-content-tertiary">
           No gateways registered yet. Connect a gateway to get started.
         </p>
@@ -397,7 +397,7 @@ function GatewayTable({ gateways, selectedMac, onSelect, onchainStatus, onOnboar
   }
 
   return (
-    <div className="-mx-4 overflow-hidden border-y border-border bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl sm:border">
+    <div className="-mx-4 overflow-hidden bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -828,7 +828,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
   }, [packets]);
 
   return (
-    <div className="-mx-4 mt-4 border-y border-border bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl sm:border">
+    <div className="-mx-4 mt-4 bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl">
       {/* Persistent header — Hotspot identity stays visible across chart + table */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-3 sm:px-4">
         <div className="flex flex-wrap items-baseline gap-2">
@@ -1218,7 +1218,7 @@ function GatewayMapModal({ gateways, onClose }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="m-4 flex flex-1 overflow-hidden rounded-2xl border border-border bg-surface-raised shadow-lg lg:m-8">
+      <div className="m-4 flex flex-1 overflow-hidden rounded-2xl bg-surface-raised shadow-lg lg:m-8">
         {/* Map */}
         <div className="relative flex-1">
           <DeckGL
@@ -1687,7 +1687,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="mx-4 w-full max-w-lg rounded-2xl border border-border bg-surface-raised p-6 shadow-lg">
+      <div className="mx-4 w-full max-w-lg rounded-2xl bg-surface-raised p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-content-primary">
             Onboard Hotspot

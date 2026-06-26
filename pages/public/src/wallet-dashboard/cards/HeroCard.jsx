@@ -59,7 +59,7 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
   const fleetCount = summary?.fleet?.count;
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-border bg-surface-raised lg:col-span-12">
+    <section className="relative overflow-hidden rounded-2xl bg-surface-raised shadow-soft lg:col-span-12">
       {/* Atmosphere: dot grid + a soft teal glow (echoes the landing hero). */}
       <div className="pointer-events-none absolute inset-0 bg-grid-slate opacity-40 [background-size:22px_22px] dark:opacity-20" />
       <div className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-accent/10 blur-3xl" />

@@ -27,6 +27,18 @@
   /* Network */
   --color-iot: 5 150 105;
   --color-mobile: 124 58 237;
+
+  /* Layered soft shadow for boxes/cards (replaces 1px borders).
+     Contact + mid + ambient layers give depth without a hard edge. */
+  --shadow-card:
+    0 1px 2px 0 rgb(15 23 42 / 0.04),
+    0 4px 8px -2px rgb(15 23 42 / 0.05),
+    0 16px 32px -8px rgb(15 23 42 / 0.08);
+  /* Deeper variant for hover / floating elevation. */
+  --shadow-card-lg:
+    0 2px 4px -1px rgb(15 23 42 / 0.06),
+    0 8px 16px -4px rgb(15 23 42 / 0.08),
+    0 24px 48px -12px rgb(15 23 42 / 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -53,6 +65,19 @@
     /* Network */
     --color-iot: 52 211 153;
     --color-mobile: 167 139 250;
+
+    /* Darker drop layers register against the near-black surface; the faint
+       inset top-highlight redraws the card edge the border used to give. */
+    --shadow-card:
+      0 1px 2px 0 rgb(0 0 0 / 0.35),
+      0 4px 8px -2px rgb(0 0 0 / 0.40),
+      0 16px 32px -8px rgb(0 0 0 / 0.50),
+      inset 0 0 0 1px rgb(255 255 255 / 0.03);
+    --shadow-card-lg:
+      0 2px 4px -1px rgb(0 0 0 / 0.45),
+      0 8px 16px -4px rgb(0 0 0 / 0.50),
+      0 24px 48px -12px rgb(0 0 0 / 0.60),
+      inset 0 0 0 1px rgb(255 255 255 / 0.04);
   }
 }
 

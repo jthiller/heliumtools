@@ -112,7 +112,7 @@ export default function Tooltip({
             role="tooltip"
             id={id}
             style={{ position: "fixed", ...positionStyle }}
-            className={`pointer-events-none z-[1000] w-max max-w-[min(20rem,90vw)] whitespace-pre-line rounded-md border border-border-muted bg-surface-raised px-2.5 py-1.5 text-xs leading-relaxed text-content shadow-soft ${className}`}
+            className={`pointer-events-none z-[1000] w-max max-w-[min(20rem,90vw)] whitespace-pre-line rounded-md bg-surface-raised px-2.5 py-1.5 text-xs leading-relaxed text-content shadow-soft ${className}`}
           >
             {content}
           </span>,

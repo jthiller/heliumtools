@@ -71,7 +71,7 @@ export default function DcMintModal({ onClose, onSuccess, defaultDcAmount = 1000
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-raised p-6 shadow-lg">
+      <div className="mx-4 w-full max-w-md rounded-2xl bg-surface-raised p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-content-primary">Mint Data Credits</h3>
           <button onClick={onClose} className="text-content-tertiary hover:text-content-secondary">

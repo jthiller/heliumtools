@@ -611,7 +611,7 @@ export default function DcMintTool() {
           </button>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-border bg-surface-raised p-6">
+        <div className="mt-6 rounded-2xl bg-surface-raised shadow-soft p-6">
           {tab === "mint"
             ? <MintTab hntPrice={hntPrice} hntBalance={hntBalance} dcBalance={dcBalance}
                 hasHntAta={hasHntAta} hasDcAta={hasDcAta} onBalanceChange={refreshBalances} />

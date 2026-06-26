@@ -196,7 +196,7 @@ export default function DcPurchaseTool() {
               }`}
           >
             {resolved && (
-              <div className="rounded-xl border border-border bg-surface-raised overflow-hidden shadow-sm w-full max-w-full">
+              <div className="rounded-xl bg-surface-raised overflow-hidden shadow-soft w-full max-w-full">
                 {/* Header + Balance - Always visible */}
                 <div className="px-4 py-4 sm:px-5 sm:py-5">
                   <div className="flex items-center justify-between mb-3">

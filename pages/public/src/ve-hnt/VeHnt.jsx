@@ -102,7 +102,7 @@ function SummaryHeader({ totals, currentEpoch }) {
   const iotPending = Number(totals.pendingRewardsIot || 0);
   const mobilePending = Number(totals.pendingRewardsMobile || 0);
   return (
-    <div className="relative rounded-2xl border border-border bg-surface-raised">
+    <div className="relative rounded-2xl bg-surface-raised shadow-soft">
       {/* Headline */}
       <div className="grid grid-cols-2 divide-x divide-border-muted">
         <div className="px-6 sm:px-8 py-6">
@@ -384,7 +384,7 @@ function PositionCard({ position, index, total, canClaim, onClaim, claimState })
   const { primary: lockupPrimary, secondary: lockupSecondary } = lockupSummary(lockup);
 
   return (
-    <article className="group relative rounded-2xl border border-border bg-surface-raised transition hover:border-content-tertiary">
+    <article className="group relative rounded-2xl bg-surface-raised shadow-soft transition hover:shadow-soft-lg">
       {/* Header strip: index + status + landrush seal */}
       <header className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-border-muted">
         <div className="flex items-center gap-3">
@@ -621,7 +621,7 @@ function ExpiredSection({ positions }) {
   if (positions.length === 0) return null;
   const totalHnt = positions.reduce((a, p) => a + Number(p.amountLockedHnt || 0), 0);
   return (
-    <section className="rounded-2xl border border-border bg-surface-raised">
+    <section className="rounded-2xl bg-surface-raised shadow-soft">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between gap-3 px-6 py-4 text-left hover:bg-surface-inset/50 transition"
