@@ -33,8 +33,8 @@ const MARKER_DISC_B58 = bs58.encode(Buffer.from(VOTE_MARKER_DISCRIMINATOR));
 const PROPOSAL_OFFSET = 72;
 
 /** Decode ProposalV0 + compute the authoritative outcome. Throws VoteError. */
-export async function buildProposalData(env, id, address) {
-  const account = await getAccount(env, id);
+export async function buildProposalData(env, address) {
+  const account = await getAccount(env, address);
   if (!account) throw new VoteError("Proposal not found.", 404);
   if (account.owner !== PROPOSAL_PROGRAM.toBase58()) {
     throw new VoteError("Account is not a Helium governance proposal.", 400);
@@ -71,8 +71,13 @@ export async function buildProposalData(env, id, address) {
   };
 }
 
-/** The live voter roster via getProgramAccounts on the VSR program. */
-export async function buildVotesData(env, id, address) {
+/**
+ * Fetch + decode every live VoteMarkerV0 for a proposal (getProgramAccounts on
+ * the VSR program). Returns markers with their account pubkey, so callers that
+ * need per-vote timing can look up each marker's creation tx. Shared by
+ * aggregateVotes (the roster) and the history recorder.
+ */
+export async function fetchProposalMarkers(env, address) {
   let accounts = await getProgramAccounts(env, VSR_PROGRAM, [
     { offset: 0, bytesBase58: MARKER_DISC_B58 },
     { offset: PROPOSAL_OFFSET, bytesBase58: address },
@@ -89,12 +94,8 @@ export async function buildVotesData(env, id, address) {
     accounts = accounts.slice(0, MAX_MARKERS_SCANNED);
   }
 
-  const perChoice = new Map();
-  const voters = new Set();
-  let totalWeight = 0n;
   const markers = [];
-
-  for (const { buf } of accounts) {
+  for (const { pubkey, buf } of accounts) {
     let m;
     try {
       m = decodeVoteMarker(buf);
@@ -102,16 +103,30 @@ export async function buildVotesData(env, id, address) {
       continue;
     }
     if (m.relinquished) continue;
+    markers.push({ pubkey, ...m });
+  }
+  return { markers, scanCapped };
+}
+
+/**
+ * Aggregate already-fetched markers into the voter-roster response. Pure, so
+ * the snapshotter can fetch markers once (via fetchProposalMarkers) and feed
+ * them to both this and the history recorder without a second getProgramAccounts.
+ */
+export function aggregateVotes({ markers, scanCapped }, address) {
+  const perChoice = new Map();
+  const voters = new Set();
+  let totalWeight = 0n;
+  for (const m of markers) {
     totalWeight += m.weight;
     voters.add(m.voter);
     for (const c of m.choices) {
       perChoice.set(c, (perChoice.get(c) || 0n) + m.weight);
     }
-    markers.push(m);
   }
 
-  markers.sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
-  const returned = markers.slice(0, MAX_MARKERS_RETURNED);
+  const sorted = [...markers].sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
+  const returned = sorted.slice(0, MAX_MARKERS_RETURNED);
 
   return {
     proposal: address,
@@ -141,8 +156,8 @@ export async function buildVotesData(env, id, address) {
 }
 
 /** Time-ordered recent transactions on the proposal account (newest first). */
-export async function buildActivityData(env, id, address, { limit = DEFAULT_ACTIVITY_LIMIT, before = null } = {}) {
-  const sigs = await getSignaturesForAddress(env, id, { limit, before });
+export async function buildActivityData(env, address) {
+  const sigs = await getSignaturesForAddress(env, address, { limit: DEFAULT_ACTIVITY_LIMIT });
   const activity = sigs.map((s) => ({
     signature: s.signature,
     blockTime: s.blockTime ?? null,
@@ -150,9 +165,21 @@ export async function buildActivityData(env, id, address, { limit = DEFAULT_ACTI
     success: !s.err,
     memo: s.memo || null,
   }));
+  return { proposal: address, activity };
+}
+
+/** The zero-roster shape, for when the marker fetch fails a snapshot cycle. */
+export function emptyVotesData(address) {
   return {
     proposal: address,
-    activity,
-    cursor: activity.length === limit ? activity[activity.length - 1].signature : null,
+    markerCount: 0,
+    uniqueVoters: 0,
+    totalWeight: "0",
+    totalVeHnt: 0,
+    truncated: false,
+    scanCapped: false,
+    returned: 0,
+    perChoice: [],
+    votes: [],
   };
 }

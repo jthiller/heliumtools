@@ -8,7 +8,7 @@
 // since the body rarely changes.
 
 import { MAX_CONTENT_BYTES, MAX_CONTENT_CHARS, CONTENT_CACHE_TTL } from "../config.js";
-import { kvGetJson, kvPutJson } from "../utils.js";
+import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
 
 /**
  * Validate an untrusted uri for outbound fetch. Returns a safe https URL string

@@ -1,77 +1,74 @@
-// Vote history time-series, stored in D1 (the `DB` binding). One row per
-// proposal per 15-minute bucket: the authoritative per-choice tally over time,
-// so the frontend can chart a vote's arc across its (e.g. 7-day) lifetime.
+// Vote history time-series, stored in D1 (the `DB` binding). One immutable row
+// per vote — keyed by its VoteMarkerV0 account — recording the exact blockTime
+// the vote was cast, the choice(s), and the weight. The cumulative per-choice
+// curve is computed at read time, so the chart reflects precise vote times (not
+// coarse intervals). Rows are appended incrementally by the snapshot cron.
 
-import { kvGetJson, kvPutJson } from "../utils.js";
-import {
-  HISTORY_BUCKET_SECONDS,
-  HISTORY_RETENTION_DAYS,
-  HISTORY_CACHE_TTL,
-} from "../config.js";
+import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
+import { weightToVeHnt } from "../utils.js";
+import { HISTORY_CACHE_TTL, MAX_HISTORY_POINTS } from "../config.js";
 
 let schemaReady = false;
 
 // CREATE IF NOT EXISTS — idempotent, so the table self-provisions on first use
-// (also mirrored in worker/schema.sql as the source of truth). Cached per
-// isolate to avoid a round-trip on every call.
+// (also mirrored in worker/schema.sql). Cached per isolate.
 async function ensureSchema(env) {
   if (schemaReady || !env.DB) return;
   await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS vote_snapshots (
+    `CREATE TABLE IF NOT EXISTS vote_events (
        proposal TEXT NOT NULL,
+       marker TEXT NOT NULL,
        ts INTEGER NOT NULL,
-       total_weight TEXT NOT NULL,
-       total_vehnt REAL NOT NULL,
-       unique_voters INTEGER,
-       marker_count INTEGER,
+       voter TEXT,
        choices_json TEXT NOT NULL,
-       PRIMARY KEY (proposal, ts)
+       weight TEXT NOT NULL,
+       PRIMARY KEY (proposal, marker)
      )`,
+  ).run();
+  await env.DB.prepare(
+    `CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts)`,
   ).run();
   schemaReady = true;
 }
 
 /**
- * Append one history point for a snapshot, bucketed to a 15-min boundary
- * (INSERT OR IGNORE → at most one point per bucket regardless of trigger), then
- * prune points older than the retention window.
+ * The set of marker pubkeys already recorded for a proposal (to skip re-timing).
+ * Reads all rows for the proposal each run; fine at the documented scale
+ * (hundreds–low-thousands of voters), would need windowing far beyond that.
  */
-export async function appendSnapshot(env, id, snapshot) {
-  if (!env.DB) return;
+export async function getRecordedMarkers(env, id) {
+  if (!env.DB) return new Set();
   await ensureSchema(env);
-
-  const p = snapshot.proposal;
-  if (!p || !Array.isArray(p.choices)) return;
-
-  const ts = Math.floor(snapshot.snapshotAt / 1000);
-  const bucketTs = Math.floor(ts / HISTORY_BUCKET_SECONDS) * HISTORY_BUCKET_SECONDS;
-  const choices = p.choices.map((c) => ({
-    index: c.index,
-    weight: c.weight,
-    veHnt: c.veHnt,
-  }));
-
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO vote_snapshots
-       (proposal, ts, total_weight, total_vehnt, unique_voters, marker_count, choices_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(
-    id,
-    bucketTs,
-    p.totalWeight,
-    p.totalVeHnt,
-    snapshot.votes?.uniqueVoters ?? null,
-    snapshot.votes?.markerCount ?? null,
-    JSON.stringify(choices),
-  ).run();
-
-  const cutoff = bucketTs - HISTORY_RETENTION_DAYS * 86400;
-  await env.DB.prepare(
-    `DELETE FROM vote_snapshots WHERE proposal = ? AND ts < ?`,
-  ).bind(id, cutoff).run();
+  const { results } = await env.DB.prepare(
+    `SELECT marker FROM vote_events WHERE proposal = ?`,
+  ).bind(id).all();
+  return new Set((results || []).map((r) => r.marker));
 }
 
-/** Read the retained history points for a proposal, oldest first. KV-cached. */
+/**
+ * Insert vote events (one per marker) in one D1 batch. INSERT OR IGNORE so a
+ * marker recorded once is never rewritten. `rows`: { marker, ts, voter,
+ * choices:[idx], weight:string }.
+ */
+export async function insertVoteEvents(env, id, rows) {
+  if (!env.DB || rows.length === 0) return;
+  await ensureSchema(env);
+  await env.DB.batch(
+    rows.map((r) =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO vote_events
+           (proposal, marker, ts, voter, choices_json, weight)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(id, r.marker, r.ts, r.voter ?? null, JSON.stringify(r.choices), r.weight),
+    ),
+  );
+}
+
+/**
+ * Read the per-vote events and fold them into a cumulative per-choice series.
+ * Each point carries the exact vote time and the running cumulative veHNT for
+ * every choice seen so far. KV-cached; downsampled to MAX_HISTORY_POINTS.
+ */
 export async function getHistory(env, id) {
   const cacheKey = `vote:histcache:${id}`;
   const cached = await kvGetJson(env, cacheKey);
@@ -80,29 +77,54 @@ export async function getHistory(env, id) {
   let points = [];
   if (env.DB) {
     await ensureSchema(env);
-    const cutoff = Math.floor(Date.now() / 1000) - HISTORY_RETENTION_DAYS * 86400;
     const { results } = await env.DB.prepare(
-      `SELECT ts, total_weight, total_vehnt, unique_voters, marker_count, choices_json
-         FROM vote_snapshots WHERE proposal = ? AND ts >= ? ORDER BY ts ASC`,
-    ).bind(id, cutoff).all();
-    points = (results || []).map((r) => ({
-      ts: r.ts,
-      totalWeight: r.total_weight,
-      totalVeHnt: r.total_vehnt,
-      uniqueVoters: r.unique_voters,
-      markerCount: r.marker_count,
-      choices: safeParse(r.choices_json),
-    }));
+      `SELECT ts, choices_json, weight FROM vote_events WHERE proposal = ? ORDER BY ts ASC, marker ASC`,
+    ).bind(id).all();
+
+    const perChoice = new Map(); // choiceIndex -> cumulative bigint
+    const all = (results || []).map((r) => {
+      let weight = 0n;
+      try { weight = BigInt(r.weight); } catch { /* skip bad row */ }
+      for (const ci of safeParse(r.choices_json)) {
+        perChoice.set(ci, (perChoice.get(ci) || 0n) + weight);
+      }
+      return {
+        ts: r.ts,
+        choices: [...perChoice.entries()].map(([index, w]) => ({ index, veHnt: weightToVeHnt(w) })),
+      };
+    });
+    const sampled = downsample(all, MAX_HISTORY_POINTS);
+    // `total` is the true vote count (pre-downsample) for the UI label.
+    const body = { proposal: id, points: sampled, total: all.length };
+    await kvPutJson(env, cacheKey, body, HISTORY_CACHE_TTL);
+    return body;
   }
 
-  const body = { proposal: id, points };
+  const body = { proposal: id, points, total: points.length };
   await kvPutJson(env, cacheKey, body, HISTORY_CACHE_TTL);
   return body;
 }
 
+// Keep the first + last points and evenly sample the middle so a huge vote
+// stays under the payload cap while preserving the curve's shape. Skips
+// collisions where rounding maps consecutive samples to the same index.
+function downsample(points, max) {
+  if (points.length <= max) return points;
+  const step = (points.length - 1) / (max - 1);
+  const out = [];
+  let last = -1;
+  for (let i = 0; i < max; i++) {
+    const idx = Math.round(i * step);
+    if (idx !== last) { out.push(points[idx]); last = idx; }
+  }
+  if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
+  return out;
+}
+
 function safeParse(s) {
   try {
-    return JSON.parse(s);
+    const v = JSON.parse(s);
+    return Array.isArray(v) ? v : [];
   } catch {
     return [];
   }

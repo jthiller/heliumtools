@@ -1,7 +1,6 @@
 import { jsonResponse } from "../../../lib/response.js";
-import { parseProposalId } from "../utils.js";
+import { resolveProposal } from "../utils.js";
 import { getOrRefreshSnapshot, VoteError } from "../services/snapshot.js";
-import { DEFAULT_PROPOSAL } from "../config.js";
 
 /**
  * GET /vote/proposal?id=<pubkey>
@@ -11,11 +10,11 @@ import { DEFAULT_PROPOSAL } from "../config.js";
  * the client how fresh it is.
  */
 export async function handleProposal(url, env, ctx) {
-  const id = parseProposalId(url.searchParams.get("id") || DEFAULT_PROPOSAL);
-  if (!id) return jsonResponse({ error: "Invalid proposal address." }, 400);
+  const p = resolveProposal(url);
+  if (!p) return jsonResponse({ error: "Invalid proposal address." }, 400);
 
   try {
-    const snap = await getOrRefreshSnapshot(env, id.toBase58(), ctx);
+    const snap = await getOrRefreshSnapshot(env, p.address, ctx);
     if (!snap || !snap.proposal) return jsonResponse({ warming: true }, 202);
     return jsonResponse({ ...snap.proposal, snapshotAt: snap.snapshotAt });
   } catch (err) {

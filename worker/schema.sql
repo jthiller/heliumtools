@@ -58,17 +58,18 @@ CREATE TABLE IF NOT EXISTS oui_balances (
   FOREIGN KEY (oui) REFERENCES ouis(oui)
 );
 
--- Vote tool: time-series of a governance proposal's tally. One row per proposal
--- per 15-minute bucket, written by the snapshot cron (worker/src/tools/vote).
--- The worker also self-provisions this via CREATE TABLE IF NOT EXISTS, so it
--- works on a fresh D1 without a manual migration.
-CREATE TABLE IF NOT EXISTS vote_snapshots (
+-- Vote tool: one immutable event per vote (worker/src/tools/vote), keyed by the
+-- VoteMarkerV0 account, recording the exact blockTime the vote was cast. The
+-- cumulative per-choice curve is folded at read time, so the chart shows precise
+-- vote times. Appended incrementally by the snapshot cron; the worker also
+-- self-provisions this via CREATE TABLE IF NOT EXISTS (no manual migration).
+CREATE TABLE IF NOT EXISTS vote_events (
   proposal TEXT NOT NULL,
-  ts INTEGER NOT NULL,            -- unix seconds, bucketed to 15 min
-  total_weight TEXT NOT NULL,     -- u128 veHNT (native units) as a string
-  total_vehnt REAL NOT NULL,      -- human veHNT (total_weight / 1e8)
-  unique_voters INTEGER,
-  marker_count INTEGER,
-  choices_json TEXT NOT NULL,     -- [{ index, weight, veHnt }]
-  PRIMARY KEY (proposal, ts)
+  marker TEXT NOT NULL,           -- VoteMarkerV0 account pubkey (one per vote)
+  ts INTEGER NOT NULL,            -- vote blockTime, unix seconds (precise)
+  voter TEXT,
+  choices_json TEXT NOT NULL,     -- [choiceIndex, ...]
+  weight TEXT NOT NULL,           -- u128 veHNT (native units) as a string
+  PRIMARY KEY (proposal, marker)
 );
+CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts);

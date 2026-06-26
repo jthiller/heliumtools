@@ -23,15 +23,11 @@ export function fetchVotes(id) {
 }
 
 /** Time-ordered recent vote/lifecycle transactions on the proposal. */
-export function fetchActivity(id, { limit, before } = {}) {
-  const params = {};
-  if (id) params.id = id;
-  if (limit) params.limit = limit;
-  if (before) params.before = before;
-  return get("/activity", params);
+export function fetchActivity(id) {
+  return get("/activity", id ? { id } : {});
 }
 
-/** Recorded tally time-series for charting the vote's arc over time. */
+/** Recorded per-vote cumulative time-series for charting the vote's arc. */
 export function fetchHistory(id) {
   return get("/history", id ? { id } : {});
 }

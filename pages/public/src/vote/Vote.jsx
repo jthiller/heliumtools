@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   ArrowTopRightOnSquareIcon,
@@ -352,27 +352,42 @@ function fmtAxisTime(ms) {
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function VoteTrendChart({ history, proposal }) {
+const VoteTrendChart = memo(function VoteTrendChart({ history, proposal }) {
   const dark = useDarkMode();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const colors = useMemo(() => readChartColors(), [dark]);
   const points = history?.points || [];
+  const voteCount = history?.total ?? points.length;
 
-  const series = (proposal?.choices || []).map((c) => ({
-    key: `c${c.index}`,
-    name: c.name,
-    color: choiceHex(c.name, c.index),
-  }));
-
-  const data = useMemo(
+  const series = useMemo(
     () =>
-      points.map((pt) => {
-        const row = { t: pt.ts * 1000 };
-        for (const c of pt.choices || []) row[`c${c.index}`] = c.veHnt;
-        return row;
-      }),
-    [points],
+      (proposal?.choices || []).map((c) => ({
+        key: `c${c.index}`,
+        name: c.name,
+        color: choiceHex(c.name, c.index),
+      })),
+    [proposal?.choices],
   );
+
+  // One row per vote (precise blockTime). Every choice gets a value on every
+  // row (0 until its first vote) so the cumulative step-lines stay continuous.
+  // Seed a zero point at voting-open so each line starts at the baseline.
+  const data = useMemo(() => {
+    const indices = (proposal?.choices || []).map((c) => c.index);
+    const rows = points.map((pt) => {
+      const byIdx = new Map((pt.choices || []).map((c) => [c.index, c.veHnt]));
+      const row = { t: pt.ts * 1000 };
+      for (const idx of indices) row[`c${idx}`] = byIdx.get(idx) ?? 0;
+      return row;
+    });
+    const startSec = proposal?.startTs || proposal?.createdAt;
+    if (startSec && rows.length && rows[0].t > startSec * 1000) {
+      const seed = { t: startSec * 1000 };
+      for (const idx of indices) seed[`c${idx}`] = 0;
+      rows.unshift(seed);
+    }
+    return rows;
+  }, [points, proposal?.choices, proposal?.startTs, proposal?.createdAt]);
 
   if (data.length === 0) {
     return (
@@ -381,8 +396,8 @@ function VoteTrendChart({ history, proposal }) {
           Vote trend
         </p>
         <p className="text-sm text-content-secondary">
-          Collecting data — the worker records a point every ~15 minutes. The
-          chart fills in as the vote progresses.
+          Collecting data — the worker records each vote at its on-chain time and
+          refreshes every ~15 minutes. The chart fills in shortly.
         </p>
       </section>
     );
@@ -395,7 +410,7 @@ function VoteTrendChart({ history, proposal }) {
           Vote trend · veHNT over time
         </h2>
         <span className="font-mono text-[10px] text-content-tertiary tabular-nums">
-          {data.length} point{data.length === 1 ? "" : "s"}
+          {voteCount} vote{voteCount === 1 ? "" : "s"}
         </span>
       </header>
       <div className="px-2 py-4" style={{ height: 280 }}>
@@ -436,7 +451,7 @@ function VoteTrendChart({ history, proposal }) {
             {series.map((s) => (
               <Line
                 key={s.key}
-                type="monotone"
+                type="stepAfter"
                 dataKey={s.key}
                 name={s.name}
                 stroke={s.color}
@@ -459,7 +474,7 @@ function VoteTrendChart({ history, proposal }) {
       </div>
     </section>
   );
-}
+});
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
@@ -476,8 +491,6 @@ export default function Vote() {
   const [activityError, setActivityError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [, setTick] = useState(0);
 
   // Keep the latest id in a ref so the polling effect doesn't restart on every
   // render but always fetches the current proposal.
@@ -500,7 +513,6 @@ export default function Vote() {
       else setVotesError(v.reason);
       if (a.status === "fulfilled") { setActivity(a.value); setActivityError(null); }
       else setActivityError(a.reason);
-      setUpdatedAt(Date.now());
     } finally {
       if (idRef.current === id) {
         setRefreshing(false);
@@ -545,14 +557,6 @@ export default function Vote() {
     return () => clearInterval(interval);
   }, [refreshHistory]);
 
-  // Light heartbeat so relative timestamps and "updated ago" stay fresh.
-  useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 10_000);
-    return () => clearInterval(t);
-  }, []);
-
-  const updatedAgo = updatedAt ? Math.round((Date.now() - updatedAt) / 1000) : null;
-
   return (
     <div className="min-h-screen bg-surface">
       <Header breadcrumb="Vote" />
@@ -585,11 +589,7 @@ export default function Vote() {
                 <div className="flex items-center gap-3">
                   <Tooltip content="Polled on-chain by the worker on a schedule (~every 15 min) and served from cache — so viewing this page doesn't hit the RPC.">
                     <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
-                      {proposal.snapshotAt
-                        ? `data ${relTime(Math.floor(proposal.snapshotAt / 1000))}`
-                        : updatedAgo != null
-                          ? `updated ${updatedAgo < 5 ? "just now" : `${updatedAgo}s ago`}`
-                          : ""}
+                      {proposal.snapshotAt ? `data ${relTime(Math.floor(proposal.snapshotAt / 1000))}` : ""}
                     </span>
                   </Tooltip>
                   <button
