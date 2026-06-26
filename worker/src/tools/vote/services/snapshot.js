@@ -12,6 +12,7 @@ import {
   VoteError,
 } from "./builders.js";
 import { recordProposalVotes } from "./recording.js";
+import { getFlippedMarkers } from "./history.js";
 import {
   DEFAULT_PROPOSAL,
   SNAPSHOT_TTL,
@@ -76,6 +77,17 @@ export async function refreshSnapshot(env, id) {
       votes: markersResult ? aggregateVotes(markersResult, id) : null,
       activity: a.status === "fulfilled" ? a.value : null,
     };
+
+    // Flag roster rows whose voter changed a vote on any of their positions
+    // (from the prior cron's recording — the icon may lag a flip by one cycle,
+    // which is fine). Drop the internal per-position marker list from the wire.
+    if (snapshot.votes) {
+      const flipped = await getFlippedMarkers(env, id);
+      for (const v of snapshot.votes.votes) {
+        v.flipped = Array.isArray(v.markers) && v.markers.some((mk) => flipped.has(mk));
+        delete v.markers;
+      }
+    }
 
     await kvPutJson(env, snapKey(id), snapshot, SNAPSHOT_TTL);
     await trackProposal(env, id);

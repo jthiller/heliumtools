@@ -71,11 +71,17 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 **Endpoints (all GET, read-only, served from snapshot/D1 — not RPC):**
 - `GET /vote/proposal?id=` — authoritative outcome + `snapshotAt`. `202
   {warming:true}` while the first snapshot builds.
-- `GET /vote/votes?id=` — voter roster + per-choice aggregates + `snapshotAt`
-  (`unavailable:true` if the roster fetch failed that cycle).
+- `GET /vote/votes?id=` — voter roster **grouped by voter** (one row per wallet:
+  total veHNT summed across their positions, distinct choices, `positions` count,
+  `flipped`) + per-choice aggregates + `snapshotAt` (`unavailable:true` if the
+  roster fetch failed that cycle).
 - `GET /vote/activity?id=` — recent vote transactions (newest first) +
   `snapshotAt`.
 - `GET /vote/history?id=` — per-vote cumulative time-series for the chart.
+- `GET /vote/voter-history?id=&voter=` — one voter's merged vote/flip timeline
+  across their positions (`[{ts, action, choice, marker}]`), parsed from each
+  marker's transactions. Lazy (loaded when a flipped roster row is expanded),
+  KV-cached.
 
 **Services:**
 - `services/rpc.js` — vote-specific RPC wrappers (`getAccount`,
@@ -85,14 +91,25 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   `VoteMarkerV0`; a `Reader` cursor handles the variable-length proposal layout.
 - `services/builders.js` — RPC→object builders (`buildProposalData`,
   `buildActivityData`), `fetchProposalMarkers` (shared by the roster and the
-  recorder), `aggregateVotes` (pure: markers → roster), `emptyVotesData`, and
-  `VoteError` (carries 404/400).
+  recorder), `aggregateVotes` (pure: markers → **per-voter** roster, summing
+  veHNT across each wallet's positions), `emptyVotesData`, and `VoteError`.
 - `services/snapshot.js` — `refreshSnapshot` (single-flight build + KV write +
   track), `getOrRefreshSnapshot` (viewer read-through), `runVoteSnapshots`
   (cron: refresh + record), tracked-set helpers.
 - `services/recording.js` — incremental per-vote recorder (see History above).
-- `services/history.js` — D1 `vote_events` (self-provisioning), `getRecordedMarkers`,
-  `insertVoteEvents`, `getHistory` (cumulative fold + downsample).
+  Also sets each event's `flipped` flag: true when a marker first seen already
+  had >1 vote-action tx, or when a recorded marker's choice later changes
+  (change-detection — `getRecordedMarkers` returns marker→choices so the recorder
+  re-processes flipped markers in place).
+- `services/history.js` — D1 `vote_events` (self-provisioning, incl. the
+  `flipped` column + ALTER migration), `getRecordedMarkers` (marker→choices),
+  `getFlippedMarkers`, `insertVoteEvents` (upsert), `getHistory` (cumulative
+  fold + downsample).
+- `services/voteHistory.js` — `getVoterHistory(env, proposal, voter)`: looks up
+  the voter's markers (D1), parses each marker's transactions, decoding each VSR
+  vote/relinquish instruction's `choice` (u16 at offset 8 — uniform across all
+  vote/relinquish/proxied variants) into a merged `[{ts, action, choice, marker}]`
+  timeline. KV-cached.
 - `services/content.js` — best-effort off-chain `uri` body fetch with an SSRF
   guard (https only; no IP-literal / localhost / internal hosts) and a streamed
   byte cap.
@@ -112,7 +129,9 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `pages/public/src/vote/Vote.jsx` — status pill, outcome bars, **`VoteTrendChart`**
   (recharts; one `stepAfter` line per choice, cumulative veHNT at precise vote
   times, seeded with a zero point at voting-open; `memo`'d so live-data polls
-  don't reconcile it), voter roster, activity feed, collapsible details. Polls
+  don't reconcile it), voter roster (rows flagged `flipped` show a ⇄ icon and
+  expand to that voter's vote timeline via `/voter-history`), activity feed,
+  collapsible details. Polls
   live data every 60s and history every 5 min while visible; freshness from
   `snapshotAt`. No wallet connect. Routes `/vote` and `/vote/:proposalId` in
   `main.jsx` — **deliberately absent from `Landing.jsx`** (blind page).
@@ -157,12 +176,15 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `vote:tracked` — `{ id: lastSeenMs }` set the cron iterates.
 - `vote:content:<id>` — cached off-chain body (`CONTENT_CACHE_TTL`).
 - `vote:histcache:<id>` — cached `/history` response (`HISTORY_CACHE_TTL`).
+- `vote:vhist:<proposal>:<voter>` — cached per-voter flip timeline (`VOTER_HISTORY_CACHE_TTL`).
 - `rl:vote:*` — IP rate-limit counter.
 
 ### D1 (`DB` binding) — `vote_events`
-One immutable row per vote, `PRIMARY KEY (proposal, marker)`: `ts` (exact vote
-blockTime), `voter`, `choices_json` (`[index,...]`), `weight` (u128 string).
-Self-provisions via `CREATE TABLE IF NOT EXISTS` (also in `worker/schema.sql`).
+One row per vote, `PRIMARY KEY (proposal, marker)`: `ts` (exact vote blockTime),
+`voter`, `choices_json` (`[index,...]`), `weight` (u128 string), `flipped` (1 if
+the voter changed their vote). Self-provisions via `CREATE TABLE IF NOT EXISTS`
+(+ an `ALTER TABLE ADD COLUMN flipped` migration; also in `worker/schema.sql`).
+Rows for a changed marker are upserted in place (INSERT OR REPLACE).
 Cumulative is computed at read time. (The earlier bucketed `vote_snapshots` table
 is superseded; it's harmless if it lingers in an existing DB.)
 

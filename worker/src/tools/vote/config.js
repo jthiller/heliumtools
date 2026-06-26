@@ -53,6 +53,9 @@ export const CONTENT_CACHE_TTL = 6 * 60 * 60;
 // very large vote stays under a sane payload size.
 export const HISTORY_CACHE_TTL = 60;
 export const MAX_HISTORY_POINTS = 1500;
+// Per-voter flip timeline (parsed from the marker's transactions) — cached
+// longer since it only changes when that voter acts again.
+export const VOTER_HISTORY_CACHE_TTL = 10 * 60;
 // Recording: how many marker creation-times to look up concurrently, and the
 // max new votes timed per cron run (a big first run spreads over a few ticks).
 export const MARKER_TIME_CONCURRENCY = 8;
@@ -62,10 +65,10 @@ export const MAX_NEW_MARKERS_PER_RUN = 500;
 // it was last viewed, then drops off.
 export const TRACK_TTL_DAYS = 8;
 
-// getProgramAccounts can return one VoteMarkerV0 per voting position. We compute
-// aggregates over every marker but only return the heaviest N to the client to
-// bound the response size.
-export const MAX_MARKERS_RETURNED = 500;
+// The roster groups markers (one per voting position) by voter; we compute
+// aggregates over every marker but only return the heaviest N voters to the
+// client to bound the response size.
+export const MAX_VOTERS_RETURNED = 500;
 
 // getSignaturesForAddress page size for the activity feed.
 export const DEFAULT_ACTIVITY_LIMIT = 25;

@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS vote_events (
   voter TEXT,
   choices_json TEXT NOT NULL,     -- [choiceIndex, ...]
   weight TEXT NOT NULL,           -- u128 veHNT (native units) as a string
+  flipped INTEGER NOT NULL DEFAULT 0, -- 1 if the voter changed their vote
   PRIMARY KEY (proposal, marker)
 );
 CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts);

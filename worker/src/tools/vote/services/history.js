@@ -22,33 +22,61 @@ async function ensureSchema(env) {
        voter TEXT,
        choices_json TEXT NOT NULL,
        weight TEXT NOT NULL,
+       flipped INTEGER NOT NULL DEFAULT 0,
        PRIMARY KEY (proposal, marker)
      )`,
   ).run();
   await env.DB.prepare(
     `CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts)`,
   ).run();
+  // Migrate an older table created before `flipped` existed (ignore if present).
+  try {
+    await env.DB.prepare(`ALTER TABLE vote_events ADD COLUMN flipped INTEGER NOT NULL DEFAULT 0`).run();
+  } catch {
+    /* column already exists */
+  }
   schemaReady = true;
 }
 
 /**
- * The set of marker pubkeys already recorded for a proposal (to skip re-timing).
- * Reads all rows for the proposal each run; fine at the documented scale
- * (hundreds–low-thousands of voters), would need windowing far beyond that.
+ * Map of marker pubkey → recorded choices_json, for the proposal. The recorder
+ * uses it to skip unchanged markers and to detect flips (current choice differs
+ * from what we stored). Reads all rows for the proposal — fine at the documented
+ * scale (hundreds–low-thousands of voters), would need windowing far beyond that.
  */
 export async function getRecordedMarkers(env, id) {
+  if (!env.DB) return new Map();
+  await ensureSchema(env);
+  const { results } = await env.DB.prepare(
+    `SELECT marker, choices_json FROM vote_events WHERE proposal = ?`,
+  ).bind(id).all();
+  return new Map((results || []).map((r) => [r.marker, r.choices_json]));
+}
+
+/** The marker pubkeys a given voter holds on a proposal (one per position). */
+export async function getVoterMarkers(env, id, voter) {
+  if (!env.DB) return [];
+  await ensureSchema(env);
+  const { results } = await env.DB.prepare(
+    `SELECT marker FROM vote_events WHERE proposal = ? AND voter = ?`,
+  ).bind(id, voter).all();
+  return (results || []).map((r) => r.marker);
+}
+
+/** Set of marker pubkeys flagged as flipped, for joining onto the roster. */
+export async function getFlippedMarkers(env, id) {
   if (!env.DB) return new Set();
   await ensureSchema(env);
   const { results } = await env.DB.prepare(
-    `SELECT marker FROM vote_events WHERE proposal = ?`,
+    `SELECT marker FROM vote_events WHERE proposal = ? AND flipped = 1`,
   ).bind(id).all();
   return new Set((results || []).map((r) => r.marker));
 }
 
 /**
- * Insert vote events (one per marker) in one D1 batch. INSERT OR IGNORE so a
- * marker recorded once is never rewritten. `rows`: { marker, ts, voter,
- * choices:[idx], weight:string }.
+ * Upsert vote events (one per marker) in one D1 batch. INSERT OR REPLACE so a
+ * marker whose choice changed (a flip) updates in place. `rows`: { marker, ts,
+ * voter, choices:[idx], weight:string, flipped:bool }.
  */
 export async function insertVoteEvents(env, id, rows) {
   if (!env.DB || rows.length === 0) return;
@@ -56,10 +84,10 @@ export async function insertVoteEvents(env, id, rows) {
   await env.DB.batch(
     rows.map((r) =>
       env.DB.prepare(
-        `INSERT OR IGNORE INTO vote_events
-           (proposal, marker, ts, voter, choices_json, weight)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-      ).bind(id, r.marker, r.ts, r.voter ?? null, JSON.stringify(r.choices), r.weight),
+        `INSERT OR REPLACE INTO vote_events
+           (proposal, marker, ts, voter, choices_json, weight, flipped)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, r.marker, r.ts, r.voter ?? null, JSON.stringify(r.choices), r.weight, r.flipped ? 1 : 0),
     ),
   );
 }
