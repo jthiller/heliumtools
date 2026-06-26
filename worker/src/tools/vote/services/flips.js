@@ -9,7 +9,7 @@
 // instructions, which is what this module does, in bounded per-cron batches.
 
 import { getSignaturesForAddress, getTransaction } from "./rpc.js";
-import { actionsForMarker } from "./voteHistory.js";
+import { actionsForMarker } from "./voteDecode.js";
 import { getUnresolvedMarkers, setMarkerFlips } from "./history.js";
 import { FLIP_RESOLVE_CONCURRENCY } from "../config.js";
 

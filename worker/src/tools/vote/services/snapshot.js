@@ -64,21 +64,30 @@ async function releaseLock(env, id) {
 export async function refreshSnapshot(env, id) {
   if (!(await acquireLock(env, id))) return undefined;
   try {
-    const [p, m, a] = await Promise.allSettled([
+    const [p, m] = await Promise.allSettled([
       buildProposalData(env, id),
       fetchProposalMarkers(env, id),
-      buildActivityData(env, id),
     ]);
 
     // The proposal tally is the core; if it failed we don't store a snapshot.
     if (p.status !== "fulfilled") throw p.reason;
 
     const markersResult = m.status === "fulfilled" ? m.value : null;
+
+    // Activity decodes each recent tx for its vote direction + size, so it needs
+    // the marker weights — built after markers resolve, not in parallel.
+    let activity = null;
+    try {
+      activity = await buildActivityData(env, id, markersResult ? markersResult.markers : []);
+    } catch (e) {
+      console.error("vote activity build failed", id, e?.message);
+    }
+
     const snapshot = {
       snapshotAt: Date.now(),
       proposal: p.value,
       votes: markersResult ? aggregateVotes(markersResult, id) : null,
-      activity: a.status === "fulfilled" ? a.value : null,
+      activity,
     };
 
     // Enrich roster rows: flag voters who changed a vote on any position (from
