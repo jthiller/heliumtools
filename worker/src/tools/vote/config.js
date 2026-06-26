@@ -56,6 +56,9 @@ export const MAX_HISTORY_POINTS = 1500;
 // Per-voter flip timeline (parsed from the marker's transactions) — cached
 // longer since it only changes when that voter acts again.
 export const VOTER_HISTORY_CACHE_TTL = 10 * 60;
+// Cap how many of a voter's (flipped) positions we parse for the timeline, so a
+// whale expanding their row can't trigger an unbounded fan-out of getTransaction.
+export const MAX_VOTER_HISTORY_MARKERS = 25;
 // Recording: how many marker creation-times to look up concurrently, and the
 // max new votes timed per cron run (a big first run spreads over a few ticks).
 export const MARKER_TIME_CONCURRENCY = 8;
