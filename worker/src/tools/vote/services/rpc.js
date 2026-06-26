@@ -22,23 +22,19 @@ export async function getAccount(env, pubkey) {
  * getProgramAccounts with memcmp filters. Returns [{ pubkey, buf }].
  * `filters` is an array of { offset, bytesBase58 } memcmp specs.
  */
-export async function getProgramAccounts(env, programId, filters, { timeoutMs = 25_000 } = {}) {
+export async function getProgramAccounts(env, programId, filters, { timeoutMs = 25_000, dataSlice } = {}) {
   const program = typeof programId === "string" ? programId : programId.toBase58();
-  const result = await rpc(
-    env,
-    "getProgramAccounts",
-    [
-      program,
-      {
-        encoding: "base64",
-        commitment: "confirmed",
-        filters: filters.map((f) => ({
-          memcmp: { offset: f.offset, bytes: f.bytesBase58, encoding: "base58" },
-        })),
-      },
-    ],
-    { timeoutMs },
-  );
+  const config = {
+    encoding: "base64",
+    commitment: "confirmed",
+    filters: filters.map((f) => ({
+      memcmp: { offset: f.offset, bytes: f.bytesBase58, encoding: "base58" },
+    })),
+  };
+  // dataSlice trims each account's returned data to a window — used when we only
+  // need a few fields (e.g. position voting-power inputs) and the set is large.
+  if (dataSlice) config.dataSlice = dataSlice;
+  const result = await rpc(env, "getProgramAccounts", [program, config], { timeoutMs });
   return (result || []).map((item) => ({
     pubkey: item.pubkey,
     buf: Buffer.from(item.account.data[0], "base64"),

@@ -13,6 +13,7 @@ import {
 } from "./builders.js";
 import { recordProposalVotes } from "./recording.js";
 import { resolveProposalFlips } from "./flips.js";
+import { getCirculatingVeHnt, refreshCirculatingVeHnt } from "./circulating.js";
 import { getFlippedMarkers } from "./history.js";
 import { getProxyMap } from "./proxies.js";
 import {
@@ -82,6 +83,12 @@ export async function refreshSnapshot(env, id) {
     } catch (e) {
       console.error("vote activity build failed", id, e?.message);
     }
+
+    // Participation denominator: read the cached circulating-veHNT figure (a
+    // plain KV read — the heavy recompute is triggered separately by the cron).
+    // Attached to the proposal so it rides the /vote/proposal response.
+    const circulating = await getCirculatingVeHnt(env).catch(() => null);
+    if (circulating) p.value.circulating = circulating;
 
     const snapshot = {
       snapshotAt: Date.now(),
@@ -165,6 +172,15 @@ export async function getTrackedProposals(env) {
 
 /** Cron entry point — refresh every tracked proposal, recording history. */
 export async function runVoteSnapshots(env) {
+  // Refresh the circulating-veHNT denominator first (throttled by its own TTL,
+  // so this is a cheap cache hit on most ticks and a heavy enumeration only
+  // ~hourly), isolated so a failure never blocks the snapshots below.
+  try {
+    await refreshCirculatingVeHnt(env);
+  } catch (e) {
+    console.error("vote circulating refresh failed", e?.message);
+  }
+
   const ids = await getTrackedProposals(env);
   // Cap the TOTAL new votes timed this invocation (one getSignaturesForAddress
   // each) across all proposals, so concurrent backfills can't blow the Workers

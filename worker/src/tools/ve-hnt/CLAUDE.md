@@ -30,6 +30,11 @@ Entry: `index.js` → `handlers/`.
   with landrush detection; `resolveEpochReward` classifies each unclaimed
   epoch (v1_hnt / v0_dnt / v0_blocked / position_vehnt_zero / …);
   `computePendingRewards` sums across unclaimed epochs.
+  **Cross-tool consumer:** the Vote tool's `services/circulating.js` imports
+  `computeVeHnt` (and `decodeRegistrar` / `LOCKUP_KIND` from `decode.js`) to sum
+  total network veHNT for its participation denominator — keep these pure and
+  in sync with voter-stake-registry; if a third consumer appears, hoist them to
+  a shared lib.
 - `cache.js` — KV read-through for registrar (24h), DAO (24h), past-epoch
   DaoEpochInfoV0 (30d — immutable). `batchCachedAccounts` avoids
   per-account fan-out by collapsing N-sequential RPCs into one

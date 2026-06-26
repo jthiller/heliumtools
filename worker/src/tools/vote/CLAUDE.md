@@ -106,7 +106,9 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 
 **Endpoints (all GET, read-only, served from snapshot/D1 — not RPC):**
 - `GET /vote/proposal?id=` — authoritative outcome + `snapshotAt`. `202
-  {warming:true}` while the first snapshot builds.
+  {warming:true}` while the first snapshot builds. Carries `circulating`
+  (`{ veHnt, veHntNative, positions, asOf }`) — total network veHNT voting power,
+  the participation denominator — when it has been computed (omitted otherwise).
 - `GET /vote/votes?id=` — voter roster **grouped by voter** (one row per wallet:
   total veHNT summed across their positions, distinct choices, `positions` count,
   `flipped`, and `proxyName` for registered delegates) + per-choice aggregates +
@@ -137,6 +139,17 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   `decodeVoteInstructions`, `actionsForMarker`); the single source of the vote/
   relinquish discriminators, consumed by the timeline, flip resolver, and activity
   feed.
+- `services/circulating.js` — total circulating veHNT (the participation
+  denominator). `refreshCirculatingVeHnt` enumerates every HNT `PositionV0`
+  (`getProgramAccounts` on VSR, filtered by the `PositionV0` discriminator +
+  HNT registrar at offset 8, `dataSlice`d to the voting-power fields) and sums
+  each position's current voting power, **reusing `computeVeHnt` + `decodeRegistrar`
+  from the ve-hnt tool** (the on-chain formula must not be duplicated). Heavy, so
+  it's single-flight + KV-cached (`CIRCULATING_CACHE_TTL`); the cron refreshes it
+  (cheap cache hit on most ticks), the snapshot only *reads* the cached figure,
+  and any failure is swallowed so the snapshot never breaks. `getCirculatingVeHnt`
+  is the cached read. (Cross-tool import; hoist the veHNT math to a shared lib if a
+  third consumer appears.)
 - `services/snapshot.js` — `refreshSnapshot` (single-flight build + KV write +
   track), `getOrRefreshSnapshot` (viewer read-through), `runVoteSnapshots`
   (cron: refresh + record + **resolve flips**), tracked-set helpers.
@@ -242,6 +255,8 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 - `vote:histcache:<id>` — cached `/history` response (`HISTORY_CACHE_TTL`).
 - `vote:vhist:<proposal>:<voter>` — cached per-voter flip timeline (`VOTER_HISTORY_CACHE_TTL`).
 - `vote:proxymap` — cached proxy wallet→name registry (`PROXY_MAP_CACHE_TTL`).
+- `vote:circulating` — cached total circulating veHNT (`CIRCULATING_CACHE_TTL`×2);
+  `vote:circulating:lock` is its single-flight lock.
 - `rl:vote:*` — IP rate-limit counter.
 
 ### D1 (`DB` binding) — `vote_events`
