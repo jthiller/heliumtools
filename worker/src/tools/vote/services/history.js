@@ -73,6 +73,22 @@ export async function getVoterMarkers(env, id, voter, { flippedOnly = false } = 
   return (results || []).map((r) => ({ marker: r.marker, choices: safeParse(r.choices_json) }));
 }
 
+/**
+ * Clear every flipped flag (one-time data cleanup). An earlier recorder marked
+ * any marker with more than one transaction as flipped, which false-positives
+ * on proxy votes (a batched vote plus crank touches produce multiple txns with
+ * no choice change). After this, genuine flips are re-detected by change
+ * detection in the recorder. Returns the number of rows cleared.
+ */
+export async function resetAllFlips(env) {
+  if (!env.DB) return 0;
+  await ensureSchema(env);
+  const { meta } = await env.DB.prepare(
+    `UPDATE vote_events SET flipped = 0 WHERE flipped = 1`,
+  ).run();
+  return meta?.changes ?? 0;
+}
+
 /** Set of marker pubkeys flagged as flipped, for joining onto the roster. */
 export async function getFlippedMarkers(env, id) {
   if (!env.DB) return new Set();
