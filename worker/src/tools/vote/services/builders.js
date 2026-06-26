@@ -156,6 +156,16 @@ export function aggregateVotes({ markers, scanCapped }, address) {
   const voters = [...byVoter.values()].sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
   const returned = voters.slice(0, MAX_VOTERS_RETURNED);
 
+  // Distinct voters backing each choice, across ALL voters (not just the
+  // returned top N). A wallet that split positions across choices counts toward
+  // each, so these can sum to more than uniqueVoters.
+  const voterCountPerChoice = new Map();
+  for (const v of byVoter.values()) {
+    for (const c of v.choices.keys()) {
+      voterCountPerChoice.set(c, (voterCountPerChoice.get(c) || 0) + 1);
+    }
+  }
+
   return {
     proposal: address,
     markerCount: markers.length,
@@ -170,6 +180,7 @@ export function aggregateVotes({ markers, scanCapped }, address) {
         index,
         weight: weight.toString(),
         veHnt: weightToVeHnt(weight),
+        voters: voterCountPerChoice.get(index) || 0,
       }))
       .sort((a, b) => a.index - b.index),
     votes: returned.map((v) => ({
