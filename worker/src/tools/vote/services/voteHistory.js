@@ -46,41 +46,68 @@ async function mapLimit(items, limit, fn) {
   return out;
 }
 
-/** Decode the vote/relinquish action + choice from one transaction, or null. */
-function decodeAction(tx) {
-  const instrs = tx?.transaction?.message?.instructions || [];
-  for (const ix of instrs) {
-    if (ix.programId !== VSR || typeof ix.data !== "string") continue;
-    let bytes;
-    try {
-      bytes = Buffer.from(bs58.decode(ix.data));
-    } catch {
-      continue;
-    }
-    if (bytes.length < 8) continue;
-    const disc = key([...bytes.subarray(0, 8)]);
-    const action = VOTE_DISCS.has(disc) ? "vote" : RELINQUISH_DISCS.has(disc) ? "relinquish" : null;
-    if (!action) continue;
-    const choice = bytes.length >= 10 ? bytes.readUInt16LE(8) : null;
-    return { action, choice };
+function decodeVsrInstruction(ix) {
+  if (ix.programId !== VSR || typeof ix.data !== "string") return null;
+  let bytes;
+  try {
+    bytes = Buffer.from(bs58.decode(ix.data));
+  } catch {
+    return null;
   }
-  return null;
+  if (bytes.length < 8) return null;
+  const disc = key([...bytes.subarray(0, 8)]);
+  const action = VOTE_DISCS.has(disc) ? "vote" : RELINQUISH_DISCS.has(disc) ? "relinquish" : null;
+  if (!action) return null;
+  const choice = bytes.length >= 10 ? bytes.readUInt16LE(8) : null;
+  return { action, choice, accounts: Array.isArray(ix.accounts) ? ix.accounts : [] };
 }
 
-/** Parse one marker's transactions into [{ ts, action, choice, signature }]. */
+/**
+ * VSR vote/relinquish actions in a transaction that apply to `marker`. Scans
+ * BOTH top-level and inner (CPI) instructions — proxy/crank-applied votes arrive
+ * as inner instructions, so a top-level-only scan would miss them. When a tx
+ * batches votes for many positions, the marker must appear in the instruction's
+ * accounts; if exactly one VSR vote instruction exists we attribute it even when
+ * account matching is inconclusive (single-vote tx).
+ */
+function actionsForMarker(tx, marker) {
+  const top = tx?.transaction?.message?.instructions || [];
+  const inner = (tx?.meta?.innerInstructions || []).flatMap((g) => g.instructions || []);
+  const decoded = [...top, ...inner].map(decodeVsrInstruction).filter(Boolean);
+  if (decoded.length === 0) return [];
+  const matching = decoded.filter((d) => d.accounts.includes(marker));
+  const chosen = matching.length > 0 ? matching : decoded.length === 1 ? decoded : [];
+  return chosen.map((d) => ({ action: d.action, choice: d.choice }));
+}
+
+/**
+ * Parse one marker's transactions into [{ ts, action, choice, signature }]. If
+ * nothing decodes (an unrecognized CPI shape), fall back to bare timestamped
+ * entries so the timeline shows *when* the voter acted rather than nothing.
+ */
 async function markerActions(env, marker) {
   const sigs = await getSignaturesForAddress(env, marker, { limit: 1000 });
-  const parsed = await mapLimit([...sigs].reverse(), MARKER_TX_CONCURRENCY, async (s) => {
+  const perSig = await mapLimit([...sigs].reverse(), MARKER_TX_CONCURRENCY, async (s) => {
     try {
       const tx = await getTransaction(env, s.signature);
-      const decoded = decodeAction(tx);
-      if (!decoded) return null;
-      return { ts: s.blockTime ?? null, signature: s.signature, marker, ...decoded };
+      return { s, acts: actionsForMarker(tx, marker) };
     } catch {
-      return null;
+      return { s, acts: [] };
     }
   });
-  return parsed.filter(Boolean);
+
+  const decoded = perSig.flatMap(({ s, acts }) =>
+    acts.map((a) => ({ ts: s.blockTime ?? null, signature: s.signature, marker, ...a })),
+  );
+  if (decoded.length > 0) return decoded;
+  // Fallback: surface the transaction timestamps even without decoded choices.
+  return perSig.map(({ s }) => ({
+    ts: s.blockTime ?? null,
+    signature: s.signature,
+    marker,
+    action: null,
+    choice: null,
+  }));
 }
 
 /**
