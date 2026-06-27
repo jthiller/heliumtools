@@ -8,6 +8,7 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   CheckBadgeIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 import {
   LineChart,
@@ -123,6 +124,67 @@ function StatusPill({ status }) {
         <span className={`relative inline-flex h-2 w-2 rounded-full ${meta.dot}`} />
       </span>
       <span className={meta.text}>{meta.label}</span>
+    </span>
+  );
+}
+
+// Live time-remaining for an open proposal; falls back to the end date once it
+// resolves. Ticks once a second in its own leaf state so it never re-renders
+// the heavier tables/chart above it.
+function fmtCountdown(remaining) {
+  const d = Math.floor(remaining / 86400);
+  const h = Math.floor((remaining % 86400) / 3600);
+  const m = Math.floor((remaining % 3600) / 60);
+  const s = remaining % 60;
+  if (d > 0) return { big: `${d}d ${h}h`, tail: `${m}m` };
+  if (h > 0) return { big: `${h}h ${m}m`, tail: `${s}s` };
+  if (m > 0) return { big: `${m}m ${s}s`, tail: "" };
+  return { big: `${s}s`, tail: "" };
+}
+
+function Countdown({ endTs, status }) {
+  const isActive = status === "active";
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isActive || !endTs) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isActive, endTs]);
+
+  if (!endTs) return null;
+
+  const base =
+    "inline-flex items-center gap-1.5 font-mono text-[11px] text-content-tertiary tabular-nums";
+
+  // Resolved/closed: no ticking, just when it ended.
+  if (!isActive) {
+    return (
+      <span className={base}>
+        <ClockIcon className="h-3.5 w-3.5" />
+        <span className="uppercase tracking-wide">Ended</span>
+        <span className="text-content-secondary">{fmtDate(endTs)}</span>
+      </span>
+    );
+  }
+
+  const remaining = endTs - Math.floor(now / 1000);
+  if (remaining <= 0) {
+    return (
+      <span className={base}>
+        <ClockIcon className="h-3.5 w-3.5" />
+        <span className="uppercase tracking-wide">Voting closed</span>
+      </span>
+    );
+  }
+
+  const { big, tail } = fmtCountdown(remaining);
+  return (
+    <span className={base}>
+      <ClockIcon className="h-3.5 w-3.5" />
+      <span className="uppercase tracking-wide">Ends in</span>
+      <span className="font-medium text-content">{big}</span>
+      {tail && <span className="text-content-tertiary">{tail}</span>}
     </span>
   );
 }
@@ -903,7 +965,10 @@ export default function Vote() {
             {/* Title block */}
             <div>
               <div className="flex items-center justify-between gap-3 mb-3">
-                <StatusPill status={proposal.status} />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+                  <StatusPill status={proposal.status} />
+                  <Countdown endTs={proposal.endTs} status={proposal.status} />
+                </div>
                 <div className="flex items-center gap-3">
                   <Tooltip content="Polled on-chain by the worker on a schedule (~every 15 min) and served from cache — so viewing this page doesn't hit the RPC.">
                     <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
@@ -929,7 +994,9 @@ export default function Vote() {
                 {proposal.status === "active" && proposal.startTs && (
                   <span>· Opened {fmtDate(proposal.startTs)}</span>
                 )}
-                {proposal.endTs && <span>· Ended {fmtDate(proposal.endTs)}</span>}
+                {proposal.endTs && (
+                  <span>· {proposal.status === "active" ? "Ends" : "Ended"} {fmtDate(proposal.endTs)}</span>
+                )}
                 {proposal.tags?.map((t) => (
                   <span key={t} className="rounded-full border border-border-muted px-2 py-0.5 text-[10px] uppercase tracking-wide">
                     {t}
