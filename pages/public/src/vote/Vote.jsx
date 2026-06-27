@@ -564,9 +564,9 @@ function VoterRoster({ proposal, votes, error }) {
             "Markers are closed after a proposal resolves — the tallies above remain authoritative."}
         </p>
       ) : (
-        <div className="max-h-[28rem] overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-surface-inset z-10">
+            <thead className="bg-surface-inset">
               <tr className="text-left text-content-tertiary font-mono uppercase tracking-[0.08em] text-[10px]">
                 <th className="px-5 py-2 font-medium">Voter</th>
                 <th className="px-3 py-2 font-medium">Choice</th>
@@ -654,7 +654,7 @@ function ActivityFeed({ activity, error, proposal }) {
       ) : activity.activity.length === 0 ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">No recent transactions.</p>
       ) : (
-        <ul className="max-h-[28rem] overflow-y-auto divide-y divide-border-muted">
+        <ul className="divide-y divide-border-muted">
           {activity.activity.map((a) => (
             <ActivityRow key={a.signature} a={a} proposal={proposal} />
           ))}
