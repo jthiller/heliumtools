@@ -91,7 +91,9 @@ export const MAX_VOTERS_RETURNED = 500;
 // getSignaturesForAddress page size for the activity feed. Each entry is decoded
 // (getTransaction) to surface its vote direction + size, so this also bounds the
 // per-refresh getTransaction fan-out; ACTIVITY_DECODE_CONCURRENCY caps parallelism.
-export const DEFAULT_ACTIVITY_LIMIT = 25;
+// Only the ~15-min snapshot refresh pays this (viewers read cache), so a larger
+// page is cheap — the feed renders every returned row client-side.
+export const DEFAULT_ACTIVITY_LIMIT = 50;
 export const ACTIVITY_DECODE_CONCURRENCY = 6;
 
 // Off-chain proposal body: cap the bytes we read/return so a hostile or huge
