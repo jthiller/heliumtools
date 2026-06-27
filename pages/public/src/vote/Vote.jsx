@@ -8,6 +8,7 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   CheckBadgeIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 import {
   LineChart,
@@ -123,6 +124,67 @@ function StatusPill({ status }) {
         <span className={`relative inline-flex h-2 w-2 rounded-full ${meta.dot}`} />
       </span>
       <span className={meta.text}>{meta.label}</span>
+    </span>
+  );
+}
+
+// Live time-remaining for an open proposal; falls back to the end date once it
+// resolves. Ticks once a second in its own leaf state so it never re-renders
+// the heavier tables/chart above it.
+function fmtCountdown(remaining) {
+  const d = Math.floor(remaining / 86400);
+  const h = Math.floor((remaining % 86400) / 3600);
+  const m = Math.floor((remaining % 3600) / 60);
+  const s = remaining % 60;
+  if (d > 0) return { big: `${d}d ${h}h`, tail: `${m}m` };
+  if (h > 0) return { big: `${h}h ${m}m`, tail: `${s}s` };
+  if (m > 0) return { big: `${m}m ${s}s`, tail: "" };
+  return { big: `${s}s`, tail: "" };
+}
+
+function Countdown({ endTs, status }) {
+  const isActive = status === "active";
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isActive || !endTs) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isActive, endTs]);
+
+  if (!endTs) return null;
+
+  const base =
+    "inline-flex items-center gap-1.5 font-mono text-[11px] text-content-tertiary tabular-nums";
+
+  // Resolved/closed: no ticking, just when it ended.
+  if (!isActive) {
+    return (
+      <span className={base}>
+        <ClockIcon className="h-3.5 w-3.5" />
+        <span className="uppercase tracking-wide">Ended</span>
+        <span className="text-content-secondary">{fmtDate(endTs)}</span>
+      </span>
+    );
+  }
+
+  const remaining = endTs - Math.floor(now / 1000);
+  if (remaining <= 0) {
+    return (
+      <span className={base}>
+        <ClockIcon className="h-3.5 w-3.5" />
+        <span className="uppercase tracking-wide">Voting closed</span>
+      </span>
+    );
+  }
+
+  const { big, tail } = fmtCountdown(remaining);
+  return (
+    <span className={base}>
+      <ClockIcon className="h-3.5 w-3.5" />
+      <span className="uppercase tracking-wide">Ends in</span>
+      <span className="font-medium text-content">{big}</span>
+      {tail && <span className="text-content-tertiary">{tail}</span>}
     </span>
   );
 }
@@ -539,7 +601,27 @@ function VoterRow({ v, proposal }) {
   );
 }
 
+// Rows shown before the Voters / Recent activity lists expand. Keeps this
+// shareable page free of nested scroll regions — the card grows and the page
+// scrolls, rather than trapping a scrollbar inside a fixed-height panel.
+const LIST_PREVIEW_ROWS = 10;
+
+function ShowAllToggle({ expanded, total, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full border-t border-border-muted px-3 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-text hover:bg-surface-inset/40 transition"
+    >
+      {expanded ? "Show fewer" : `Show all ${numberFormatter.format(total)}`}
+    </button>
+  );
+}
+
 function VoterRoster({ proposal, votes, error }) {
+  const [showAll, setShowAll] = useState(false);
+  const all = votes?.votes || [];
+  const shown = showAll ? all : all.slice(0, LIST_PREVIEW_ROWS);
+
   return (
     <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
@@ -557,16 +639,16 @@ function VoterRoster({ proposal, votes, error }) {
         <p className="px-5 py-6 text-sm text-content-tertiary">Couldn't load voters.</p>
       ) : !votes ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">Loading voters…</p>
-      ) : votes.votes.length === 0 ? (
+      ) : all.length === 0 ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">
           No open vote markers.{" "}
           {proposal.status !== "active" &&
             "Markers are closed after a proposal resolves — the tallies above remain authoritative."}
         </p>
       ) : (
-        <div className="max-h-[28rem] overflow-y-auto">
+        <>
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-surface-inset z-10">
+            <thead className="bg-surface-inset">
               <tr className="text-left text-content-tertiary font-mono uppercase tracking-[0.08em] text-[10px]">
                 <th className="px-5 py-2 font-medium">Voter</th>
                 <th className="px-3 py-2 font-medium">Choice</th>
@@ -574,12 +656,15 @@ function VoterRoster({ proposal, votes, error }) {
               </tr>
             </thead>
             <tbody>
-              {votes.votes.map((v) => (
+              {shown.map((v) => (
                 <VoterRow key={v.voter} v={v} proposal={proposal} />
               ))}
             </tbody>
           </table>
-        </div>
+          {all.length > LIST_PREVIEW_ROWS && (
+            <ShowAllToggle expanded={showAll} total={all.length} onToggle={() => setShowAll((s) => !s)} />
+          )}
+        </>
       )}
     </section>
   );
@@ -635,6 +720,10 @@ function ActivityRow({ a, proposal }) {
 }
 
 function ActivityFeed({ activity, error, proposal }) {
+  const [showAll, setShowAll] = useState(false);
+  const all = activity?.activity || [];
+  const shown = showAll ? all : all.slice(0, LIST_PREVIEW_ROWS);
+
   return (
     <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
@@ -651,14 +740,19 @@ function ActivityFeed({ activity, error, proposal }) {
         <p className="px-5 py-6 text-sm text-content-tertiary">Couldn't load activity.</p>
       ) : !activity ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">Loading activity…</p>
-      ) : activity.activity.length === 0 ? (
+      ) : all.length === 0 ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">No recent transactions.</p>
       ) : (
-        <ul className="max-h-[28rem] overflow-y-auto divide-y divide-border-muted">
-          {activity.activity.map((a) => (
-            <ActivityRow key={a.signature} a={a} proposal={proposal} />
-          ))}
-        </ul>
+        <>
+          <ul className="divide-y divide-border-muted">
+            {shown.map((a) => (
+              <ActivityRow key={a.signature} a={a} proposal={proposal} />
+            ))}
+          </ul>
+          {all.length > LIST_PREVIEW_ROWS && (
+            <ShowAllToggle expanded={showAll} total={all.length} onToggle={() => setShowAll((s) => !s)} />
+          )}
+        </>
       )}
     </section>
   );
@@ -903,7 +997,10 @@ export default function Vote() {
             {/* Title block */}
             <div>
               <div className="flex items-center justify-between gap-3 mb-3">
-                <StatusPill status={proposal.status} />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+                  <StatusPill status={proposal.status} />
+                  <Countdown endTs={proposal.endTs} status={proposal.status} />
+                </div>
                 <div className="flex items-center gap-3">
                   <Tooltip content="Polled on-chain by the worker on a schedule (~every 15 min) and served from cache — so viewing this page doesn't hit the RPC.">
                     <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
@@ -929,7 +1026,9 @@ export default function Vote() {
                 {proposal.status === "active" && proposal.startTs && (
                   <span>· Opened {fmtDate(proposal.startTs)}</span>
                 )}
-                {proposal.endTs && <span>· Ended {fmtDate(proposal.endTs)}</span>}
+                {proposal.endTs && (
+                  <span>· {proposal.status === "active" ? "Ends" : "Ended"} {fmtDate(proposal.endTs)}</span>
+                )}
                 {proposal.tags?.map((t) => (
                   <span key={t} className="rounded-full border border-border-muted px-2 py-0.5 text-[10px] uppercase tracking-wide">
                     {t}
@@ -955,7 +1054,7 @@ export default function Vote() {
 
             <VoteTrendChart history={history} proposal={proposal} />
 
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid items-start gap-6 lg:grid-cols-2">
               <VoterRoster proposal={proposal} votes={votes} error={votesError} />
               <ActivityFeed activity={activity} error={activityError} proposal={proposal} />
             </div>
