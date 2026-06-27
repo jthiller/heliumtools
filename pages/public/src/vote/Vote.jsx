@@ -601,27 +601,7 @@ function VoterRow({ v, proposal }) {
   );
 }
 
-// Rows shown before the Voters / Recent activity lists expand. Keeps this
-// shareable page free of nested scroll regions — the card grows and the page
-// scrolls, rather than trapping a scrollbar inside a fixed-height panel.
-const LIST_PREVIEW_ROWS = 10;
-
-function ShowAllToggle({ expanded, total, onToggle }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="w-full border-t border-border-muted px-3 py-3 font-mono text-[11px] uppercase tracking-[0.08em] text-accent-text hover:bg-surface-inset/40 transition"
-    >
-      {expanded ? "Show fewer" : `Show all ${numberFormatter.format(total)}`}
-    </button>
-  );
-}
-
 function VoterRoster({ proposal, votes, error }) {
-  const [showAll, setShowAll] = useState(false);
-  const all = votes?.votes || [];
-  const shown = showAll ? all : all.slice(0, LIST_PREVIEW_ROWS);
-
   return (
     <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
@@ -639,14 +619,14 @@ function VoterRoster({ proposal, votes, error }) {
         <p className="px-5 py-6 text-sm text-content-tertiary">Couldn't load voters.</p>
       ) : !votes ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">Loading voters…</p>
-      ) : all.length === 0 ? (
+      ) : votes.votes.length === 0 ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">
           No open vote markers.{" "}
           {proposal.status !== "active" &&
             "Markers are closed after a proposal resolves — the tallies above remain authoritative."}
         </p>
       ) : (
-        <>
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface-inset">
               <tr className="text-left text-content-tertiary font-mono uppercase tracking-[0.08em] text-[10px]">
@@ -656,15 +636,12 @@ function VoterRoster({ proposal, votes, error }) {
               </tr>
             </thead>
             <tbody>
-              {shown.map((v) => (
+              {votes.votes.map((v) => (
                 <VoterRow key={v.voter} v={v} proposal={proposal} />
               ))}
             </tbody>
           </table>
-          {all.length > LIST_PREVIEW_ROWS && (
-            <ShowAllToggle expanded={showAll} total={all.length} onToggle={() => setShowAll((s) => !s)} />
-          )}
-        </>
+        </div>
       )}
     </section>
   );
@@ -720,10 +697,6 @@ function ActivityRow({ a, proposal }) {
 }
 
 function ActivityFeed({ activity, error, proposal }) {
-  const [showAll, setShowAll] = useState(false);
-  const all = activity?.activity || [];
-  const shown = showAll ? all : all.slice(0, LIST_PREVIEW_ROWS);
-
   return (
     <section className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-baseline justify-between gap-3 px-5 py-3.5 border-b border-border-muted">
@@ -740,19 +713,14 @@ function ActivityFeed({ activity, error, proposal }) {
         <p className="px-5 py-6 text-sm text-content-tertiary">Couldn't load activity.</p>
       ) : !activity ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">Loading activity…</p>
-      ) : all.length === 0 ? (
+      ) : activity.activity.length === 0 ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">No recent transactions.</p>
       ) : (
-        <>
-          <ul className="divide-y divide-border-muted">
-            {shown.map((a) => (
-              <ActivityRow key={a.signature} a={a} proposal={proposal} />
-            ))}
-          </ul>
-          {all.length > LIST_PREVIEW_ROWS && (
-            <ShowAllToggle expanded={showAll} total={all.length} onToggle={() => setShowAll((s) => !s)} />
-          )}
-        </>
+        <ul className="divide-y divide-border-muted">
+          {activity.activity.map((a) => (
+            <ActivityRow key={a.signature} a={a} proposal={proposal} />
+          ))}
+        </ul>
       )}
     </section>
   );
@@ -1054,7 +1022,7 @@ export default function Vote() {
 
             <VoteTrendChart history={history} proposal={proposal} />
 
-            <div className="grid items-start gap-6 lg:grid-cols-2">
+            <div className="grid gap-6 lg:grid-cols-2">
               <VoterRoster proposal={proposal} votes={votes} error={votesError} />
               <ActivityFeed activity={activity} error={activityError} proposal={proposal} />
             </div>
