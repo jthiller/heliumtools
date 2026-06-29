@@ -43,10 +43,11 @@ indirectly via the shared fee cache).
   txn (used to validate account/arg order — see Gotchas).
 
 **Handlers:**
-- `handlers/status.js` — exports `parseIotInfo(buf)`, which walks
-  `IotHotspotInfoV0` (`disc(8) + asset(32) + bump(1)` then the location/elevation/
-  gain Options, then `is_full_hotspot` + `num_location_asserts`). The location
-  Option tag is at byte 41 (same as iot-onboard's `has_location`).
+- `handlers/status.js` — reads the on-chain state and parses it via
+  `parseIotInfo(buf)` (implemented in `worker/src/lib/helium-solana.js`), which
+  walks `IotHotspotInfoV0` (`disc(8) + asset(32) + bump(1)` then the location/
+  elevation/gain Options, then `is_full_hotspot` + `num_location_asserts`). The
+  location Option tag is at byte 41 (same as iot-onboard's `has_location`).
 - `handlers/build.js` — adapted from `multi-gateway/handlers/issue.js`
   `handleOnboard`, with the differences below.
 

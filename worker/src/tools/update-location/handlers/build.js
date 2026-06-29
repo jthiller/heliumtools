@@ -68,14 +68,24 @@ export async function handleBuildUpdate(request, env) {
     return jsonResponse({ error: "Invalid owner address" }, 400);
   }
 
+  // Derive the PDAs up front so a malformed gateway_pubkey (non-base58) returns
+  // a 400 instead of throwing into the outer catch as a 500.
+  let ktaKey, infoKey;
+  try {
+    ktaKey = keyToAssetKey(gateway_pubkey);
+    infoKey = iotInfoKey(gateway_pubkey);
+  } catch {
+    return jsonResponse({ error: "Invalid gateway_pubkey" }, 400);
+  }
+
   try {
     const rpcUrl = env.SOLANA_RPC_URL;
     const connection = new Connection(rpcUrl);
 
     // Batch 1: keyToAsset + iotInfo. Both must exist (issued + onboarded).
     const [ktaAccount, iotInfoAccount] = await Promise.all([
-      connection.getAccountInfo(keyToAssetKey(gateway_pubkey)),
-      connection.getAccountInfo(iotInfoKey(gateway_pubkey)),
+      connection.getAccountInfo(ktaKey),
+      connection.getAccountInfo(infoKey),
     ]);
 
     if (!ktaAccount) {
