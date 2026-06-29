@@ -36,9 +36,12 @@ indirectly via the shared fee cache).
 - `POST /build { owner, gateway_pubkey, location?, elevation?, gain? }` — builds
   the unsigned `update_iot_info_v0` transaction (base64). `location` is an H3
   res-12 cell **hex** string; omitted/null fields are left unchanged on-chain.
-  Returns `{ transaction }`, or `{ dc_needed, required_dc, current_dc,
-  device_type }` when the wallet's DC is short of the location fee, or
-  `{ error, not_onboarded }` when the Hotspot isn't onboarded. A `?simulate=1`
+  `gain` (dBi × 10) is validated to the on-chain IoT bounds `IOT_MIN_GAIN`–
+  `IOT_MAX_GAIN` (10–150 = 1.0–15.0 dBi) and returns a `400` otherwise — the
+  on-chain `validate_iot_gain` constraint would otherwise reject it with an
+  opaque `0x7d3` (Anchor `ConstraintRaw`). Returns `{ transaction }`, or
+  `{ dc_needed, required_dc, current_dc, device_type }` when the wallet's DC is
+  short of the location fee, or `{ error, not_onboarded }` when not onboarded. A `?simulate=1`
   query (honored only on a localhost host — i.e. `wrangler dev`, ignored in
   production) returns the `simulateTransaction` result instead of the txn (used
   to validate account/arg order — see Gotchas).

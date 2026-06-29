@@ -37,6 +37,13 @@ export const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDm
 // mirrored as a string in hotspot-claimer/config.js).
 export const HELIUM_COMMON_LUT = new PublicKey("43eY9L2spbM2b1MPDFFBStUiFGt29ziZ1nc1xbpzsfVt");
 
+// IoT RewardableEntityConfig antenna-gain bounds (dBi × 10). The on-chain
+// `validate_iot_gain` constraint enforces IOT_MIN_GAIN ≤ gain ≤ IOT_MAX_GAIN
+// (1.0–15.0 dBi); a value outside this fails update_iot_info_v0 with the Anchor
+// ConstraintRaw error (0x7d3). Mirrors the marker values fees.js keys off.
+export const IOT_MIN_GAIN = 10;
+export const IOT_MAX_GAIN = 150;
+
 // Voter Stake Registry (veHNT positions)
 export const VSR_PROGRAM = new PublicKey("hvsrNC3NKbcryqDs2DocYHZ9yPKEVzdSjQG6RVtK1s8");
 // SPL governance program (realm lives under this)

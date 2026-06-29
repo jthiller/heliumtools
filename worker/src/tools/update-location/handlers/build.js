@@ -18,6 +18,8 @@ import {
   fetchAssetProof,
   getCanopyDepth,
   parseIotInfo,
+  IOT_MIN_GAIN,
+  IOT_MAX_GAIN,
 } from "../../../lib/helium-solana.js";
 import { getOnboardFees } from "../../iot-onboard/services/fees.js";
 
@@ -90,8 +92,12 @@ export async function handleBuildUpdate(request, env) {
   if (elevation != null && !Number.isInteger(elevation)) {
     return jsonResponse({ error: "Invalid elevation — expected an integer (meters)" }, 400);
   }
-  if (gain != null && !Number.isInteger(gain)) {
-    return jsonResponse({ error: "Invalid gain — expected an integer (dBi × 10)" }, 400);
+  if (gain != null && (!Number.isInteger(gain) || gain < IOT_MIN_GAIN || gain > IOT_MAX_GAIN)) {
+    // The on-chain validate_iot_gain constraint rejects out-of-range gain with an
+    // opaque 0x7d3; surface a clear 400 instead.
+    return jsonResponse({
+      error: `Invalid gain — antenna gain must be ${IOT_MIN_GAIN / 10}–${IOT_MAX_GAIN / 10} dBi`,
+    }, 400);
   }
 
   try {

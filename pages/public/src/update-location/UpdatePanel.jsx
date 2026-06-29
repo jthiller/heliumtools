@@ -26,6 +26,11 @@ const INPUT_CLASS =
 
 const dcToUsd = (dc) => (dc / 100_000).toFixed(2);
 
+// On-chain IoT RewardableEntityConfig bounds: validate_iot_gain requires
+// 1.0–15.0 dBi (min_gain 10 / max_gain 150, ×10). Out-of-range fails on-chain.
+const GAIN_MIN_DBI = 1.0;
+const GAIN_MAX_DBI = 15.0;
+
 /**
  * Editor for one Hotspot: seeds the map + fields from the current on-chain
  * values, lets the owner change location / elevation / gain, and submits an
@@ -175,6 +180,7 @@ export default function UpdatePanel({ hotspot, onBack }) {
 
   const elevationNum = elevation !== "" && Number.isFinite(parseInt(elevation, 10)) ? parseInt(elevation, 10) : null;
   const gainTimes10 = gain !== "" && Number.isFinite(parseFloat(gain)) ? Math.round(parseFloat(gain) * 10) : null;
+  const gainOutOfRange = gainTimes10 != null && (gainTimes10 < GAIN_MIN_DBI * 10 || gainTimes10 > GAIN_MAX_DBI * 10);
   const elevationDirty = elevationNum != null && elevationNum !== status?.elevation;
   const gainDirty = gainTimes10 != null && gainTimes10 !== status?.gain;
   const anyDirty = locationDirty || elevationDirty || gainDirty;
@@ -310,6 +316,12 @@ export default function UpdatePanel({ hotspot, onBack }) {
               </div>
             </div>
 
+            {gainOutOfRange && (
+              <p className="text-xs text-rose-500">
+                Antenna gain must be between {GAIN_MIN_DBI.toFixed(1)} and {GAIN_MAX_DBI.toFixed(1)} dBi.
+              </p>
+            )}
+
             {/* Cost card */}
             <div className="rounded-lg bg-surface-inset p-3 text-xs space-y-1.5">
               <div className="flex justify-between text-content-secondary">
@@ -340,7 +352,7 @@ export default function UpdatePanel({ hotspot, onBack }) {
               {/* Single button — handleSubmit routes a DC-short wallet to the top-up modal. */}
               <button
                 onClick={handleSubmit}
-                disabled={busy || !connected || !anyDirty}
+                disabled={busy || !connected || !anyDirty || gainOutOfRange}
                 className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {submitState === "building" ? "Building…"
