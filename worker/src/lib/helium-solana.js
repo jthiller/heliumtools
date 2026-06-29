@@ -399,3 +399,51 @@ export const CONFIG_MERKLE_OFFSET = CONFIG_COLLECTION_OFFSET + 32;
 
 /** KeyToAssetV0 layout: discriminator(8) + dao(32) + asset(32) + ... */
 export const KTA_ASSET_OFFSET = 40;
+
+/**
+ * IotHotspotInfoV0 layout: disc(8) + asset(32) + bump_seed(1)
+ * + location: Option<u64> + elevation: Option<i32> + gain: Option<i32>
+ * + is_full_hotspot: bool + num_location_asserts: u16 + ...
+ * The location Option tag sits at byte 41.
+ */
+export const IOT_INFO_LOCATION_OFFSET = 8 + 32 + 1;
+
+/**
+ * Parse the asserted location / elevation / gain (+ device type) out of an
+ * IotHotspotInfoV0 account buffer, walking the three Options from byte 41.
+ * `location_dec` is the H3 cell as a decimal string (null if unasserted);
+ * `gain` is dBi × 10.
+ */
+export function parseIotInfo(buf) {
+  let off = IOT_INFO_LOCATION_OFFSET;
+
+  const hasLoc = buf[off] === 1;
+  off += 1;
+  let location_dec = null;
+  if (hasLoc) {
+    location_dec = buf.readBigUInt64LE(off).toString();
+    off += 8;
+  }
+
+  const hasElev = buf[off] === 1;
+  off += 1;
+  let elevation = null;
+  if (hasElev) {
+    elevation = buf.readInt32LE(off);
+    off += 4;
+  }
+
+  const hasGain = buf[off] === 1;
+  off += 1;
+  let gain = null;
+  if (hasGain) {
+    gain = buf.readInt32LE(off);
+    off += 4;
+  }
+
+  const is_full_hotspot = buf[off] === 1;
+  off += 1;
+  const num_location_asserts = buf.readUInt16LE(off);
+
+  return { location_dec, elevation, gain, is_full_hotspot, num_location_asserts };
+}

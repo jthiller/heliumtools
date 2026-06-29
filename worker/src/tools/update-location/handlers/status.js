@@ -1,5 +1,5 @@
 import { jsonResponse } from "../../../lib/response.js";
-import { keyToAssetKey, iotInfoKey } from "../../../lib/helium-solana.js";
+import { keyToAssetKey, iotInfoKey, parseIotInfo } from "../../../lib/helium-solana.js";
 import { fetchAccount } from "../../hotspot-claimer/services/common.js";
 import { getOnboardFees } from "../../iot-onboard/services/fees.js";
 
@@ -58,47 +58,4 @@ export async function handleStatus(request, env) {
     console.error("update-location status error:", err.message);
     return jsonResponse({ error: "Status lookup failed" }, 500);
   }
-}
-
-/**
- * Parse IotHotspotInfoV0:
- *   disc(8) + asset(32) + bump_seed(1)
- *   + location: Option<u64> + elevation: Option<i32> + gain: Option<i32>
- *   + is_full_hotspot: bool + num_location_asserts: u16 + ...
- *
- * The location Option tag is at byte 41 (matches iot-onboard's has_location
- * check); we walk forward past each present Option to read the rest.
- */
-export function parseIotInfo(buf) {
-  let off = 41;
-
-  const hasLoc = buf[off] === 1;
-  off += 1;
-  let location_dec = null;
-  if (hasLoc) {
-    location_dec = buf.readBigUInt64LE(off).toString();
-    off += 8;
-  }
-
-  const hasElev = buf[off] === 1;
-  off += 1;
-  let elevation = null;
-  if (hasElev) {
-    elevation = buf.readInt32LE(off);
-    off += 4;
-  }
-
-  const hasGain = buf[off] === 1;
-  off += 1;
-  let gain = null;
-  if (hasGain) {
-    gain = buf.readInt32LE(off);
-    off += 4;
-  }
-
-  const is_full_hotspot = buf[off] === 1;
-  off += 1;
-  const num_location_asserts = buf.readUInt16LE(off);
-
-  return { location_dec, elevation, gain, is_full_hotspot, num_location_asserts };
 }

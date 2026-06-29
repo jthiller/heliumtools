@@ -13,7 +13,7 @@ import {
 } from "@heroicons/react/24/outline";
 import useDarkMode from "../lib/useDarkMode.js";
 import { h3ToLatLng } from "../lib/h3.js";
-import { confirmAndVerify } from "../dc-mint/solanaUtils.js";
+import { signAndBroadcast } from "../dc-mint/solanaUtils.js";
 import { DC_MINT } from "../dc-mint/constants.js";
 import DcMintModal from "../dc-mint/DcMintModal.jsx";
 import { fetchHotspotStatus, buildUpdate } from "../lib/updateLocationApi.js";
@@ -25,29 +25,6 @@ const INPUT_CLASS =
   "mt-1 w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 const dcToUsd = (dc) => (dc / 100_000).toFixed(2);
-
-/**
- * Sign + broadcast a transaction. The wallet is always a required signer for an
- * owner-paid location update, so this takes the wallet-adapter path; the
- * raw-broadcast branch is kept for parity with the onboarding flow.
- */
-async function signAndBroadcast(txn, walletPubkey, sendTransaction, connection) {
-  const msg = txn.message;
-  const staticKeys = msg.staticAccountKeys || msg.accountKeys || [];
-  const numSigners = msg.header?.numRequiredSignatures ?? txn.signatures.length;
-  const signerKeys = staticKeys.slice(0, numSigners);
-  const walletStr = walletPubkey.toBase58();
-  const walletIsSigner = signerKeys.some((k) => k.toBase58() === walletStr);
-
-  let sig;
-  if (walletIsSigner) {
-    sig = await sendTransaction(txn, connection, { skipPreflight: true });
-  } else {
-    sig = await connection.sendRawTransaction(txn.serialize(), { skipPreflight: true });
-  }
-  await confirmAndVerify(connection, sig);
-  return sig;
-}
 
 /**
  * Editor for one Hotspot: seeds the map + fields from the current on-chain
@@ -71,7 +48,8 @@ export default function UpdatePanel({ hotspot, onBack }) {
   const [viewState, setViewState] = useState({ latitude: 37.77, longitude: -122.42, zoom: 16 });
 
   const [dcBalance, setDcBalance] = useState(null);
-  const [submitState, setSubmitState] = useState("idle"); // idle | building | signing | done | error
+  const [balanceNonce, setBalanceNonce] = useState(0); // bump to refresh the DC balance
+  const [submitState, setSubmitState] = useState("idle"); // idle | building | signing | done
   const [error, setError] = useState(null);
   const [txSignature, setTxSignature] = useState(null);
   const [showDcModal, setShowDcModal] = useState(false);
@@ -103,7 +81,9 @@ export default function UpdatePanel({ hotspot, onBack }) {
 
   useEffect(() => loadStatus(), [loadStatus]);
 
-  // Read the wallet's DC balance (to gate the location-fee path).
+  // Read the wallet's DC balance (to gate the location-fee path). Refreshed via
+  // balanceNonce after a successful update or DC top-up — not on every submit
+  // state transition.
   useEffect(() => {
     if (!walletPubkey || !connection) return;
     let cancelled = false;
@@ -116,23 +96,7 @@ export default function UpdatePanel({ hotspot, onBack }) {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [walletPubkey, connection, submitState]);
-
-  // Auto-fill ground elevation only when it's never been set (don't clobber the
-  // on-chain value or a manual edit).
-  useEffect(() => {
-    if (elevation !== "" || !lat || !lng) return;
-    if (isNaN(parseFloat(lat)) || isNaN(parseFloat(lng))) return;
-    let cancelled = false;
-    fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const g = data?.results?.[0]?.elevation;
-        if (!cancelled && g != null) setElevation(String(Math.round(g)));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [lat, lng, elevation]);
+  }, [walletPubkey, connection, balanceNonce]);
 
   const h3Cell = useMemo(() => {
     const la = parseFloat(lat);
@@ -147,6 +111,23 @@ export default function UpdatePanel({ hotspot, onBack }) {
     const boundary = cellToBoundary(h3Cell, true);
     return { type: "Feature", geometry: { type: "Polygon", coordinates: [boundary.concat([boundary[0]])] } };
   }, [h3Cell]);
+
+  // Auto-fill ground elevation only when it's never been set (don't clobber the
+  // on-chain value or a manual edit). Keyed on the memoized cell so it fires
+  // once per cell change, not on every keystroke while panning.
+  useEffect(() => {
+    if (elevation !== "" || !h3Cell) return;
+    let cancelled = false;
+    fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const g = data?.results?.[0]?.elevation;
+        if (!cancelled && g != null) setElevation(String(Math.round(g)));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [h3Cell, elevation]);
 
   const handleMove = useCallback((evt) => setViewState(evt.viewState), []);
   const handleMoveEnd = useCallback((evt) => {
@@ -217,10 +198,11 @@ export default function UpdatePanel({ hotspot, onBack }) {
       const sig = await signAndBroadcast(txn, walletPubkey, sendTransaction, connection);
       setTxSignature(sig);
       setSubmitState("done");
+      setBalanceNonce((n) => n + 1); // DC was spent — refresh balance
       loadStatus(); // refresh to show the new on-chain values
     } catch (err) {
       setError(err.message);
-      setSubmitState("error");
+      setSubmitState("idle");
     }
   };
 
@@ -348,25 +330,17 @@ export default function UpdatePanel({ hotspot, onBack }) {
 
             <div className="flex items-center gap-3">
               {!connected && <WalletMultiButton className="!h-9 !rounded-lg !text-sm" />}
-              {dcShort ? (
-                <button
-                  onClick={() => setShowDcModal(true)}
-                  disabled={!connected}
-                  className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  Top up Data Credits
-                </button>
-              ) : (
-                <button
-                  onClick={handleSubmit}
-                  disabled={busy || !connected || !anyDirty}
-                  className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  {submitState === "building" ? "Building…"
-                    : submitState === "signing" ? "Confirm in wallet…"
-                    : anyDirty ? "Update Hotspot" : "No changes"}
-                </button>
-              )}
+              {/* Single button — handleSubmit routes a DC-short wallet to the top-up modal. */}
+              <button
+                onClick={handleSubmit}
+                disabled={busy || !connected || !anyDirty}
+                className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {submitState === "building" ? "Building…"
+                  : submitState === "signing" ? "Confirm in wallet…"
+                  : dcShort ? "Top up Data Credits"
+                  : anyDirty ? "Update Hotspot" : "No changes"}
+              </button>
             </div>
           </div>
         )}
@@ -419,7 +393,7 @@ export default function UpdatePanel({ hotspot, onBack }) {
           onClose={() => setShowDcModal(false)}
           onSuccess={() => {
             setShowDcModal(false);
-            setSubmitState("idle");
+            setBalanceNonce((n) => n + 1); // refresh DC balance so the gate clears
           }}
         />
       )}

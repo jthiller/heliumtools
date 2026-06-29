@@ -17,9 +17,9 @@ import {
   fetchAsset,
   fetchAssetProof,
   getCanopyDepth,
+  parseIotInfo,
 } from "../../../lib/helium-solana.js";
 import { getOnboardFees } from "../../iot-onboard/services/fees.js";
-import { parseIotInfo } from "./status.js";
 
 /**
  * POST /build
@@ -55,9 +55,9 @@ export async function handleBuildUpdate(request, env) {
   if (!gateway_pubkey) return jsonResponse({ error: "Missing gateway_pubkey" }, 400);
 
   const hasLocation = location !== null && location !== undefined && location !== "";
-  const hasElevation = elevation !== null && elevation !== undefined;
-  const hasGain = gain !== null && gain !== undefined;
-  if (!hasLocation && !hasElevation && !hasGain) {
+  // elevation/gain are passed straight to the builder, which encodes null/undefined
+  // as Borsh None ("leave unchanged"); only `hasLocation` gates real branches below.
+  if (!hasLocation && elevation == null && gain == null) {
     return jsonResponse({ error: "Nothing to update — provide location, elevation, or gain" }, 400);
   }
 
@@ -92,12 +92,17 @@ export async function handleBuildUpdate(request, env) {
       ktaAccount.data.slice(KTA_ASSET_OFFSET, KTA_ASSET_OFFSET + 32),
     ).toBase58();
 
-    // Batch 2: DAS asset + proof, blockhash, and the LUT in parallel.
-    const [asset, proof, { blockhash }, lutResult] = await Promise.all([
+    // Batch 2: DAS asset + proof, blockhash, the LUT, and — only when location
+    // is changing — the fee table + the owner's DC balance. The fee/DC reads
+    // depend on neither the asset nor the proof, so they run concurrently here
+    // rather than serially after the tree read.
+    const [asset, proof, { blockhash }, lutResult, fees, dcAtaAccount] = await Promise.all([
       fetchAsset(rpcUrl, assetId),
       fetchAssetProof(rpcUrl, assetId),
       connection.getLatestBlockhash(),
       connection.getAddressLookupTable(HELIUM_COMMON_LUT),
+      hasLocation ? getOnboardFees(env) : Promise.resolve(null),
+      hasLocation ? connection.getAccountInfo(ataAddress(ownerPubkey, DC_MINT)) : Promise.resolve(null),
     ]);
 
     // Ownership gate: the connected wallet must own the cNFT (update_iot_info_v0
@@ -108,6 +113,7 @@ export async function handleBuildUpdate(request, env) {
     }
 
     // Merkle tree from the asset (NOT DataOnlyConfig) so full + data-only work.
+    // This read genuinely depends on the asset, so it can't join Batch 2.
     const merkleTree = new PublicKey(asset.compression.tree);
     const treeAccount = await connection.getAccountInfo(merkleTree);
     if (!treeAccount) {
@@ -116,17 +122,11 @@ export async function handleBuildUpdate(request, env) {
     const canopyDepth = getCanopyDepth(treeAccount.data);
 
     // Proactive DC check when location changes — surface a top-up signal before
-    // the user signs a doomed transaction.
+    // the user signs a doomed transaction. (fees + DC balance fetched in Batch 2.)
     if (hasLocation) {
-      const info = parseIotInfo(iotInfoAccount.data);
-      const fees = await getOnboardFees(env);
-      const deviceType = info.is_full_hotspot ? "full" : "data_only";
+      const deviceType = parseIotInfo(iotInfoAccount.data).is_full_hotspot ? "full" : "data_only";
       const requiredDc = fees[deviceType].location;
-
-      let currentDc = 0;
-      const dcAta = await connection.getAccountInfo(ataAddress(ownerPubkey, DC_MINT));
-      if (dcAta) currentDc = Number(dcAta.data.readBigUInt64LE(64));
-
+      const currentDc = dcAtaAccount ? Number(dcAtaAccount.data.readBigUInt64LE(64)) : 0;
       if (currentDc < requiredDc) {
         return jsonResponse({
           dc_needed: true,
@@ -144,11 +144,7 @@ export async function handleBuildUpdate(request, env) {
       asset,
       proof,
       canopyDepth,
-      {
-        location: hasLocation ? location : null,
-        elevation: hasElevation ? elevation : null,
-        gain: hasGain ? gain : null,
-      },
+      { location, elevation, gain }, // builder encodes null/undefined as Borsh None
     );
 
     const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 });
