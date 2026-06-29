@@ -39,6 +39,32 @@ export async function confirmAndVerify(connection, signature) {
   }
 }
 
+/**
+ * Sign + broadcast a (legacy or v0) transaction, then confirm it. If the
+ * connected wallet is among the required signers it signs via the wallet
+ * adapter; otherwise the transaction is already fully signed (e.g. maker-paid)
+ * and is broadcast raw. Returns the signature once confirmed.
+ */
+export async function signAndBroadcast(txn, walletPubkey, sendTransaction, connection) {
+  const msg = txn.message;
+  const staticKeys = msg.staticAccountKeys || msg.accountKeys || [];
+  const numSigners = msg.header?.numRequiredSignatures ?? txn.signatures.length;
+  const signerKeys = staticKeys.slice(0, numSigners);
+  const walletStr = walletPubkey.toBase58();
+  const walletIsSigner = signerKeys.some((k) => k.toBase58() === walletStr);
+
+  let sig;
+  if (walletIsSigner) {
+    // Wallet must sign — use the wallet adapter
+    sig = await sendTransaction(txn, connection, { skipPreflight: true });
+  } else {
+    // Transaction is already fully signed (e.g., maker-paid) — broadcast directly
+    sig = await connection.sendRawTransaction(txn.serialize(), { skipPreflight: true });
+  }
+  await confirmAndVerify(connection, sig);
+  return sig;
+}
+
 /** Strip everything except digits (for DC/integer amounts). */
 export const cleanInt = (v) => v.replace(/[^\d]/g, "");
 

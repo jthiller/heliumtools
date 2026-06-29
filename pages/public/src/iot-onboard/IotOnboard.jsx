@@ -9,7 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import Header from '../components/Header.jsx';
 import StatusBanner from '../components/StatusBanner.jsx';
 import CopyButton from '../components/CopyButton.jsx';
-import { confirmAndVerify } from '../dc-mint/solanaUtils.js';
+import { signAndBroadcast } from '../dc-mint/solanaUtils.js';
 import { lookupHotspot, requestIssue, requestOnboard } from '../lib/iotOnboardApi.js';
 import useDarkMode from '../lib/useDarkMode.js';
 import useHotspotBle from './useHotspotBle.js';
@@ -444,26 +444,6 @@ function WifiPanel({
 // ---------------------------------------------------------------------------
 // OnboardPanel — full on-chain onboarding flow
 // ---------------------------------------------------------------------------
-
-async function signAndBroadcast(txn, walletPubkey, sendTransaction, connection) {
-  const msg = txn.message;
-  const staticKeys = msg.staticAccountKeys || msg.accountKeys || [];
-  const numSigners = msg.header?.numRequiredSignatures ?? txn.signatures.length;
-  const signerKeys = staticKeys.slice(0, numSigners);
-  const walletStr = walletPubkey.toBase58();
-  const walletIsSigner = signerKeys.some((k) => k.toBase58() === walletStr);
-
-  let sig;
-  if (walletIsSigner) {
-    // Wallet must sign — use the wallet adapter
-    sig = await sendTransaction(txn, connection, { skipPreflight: true });
-  } else {
-    // Transaction is already fully signed (e.g., maker-paid) — broadcast directly
-    sig = await connection.sendRawTransaction(txn.serialize(), { skipPreflight: true });
-  }
-  await confirmAndVerify(connection, sig);
-  return sig;
-}
 
 function OnboardPanel({ ble }) {
   const { connected, publicKey: walletPubkey, sendTransaction } = useWallet();
