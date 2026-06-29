@@ -100,7 +100,9 @@ export async function handleBuildUpdate(request, env) {
       fetchAsset(rpcUrl, assetId),
       fetchAssetProof(rpcUrl, assetId),
       connection.getLatestBlockhash(),
-      connection.getAddressLookupTable(HELIUM_COMMON_LUT),
+      // .catch so a transient LUT-fetch failure degrades to a no-LUT v0 message
+      // rather than failing the whole build.
+      connection.getAddressLookupTable(HELIUM_COMMON_LUT).catch(() => null),
       hasLocation ? getOnboardFees(env) : Promise.resolve(null),
       hasLocation ? connection.getAccountInfo(ataAddress(ownerPubkey, DC_MINT)) : Promise.resolve(null),
     ]);

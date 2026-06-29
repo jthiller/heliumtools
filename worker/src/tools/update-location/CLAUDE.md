@@ -105,19 +105,21 @@ own Hotspot, `payer = dc_fee_payer = hotspot_owner = the connected wallet`.
   autofill). Seeds the map/fields from `/status`'s current values, tracks
   per-field **dirty** state so only changed fields are sent (a gain-only change
   skips the DC fee), reads the wallet's DC balance to gate the location-fee path
-  (offering `DcMintModal`), and signs via `signAndBroadcast` + `confirmAndVerify`
-  (from `dc-mint`). On success: Solscan + in-app map links, then re-reads `/status`.
+  (offering `DcMintModal`), and signs via the shared `signAndBroadcast`
+  (`dc-mint/solanaUtils.js`, which confirms via `confirmAndVerify`). On success:
+  Solscan + in-app map links, then re-reads `/status`.
 - `lib/updateLocationApi.js` — `fetchHotspotStatus`, `buildUpdate`.
 
 ## Reused from other tools
 - `worker/src/lib/helium-solana.js` — PDAs, `fetchAsset`/`fetchAssetProof`/
   `getCanopyDepth`, `encodeOption*`, `anchorDiscriminator`, `treeAuthorityKey`,
-  `ataAddress`, `HELIUM_COMMON_LUT`, `decodeCompressionHash`.
+  `ataAddress`, `HELIUM_COMMON_LUT`, `decodeCompressionHash`, `parseIotInfo`.
 - `iot-onboard/services/fees.js` — `getOnboardFees` (KV key `iot-onboard:fees:v1`,
   refreshed by iot-onboard's existing cron; this tool only reads it).
 - `hotspot-claimer/services/common.js` — `fetchAccount`.
 - `wallet-dashboard` `/fleet` — the wallet's Hotspot list.
-- `dc-mint` — `DcMintModal`, `DC_MINT`, `confirmAndVerify`.
+- `dc-mint` — `DcMintModal`, `DC_MINT`, and the shared `signAndBroadcast` /
+  `confirmAndVerify` (`solanaUtils.js`).
 
 ## Environment / Secrets
 - `SOLANA_RPC_URL` — Helius staked endpoint for on-chain reads, DAS, and the LUT

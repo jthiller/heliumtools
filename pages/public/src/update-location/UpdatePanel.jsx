@@ -46,6 +46,7 @@ export default function UpdatePanel({ hotspot, onBack }) {
   const [elevation, setElevation] = useState("");
   const [gain, setGain] = useState("");
   const [viewState, setViewState] = useState({ latitude: 37.77, longitude: -122.42, zoom: 16 });
+  const [locationTouched, setLocationTouched] = useState(false); // user actively picked a spot
 
   const [dcBalance, setDcBalance] = useState(null);
   const [balanceNonce, setBalanceNonce] = useState(0); // bump to refresh the DC balance
@@ -112,11 +113,12 @@ export default function UpdatePanel({ hotspot, onBack }) {
     return { type: "Feature", geometry: { type: "Polygon", coordinates: [boundary.concat([boundary[0]])] } };
   }, [h3Cell]);
 
-  // Auto-fill ground elevation only when it's never been set (don't clobber the
-  // on-chain value or a manual edit). Keyed on the memoized cell so it fires
-  // once per cell change, not on every keystroke while panning.
+  // Auto-fill ground elevation only after the user actively picks a location and
+  // only when elevation hasn't been set. Gating on locationTouched is what keeps
+  // a Hotspot that is merely being *viewed* (location asserted on-chain but no
+  // elevation) from auto-filling elevation and falsely showing as "changed".
   useEffect(() => {
-    if (elevation !== "" || !h3Cell) return;
+    if (elevation !== "" || !h3Cell || !locationTouched) return;
     let cancelled = false;
     fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`)
       .then((r) => r.json())
@@ -127,17 +129,21 @@ export default function UpdatePanel({ hotspot, onBack }) {
       .catch(() => {});
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [h3Cell, elevation]);
+  }, [h3Cell, elevation, locationTouched]);
 
   const handleMove = useCallback((evt) => setViewState(evt.viewState), []);
   const handleMoveEnd = useCallback((evt) => {
     setLat(evt.viewState.latitude.toFixed(6));
     setLng(evt.viewState.longitude.toFixed(6));
+    setLocationTouched(true);
   }, []);
   const handleLatLngBlur = useCallback(() => {
     const la = parseFloat(lat);
     const lo = parseFloat(lng);
-    if (!isNaN(la) && !isNaN(lo)) setViewState((v) => ({ ...v, latitude: la, longitude: lo }));
+    if (!isNaN(la) && !isNaN(lo)) {
+      setViewState((v) => ({ ...v, latitude: la, longitude: lo }));
+      setLocationTouched(true);
+    }
   }, [lat, lng]);
 
   const [geolocating, setGeolocating] = useState(false);
@@ -151,6 +157,7 @@ export default function UpdatePanel({ hotspot, onBack }) {
         setLat(la.toFixed(6));
         setLng(lo.toFixed(6));
         setViewState((v) => ({ ...v, latitude: la, longitude: lo, zoom: 17 }));
+        setLocationTouched(true);
         setGeolocating(false);
       },
       () => setGeolocating(false),
