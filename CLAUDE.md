@@ -59,6 +59,7 @@ in this root file are a higher-level overview.
 | DC Mint | `worker/src/tools/dc-mint/CLAUDE.md` | HNT→DC burn; `DcMintModal` reused by other tools |
 | Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **disabled / Coming Soon** |
 | IoT Hotspot Onboarding | `worker/src/tools/iot-onboard/CLAUDE.md` | Web Bluetooth + dewi.org onboarding proxy |
+| Update Hotspot Location | `worker/src/tools/update-location/CLAUDE.md` | Wallet-driven re-assert of `update_iot_info_v0` (location/elevation/gain) on onboarded IoT Hotspots |
 | Multi-Gateway | `worker/src/tools/multi-gateway/CLAUDE.md` | Live packet dashboard; runs the `jthiller/multi-gateway` fork |
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |

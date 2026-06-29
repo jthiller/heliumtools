@@ -13,6 +13,7 @@ import { MultiGatewayHub } from "./tools/multi-gateway/hub.js";
 import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { handleL1MigrationRequest } from "./tools/l1-migration/index.js";
 import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard/index.js";
+import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
 import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
@@ -28,6 +29,7 @@ const routes = [
   { prefix: "/dc-mint", handler: handleDcMintRequest },
   { prefix: "/l1-migration", handler: handleL1MigrationRequest },
   { prefix: "/iot-onboard", handler: handleIotOnboardRequest },
+  { prefix: "/update-location", handler: handleUpdateLocationRequest },
   { prefix: "/ve-hnt", handler: handleVeHntRequest },
   { prefix: "/vote", handler: handleVoteRequest },
   { prefix: "/wallet-dashboard", handler: handleWalletDashboardRequest },

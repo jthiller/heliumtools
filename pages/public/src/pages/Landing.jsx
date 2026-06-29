@@ -65,6 +65,15 @@ const sections = [
         badge: null,
       },
       {
+        name: "Update Hotspot Location",
+        description:
+          "Connect your Solana wallet to re-assert the location, elevation, or antenna gain of your onboarded IoT Hotspots.",
+        href: "/update-location",
+        icon: MapPinIcon,
+        iconBg: "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
+        badge: "New",
+      },
+      {
         name: "Add a Hotspot",
         description:
           "Add a LoRaWAN gateway to the Helium network and monitor it in real time. View signal quality, packet activity, and connection status.",

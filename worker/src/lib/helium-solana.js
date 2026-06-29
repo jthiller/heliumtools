@@ -32,6 +32,11 @@ export const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxW
 export const IOT_MINT = new PublicKey("iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns");
 export const DC_MINT = new PublicKey("dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm");
 
+// Helium common Address Lookup Table — compresses the static Helium program /
+// PDA accounts in v0 transactions. Used by the location-update builder (and
+// mirrored as a string in hotspot-claimer/config.js).
+export const HELIUM_COMMON_LUT = new PublicKey("43eY9L2spbM2b1MPDFFBStUiFGt29ziZ1nc1xbpzsfVt");
+
 // Voter Stake Registry (veHNT positions)
 export const VSR_PROGRAM = new PublicKey("hvsrNC3NKbcryqDs2DocYHZ9yPKEVzdSjQG6RVtK1s8");
 // SPL governance program (realm lives under this)
@@ -171,6 +176,17 @@ export function encodeOptionI32(value) {
   return buf;
 }
 
+/**
+ * Decode a compressed-NFT hash (data_hash / creator_hash) from a DAS asset.
+ * Helius normally returns base58, but some DAS providers return a "0x"-prefixed
+ * hex string — handle both so the proof check never silently corrupts.
+ */
+export function decodeCompressionHash(hash) {
+  return hash.startsWith("0x")
+    ? Buffer.from(hash.slice(2), "hex")
+    : Buffer.from(bs58.decode(hash));
+}
+
 // ---------------------------------------------------------------------------
 // Instruction builders
 // ---------------------------------------------------------------------------
@@ -255,6 +271,70 @@ export function buildOnboardInstruction(owner, gatewayPubkeyB58, merkleTree, ass
     { pubkey: SPL_ATA, isSigner: false, isWritable: false },                 // associated_token_program
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
     { pubkey: SUB_DAOS, isSigner: false, isWritable: false },                // helium_sub_daos_program
+  ];
+
+  const proofPath = proof.proof.slice(0, proof.proof.length - canopyDepth);
+  for (const proofKey of proofPath) {
+    accounts.push({ pubkey: new PublicKey(proofKey), isSigner: false, isWritable: false });
+  }
+
+  return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
+}
+
+/**
+ * Build an update_iot_info_v0 instruction to re-assert an already-onboarded
+ * IoT Hotspot's location / elevation / antenna gain. The connected wallet
+ * (owner) is payer + dc_fee_payer + hotspot_owner.
+ *
+ * Mirrors buildOnboardInstruction but with three deliberate differences — each
+ * a known failure mode if copied blindly:
+ *  1. Borsh arg order puts the Options FIRST (location, elevation, gain), then
+ *     the cNFT fields (data_hash, creator_hash, root, index). Onboard is the
+ *     reverse. (Sanity: 127 bytes all-Some, 111 bytes all-None.)
+ *  2. The account list ADDS tree_authority + bubblegum_program and OMITS
+ *     onboard's key_to_asset / data_only_config / helium_sub_daos_program.
+ *  3. The cNFT hashes are decoded defensively (base58 or "0x"-hex).
+ *
+ * A None arg (null/undefined location/elevation/gain) leaves that field
+ * unchanged on-chain; only a location change incurs the DC staking fee.
+ */
+export function buildUpdateIotInfoInstruction(owner, gatewayPubkeyB58, merkleTree, asset, proof, canopyDepth, opts = {}) {
+  const disc = anchorDiscriminator("update_iot_info_v0");
+
+  const dataHash = decodeCompressionHash(asset.compression.data_hash);
+  const creatorHash = decodeCompressionHash(asset.compression.creator_hash);
+  const root = Buffer.from(bs58.decode(proof.root));
+  const indexBuf = Buffer.alloc(4);
+  indexBuf.writeUInt32LE(asset.compression.leaf_id);
+
+  // NOTE: arg order differs from onboard — Options FIRST, then hashes/root/index.
+  const data = Buffer.concat([
+    disc,
+    encodeOptionU64(opts.location),          // H3 cell hex string → u64, or None
+    encodeOptionI32(opts.elevation ?? null), // meters, or None
+    encodeOptionI32(opts.gain ?? null),      // dBi × 10, or None
+    dataHash, creatorHash, root, indexBuf,
+  ]);
+
+  const accounts = [
+    { pubkey: owner, isSigner: true, isWritable: true },                        // payer
+    { pubkey: owner, isSigner: true, isWritable: true },                        // dc_fee_payer
+    { pubkey: iotInfoKey(gatewayPubkeyB58), isSigner: false, isWritable: true }, // iot_info
+    { pubkey: owner, isSigner: true, isWritable: true },                        // hotspot_owner
+    { pubkey: merkleTree, isSigner: false, isWritable: false },                 // merkle_tree
+    { pubkey: treeAuthorityKey(merkleTree), isSigner: false, isWritable: false }, // tree_authority
+    { pubkey: ataAddress(owner, DC_MINT), isSigner: false, isWritable: true },  // dc_burner
+    { pubkey: REWARDABLE_ENTITY_CONFIG_KEY, isSigner: false, isWritable: false }, // rewardable_entity_config
+    { pubkey: DAO_KEY, isSigner: false, isWritable: false },                    // dao
+    { pubkey: IOT_SUB_DAO_KEY, isSigner: false, isWritable: false },            // sub_dao (read-only here, unlike onboard)
+    { pubkey: DC_MINT, isSigner: false, isWritable: true },                     // dc_mint
+    { pubkey: DC_KEY, isSigner: false, isWritable: false },                     // dc
+    { pubkey: BUBBLEGUM, isSigner: false, isWritable: false },                  // bubblegum_program
+    { pubkey: COMPRESSION, isSigner: false, isWritable: false },                // compression_program
+    { pubkey: DATA_CREDITS, isSigner: false, isWritable: false },               // data_credits_program
+    { pubkey: SPL_TOKEN, isSigner: false, isWritable: false },                  // token_program
+    { pubkey: SPL_ATA, isSigner: false, isWritable: false },                    // associated_token_program
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },    // system_program
   ];
 
   const proofPath = proof.proof.slice(0, proof.proof.length - canopyDepth);
