@@ -182,9 +182,19 @@ export function encodeOptionI32(value) {
  * hex string — handle both so the proof check never silently corrupts.
  */
 export function decodeCompressionHash(hash) {
-  return hash.startsWith("0x")
+  if (typeof hash !== "string" || hash.length === 0) {
+    throw new Error("Invalid compression hash: expected a non-empty string");
+  }
+  const buf = hash.startsWith("0x")
     ? Buffer.from(hash.slice(2), "hex")
     : Buffer.from(bs58.decode(hash));
+  // Both data_hash and creator_hash are 32 bytes; anything else means a
+  // malformed/unexpected DAS response — fail explicitly rather than build a
+  // transaction with a silently-wrong hash.
+  if (buf.length !== 32) {
+    throw new Error(`Invalid compression hash: expected 32 bytes, got ${buf.length}`);
+  }
+  return buf;
 }
 
 // ---------------------------------------------------------------------------

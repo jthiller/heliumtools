@@ -38,9 +38,10 @@ indirectly via the shared fee cache).
   res-12 cell **hex** string; omitted/null fields are left unchanged on-chain.
   Returns `{ transaction }`, or `{ dc_needed, required_dc, current_dc,
   device_type }` when the wallet's DC is short of the location fee, or
-  `{ error, not_onboarded }` when the Hotspot isn't onboarded. A dev-only
-  `?simulate=1` query returns the `simulateTransaction` result instead of the
-  txn (used to validate account/arg order — see Gotchas).
+  `{ error, not_onboarded }` when the Hotspot isn't onboarded. A `?simulate=1`
+  query (honored only on a localhost host — i.e. `wrangler dev`, ignored in
+  production) returns the `simulateTransaction` result instead of the txn (used
+  to validate account/arg order — see Gotchas).
 
 **Handlers:**
 - `handlers/status.js` — reads the on-chain state and parses it via

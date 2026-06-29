@@ -41,7 +41,11 @@ import { getOnboardFees } from "../../iot-onboard/services/fees.js";
  */
 export async function handleBuildUpdate(request, env) {
   const url = new URL(request.url);
-  const simulateOnly = url.searchParams.get("simulate") === "1";
+  // `?simulate=1` is a local-dev validation aid (returns simulation logs instead
+  // of the txn). Gate it to localhost so it can't add RPC load or expose debug
+  // output to public callers in production.
+  const isLocalDev = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  const simulateOnly = isLocalDev && url.searchParams.get("simulate") === "1";
 
   let body;
   try {
@@ -76,6 +80,18 @@ export async function handleBuildUpdate(request, env) {
     infoKey = iotInfoKey(gateway_pubkey);
   } catch {
     return jsonResponse({ error: "Invalid gateway_pubkey" }, 400);
+  }
+
+  // Validate the optional fields up front so malformed client input is a clean
+  // 400 rather than a 500 thrown from encodeOptionU64/writeInt32LE deeper in.
+  if (hasLocation && !/^[0-9a-fA-F]{1,16}$/.test(location)) {
+    return jsonResponse({ error: "Invalid location — expected an H3 cell as a hex string" }, 400);
+  }
+  if (elevation != null && !Number.isInteger(elevation)) {
+    return jsonResponse({ error: "Invalid elevation — expected an integer (meters)" }, 400);
+  }
+  if (gain != null && !Number.isInteger(gain)) {
+    return jsonResponse({ error: "Invalid gain — expected an integer (dBi × 10)" }, 400);
   }
 
   try {
