@@ -104,7 +104,11 @@ export async function handlePositionEpochs(url, env, request) {
       const dao = daoBufs[i] ? decodeDaoEpochInfo(daoBufs[i]) : null;
       const subDao = subDaoBufs[i] ? decodeSubDaoEpochInfo(subDaoBufs[i]) : null;
       const positionVehnt = computeVeHntAt(position, vmc, epochStartTs);
-      const { claimableHnt, claimableDnt, reason } = resolveEpochReward(positionVehnt, dao, subDao);
+      const { claimableHnt, claimableDnt, reason } = resolveEpochReward(positionVehnt, dao, subDao, {
+        expirationTs: delegation.expirationTs,
+        epochStartTs,
+        positionRecentProposals: position.recentProposals,
+      });
 
       return {
         epoch,
