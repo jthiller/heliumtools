@@ -105,13 +105,17 @@ branch of `resolveEpochReward`:
    `epochIsForfeit` in `compute.js`, mirrored verbatim from the Rust. Epochs
    that would burn surface as reason `v1_forfeit`.
 
-Both gates fail open: a DAO snapshot without four real proposals can't
-forfeit, and a delegation with no expiration set keeps paying. The forfeit
-rule reads `DaoEpochInfoV0.recent_proposals` (a fixed `[RecentProposal; 4]`,
-newest-first) and `PositionV0.recent_proposals` — both now decoded in
-`decode.js`. Claiming a forfeited/expired epoch is still valid on-chain (it
-marks the epoch claimed and unblocks undelegate/withdraw), so `claim.js`
-still builds txns for every unclaimed epoch off the bitmap.
+Both gates fail open on missing *decode* data: a DAO snapshot without four
+real proposals can't forfeit, and an absent/undecodable `expiration_ts`
+(i.e. `null` — the only case the gate skips) is treated as not-expired. This
+is not about the on-chain value: `expiration_ts` is an always-present `i64`,
+and a decoded **0** pays **0** for every epoch, exactly as the chain's
+`expiration_ts > epoch_start_ts` gate does (0 is never > a positive epoch
+start). The forfeit rule reads `DaoEpochInfoV0.recent_proposals` (a fixed
+`[RecentProposal; 4]`, newest-first) and `PositionV0.recent_proposals` —
+both now decoded in `decode.js`. Claiming a forfeited/expired epoch is still
+valid on-chain (it marks the epoch claimed and unblocks undelegate/withdraw),
+so `claim.js` still builds txns for every unclaimed epoch off the bitmap.
 
 ### Claim signer
 `claim_rewards_v1` requires `position_authority` (NFT owner) to sign OR
