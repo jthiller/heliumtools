@@ -226,6 +226,8 @@ function StatusPill({ position }) {
 
 const REASON_COPY = {
   v1_hnt: "Claimable (v1): HNT via DAO",
+  v1_expired: "No reward: the delegation expired before this epoch — claim_rewards_v1 pays 0 once expiration_ts ≤ the epoch's start. Undelegate and re-delegate to resume earning.",
+  v1_forfeit: "Forfeited (v1): the position was eligible on fewer than 2 of the DAO's last 4 proposals, so the chain burns this epoch's rewards on claim rather than paying them.",
   v0_dnt: "Claimable (v0): DNT via sub-DAO",
   v0_blocked_by_hnt_issued: "Locked (v0 blocked): sub-DAO shows DNT but HIP-138 cutover already issued HNT",
   position_vehnt_zero: "No reward: position's veHNT at this epoch's start is 0 (lockup already expired)",
@@ -236,11 +238,16 @@ const REASON_COPY = {
 function ReasonPill({ reason }) {
   const isClaimable = reason === "v1_hnt" || reason === "v0_dnt";
   const isLocked = reason === "v0_blocked_by_hnt_issued";
+  // Rewards the position was entitled to size but the chain won't pay: burned
+  // for non-participation, or zeroed after the delegation expired.
+  const isForfeited = reason === "v1_forfeit" || reason === "v1_expired";
   const color = isClaimable
     ? "text-emerald-600 dark:text-emerald-400"
     : isLocked
       ? "text-amber-600 dark:text-amber-400"
-      : "text-content-tertiary";
+      : isForfeited
+        ? "text-rose-600 dark:text-rose-400"
+        : "text-content-tertiary";
   return (
     <Tooltip content={REASON_COPY[reason] ?? reason}>
       <span className={`font-mono text-[10px] uppercase tracking-[0.08em] border-b border-dotted border-content-tertiary cursor-help ${color}`}>

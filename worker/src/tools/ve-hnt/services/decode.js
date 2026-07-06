@@ -256,7 +256,7 @@ export function decodeDao(buf) {
  *   done_issuing_rewards: bool (1)
  *   done_issuing_hst_pool: bool (1)
  *   bump_seed: u8 (1)
- *   recent_proposals: [RecentProposal; 4]  (fixed 4*(32+8) = 160)
+ *   recent_proposals: [RecentProposal; 4]  (fixed 4*(32+8) = 160, newest-first)
  *   delegation_rewards_issued: u64 (8)
  *   vehnt_at_epoch_start: u64 (8)
  *   cumulative_not_emitted: u64 (8)
@@ -320,13 +320,23 @@ export function decodeDaoEpochInfo(buf) {
   const doneIssuingRewards = buf.readUInt8(o) === 1; o += 1;
   /* done_issuing_hst_pool */ o += 1;
   /* bump_seed */ o += 1;
-  /* recent_proposals [4] */ o += 160;
+  // The snapshot of the DAO's four most recent proposals at this epoch. It's a
+  // fixed [RecentProposal; 4] (no length prefix), stored newest-first, and is
+  // what claim_rewards_v1 evaluates the vote-participation forfeit rule
+  // against — so decode it rather than skipping the 160 bytes.
+  const recentProposals = [];
+  for (let i = 0; i < 4; i++) {
+    const proposal = new PublicKey(buf.slice(o, o + 32)); o += 32;
+    const ts = Number(buf.readBigInt64LE(o)); o += 8;
+    recentProposals.push({ proposal, ts });
+  }
   const delegationRewardsIssued = buf.readBigUInt64LE(o); o += 8;
   const vehntAtEpochStart = buf.readBigUInt64LE(o); o += 8;
 
   return {
     epoch,
     doneIssuingRewards,
+    recentProposals,
     delegationRewardsIssued,
     vehntAtEpochStart,
   };

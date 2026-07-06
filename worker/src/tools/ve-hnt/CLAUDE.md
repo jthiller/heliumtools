@@ -87,6 +87,32 @@ in `claimed_epochs_bitmap`. v1 response flags `pendingRewardsApprox:
 "current-vehnt"` — for Cliff lockups we approximate historical veHNT with
 the current value. Error is usually < 1% for recent epochs.
 
+**Two gates zero a v1 epoch's payout** — `claim_rewards_v1` enforces both,
+so an estimate that ignores them over-reports (the estimate must match what
+the claim actually transfers, not what the position's veHNT alone implies).
+Neither exists in `claim_rewards_v0`, so both apply only to the `v1_hnt`
+branch of `resolveEpochReward`:
+
+1. **Expiration** — `delegated_vehnt_at_epoch = expiration_ts > epoch_start_ts
+   ? voting_power : 0`. A delegation's `expiration_ts` is pinned to the
+   proxy-season end at delegate time; once an epoch starts at/after it the
+   share is 0. Epochs past expiry surface as reason `v1_expired`.
+2. **Vote-participation forfeit** — after sizing the reward the chain BURNS
+   it (instead of transferring) when the epoch's DAO `recent_proposals`
+   snapshot holds four real proposals and the position was eligible on fewer
+   than two (voted on it within the snapshot window, or the proposal was
+   still in progress — created < 1 week before the epoch start). See
+   `epochIsForfeit` in `compute.js`, mirrored verbatim from the Rust. Epochs
+   that would burn surface as reason `v1_forfeit`.
+
+Both gates fail open: a DAO snapshot without four real proposals can't
+forfeit, and a delegation with no expiration set keeps paying. The forfeit
+rule reads `DaoEpochInfoV0.recent_proposals` (a fixed `[RecentProposal; 4]`,
+newest-first) and `PositionV0.recent_proposals` — both now decoded in
+`decode.js`. Claiming a forfeited/expired epoch is still valid on-chain (it
+marks the epoch claimed and unblocks undelegate/withdraw), so `claim.js`
+still builds txns for every unclaimed epoch off the bitmap.
+
 ### Claim signer
 `claim_rewards_v1` requires `position_authority` (NFT owner) to sign OR
 the TUKTUK signer (`8m6iyXwcu8obaXdqKwzBqHE5HM2tRZZfSXV5qNALiPk4`), which
