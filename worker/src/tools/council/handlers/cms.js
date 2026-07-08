@@ -20,7 +20,13 @@ function slugify(s) {
     .replace(/^-+|-+$/g, "");
 }
 
-// "🫡 13 · ✅ 5 · 🙏 3" — top reactions by count.
+// Custom Discord emoji arrive as an ASCII name ("cat_scream", "LF5G", "GIFCryptoRocket")
+// instead of a unicode glyph, which reads as junk on the marketing page. Keep only
+// standard emoji — any reaction whose glyph contains a non-ASCII character (all unicode
+// emoji do; Discord custom-emoji names are ASCII `[A-Za-z0-9_]`). Marketing feed only.
+const isStandardEmoji = (r) => [...String(r?.emoji ?? "")].some((c) => c.charCodeAt(0) > 127);
+
+// "🫡 13 · ✅ 5 · 🙏 3" — reactions by count.
 function reactionsSummary(reactions) {
   return [...reactions]
     .sort((a, b) => b.count - a.count)
@@ -56,7 +62,11 @@ export async function handleCms(request, env) {
   }
   const approved = nominations.filter((n) => statusOf(map, n.id) === "approved");
 
-  const items = approved.map((n) => ({
+  const items = approved.map((n) => {
+    // Marketing feed shows standard emoji only — drop custom-emoji reactions from both
+    // the count and the summary so they stay consistent.
+    const rx = n.reactions.filter(isStandardEmoji);
+    return {
     id: n.id,
     slug: slugify(n.authorUsername || n.candidateName || n.id),
     name: n.candidateName || n.authorDisplayName || "",
@@ -66,11 +76,12 @@ export async function handleCms(request, env) {
     postedAt: iso(n.postedAt),
     editedAt: iso(n.editedAt),
     discordLink: n.link,
-    reactionCount: n.reactions.reduce((sum, r) => sum + (r.count || 0), 0),
-    reactions: reactionsSummary(n.reactions),
+    reactionCount: rx.reduce((sum, r) => sum + (r.count || 0), 0),
+    reactions: reactionsSummary(rx),
     endorsementCount: n.endorsements.length,
     endorsers: n.endorsements.map((e) => e.authorDisplayName).filter(Boolean).join(", "),
-  }));
+    };
+  });
 
   const result = { generatedAt: Date.now(), scrapedAt: meta?.scrapedAt ?? null, count: items.length, items };
   await kvPutJson(env, CMS_CACHE_KEY, result, NOMINATIONS_CACHE_TTL);

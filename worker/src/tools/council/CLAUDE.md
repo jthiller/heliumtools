@@ -119,7 +119,10 @@ avatarUrl, body (markdown), postedAt (ISO), editedAt, discordLink, reactionCount
 reactions (summary string), endorsementCount, endorsers }] }`. `name`/`body` are the
 **server-computed** presentation fields (`services/present.js`) — the same lift + strip
 the `/council` page uses, so the two never diverge. KV-cached (`council:cms`, 60s),
-invalidated by every ingest/poll.
+invalidated by every ingest/poll. **Custom Discord emoji are stripped from this feed
+only** (`reactionCount` + `reactions`): they arrive as ASCII names ("cat_scream", "LF5G")
+that read as junk on the marketing page, so `/cms` keeps standard unicode emoji reactions
+only. The blind `/council` page (`/nominations`) still shows all reactions.
 
 **How the marketing site consumes it:** Framer does not pull this endpoint directly.
 A local hourly launchd job (`org.heliumtools.council-framer-sync`, see Touchpoints →
