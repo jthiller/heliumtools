@@ -9,27 +9,43 @@ tallies, and supporting replies as sub-items.
 - Built for guild `404106811252408320`, channel `1524096173206536242`
   (`config.js` — flip `COUNCIL_CHANNEL_ID` for a future election cycle).
 
-## Push-model architecture — the worker never talks to Discord
+## Architecture — worker-side Discord bot poll (primary) + manual push (override)
 
-There is **no Discord bot, no Discord credential, and no cron** in this tool. The
-data flow is one-directional:
+Two ingest sources, one shared commit path (`services/commit.js`):
 
 ```
-local Chrome (logged into Discord)
-  → council-scrape skill reads the channel DOM, classifies each message
-  → curl POST /council/ingest  (Authorization: Bearer <COUNCIL_INGEST_TOKEN>)
-  → worker validates + upserts into D1, invalidates the KV read cache
-  → GET /council/nominations   (public, KV-cached) → the page
+PRIMARY: worker cron (6-hourly) → services/poll.js
+  → fetchChannelMessages() reads the channel via Discord REST (Authorization: Bot …)
+  → mapMessage() + classifyMessage()  →  same validate + commit as the push path
+  → GET /council/nominations (public, KV-cached) → the page
+
+OVERRIDE: curl POST /council/ingest (Bearer COUNCIL_INGEST_TOKEN)
+  → validate + commit  (manual correction / backfill / a browser-scrape fallback)
 ```
 
-The worker is a dumb store-and-serve endpoint: it accepts classified snapshots and
-serves them. All Discord reading, classification (nomination / support / other),
-and mention/handle resolution happen **scraper-side**. We never call Discord's REST
-API with any account token (ToS). Page freshness therefore depends on the scraping
-Mac running; the frontend surfaces an honest "data N ago" from `scrapedAt`.
+Both sources go through `validatePayload` → `commitSnapshot` (upsert + complete-scrape
+soft-remove + cache invalidation), so they behave identically. The poll is a full read
+each run, so it's always `complete: true`.
 
-Scraper procedure + failure handling + scheduling live in the skill at
-**`.claude/skills/council-scrape/`** (`SKILL.md` + `extract.js`).
+**Why a bot poll, not a browser scrape.** The original design read the channel from a
+logged-in browser (the `council-scrape` skill) and pushed to `/ingest`. That still works
+as a manual override, but a sandboxed agent session filters bulk logged-in-session content
+out of its browser tool results (anti-exfiltration), so it can't reliably carry full
+nomination text to the ingest. A read-only **bot token** used server-side sidesteps that
+entirely: the worker talks to Discord directly, with full content, on cron — no browser,
+no user session. This needs the bot in the guild with **View Channel + Read Message
+History** on the channel and the **Message Content** privileged intent enabled.
+
+**Classification is heuristic** (`services/classify.js`): a reply → `support`; a
+top-level post ≥ `NOMINATION_MIN_CHARS` and not the channel-intro announcement →
+`nomination`; else `other`. This gets nominations right but can't tell a short
+supportive reply from a short jab (both become `support`). If that endorsement noise
+matters, replace `classifyMessage` with an LLM call (Workers AI or the Anthropic API) —
+it's the single seam. The scraper's Claude-side classification was more precise; this is
+the tradeoff for a fully-automated, browser-free pipeline.
+
+Page freshness is the last successful poll; the frontend shows an honest "data N ago"
+from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**.
 
 ## Ingest contract (shared with the scraper)
 
@@ -133,29 +149,37 @@ rate limit on ingest — the bearer token is the gate.
 
 ## CORS
 
-Ingest is a **curl** client, not a browser, so the shared `corsHeaders`
-(`worker/src/lib/response.js`) — which allow-lists `Content-Type, X-User-Uuid,
-Coinbase-Signature` but **not `Authorization`** — are fine as-is. A browser-based
-ingest would need `Authorization` added to `Access-Control-Allow-Headers`; that is
-deliberately **not** done, since the only ingest client is the local scraper.
-`OPTIONS` returns `204` with the shared `corsHeaders` (the public read is a plain
-same-shape GET).
+The primary poll is server-side (no browser, no CORS). The manual `/ingest` push is a
+**curl** client, also not a browser. So the shared `corsHeaders`
+(`worker/src/lib/response.js`) — which allow-list `Content-Type, X-User-Uuid,
+Coinbase-Signature` but **not `Authorization`** — are fine as-is, and `OPTIONS` returns
+`204` with them. We deliberately do **not** add `Authorization` to
+`Access-Control-Allow-Headers`: enabling a browser to POST the snapshot cross-origin
+would be a way to route logged-in-session data around the sandbox's anti-exfiltration
+guard, which is exactly why the bot-poll path exists instead.
 
 ## Environment
 
-- `COUNCIL_INGEST_TOKEN` — dedicated bearer token gating `POST /council/ingest`,
-  resolved **first**. Lets the council ingest rotate independently of the
-  OUI-notifier admin route. Set in production via
-  `wrangler secret put COUNCIL_INGEST_TOKEN --env production`.
+- `DISCORD_BOT_TOKEN` — read-only bot token for the primary poll (`Authorization:
+  Bot …`). Set via `wrangler secret put DISCORD_BOT_TOKEN --env production`. Unset ⇒
+  the 6-hourly `council-poll` cron task is a **no-op** (logs "skipped"), so the tool
+  ships dormant until the bot is configured. The bot must be in the guild with View
+  Channel + Read Message History on the channel and the **Message Content** intent on.
+- `COUNCIL_INGEST_TOKEN` — dedicated bearer token gating the manual `POST /council/ingest`
+  override, resolved **first**. Lets the ingest rotate independently of the
+  OUI-notifier admin route. Set via `wrangler secret put COUNCIL_INGEST_TOKEN --env production`.
 - `ADMIN_TOKEN` — **fallback** when `COUNCIL_INGEST_TOKEN` is unset (also gates the
   OUI-notifier admin route). Resolution is `env.COUNCIL_INGEST_TOKEN || env.ADMIN_TOKEN`;
   both unset ⇒ ingest returns **503**, a header mismatch on the resolved token ⇒ **401**.
   **Never log or expose** either value.
-- The local scraper reads its copy of the ingest token from
+- The manual-push scraper reads its copy of `COUNCIL_INGEST_TOKEN` from
   `~/.config/heliumtools/council-admin-token` (outside the repo, never committed).
+- Both unset ⇒ ingest returns **503**; a header mismatch on the resolved token ⇒ **401**.
+  **Never log or expose** either token.
 - `KV` — read cache, replay-guard meta, rate-limit counter.
 - `DB` (D1) — the `council_messages` table. A missing `DB` binding makes ingest
-  return **503** (rather than silently no-op the writes). No new binding, no cron.
+  return **503** (rather than silently no-op the writes). No new binding. The only
+  cron is the shared 6-hourly tick driving `council-poll` (see `worker/src/index.js`).
 
 ## Related
 

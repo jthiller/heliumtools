@@ -1,10 +1,10 @@
 // Council (advisory-council nominations) tool — configuration.
 //
 // A blind page (not listed on the landing page) that lists Helium advisory-council
-// nominees scraped from the Discord #advisory-council channel. The worker holds NO
-// Discord credentials and runs NO cron: a local Chrome scrape (see the council-scrape
-// skill) classifies each message and PUSHes snapshots to the admin-gated ingest
-// endpoint; viewers read a KV-cached public feed. See CLAUDE.md.
+// nominees from the Discord #advisory-council channel. Primary ingest is a worker-side
+// bot poll on the 6-hourly cron (services/poll.js, Authorization: Bot); a manual
+// admin-token push to /council/ingest is the override. Viewers read a KV-cached feed.
+// See CLAUDE.md.
 
 // The Discord guild + channel this page is built for. Flip COUNCIL_CHANNEL_ID for a
 // future election cycle. The channel id is the ingest contract's `channelId` (a push
@@ -46,6 +46,13 @@ export const AVATAR_URL_PREFIXES = [
 
 // D1 has a per-batch statement ceiling; upserts are chunked at this size.
 export const D1_BATCH_CHUNK = 50;
+
+// Heuristic classification (services/classify.js) for the Discord-bot poller. Real
+// nominations are long self-intro posts; a top-level message at least this many
+// characters (and not the channel-intro announcement) is treated as a nomination.
+// Replies are treated as support. This is a deliberately simple first pass — see
+// the CLAUDE.md note on upgrading to LLM classification if it proves too coarse.
+export const NOMINATION_MIN_CHARS = 400;
 
 // KV keys. The public feed is cached briefly; the replay-guard meta is written
 // with no TTL (it must outlive any single snapshot to reject out-of-order pushes).

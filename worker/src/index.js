@@ -16,7 +16,7 @@ import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard
 import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
 import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
-import { handleCouncilRequest } from "./tools/council/index.js";
+import { handleCouncilRequest, pollCouncil } from "./tools/council/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
@@ -84,6 +84,9 @@ export default {
     run("oui-notifier-daily", runOuiNotifierDaily(env));
     run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
     run("iot-onboard-fees", refreshOnboardFees(env));
+    // Council nominations: poll the Discord channel with the bot token and refresh
+    // the stored snapshot (no-op until DISCORD_BOT_TOKEN is set).
+    run("council-poll", pollCouncil(env));
     // OUI data changes infrequently — refresh once daily at midnight UTC
     const hour = new Date(event.scheduledTime).getUTCHours();
     if (hour === 0) run("multi-gateway-oui-cache", refreshOuiCache(env));

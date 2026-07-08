@@ -1,8 +1,8 @@
 import { jsonResponse } from "../../../lib/response.js";
 import { kvGetJson } from "../../../lib/kv.js";
-import { MAX_BODY_BYTES, MAX_FUTURE_SKEW_MS, NOMINATIONS_CACHE_KEY, META_KEY } from "../config.js";
+import { MAX_BODY_BYTES, MAX_FUTURE_SKEW_MS, META_KEY } from "../config.js";
 import { validatePayload } from "../services/validate.js";
-import { getStoredIds, upsertMessages, softRemoveStale } from "../services/store.js";
+import { commitSnapshot } from "../services/commit.js";
 
 /**
  * POST /council/ingest — admin-gated snapshot push from the local Discord scraper.
@@ -53,7 +53,7 @@ export async function handleIngest(request, env) {
     if (validated.messageIndex !== undefined) body.messageIndex = validated.messageIndex;
     return jsonResponse(body, 400);
   }
-  const { channelId, guildId, scrapedAt, complete, messages } = validated.value;
+  const { scrapedAt } = validated.value;
 
   // Reject a far-future scrapedAt (a seconds-vs-ms or microsecond scraper bug):
   // stamping meta with it would 409 every later legitimate push forever.
@@ -68,43 +68,6 @@ export async function handleIngest(request, env) {
     return jsonResponse({ error: "Stale snapshot", storedScrapedAt: meta.scrapedAt }, 409);
   }
 
-  // inserted vs updated is decided against the ids already stored for the channel.
-  const storedIds = await getStoredIds(env, channelId);
-  let inserted = 0;
-  for (const m of messages) {
-    if (!storedIds.has(m.id)) inserted++;
-  }
-  const updated = messages.length - inserted;
-
-  await upsertMessages(env, channelId, guildId, scrapedAt, messages);
-
-  // Only a complete-channel scrape may soft-remove rows this snapshot didn't carry
-  // (deleted in Discord). A partial/degraded scrape (complete:false) must not.
-  let removed = 0;
-  if (complete) {
-    removed = await softRemoveStale(env, channelId, scrapedAt);
-  }
-
-  // Invalidate the public read cache and stamp the replay-guard meta (no TTL).
-  // Best-effort: a KV hiccup here must not fail an ingest whose D1 write succeeded.
-  try {
-    if (env.KV) {
-      await env.KV.delete(NOMINATIONS_CACHE_KEY);
-      await env.KV.put(
-        META_KEY,
-        JSON.stringify({ scrapedAt, channelId, guildId, updatedAt: Date.now() }),
-      );
-    }
-  } catch {
-    // best-effort
-  }
-
-  return jsonResponse({
-    ok: true,
-    received: messages.length,
-    inserted,
-    updated,
-    removed,
-    scrapedAt,
-  });
+  const counts = await commitSnapshot(env, validated.value);
+  return jsonResponse({ ok: true, ...counts });
 }

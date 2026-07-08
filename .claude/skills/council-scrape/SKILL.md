@@ -5,11 +5,18 @@ description: Scrape the Helium Discord #advisory-council channel from the user's
 
 # Council Scrape
 
-Push-model ingestion for the blind `/council` page. There is no Discord bot and no
-server-side cron for this data: the freshness of `heliumtools.org/council` depends
-entirely on this skill running on this Mac. Each run is a full snapshot, so a run
-that is skipped or missed is harmless. The page surfaces `scrapedAt` honestly as
-"data Xh ago", so a stale run shows up as stale, never as wrong.
+**Manual fallback.** The `/council` page is now populated by a worker-side Discord
+**bot poll** on a 6-hourly cron (`worker/src/tools/council/services/poll.js`), which
+reads the channel server-side with a read-only bot token. This browser-scrape skill is
+kept only as a manual override — e.g. to force an immediate refresh, or to populate the
+page in an environment where the bot can't be used. Note: in a sandboxed agent session
+whose browser tool results are filtered for logged-in-session content, this skill can't
+carry full nomination text to the ingest; prefer the bot poll there.
+
+Push-model ingestion for the blind `/council` page: the freshness of
+`heliumtools.org/council` depends on this skill running on this Mac when used. Each run
+is a full snapshot, so a run that is skipped or missed is harmless. The page surfaces
+`scrapedAt` honestly as "data Xh ago", so a stale run shows up as stale, never as wrong.
 
 The flow: drive the user's logged-in Chrome (claude-in-chrome MCP) to read the
 channel DOM, classify each message, then `curl` a JSON snapshot to the worker's

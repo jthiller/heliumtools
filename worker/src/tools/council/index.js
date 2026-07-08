@@ -2,6 +2,10 @@ import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handleIngest } from "./handlers/ingest.js";
 import { handleNominations } from "./handlers/nominations.js";
 
+// Cron entry: the Discord-bot poller (primary ingest source). Re-exported so the
+// top-level scheduled() handler can drive it on the 6-hourly ticks.
+export { pollCouncil } from "./services/poll.js";
+
 /**
  * Council (advisory-council nominations) tool — prefix `/council`. A blind page
  * (deliberately not listed on the landing page). Push-model: a local Discord

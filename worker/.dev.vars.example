@@ -25,12 +25,16 @@ RESEND_API_KEY="re_REPLACE_ME"
 # routes return 503 if unset; not needed for general dev or cron.
 ADMIN_TOKEN=""
 
-# --- Council (Discord nominations ingest) ---
-# Dedicated bearer token guarding POST /council/ingest
-# (worker/src/tools/council/handlers/ingest.js). Preferred over ADMIN_TOKEN so the
-# council ingest can rotate independently of the OUI-notifier admin route. If unset,
-# the handler falls back to ADMIN_TOKEN; if both are unset the endpoint returns 503.
-# The local Discord scraper reads its copy from ~/.config/heliumtools/council-admin-token.
+# --- Council (Discord nominations) ---
+# Read-only Discord bot token. The worker cron polls the #advisory-council channel
+# with it (Authorization: Bot <token>) — the primary ingest source. The bot must be
+# in the guild with View Channel + Read Message History on the channel and the
+# "Message Content" privileged intent enabled. Unset ⇒ the poll is a no-op.
+DISCORD_BOT_TOKEN=""
+# Dedicated bearer token guarding the manual POST /council/ingest override
+# (worker/src/tools/council/handlers/ingest.js). Preferred over ADMIN_TOKEN so it
+# can rotate independently of the OUI-notifier admin route. If unset, the handler
+# falls back to ADMIN_TOKEN; if both are unset the endpoint returns 503.
 COUNCIL_INGEST_TOKEN=""
 
 # --- DC Purchase (Coinbase Onramp) ---
