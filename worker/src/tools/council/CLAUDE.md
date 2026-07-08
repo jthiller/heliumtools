@@ -53,6 +53,21 @@ runs at read time so it fixes the `/council` page and the `/council/cms` feed to
 These dropped posts can't be shown as attached endorsements (they're top-level and name
 several people), so they're hidden rather than mis-shown as nominations.
 
+**Review gate (moderation)** (`services/review.js`): nothing reaches the public
+surfaces (`/nominations` + `/cms`) until it is reviewed **approved**; anything else is
+held. The heuristic classifier can't judge *content* (FUD, scams, off-brand, a
+non-candidate's long post the classifier promoted), so a **local Claude** review makes
+that call — no server-side LLM/API key. State is a KV map (`council:review`,
+`{ id: { status, reason } }`) set only by `POST /council/moderate`; the poll never
+touches it (durable across re-polls). Admin reads via `GET /council/review`. The store
+**fails closed**: `loadReviewMap` returns `{ ok, map }` and on any KV read error (or
+missing binding) callers serve nothing and never persist — a blip can't wipe decisions
+or re-approve held items. There is **no auto-grandfather**; approval is always an
+explicit `/moderate` call (the deploy seeded the vetted set that was live at cutover).
+The review itself is the `council-review` skill, run hourly by a scheduled local Claude
+session (see Touchpoints). Note: a newly-approved candidate not yet in the Framer
+collection is logged by the sync, not auto-created (update-only), so it needs a manual add.
+
 Page freshness is the last successful poll; the frontend shows an honest "data N ago"
 from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**
 (now a disabled fallback — the bot poll is primary).
@@ -289,12 +304,16 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 
 **Production infra:**
 - D1 (`heliumtools-prod`): table `council_messages`.
-- KV: keys `council:nominations`, `council:cms`, `council:meta`, and `rl:council:*` rate-limit counters.
+- KV: keys `council:nominations`, `council:cms`, `council:meta`, `council:review` (moderation decisions), and `rl:council:*` rate-limit counters.
 - Secrets: `DISCORD_BOT_TOKEN`, `COUNCIL_INGEST_TOKEN`. (No new binding — shares `DB`/`KV`.)
 
 **This machine (not in the repo):**
 - Token file `~/.config/heliumtools/council-admin-token`.
 - Desktop scheduled task `council-scrape` (currently disabled).
+- **Moderation review** — the committed `.claude/skills/council-review/` skill (the
+  flag-negative rubric + procedure) driven by a desktop scheduled task `council-review`
+  (hourly at :10, `~/.claude/scheduled-tasks/council-review/`). A local Claude session
+  reads `GET /council/review` and pushes approve/reject to `POST /council/moderate`.
 - **Framer CMS sync (hourly re-push into the marketing site).** A launchd agent
   `~/Library/LaunchAgents/org.heliumtools.council-framer-sync.plist` (label
   `org.heliumtools.council-framer-sync`, fires hourly at :20) runs
@@ -338,10 +357,11 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
    lazy import + route in `main.jsx`.
 4. **Schema/secrets/data**: remove the `council_messages` block from `schema.sql`;
    `DROP TABLE council_messages` on prod D1; delete KV keys `council:nominations`,
-   `council:cms`, `council:meta`, `rl:council:*`; `wrangler secret delete DISCORD_BOT_TOKEN` and
+   `council:cms`, `council:meta`, `council:review`, `rl:council:*`; `wrangler secret delete DISCORD_BOT_TOKEN` and
    `COUNCIL_INGEST_TOKEN --env production`; remove both from `.dev.vars.example`.
-5. **Skill/local**: delete `.claude/skills/council-scrape/`, the desktop `council-scrape`
-   scheduled task, and `~/.config/heliumtools/council-admin-token`.
+5. **Skill/local**: delete `.claude/skills/council-scrape/` and `.claude/skills/council-review/`,
+   the desktop scheduled tasks `council-scrape` **and `council-review`**, and
+   `~/.config/heliumtools/council-admin-token`.
    - **Stop the Framer sync**: `launchctl unload ~/Library/LaunchAgents/org.heliumtools.council-framer-sync.plist`,
      then delete that plist and the `~/.config/heliumtools/council-framer-sync.*` files
      (`.js`, `.sh`, `.log`, `.launchd.log`). The "Nominations" collection + the fields it
