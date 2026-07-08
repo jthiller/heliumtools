@@ -16,6 +16,7 @@ import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard
 import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
 import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
+import { handleCouncilRequest } from "./tools/council/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
@@ -32,6 +33,7 @@ const routes = [
   { prefix: "/update-location", handler: handleUpdateLocationRequest },
   { prefix: "/ve-hnt", handler: handleVeHntRequest },
   { prefix: "/vote", handler: handleVoteRequest },
+  { prefix: "/council", handler: handleCouncilRequest },
   { prefix: "/wallet-dashboard", handler: handleWalletDashboardRequest },
   { prefix: "/shared", handler: handleSharedRequest },
 ];

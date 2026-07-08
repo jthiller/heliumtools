@@ -65,6 +65,7 @@ in this root file are a higher-level overview.
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
 | Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind page** — live vote activity, outcomes + 7-day trend chart. Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC) |
+| Council | `worker/src/tools/council/CLAUDE.md` | **Blind page** - Discord election nominees; push-model ingest (admin token), no cron, no Discord egress |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
 
