@@ -41,10 +41,25 @@ export async function handleDiag(request, env) {
   const guilds = await probe("https://discord.com/api/v10/users/@me/guilds", headers);
   if (Array.isArray(guilds.body)) {
     out.guilds = guilds.body.map((g) => ({ id: g.id, name: g.name }));
-    out.inTargetGuild = guilds.body.some((g) => g.id === COUNCIL_GUILD_ID);
+    out.inTargetGuildList = guilds.body.some((g) => g.id === COUNCIL_GUILD_ID);
   } else {
     out.guilds = guilds;
   }
+
+  // Direct guild probe — reliable membership check (200 = bot is a member),
+  // unlike /users/@me/guilds which lags for a REST-only bot that never connects
+  // to the gateway. This is the authoritative "is the bot in the guild" signal.
+  const guild = await probe(`https://discord.com/api/v10/guilds/${COUNCIL_GUILD_ID}`, headers);
+  out.guild = guild.body
+    ? {
+        status: guild.status,
+        id: guild.body.id,
+        name: guild.body.name,
+        discordMessage: guild.body.message,
+        discordCode: guild.body.code,
+      }
+    : guild;
+  out.inTargetGuild = guild.status === 200;
 
   const chan = await probe(`https://discord.com/api/v10/channels/${COUNCIL_CHANNEL_ID}`, headers);
   out.channel = chan.body
