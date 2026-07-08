@@ -3,7 +3,7 @@
 // the two ingest sources behave identically: same upsert, same complete-scrape
 // soft-removal, same cache invalidation and replay-guard meta stamp.
 
-import { NOMINATIONS_CACHE_KEY, META_KEY } from "../config.js";
+import { NOMINATIONS_CACHE_KEY, CMS_CACHE_KEY, META_KEY } from "../config.js";
 import { getStoredIds, upsertMessages, softRemoveStale } from "./store.js";
 
 /**
@@ -36,6 +36,7 @@ export async function commitSnapshot(env, value) {
   try {
     if (env.KV) {
       await env.KV.delete(NOMINATIONS_CACHE_KEY);
+      await env.KV.delete(CMS_CACHE_KEY);
       await env.KV.put(
         META_KEY,
         JSON.stringify({ scrapedAt, channelId, guildId, updatedAt: Date.now() }),

@@ -5,6 +5,7 @@
 // still resolve.
 
 import { COUNCIL_GUILD_ID, COUNCIL_CHANNEL_ID } from "../config.js";
+import { presentNomination } from "./present.js";
 
 function messageLink(id) {
   return `https://discord.com/channels/${COUNCIL_GUILD_ID}/${COUNCIL_CHANNEL_ID}/${id}`;
@@ -49,7 +50,11 @@ export function assembleNominations(rows) {
   const nominationById = new Map();
   for (const row of rows) {
     if (row.kind !== "nomination") continue;
-    const nom = { ...toPublic(row), endorsements: [] };
+    const base = toPublic(row);
+    // Presentation fields (same logic the /council page uses): the lifted candidate
+    // name and the body with any redundant name-header line removed.
+    const { candidateName, body } = presentNomination(base.content, base.authorDisplayName);
+    const nom = { ...base, candidateName, body, endorsements: [] };
     nominations.push(nom);
     nominationById.set(row.id, nom);
   }

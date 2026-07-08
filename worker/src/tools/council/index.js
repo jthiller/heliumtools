@@ -3,6 +3,7 @@ import { handleIngest } from "./handlers/ingest.js";
 import { handleRefresh } from "./handlers/refresh.js";
 import { handleDiag } from "./handlers/diag.js";
 import { handleNominations } from "./handlers/nominations.js";
+import { handleCms } from "./handlers/cms.js";
 
 // Cron entry: the Discord-bot poller (primary ingest source). Re-exported so the
 // top-level scheduled() handler can drive it on the 6-hourly ticks.
@@ -19,6 +20,7 @@ export { pollCouncil } from "./services/poll.js";
  *   POST /council/ingest       — admin-token-gated snapshot push (manual override)
  *   POST /council/refresh      — admin-token-gated manual trigger for the Discord poll
  *   GET  /council/nominations  — public nominations tree (KV-cached)
+ *   GET  /council/cms          — public flat feed for an external CMS to sync (KV-cached)
  */
 export async function handleCouncilRequest(request, env, ctx) {
   if (request.method === "OPTIONS") {
@@ -48,6 +50,11 @@ export async function handleCouncilRequest(request, env, ctx) {
         return jsonResponse({ error: "Method not allowed" }, 405);
       }
       return handleNominations(request, env);
+    case "/cms":
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "Method not allowed" }, 405);
+      }
+      return handleCms(request, env);
     default:
       return jsonResponse({ error: "Not found" }, 404);
   }

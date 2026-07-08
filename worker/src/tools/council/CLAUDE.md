@@ -65,12 +65,26 @@ post by Keenon for PepeMexico shows as PepeMexico.
 ## Files
 
 ```
-config.js        constants (ids, caps, NOMINATION_MIN_CHARS, cache TTL, rate limit)
-index.js         dispatch: OPTIONS/ingest/refresh/diag/nominations; exports pollCouncil for cron
-handlers/        ingest.js (auth+validate+replay guard), refresh.js, diag.js, nominations.js (cache-first)
-services/        discord.js (REST fetch + mapMessage + cdnAvatar), classify.js, proxy.js,
-                 commit.js (shared upsert/soft-remove/cache), store.js (D1), validate.js, assemble.js (read-time tree)
+config.js        constants (ids, caps, NOMINATION_MIN_CHARS, cache keys/TTL, rate limit)
+index.js         dispatch: OPTIONS/ingest/refresh/diag/nominations/cms; exports pollCouncil for cron
+handlers/        ingest.js (auth+validate+replay guard), refresh.js, diag.js,
+                 nominations.js (cache-first tree), cms.js (flat feed for an external CMS)
+services/        discord.js (REST fetch + mapMessage + resolveMentions + cdnAvatar), classify.js,
+                 proxy.js, present.js (candidate-name lift + body strip — shared by the page + CMS),
+                 commit.js (shared upsert/soft-remove/cache), store.js (D1), validate.js, assemble.js
 ```
+
+## External CMS feed — `GET /council/cms`
+
+A flat, presentation-ready array for an external CMS (e.g. a Framer synced/API-backed
+collection) to pull from — the designer's public page binds to it and it stays current
+with the hourly poll (no push, no key). Same public data as `/nominations`, reshaped by
+`handlers/cms.js`: `{ generatedAt, scrapedAt, count, items: [{ id, slug, name, handle,
+avatarUrl, body (markdown), postedAt (ISO), editedAt, discordLink, reactionCount,
+reactions (summary string), endorsementCount, endorsers }] }`. `name`/`body` are the
+**server-computed** presentation fields (`services/present.js`) — the same lift + strip
+the `/council` page uses, so the two never diverge. KV-cached (`council:cms`, 60s),
+invalidated by every ingest/poll.
 
 ## Adding the bot (Wick gauntlet)
 
@@ -259,7 +273,7 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 
 **Production infra:**
 - D1 (`heliumtools-prod`): table `council_messages`.
-- KV: keys `council:nominations`, `council:meta`, and `rl:council:*` rate-limit counters.
+- KV: keys `council:nominations`, `council:cms`, `council:meta`, and `rl:council:*` rate-limit counters.
 - Secrets: `DISCORD_BOT_TOKEN`, `COUNCIL_INGEST_TOKEN`. (No new binding — shares `DB`/`KV`.)
 
 **This machine (not in the repo):**
@@ -291,7 +305,7 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
    lazy import + route in `main.jsx`.
 4. **Schema/secrets/data**: remove the `council_messages` block from `schema.sql`;
    `DROP TABLE council_messages` on prod D1; delete KV keys `council:nominations`,
-   `council:meta`, `rl:council:*`; `wrangler secret delete DISCORD_BOT_TOKEN` and
+   `council:cms`, `council:meta`, `rl:council:*`; `wrangler secret delete DISCORD_BOT_TOKEN` and
    `COUNCIL_INGEST_TOKEN --env production`; remove both from `.dev.vars.example`.
 5. **Skill/local**: delete `.claude/skills/council-scrape/`, the desktop `council-scrape`
    scheduled task, and `~/.config/heliumtools/council-admin-token`.

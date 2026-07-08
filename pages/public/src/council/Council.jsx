@@ -126,71 +126,10 @@ function safeHttps(link) {
   return typeof link === "string" && link.startsWith("https://") ? link : null;
 }
 
-// ─── candidate name ─────────────────────────────────────────────────────────────
-
-// Words that mark a first line as a greeting rather than a name ("Iconic Afternoon",
-// "Hey everyone"), so we don't mistake a salutation for the candidate's name.
-const GREETING_WORDS = /\b(hi|hey|hello|hiya|yo|gm|greetings|welcome|morning|afternoon|evening|sup|howdy)\b/i;
-// Words that mark a first line as a section title, not a person's name ("Advisory
-// Council Nomination", "Self Nomination", "My Application"), so a titled post isn't
-// mislabeled with the title as the candidate's name.
-const TITLE_WORDS = /\b(nomination|application|candidacy|candidate|council|intro(?:duction)?)\b/i;
-// A plausible person name: starts with a letter, then only letters, spaces, and the
-// punctuation that shows up in names (comma, period, apostrophe, hyphen). No digits,
-// mentions, colons, or urls — those disqualify a line from being a name header.
-const NAME_LIKE = /^[\p{L}][\p{L} .,'-]{0,44}$/u;
-
-// Drop trailing emoji / symbols / whitespace (e.g. "Iconic Afternoon 🫡" → "Iconic Afternoon").
-function trimTrailingSymbols(s) {
-  return s.replace(/[\s\p{Extended_Pictographic}\p{So}\p{Sk}️‍]+$/u, "").trim();
-}
-
-const NAME_OK = (name) =>
-  !!name && NAME_LIKE.test(name) && !GREETING_WORDS.test(name) && !TITLE_WORDS.test(name);
-
-// Lift the candidate's name for the card header. Returns { name, strip } — `strip`
-// is true when the name was its own header line (so the caller drops that line from
-// the body), false when it was pulled from prose (leave the body intact). Returns
-// null when no name is confidently found. Deliberately conservative.
-function parseCandidateName(rawContent) {
-  const content = rawContent || "";
-  const nl = content.indexOf("\n");
-  const firstLine = (nl === -1 ? content : content.slice(0, nl)).trim();
-
-  if (firstLine) {
-    // "Name <separator> @mention" — the trailing mention makes this an unambiguous header.
-    const sep = firstLine.match(/^(.{2,44}?)\s*[-–—/|]\s*(?:<@[!&]?\d+>|@[\w.]+)\s*$/u);
-    if (sep) {
-      const name = trimTrailingSymbols(sep[1]);
-      if (NAME_OK(name)) return { name, strip: true };
-    }
-    // A short, name-like line on its own ("Samuel Andrews, MD" / "Jeremy Harris").
-    const bare = trimTrailingSymbols(firstLine);
-    if (NAME_OK(bare) && bare.split(/\s+/).length <= 5 && !/[.!?]$/.test(bare)) {
-      return { name: bare, strip: true };
-    }
-  }
-
-  // Self-introduction in the opening prose ("I'm Omar Henry, founder of…"). Lift the
-  // name but keep the body (the name is mid-sentence, not a standalone header). The
-  // trailing boundary (comma / "and" / etc.) avoids capturing a sentence continuation.
-  const intro = content
-    .slice(0, 300)
-    .match(
-      /\b(?:I['’]?m|I am|My name is|This is)\s+([A-Z][\p{L}'.-]+(?:\s+[A-Z][\p{L}'.-]+){1,2})(?=[,.\n]|\s+(?:and|who|from|here|is)\b|$)/u,
-    );
-  if (intro && NAME_OK(intro[1].trim())) {
-    return { name: intro[1].trim(), strip: false };
-  }
-  return null;
-}
-
-// Drop the first line (the lifted name header) plus any blank lines after it.
-function stripNameHeader(content) {
-  const nl = (content || "").indexOf("\n");
-  if (nl === -1) return "";
-  return content.slice(nl + 1).replace(/^\s+/, "");
-}
+// The candidate name and the preface-stripped body are computed server-side now
+// (worker `services/present.js`, exposed on each nomination as `candidateName` and
+// `body`) so this page and the Framer CMS feed (`/council/cms`) can't diverge. The
+// card reads `n.candidateName` / `n.body` directly.
 
 // ─── avatar ─────────────────────────────────────────────────────────────────
 
@@ -314,13 +253,10 @@ function NominationCard({ nomination: n }) {
   // Lift the candidate's name out of the nomination's first line into the header,
   // and drop that redundant preface from the body. Falls back to the Discord
   // display name when the first line isn't a clear name header.
-  const { name, body } = useMemo(() => {
-    const lifted = parseCandidateName(n.content);
-    return {
-      name: lifted?.name || n.authorDisplayName,
-      body: lifted?.strip ? stripNameHeader(n.content) : n.content,
-    };
-  }, [n.content, n.authorDisplayName]);
+  // Server-computed (worker services/present.js); fall back to raw fields if an
+  // older cached payload predates them.
+  const name = n.candidateName || n.authorDisplayName;
+  const body = n.body ?? n.content;
 
   return (
     <article className="rounded-2xl bg-surface-raised shadow-soft">
