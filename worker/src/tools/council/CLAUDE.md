@@ -45,7 +45,44 @@ it's the single seam. The scraper's Claude-side classification was more precise;
 the tradeoff for a fully-automated, browser-free pipeline.
 
 Page freshness is the last successful poll; the frontend shows an honest "data N ago"
-from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**.
+from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**
+(now a disabled fallback — the bot poll is primary).
+
+**Proxy nominations** (`services/proxy.js`): a nomination posted on someone's behalf
+("Application: @X", "on behalf of @X") is re-attributed to the mentioned candidate —
+name, @handle, and avatar are pulled from the mention Discord resolves in the payload
+(`mapMessage` captures `mentions` transiently), and the preface line is dropped. So a
+post by Keenon for PepeMexico shows as PepeMexico.
+
+**Admin/debug endpoints** (Bearer `COUNCIL_INGEST_TOKEN` || `ADMIN_TOKEN`):
+- `POST /council/refresh` (`handlers/refresh.js`) — force an immediate poll; returns the
+  commit counts or the poll's own error (e.g. a Discord 403) as a token-free 502. Use
+  after (re-)adding the bot instead of waiting for the cron.
+- `GET /council/diag` (`handlers/diag.js`) — read-only: is the bot in the guild
+  (`GET /guilds/{id}`, authoritative) and can it read the channel? Surfaces Discord's
+  error code, so a poll failure pins to wrong-server vs missing channel permission.
+
+## Files
+
+```
+config.js        constants (ids, caps, NOMINATION_MIN_CHARS, cache TTL, rate limit)
+index.js         dispatch: OPTIONS/ingest/refresh/diag/nominations; exports pollCouncil for cron
+handlers/        ingest.js (auth+validate+replay guard), refresh.js, diag.js, nominations.js (cache-first)
+services/        discord.js (REST fetch + mapMessage + cdnAvatar), classify.js, proxy.js,
+                 commit.js (shared upsert/soft-remove/cache), store.js (D1), validate.js, assemble.js (read-time tree)
+```
+
+## Adding the bot (Wick gauntlet)
+
+The Helium Discord runs **Wick**, whose join-gate kicks bots on join. An unverified bot
+added by an admin trips these filters in turn — disable each with `w!jg Xa ?off`, or
+better, whitelist the bot id: `4a` unauthorized-adder, `6a` unverified-by-Discord (our
+bot can't verify), `3a` account-age <5d, `7a` suspicious, `2a` no-avatar. jg filters act
+on join, so re-enabling after the bot is in leaves it grandfathered. Durable fix:
+whitelist bot id `1524254437181358140` in Wick. The OAuth invite hands off to the Discord
+app (the "Add to Server" dialog is inside Discord, not the browser) and needs the admin's
+2FA. `GET /council/diag` is the tool for confirming the bot actually stuck. See the
+`council-tool-ops` memory for the full runbook.
 
 ## Ingest contract (shared with the scraper)
 
@@ -174,8 +211,6 @@ guard, which is exactly why the bot-poll path exists instead.
   **Never log or expose** either value.
 - The manual-push scraper reads its copy of `COUNCIL_INGEST_TOKEN` from
   `~/.config/heliumtools/council-admin-token` (outside the repo, never committed).
-- Both unset ⇒ ingest returns **503**; a header mismatch on the resolved token ⇒ **401**.
-  **Never log or expose** either token.
 - `KV` — read cache, replay-guard meta, rate-limit counter.
 - `DB` (D1) — the `council_messages` table. A missing `DB` binding makes ingest
   return **503** (rather than silently no-op the writes). No new binding. The only
@@ -188,4 +223,11 @@ guard, which is exactly why the bot-poll path exists instead.
   + KV-cache + cache-before-rate-limit conventions).
 - Frontend: `pages/public/src/council/Council.jsx`, client
   `pages/public/src/lib/councilApi.js`, route in `pages/public/src/main.jsx`
-  (blind — absent from `Landing.jsx`).
+  (blind — absent from `Landing.jsx`). Display logic lives in `Council.jsx`:
+  `parseCandidateName` lifts the candidate's name from a nomination's first line into
+  the card header and strips the redundant preface (conservative — skips greetings,
+  titles, sentences); `DiscordText` renders basic inline markdown
+  (`***`/`**`/`*`/`__`/`~~`/`` ` ``) as React elements (no `dangerouslySetInnerHTML`)
+  plus https linkify and mention/emoji degrade. Polls the public feed every 60s while
+  the tab is visible.
+- Operational runbook (tokens, Wick, re-adding the bot): the `council-tool-ops` memory.
