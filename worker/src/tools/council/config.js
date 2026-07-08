@@ -61,6 +61,11 @@ export const NOMINATIONS_CACHE_TTL = 60;
 export const META_KEY = "council:meta";
 // Flat, presentation-ready feed for an external CMS (Framer) to sync from.
 export const CMS_CACHE_KEY = "council:cms";
+// Review/moderation store (no TTL): { "<msgId>": { status: "approved"|"rejected",
+// reason, at } }. Ids absent from the map are "pending" (held). Written only by the
+// admin /moderate endpoint + the one-time bootstrap; the hourly poll never touches it,
+// so decisions survive re-polls. Gates BOTH /nominations and /cms.
+export const REVIEW_KEY = "council:review";
 
 // IP rate limit on the public read (the ingest is gated by the admin token, not IP).
 export const RATE_LIMIT = {

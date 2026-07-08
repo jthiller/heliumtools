@@ -4,6 +4,8 @@ import { handleRefresh } from "./handlers/refresh.js";
 import { handleDiag } from "./handlers/diag.js";
 import { handleNominations } from "./handlers/nominations.js";
 import { handleCms } from "./handlers/cms.js";
+import { handleReview } from "./handlers/review.js";
+import { handleModerate } from "./handlers/moderate.js";
 
 // Cron entry: the Discord-bot poller (primary ingest source). Re-exported so the
 // top-level scheduled() handler can drive it on the 6-hourly ticks.
@@ -19,8 +21,10 @@ export { pollCouncil } from "./services/poll.js";
  *
  *   POST /council/ingest       — admin-token-gated snapshot push (manual override)
  *   POST /council/refresh      — admin-token-gated manual trigger for the Discord poll
- *   GET  /council/nominations  — public nominations tree (KV-cached)
- *   GET  /council/cms          — public flat feed for an external CMS to sync (KV-cached)
+ *   GET  /council/nominations  — public nominations tree (KV-cached, review-gated)
+ *   GET  /council/cms          — public flat feed for an external CMS (KV-cached, review-gated)
+ *   GET  /council/review       — admin: all nominations + review status (for the review pass)
+ *   POST /council/moderate     — admin: set approve/reject/reset review decisions
  */
 export async function handleCouncilRequest(request, env, ctx) {
   if (request.method === "OPTIONS") {
@@ -55,6 +59,16 @@ export async function handleCouncilRequest(request, env, ctx) {
         return jsonResponse({ error: "Method not allowed" }, 405);
       }
       return handleCms(request, env);
+    case "/review":
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "Method not allowed" }, 405);
+      }
+      return handleReview(request, env);
+    case "/moderate":
+      if (request.method !== "POST") {
+        return jsonResponse({ error: "Method not allowed" }, 405);
+      }
+      return handleModerate(request, env);
     default:
       return jsonResponse({ error: "Not found" }, 404);
   }

@@ -10,6 +10,7 @@ import {
 } from "../config.js";
 import { getLiveMessages } from "../services/store.js";
 import { assembleNominations } from "../services/assemble.js";
+import { loadReviewMap, statusOf } from "../services/review.js";
 
 // URL-friendly identifier; prefer the (unique) Discord handle, else the name, else id.
 function slugify(s) {
@@ -46,7 +47,16 @@ export async function handleCms(request, env) {
   const rows = await getLiveMessages(env, COUNCIL_CHANNEL_ID);
   const { nominations } = assembleNominations(rows);
 
-  const items = nominations.map((n) => ({
+  // Same review gate as /nominations: the marketing feed only carries approved items.
+  // Fail closed on a review-store read error — serve an empty feed and don't cache, so
+  // the Framer sync (update-only) simply makes no change rather than seeing held items.
+  const { ok, map } = await loadReviewMap(env);
+  if (!ok) {
+    return jsonResponse({ generatedAt: Date.now(), scrapedAt: meta?.scrapedAt ?? null, count: 0, items: [], degraded: true });
+  }
+  const approved = nominations.filter((n) => statusOf(map, n.id) === "approved");
+
+  const items = approved.map((n) => ({
     id: n.id,
     slug: slugify(n.authorUsername || n.candidateName || n.id),
     name: n.candidateName || n.authorDisplayName || "",
