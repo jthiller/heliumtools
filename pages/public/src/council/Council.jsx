@@ -99,6 +99,10 @@ function safeHttps(link) {
 // Words that mark a first line as a greeting rather than a name ("Iconic Afternoon",
 // "Hey everyone"), so we don't mistake a salutation for the candidate's name.
 const GREETING_WORDS = /\b(hi|hey|hello|hiya|yo|gm|greetings|welcome|morning|afternoon|evening|sup|howdy)\b/i;
+// Words that mark a first line as a section title, not a person's name ("Advisory
+// Council Nomination", "Self Nomination", "My Application"), so a titled post isn't
+// mislabeled with the title as the candidate's name.
+const TITLE_WORDS = /\b(nomination|application|candidacy|candidate|council|intro(?:duction)?)\b/i;
 // A plausible person name: starts with a letter, then only letters, spaces, and the
 // punctuation that shows up in names (comma, period, apostrophe, hyphen). No digits,
 // mentions, colons, or urls — those disqualify a line from being a name header.
@@ -124,7 +128,9 @@ function parseCandidateName(rawContent) {
   const sep = firstLine.match(/^(.{2,44}?)\s*[-–—/|]\s*(?:<@[!&]?\d+>|@[\w.]+)\s*$/u);
   if (sep) {
     const name = trimTrailingSymbols(sep[1]);
-    if (name && NAME_LIKE.test(name) && !GREETING_WORDS.test(name)) return name;
+    if (name && NAME_LIKE.test(name) && !GREETING_WORDS.test(name) && !TITLE_WORDS.test(name)) {
+      return name;
+    }
   }
 
   // A short, name-like line on its own (e.g. "Samuel Andrews, MD" / "Jeremy Harris").
@@ -133,6 +139,7 @@ function parseCandidateName(rawContent) {
     bare &&
     NAME_LIKE.test(bare) &&
     !GREETING_WORDS.test(bare) &&
+    !TITLE_WORDS.test(bare) &&
     bare.split(/\s+/).length <= 5 &&
     !/[.!?]$/.test(bare)
   ) {
@@ -308,9 +315,11 @@ function NominationCard({ nomination: n }) {
         )}
       </header>
 
-      <div className="px-5 py-4">
-        <DiscordText text={body} className="text-sm leading-relaxed text-content-secondary" />
-      </div>
+      {body && (
+        <div className="px-5 py-4">
+          <DiscordText text={body} className="text-sm leading-relaxed text-content-secondary" />
+        </div>
+      )}
 
       {(reactions.length > 0 || endorsements.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 px-5 pb-4">

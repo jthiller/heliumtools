@@ -71,12 +71,13 @@ export async function fetchChannelMessages(env) {
   return { messages: all, complete };
 }
 
-// Discord CDN avatar URL for a user, or null for a default (hashless) avatar.
-// Only cdn.discordapp.com is produced, which the validator's host allowlist accepts.
-function avatarUrl(author) {
-  if (!author?.id || !author?.avatar) return null;
-  const ext = author.avatar.startsWith("a_") ? "gif" : "webp";
-  return `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.${ext}`;
+// Discord CDN avatar URL for a user id + avatar hash, or null for a default
+// (hashless) avatar. Only cdn.discordapp.com is produced, which the validator's
+// host allowlist accepts. Exported for reuse by proxy re-attribution.
+export function cdnAvatar(id, hash) {
+  if (!id || !hash) return null;
+  const ext = hash.startsWith("a_") ? "gif" : "webp";
+  return `https://cdn.discordapp.com/avatars/${id}/${hash}.${ext}`;
 }
 
 /**
@@ -98,7 +99,7 @@ export function mapMessage(raw) {
     authorId: author.id ?? null,
     authorUsername: author.username ?? null,
     authorDisplayName: displayName,
-    avatarUrl: avatarUrl(author),
+    avatarUrl: cdnAvatar(author.id, author.avatar),
     content: raw.content ?? "",
     postedAt: Date.parse(raw.timestamp),
     editedAt: raw.edited_timestamp ? Date.parse(raw.edited_timestamp) : null,
@@ -106,6 +107,18 @@ export function mapMessage(raw) {
       ? raw.reactions
           .map((r) => ({ emoji: r?.emoji?.name || "", count: Number(r?.count) || 0 }))
           .filter((r) => r.emoji)
+      : [],
+    // Resolved @mentions from the payload (transient — used for proxy re-attribution
+    // in poll.js, then dropped by validation). Carries each mentioned user's handle,
+    // display name, and avatar so a "posting on behalf of @X" nomination can be
+    // attributed to the real candidate X.
+    mentions: Array.isArray(raw.mentions)
+      ? raw.mentions.map((u) => ({
+          id: u.id,
+          username: u.username ?? null,
+          displayName: u.global_name || u.username || null,
+          avatar: u.avatar ?? null,
+        }))
       : [],
   };
 }
