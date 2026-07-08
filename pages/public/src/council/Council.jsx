@@ -57,27 +57,59 @@ function degradeTokens(text) {
     .replace(/<@[!&]?\d+>/g, "@member");
 }
 
-// Render scraped content as React-escaped text nodes, emitting <a> only for bare
-// https:// URLs. No dangerouslySetInnerHTML and no markdown parsing, so a hostile
-// post can't inject markup.
+// Basic Discord-style inline markdown, rendered as React elements (never
+// dangerouslySetInnerHTML), so a hostile post can't inject markup. Rules are ordered
+// by delimiter specificity (checked first on ties). `terminal` rules (code, links)
+// don't parse their inner content; the rest recurse so emphasis can nest. The inner
+// group `\S(?:[\s\S]*?\S)?` requires non-space at both ends, matching Discord (which
+// ignores "** **") and avoiding stray-asterisk false positives.
+const CODE_CLASS = "rounded bg-surface-inset px-1 py-0.5 font-mono text-[0.85em]";
+const INLINE_RULES = [
+  { re: /`([^`\n]+)`/, terminal: true, render: (m, k) => <code key={k} className={CODE_CLASS}>{m[1]}</code> },
+  {
+    re: /(https:\/\/[^\s<]+)/,
+    terminal: true,
+    render: (m, k) => (
+      <a key={k} href={m[1]} target="_blank" rel="noopener noreferrer" className="text-accent-text hover:opacity-80 break-all">
+        {m[1]}
+      </a>
+    ),
+  },
+  { re: /\*\*\*(\S(?:[\s\S]*?\S)?)\*\*\*/, render: (m, k, inner) => <strong key={k}><em>{inner}</em></strong> },
+  { re: /\*\*(\S(?:[\s\S]*?\S)?)\*\*/, render: (m, k, inner) => <strong key={k}>{inner}</strong> },
+  { re: /__(\S(?:[\s\S]*?\S)?)__/, render: (m, k, inner) => <span key={k} className="underline">{inner}</span> },
+  { re: /~~(\S(?:[\s\S]*?\S)?)~~/, render: (m, k, inner) => <del key={k}>{inner}</del> },
+  { re: /\*(\S(?:[\s\S]*?\S)?)\*/, render: (m, k, inner) => <em key={k}>{inner}</em> },
+];
+
+// Parse a string into React nodes: repeatedly take the earliest-matching rule,
+// emit the text before it, then the rendered (optionally recursed) match.
+function parseInline(text, ctr) {
+  const out = [];
+  let rest = text;
+  while (rest) {
+    let best = null;
+    for (const rule of INLINE_RULES) {
+      const m = rule.re.exec(rest);
+      if (m && (!best || m.index < best.m.index)) best = { rule, m };
+    }
+    if (!best) {
+      out.push(rest);
+      break;
+    }
+    if (best.m.index > 0) out.push(rest.slice(0, best.m.index));
+    const key = `md${ctr.n++}`;
+    const inner = best.rule.terminal ? null : parseInline(best.m[1], ctr);
+    out.push(best.rule.render(best.m, key, inner));
+    rest = rest.slice(best.m.index + best.m[0].length);
+  }
+  return out;
+}
+
+// Degrade entity tokens to readable text, then parse basic markdown.
 function renderDiscordContent(text) {
   if (!text) return null;
-  const parts = degradeTokens(text).split(/(https:\/\/[^\s<]+)/g);
-  return parts.map((part, i) =>
-    /^https:\/\//.test(part) ? (
-      <a
-        key={i}
-        href={part}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-accent-text hover:opacity-80 break-all"
-      >
-        {part}
-      </a>
-    ) : (
-      part
-    ),
-  );
+  return parseInline(degradeTokens(text), { n: 0 });
 }
 
 function DiscordText({ text, className = "" }) {
@@ -445,7 +477,7 @@ export default function Council() {
               {scrapedAt && (
                 <span
                   className="font-mono text-[11px] tabular-nums text-content-tertiary"
-                  title="Reflects the last time this page's scrape of the Discord channel ran, not live Discord state."
+                  title="Reflects the last successful poll of the Discord channel, not live Discord state."
                 >
                   data {relTime(scrapedAt)}
                 </span>
@@ -480,8 +512,7 @@ export default function Council() {
             >
               #advisory-council channel
             </a>{" "}
-            in the Helium Discord. Posts are read from the browser on a schedule, so the page
-            is only as current as the last scrape.
+            in the Helium Discord, refreshed automatically every few hours.
           </p>
         </div>
 
