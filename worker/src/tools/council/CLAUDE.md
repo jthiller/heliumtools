@@ -271,16 +271,17 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 **External (Discord side):**
 - Discord application/bot **`heliumtools-council`** (app/user id `1524254437181358140`),
   a member of the Official Helium Community guild (`404106811252408320`).
-- **Wick was weakened to let the bot in**: join-gate filters `2a/3a/4a/6a/7a` were
-  toggled `?off` (or the bot whitelisted). Teardown must restore them.
+- Wick join-gate filters `2a/3a/4a/6a/7a` were toggled `?off` to add the bot and have
+  since been **re-enabled** (the bot is grandfathered in as an existing member, so it
+  keeps working). Teardown only removes the bot (and any Wick whitelist entry added
+  for it) — no filter changes needed.
 
 ## Teardown (after the election)
 
-1. **Restore Discord security first.** Re-enable the Wick filters that were turned off
-   (`w!jg 2a ?on`, `3a`, `4a`, `6a`, `7a`), and/or remove the bot from Wick's whitelist.
-   Then remove/kick the **heliumtools-council** bot from the server (and optionally
-   delete the Discord application). This is the most important step — we lowered a
-   shared server's raid protection to add the bot.
+1. **Remove the bot.** Kick **heliumtools-council** from the Official Helium Community
+   server (and delete the Discord application if you like). Wick's join-gate filters are
+   already back on, so no filter changes are needed — just remove any Wick whitelist
+   entry that was added for the bot.
 2. **Worker code**: delete `worker/src/tools/council/`; in `worker/src/index.js` remove
    the import, the `/council` route, and the `run("council-poll", …)` line. Decide on
    the cron: simplest is to leave the hourly cron + `hour % 6` gating as-is (the other
