@@ -44,6 +44,15 @@ matters, replace `classifyMessage` with an LLM call (Workers AI or the Anthropic
 it's the single seam. The scraper's Claude-side classification was more precise; this is
 the tradeoff for a fully-automated, browser-free pipeline.
 
+**One nomination per author** (`services/assemble.js`, read-time): a candidate's
+EARLIEST long top-level post is their nomination; any later long top-level post by the
+same author is dropped (endorsements the heuristic mis-promoted — e.g. "here are my
+favorite two other candidates", or a re-declaration). Keyed on `authorId` (proxy posts
+are already re-attributed to the candidate's id), so it dedupes the right person, and it
+runs at read time so it fixes the `/council` page and the `/council/cms` feed together.
+These dropped posts can't be shown as attached endorsements (they're top-level and name
+several people), so they're hidden rather than mis-shown as nominations.
+
 Page freshness is the last successful poll; the frontend shows an honest "data N ago"
 from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**
 (now a disabled fallback — the bot poll is primary).

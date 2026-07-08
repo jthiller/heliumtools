@@ -36,8 +36,19 @@ function toPublic(row) {
   };
 }
 
+// The nomination for an author is their EARLIEST long top-level post. Any later
+// long top-level post by the same author is not a second nomination — it's an
+// endorsement / re-declaration the heuristic classifier mis-promoted (e.g. a
+// candidate posting "here are my favorite two other candidates"). Proxy nominations
+// are already re-attributed to the candidate's authorId (services/proxy.js), so this
+// keys on the right person. authorId is present for real Discord authors; fall back
+// to username/display name defensively.
+const authorKeyOf = (nom) => nom.authorId || nom.authorUsername || nom.authorDisplayName;
+
 /**
  * Rows → `{ nominations, unattachedSupports }`.
+ * - At most one nomination per author (the earliest); later same-author "nominations"
+ *   are dropped and any endorsements on them are folded into the kept one.
  * - Nominations sorted `postedAt` DESC; each nomination's endorsements sorted ASC.
  * - Supports attach via a one-level reply walk (see `resolveNominationId`);
  *   unresolvable supports are tallied into the `unattachedSupports` count.
@@ -71,12 +82,29 @@ export function assembleNominations(rows) {
     }
   }
 
-  nominations.sort((a, b) => b.postedAt - a.postedAt);
+  // One nomination per author: keep the earliest, fold later duplicates' endorsements
+  // into it, drop the rest (they are not additional nominations).
+  const canonicalByAuthor = new Map();
   for (const nom of nominations) {
+    const key = authorKeyOf(nom);
+    const existing = canonicalByAuthor.get(key);
+    if (!existing) {
+      canonicalByAuthor.set(key, nom);
+      continue;
+    }
+    const keep = existing.postedAt <= nom.postedAt ? existing : nom;
+    const drop = keep === existing ? nom : existing;
+    keep.endorsements.push(...drop.endorsements);
+    canonicalByAuthor.set(key, keep);
+  }
+  const deduped = [...canonicalByAuthor.values()];
+
+  deduped.sort((a, b) => b.postedAt - a.postedAt);
+  for (const nom of deduped) {
     nom.endorsements.sort((a, b) => a.postedAt - b.postedAt);
   }
 
-  return { nominations, unattachedSupports };
+  return { nominations: deduped, unattachedSupports };
 }
 
 // One-level walk: a support replying straight to a nomination attaches to it; a
