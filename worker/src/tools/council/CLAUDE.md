@@ -231,3 +231,70 @@ guard, which is exactly why the bot-poll path exists instead.
   plus https linkify and mention/emoji degrade. Polls the public feed every 60s while
   the tab is visible.
 - Operational runbook (tokens, Wick, re-adding the bot): the `council-tool-ops` memory.
+
+## Touchpoints (everything this tool added)
+
+This tool is **temporary** — it exists for one advisory-council election and will be
+torn down afterward. Every place it touches, so teardown is a clean checklist:
+
+**Repo — council-only (safe to delete wholesale):**
+- `worker/src/tools/council/**` (this whole directory).
+- `pages/public/src/council/Council.jsx`, `pages/public/src/lib/councilApi.js`.
+- `.claude/skills/council-scrape/**` (the disabled browser-scrape fallback + `extract.js`).
+
+**Repo — shared files (edit, don't delete):**
+- `worker/src/index.js` — the `import { handleCouncilRequest, pollCouncil }`, the
+  `{ prefix: "/council", handler }` route, and the `run("council-poll", …)` line in
+  `scheduled()`.
+- `worker/src/index.js` + `worker/wrangler.jsonc` — **the cron is now shared/hourly
+  because of this tool.** The four `0 0/6/12/18` crons were collapsed into one
+  `0 * * * *`, and `scheduled()` gates OUI/DC/IoT to `hour % 6 === 0` and the OUI cache
+  to `hour === 0`. Removing council must NOT break those cadences (see teardown).
+- `worker/schema.sql` — the `council_messages` DDL block (also self-provisioned by
+  `services/store.js`).
+- `worker/.dev.vars.example` — `DISCORD_BOT_TOKEN` and `COUNCIL_INGEST_TOKEN` lines.
+- `pages/public/src/main.jsx` — the lazy import + `<Route path="/council">`.
+- Root `CLAUDE.md` — the Council table row and the cron description.
+- `Landing.jsx` — **not touched** (blind page); nothing to undo there.
+
+**Production infra:**
+- D1 (`heliumtools-prod`): table `council_messages`.
+- KV: keys `council:nominations`, `council:meta`, and `rl:council:*` rate-limit counters.
+- Secrets: `DISCORD_BOT_TOKEN`, `COUNCIL_INGEST_TOKEN`. (No new binding — shares `DB`/`KV`.)
+
+**This machine (not in the repo):**
+- Token file `~/.config/heliumtools/council-admin-token`.
+- Desktop scheduled task `council-scrape` (currently disabled).
+- Memories `council-tool-ops`, `council-scrape-harvest-race` (keep
+  `claude-in-chrome-exfiltration-filter` — it's general).
+
+**External (Discord side):**
+- Discord application/bot **`heliumtools-council`** (app/user id `1524254437181358140`),
+  a member of the Official Helium Community guild (`404106811252408320`).
+- **Wick was weakened to let the bot in**: join-gate filters `2a/3a/4a/6a/7a` were
+  toggled `?off` (or the bot whitelisted). Teardown must restore them.
+
+## Teardown (after the election)
+
+1. **Restore Discord security first.** Re-enable the Wick filters that were turned off
+   (`w!jg 2a ?on`, `3a`, `4a`, `6a`, `7a`), and/or remove the bot from Wick's whitelist.
+   Then remove/kick the **heliumtools-council** bot from the server (and optionally
+   delete the Discord application). This is the most important step — we lowered a
+   shared server's raid protection to add the bot.
+2. **Worker code**: delete `worker/src/tools/council/`; in `worker/src/index.js` remove
+   the import, the `/council` route, and the `run("council-poll", …)` line. Decide on
+   the cron: simplest is to leave the hourly cron + `hour % 6` gating as-is (the other
+   tasks keep their cadence; the worker just wakes hourly). To fully revert, restore the
+   four `0 0/6/12/18` crons in `wrangler.jsonc` and the original ungated `scheduled()`.
+3. **Frontend**: delete `pages/public/src/council/` and `lib/councilApi.js`; remove the
+   lazy import + route in `main.jsx`.
+4. **Schema/secrets/data**: remove the `council_messages` block from `schema.sql`;
+   `DROP TABLE council_messages` on prod D1; delete KV keys `council:nominations`,
+   `council:meta`, `rl:council:*`; `wrangler secret delete DISCORD_BOT_TOKEN` and
+   `COUNCIL_INGEST_TOKEN --env production`; remove both from `.dev.vars.example`.
+5. **Skill/local**: delete `.claude/skills/council-scrape/`, the desktop `council-scrape`
+   scheduled task, and `~/.config/heliumtools/council-admin-token`.
+6. **Docs**: drop the Council row + cron mention from root `CLAUDE.md`; delete the
+   `council-tool-ops` / `council-scrape-harvest-race` memories.
+7. Commit + push (auto-deploys). Confirm `GET https://api.heliumtools.org/council/nominations`
+   is 404 and `heliumtools.org/council` no longer resolves.
