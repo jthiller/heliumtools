@@ -94,6 +94,60 @@ function safeHttps(link) {
   return typeof link === "string" && link.startsWith("https://") ? link : null;
 }
 
+// ─── candidate name ─────────────────────────────────────────────────────────────
+
+// Words that mark a first line as a greeting rather than a name ("Iconic Afternoon",
+// "Hey everyone"), so we don't mistake a salutation for the candidate's name.
+const GREETING_WORDS = /\b(hi|hey|hello|hiya|yo|gm|greetings|welcome|morning|afternoon|evening|sup|howdy)\b/i;
+// A plausible person name: starts with a letter, then only letters, spaces, and the
+// punctuation that shows up in names (comma, period, apostrophe, hyphen). No digits,
+// mentions, colons, or urls — those disqualify a line from being a name header.
+const NAME_LIKE = /^[\p{L}][\p{L} .,'-]{0,44}$/u;
+
+// Drop trailing emoji / symbols / whitespace (e.g. "Iconic Afternoon 🫡" → "Iconic Afternoon").
+function trimTrailingSymbols(s) {
+  return s.replace(/[\s\p{Extended_Pictographic}\p{So}\p{Sk}️‍]+$/u, "").trim();
+}
+
+// Nomination posts usually open with a name header — "Jacob Brady - <@id>",
+// "Jeremy Mahrle / @jay", or a bare "Samuel Andrews, MD" line — which is redundant
+// once the name is in the card header. Lift that name out (returns null if the first
+// line isn't clearly a name header). Deliberately conservative: a greeting or a
+// sentence is left alone, so "Iconic Afternoon 🫡\n\nI'm Omar Henry…" isn't touched.
+function parseCandidateName(rawContent) {
+  const content = rawContent || "";
+  const nl = content.indexOf("\n");
+  const firstLine = (nl === -1 ? content : content.slice(0, nl)).trim();
+  if (!firstLine) return null;
+
+  // "Name <separator> @mention" — the trailing mention makes this an unambiguous header.
+  const sep = firstLine.match(/^(.{2,44}?)\s*[-–—/|]\s*(?:<@[!&]?\d+>|@[\w.]+)\s*$/u);
+  if (sep) {
+    const name = trimTrailingSymbols(sep[1]);
+    if (name && NAME_LIKE.test(name) && !GREETING_WORDS.test(name)) return name;
+  }
+
+  // A short, name-like line on its own (e.g. "Samuel Andrews, MD" / "Jeremy Harris").
+  const bare = trimTrailingSymbols(firstLine);
+  if (
+    bare &&
+    NAME_LIKE.test(bare) &&
+    !GREETING_WORDS.test(bare) &&
+    bare.split(/\s+/).length <= 5 &&
+    !/[.!?]$/.test(bare)
+  ) {
+    return bare;
+  }
+  return null;
+}
+
+// Drop the first line (the lifted name header) plus any blank lines after it.
+function stripNameHeader(content) {
+  const nl = (content || "").indexOf("\n");
+  if (nl === -1) return "";
+  return content.slice(nl + 1).replace(/^\s+/, "");
+}
+
 // ─── avatar ─────────────────────────────────────────────────────────────────
 
 // Initials-tile tones lifted from the Landing icon tiles, so a null or broken
@@ -213,15 +267,25 @@ function NominationCard({ nomination: n }) {
     [n.reactions],
   );
   const endorsements = n.endorsements || [];
+  // Lift the candidate's name out of the nomination's first line into the header,
+  // and drop that redundant preface from the body. Falls back to the Discord
+  // display name when the first line isn't a clear name header.
+  const { name, body } = useMemo(() => {
+    const lifted = parseCandidateName(n.content);
+    return {
+      name: lifted || n.authorDisplayName,
+      body: lifted ? stripNameHeader(n.content) : n.content,
+    };
+  }, [n.content, n.authorDisplayName]);
 
   return (
     <article className="rounded-2xl bg-surface-raised shadow-soft">
       <header className="flex items-start gap-3 border-b border-border-muted px-5 py-4">
-        <Avatar url={n.avatarUrl} name={n.authorDisplayName} id={n.authorId} />
+        <Avatar url={n.avatarUrl} name={name} id={n.authorId} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-content">
-              {n.authorDisplayName}
+              {name}
             </span>
             {n.authorUsername && (
               <span className="font-mono text-xs text-content-tertiary">@{n.authorUsername}</span>
@@ -245,7 +309,7 @@ function NominationCard({ nomination: n }) {
       </header>
 
       <div className="px-5 py-4">
-        <DiscordText text={n.content} className="text-sm leading-relaxed text-content-secondary" />
+        <DiscordText text={body} className="text-sm leading-relaxed text-content-secondary" />
       </div>
 
       {(reactions.length > 0 || endorsements.length > 0) && (
