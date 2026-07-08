@@ -86,6 +86,13 @@ reactions (summary string), endorsementCount, endorsers }] }`. `name`/`body` are
 the `/council` page uses, so the two never diverge. KV-cached (`council:cms`, 60s),
 invalidated by every ingest/poll.
 
+**How the marketing site consumes it:** Framer does not pull this endpoint directly.
+A local hourly launchd job (`org.heliumtools.council-framer-sync`, see Touchpoints →
+"This machine") *pushes* this feed into the designer's "Nominations" Framer collection
+via the `@framer/agent` CLI, matched by Discord handle (update-only). So the marketing
+page's freshness depends on that local job running (Mac awake, `@framer/agent` still
+authorized), not on the endpoint alone.
+
 ## Adding the bot (Wick gauntlet)
 
 The Helium Discord runs **Wick**, whose join-gate kicks bots on join. An unverified bot
@@ -279,8 +286,25 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 **This machine (not in the repo):**
 - Token file `~/.config/heliumtools/council-admin-token`.
 - Desktop scheduled task `council-scrape` (currently disabled).
+- **Framer CMS sync (hourly re-push into the marketing site).** A launchd agent
+  `~/Library/LaunchAgents/org.heliumtools.council-framer-sync.plist` (label
+  `org.heliumtools.council-framer-sync`, fires hourly at :20) runs
+  `~/.config/heliumtools/council-framer-sync.sh`, which opens a `@framer/agent` CLI
+  session and execs `council-framer-sync.js` (both in `~/.config/heliumtools/`; logs to
+  `council-framer-sync.log` + `council-framer-sync.launchd.log`). It pushes `/council/cms`
+  into the "Nominations" collection of the Helium.com Framer project
+  (`wfVkOsvjtre4gvABHzvs`), matched by Discord handle (update-only; new candidates are
+  logged, not auto-created). Relies on `@framer/agent` auth persisted from
+  `npx @framer/agent setup` (installed skills under `~/.agents/skills` + `~/.claude/skills/framer*`).
 - Memories `council-tool-ops`, `council-scrape-harvest-race` (keep
   `claude-in-chrome-exfiltration-filter` — it's general).
+
+**External (Framer / marketing site):**
+- The "Nominations" CMS collection in the Helium.com Framer project is populated from
+  `/council/cms`. This tool added the fields **Reaction Count, Endorsement Count,
+  Reactions, Endorsers** to that (user-managed) collection. The collection, its fields,
+  and the page belong to the design team — teardown just stops the local sync; removing
+  the collection/fields/page is the designer's call.
 
 **External (Discord side):**
 - Discord application/bot **`heliumtools-council`** (app/user id `1524254437181358140`),
@@ -309,6 +333,10 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
    `COUNCIL_INGEST_TOKEN --env production`; remove both from `.dev.vars.example`.
 5. **Skill/local**: delete `.claude/skills/council-scrape/`, the desktop `council-scrape`
    scheduled task, and `~/.config/heliumtools/council-admin-token`.
+   - **Stop the Framer sync**: `launchctl unload ~/Library/LaunchAgents/org.heliumtools.council-framer-sync.plist`,
+     then delete that plist and the `~/.config/heliumtools/council-framer-sync.*` files
+     (`.js`, `.sh`, `.log`, `.launchd.log`). The "Nominations" collection + the fields it
+     added live in the designer's Framer project — leave those for the design team.
 6. **Docs**: drop the Council row + cron mention from root `CLAUDE.md`; delete the
    `council-tool-ops` / `council-scrape-harvest-race` memories.
 7. Commit + push (auto-deploys). Confirm `GET https://api.heliumtools.org/council/nominations`
