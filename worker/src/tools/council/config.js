@@ -47,6 +47,19 @@ export const AVATAR_URL_PREFIXES = [
 // D1 has a per-batch statement ceiling; upserts are chunked at this size.
 export const D1_BATCH_CHUNK = 50;
 
+// Election timeline (this is a temporary, single-election tool).
+// - NOMINATIONS_CLOSE_MS: nominations close Sun 2026-07-12 23:59 UTC. After that instant
+//   a post can no longer BECOME a nomination — the ballot is frozen (assemble.js filters
+//   nominations + endorsements to postedAt <= this). The poll keeps running, so reaction
+//   counts on the frozen set stay live. This is a read-time bound (deterministic, no
+//   clock check): before the date it filters nothing; after it, later posts are excluded.
+// - POLL_STOP_MS: the bot runs one more week for reactions only, then stops. After this
+//   instant pollCouncil() no-ops, so the page freezes at its final snapshot. Safety
+//   backstop so the bot never polls the community Discord indefinitely; extend by editing
+//   + redeploying, and see the CLAUDE.md teardown.
+export const NOMINATIONS_CLOSE_MS = Date.parse("2026-07-12T23:59:59.999Z");
+export const POLL_STOP_MS = Date.parse("2026-07-19T23:59:59.999Z");
+
 // Heuristic classification (services/classify.js) for the Discord-bot poller. Real
 // nominations are long self-intro posts; a top-level message at least this many
 // characters (and not the channel-intro announcement) is treated as a nomination.

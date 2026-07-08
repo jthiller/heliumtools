@@ -3,7 +3,7 @@
 // snapshot through the same validated store path the /ingest push endpoint uses.
 // A full read every run means `complete: true`, so deleted messages soft-remove.
 
-import { COUNCIL_CHANNEL_ID, COUNCIL_GUILD_ID } from "../config.js";
+import { COUNCIL_CHANNEL_ID, COUNCIL_GUILD_ID, POLL_STOP_MS } from "../config.js";
 import { fetchChannelMessages, mapMessage, resolveMentions } from "./discord.js";
 import { classifyMessage } from "./classify.js";
 import { applyProxyAttribution } from "./proxy.js";
@@ -20,6 +20,13 @@ export async function pollCouncil(env) {
   if (!env.DISCORD_BOT_TOKEN) {
     console.log("council poll skipped: DISCORD_BOT_TOKEN not configured");
     return { skipped: true };
+  }
+
+  // Post-election backstop: after the reaction-update week, stop touching Discord and
+  // freeze the page at its last snapshot (the ballot closed earlier; see config.js).
+  if (Number.isFinite(POLL_STOP_MS) && Date.now() > POLL_STOP_MS) {
+    console.log("council poll skipped: past POLL_STOP_MS (election window closed)");
+    return { skipped: true, reason: "poll window closed" };
   }
 
   const { messages: raw, complete } = await fetchChannelMessages(env);

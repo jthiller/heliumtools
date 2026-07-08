@@ -4,8 +4,15 @@
 // filtered out of the output but kept in the id map so reply chains through them
 // still resolve.
 
-import { COUNCIL_GUILD_ID, COUNCIL_CHANNEL_ID } from "../config.js";
+import { COUNCIL_GUILD_ID, COUNCIL_CHANNEL_ID, NOMINATIONS_CLOSE_MS } from "../config.js";
 import { presentNomination } from "./present.js";
+
+// The ballot freezes at the nominations-close instant: a message posted after it can't
+// be shown as a nomination or an endorsement (see config.js NOMINATIONS_CLOSE_MS). This
+// is a fixed postedAt bound, so it filters nothing before the deadline and freezes the
+// displayed set after — while the poll keeps refreshing reaction counts on that set.
+const withinBallot = (row) =>
+  !Number.isFinite(NOMINATIONS_CLOSE_MS) || row.posted_at <= NOMINATIONS_CLOSE_MS;
 
 function messageLink(id) {
   return `https://discord.com/channels/${COUNCIL_GUILD_ID}/${COUNCIL_CHANNEL_ID}/${id}`;
@@ -47,6 +54,8 @@ const authorKeyOf = (nom) => nom.authorId || nom.authorUsername || nom.authorDis
 
 /**
  * Rows → `{ nominations, unattachedSupports }`.
+ * - Only messages posted on/before NOMINATIONS_CLOSE_MS are eligible (the ballot
+ *   freezes at close; reaction counts on the frozen set still update via the poll).
  * - At most one nomination per author (the earliest); later same-author "nominations"
  *   are dropped and any endorsements on them are folded into the kept one.
  * - Nominations sorted `postedAt` DESC; each nomination's endorsements sorted ASC.
@@ -61,6 +70,7 @@ export function assembleNominations(rows) {
   const nominationById = new Map();
   for (const row of rows) {
     if (row.kind !== "nomination") continue;
+    if (!withinBallot(row)) continue; // ballot frozen at close — no new nominations
     const base = toPublic(row);
     // Presentation fields (same logic the /council page uses): the lifted candidate
     // name and the body with any redundant name-header line removed.
@@ -73,6 +83,7 @@ export function assembleNominations(rows) {
   let unattachedSupports = 0;
   for (const row of rows) {
     if (row.kind !== "support") continue;
+    if (!withinBallot(row)) continue; // endorsements freeze at close too (reactions still update)
     const nominationId = resolveNominationId(row, byId);
     const nom = nominationId != null ? nominationById.get(nominationId) : null;
     if (nom) {

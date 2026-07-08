@@ -68,6 +68,17 @@ The review itself is the `council-review` skill, run hourly by a scheduled local
 session (see Touchpoints). Note: a newly-approved candidate not yet in the Framer
 collection is logged by the sync, not auto-created (update-only), so it needs a manual add.
 
+**Election timeline** (`config.js`, hard-coded dates for this one election):
+- **Nominations close `2026-07-12T23:59:59.999Z`** (`NOMINATIONS_CLOSE_MS`). After that
+  instant a post can't become a nomination or endorsement — `assemble.js` filters both to
+  `postedAt <= close`, so the ballot freezes. It's a fixed `postedAt` bound (not a clock
+  check): a no-op before the date, a freeze after. The poll keeps running, so **reaction
+  counts on the frozen set stay live**. Endorsements freeze too (only reactions change
+  post-close); relax that by dropping the `withinBallot` check in the support loop.
+- **Poll stops `2026-07-19T23:59:59.999Z`** (`POLL_STOP_MS`, one week later). `pollCouncil`
+  no-ops after this, freezing the page at its final snapshot — a backstop so the bot never
+  polls the community Discord indefinitely. Extend by editing the constant + redeploying.
+
 Page freshness is the last successful poll; the frontend shows an honest "data N ago"
 from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**
 (now a disabled fallback — the bot poll is primary).
@@ -343,6 +354,10 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
   for it) — no filter changes needed.
 
 ## Teardown (after the election)
+
+Timing: the poll **auto-stops after `POLL_STOP_MS` (2026-07-19)**, so data freezes on its
+own — there's no rush, but the bot is still a guild member and all the infra below still
+exists until you run this checklist.
 
 1. **Remove the bot.** Kick **heliumtools-council** from the Official Helium Community
    server (and delete the Discord application if you like). Wick's join-gate filters are
