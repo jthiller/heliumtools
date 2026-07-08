@@ -145,37 +145,42 @@ function trimTrailingSymbols(s) {
   return s.replace(/[\s\p{Extended_Pictographic}\p{So}\p{Sk}️‍]+$/u, "").trim();
 }
 
-// Nomination posts usually open with a name header — "Jacob Brady - <@id>",
-// "Jeremy Mahrle / @jay", or a bare "Samuel Andrews, MD" line — which is redundant
-// once the name is in the card header. Lift that name out (returns null if the first
-// line isn't clearly a name header). Deliberately conservative: a greeting or a
-// sentence is left alone, so "Iconic Afternoon 🫡\n\nI'm Omar Henry…" isn't touched.
+const NAME_OK = (name) =>
+  !!name && NAME_LIKE.test(name) && !GREETING_WORDS.test(name) && !TITLE_WORDS.test(name);
+
+// Lift the candidate's name for the card header. Returns { name, strip } — `strip`
+// is true when the name was its own header line (so the caller drops that line from
+// the body), false when it was pulled from prose (leave the body intact). Returns
+// null when no name is confidently found. Deliberately conservative.
 function parseCandidateName(rawContent) {
   const content = rawContent || "";
   const nl = content.indexOf("\n");
   const firstLine = (nl === -1 ? content : content.slice(0, nl)).trim();
-  if (!firstLine) return null;
 
-  // "Name <separator> @mention" — the trailing mention makes this an unambiguous header.
-  const sep = firstLine.match(/^(.{2,44}?)\s*[-–—/|]\s*(?:<@[!&]?\d+>|@[\w.]+)\s*$/u);
-  if (sep) {
-    const name = trimTrailingSymbols(sep[1]);
-    if (name && NAME_LIKE.test(name) && !GREETING_WORDS.test(name) && !TITLE_WORDS.test(name)) {
-      return name;
+  if (firstLine) {
+    // "Name <separator> @mention" — the trailing mention makes this an unambiguous header.
+    const sep = firstLine.match(/^(.{2,44}?)\s*[-–—/|]\s*(?:<@[!&]?\d+>|@[\w.]+)\s*$/u);
+    if (sep) {
+      const name = trimTrailingSymbols(sep[1]);
+      if (NAME_OK(name)) return { name, strip: true };
+    }
+    // A short, name-like line on its own ("Samuel Andrews, MD" / "Jeremy Harris").
+    const bare = trimTrailingSymbols(firstLine);
+    if (NAME_OK(bare) && bare.split(/\s+/).length <= 5 && !/[.!?]$/.test(bare)) {
+      return { name: bare, strip: true };
     }
   }
 
-  // A short, name-like line on its own (e.g. "Samuel Andrews, MD" / "Jeremy Harris").
-  const bare = trimTrailingSymbols(firstLine);
-  if (
-    bare &&
-    NAME_LIKE.test(bare) &&
-    !GREETING_WORDS.test(bare) &&
-    !TITLE_WORDS.test(bare) &&
-    bare.split(/\s+/).length <= 5 &&
-    !/[.!?]$/.test(bare)
-  ) {
-    return bare;
+  // Self-introduction in the opening prose ("I'm Omar Henry, founder of…"). Lift the
+  // name but keep the body (the name is mid-sentence, not a standalone header). The
+  // trailing boundary (comma / "and" / etc.) avoids capturing a sentence continuation.
+  const intro = content
+    .slice(0, 300)
+    .match(
+      /\b(?:I['’]?m|I am|My name is|This is)\s+([A-Z][\p{L}'.-]+(?:\s+[A-Z][\p{L}'.-]+){1,2})(?=[,.\n]|\s+(?:and|who|from|here|is)\b|$)/u,
+    );
+  if (intro && NAME_OK(intro[1].trim())) {
+    return { name: intro[1].trim(), strip: false };
   }
   return null;
 }
@@ -312,8 +317,8 @@ function NominationCard({ nomination: n }) {
   const { name, body } = useMemo(() => {
     const lifted = parseCandidateName(n.content);
     return {
-      name: lifted || n.authorDisplayName,
-      body: lifted ? stripNameHeader(n.content) : n.content,
+      name: lifted?.name || n.authorDisplayName,
+      body: lifted?.strip ? stripNameHeader(n.content) : n.content,
     };
   }, [n.content, n.authorDisplayName]);
 
