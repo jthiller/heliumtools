@@ -24,7 +24,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Schema: `worker/schema.sql`
 - Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
 - Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
-- Cron: the 6-hourly tasks (OUI notifier, DC purchase, IoT fees, Council Discord poll) run at 00:00, 06:00, 12:00, 18:00 UTC. A separate **15-min** trigger (`*/15 * * * *`) drives the Vote tool's snapshot/history poll only — `scheduled()` in `src/index.js` branches on `event.cron` (and a `minute === 0` backstop) so the 6-hourly tasks never fire on the 15-min tick.
+- Cron: a single **hourly** trigger (`0 * * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron`: the 15-min tick drives the Vote snapshot/history poll only; on the hourly tick it runs the Council Discord poll every hour and gates the heavier tasks by hour — OUI notifier, DC purchase, IoT fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
 
 ### When to put something in `shared/` vs a specific tool
 Default to the tool's own directory. Hoist to `shared/` only when:

@@ -14,7 +14,7 @@ tallies, and supporting replies as sub-items.
 Two ingest sources, one shared commit path (`services/commit.js`):
 
 ```
-PRIMARY: worker cron (6-hourly) → services/poll.js
+PRIMARY: worker cron (hourly) → services/poll.js
   → fetchChannelMessages() reads the channel via Discord REST (Authorization: Bot …)
   → mapMessage() + classifyMessage()  →  same validate + commit as the push path
   → GET /council/nominations (public, KV-cached) → the page
@@ -199,7 +199,7 @@ guard, which is exactly why the bot-poll path exists instead.
 
 - `DISCORD_BOT_TOKEN` — read-only bot token for the primary poll (`Authorization:
   Bot …`). Set via `wrangler secret put DISCORD_BOT_TOKEN --env production`. Unset ⇒
-  the 6-hourly `council-poll` cron task is a **no-op** (logs "skipped"), so the tool
+  the hourly `council-poll` cron task is a **no-op** (logs "skipped"), so the tool
   ships dormant until the bot is configured. The bot must be in the guild with View
   Channel + Read Message History on the channel and the **Message Content** intent on.
 - `COUNCIL_INGEST_TOKEN` — dedicated bearer token gating the manual `POST /council/ingest`
@@ -214,7 +214,7 @@ guard, which is exactly why the bot-poll path exists instead.
 - `KV` — read cache, replay-guard meta, rate-limit counter.
 - `DB` (D1) — the `council_messages` table. A missing `DB` binding makes ingest
   return **503** (rather than silently no-op the writes). No new binding. The only
-  cron is the shared 6-hourly tick driving `council-poll` (see `worker/src/index.js`).
+  cron is the shared hourly tick driving `council-poll` (see `worker/src/index.js`).
 
 ## Related
 

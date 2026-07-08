@@ -72,23 +72,27 @@ export default {
 
     // High-frequency vote-snapshot tick (every 15 min): refresh the stored
     // snapshot + append history so viewers never hit the RPC. Runs in isolation
-    // — the heavier 6-hourly tasks below must NOT fire on this cadence.
+    // — the hourly tasks below must NOT fire on this cadence.
     if (event.cron === VOTE_SNAPSHOT_CRON) {
       run("vote-snapshots", runVoteSnapshots(env));
       return;
     }
-    // Safety backstop: the 6-hourly tasks only ever run at minute 0, so even if
-    // the cron string didn't match above they can't fire on a :15/:30/:45 tick.
+    // Everything else runs on the hourly tick ("0 * * * *"). minute is always 0
+    // here; the backstop stays so a stray non-hourly tick can't fire these.
     if (new Date(event.scheduledTime).getUTCMinutes() !== 0) return;
-
-    run("oui-notifier-daily", runOuiNotifierDaily(env));
-    run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
-    run("iot-onboard-fees", refreshOnboardFees(env));
-    // Council nominations: poll the Discord channel with the bot token and refresh
-    // the stored snapshot (no-op until DISCORD_BOT_TOKEN is set).
-    run("council-poll", pollCouncil(env));
-    // OUI data changes infrequently — refresh once daily at midnight UTC
     const hour = new Date(event.scheduledTime).getUTCHours();
+
+    // Council nominations: poll the Discord channel every hour with the bot token
+    // (no-op until DISCORD_BOT_TOKEN is set).
+    run("council-poll", pollCouncil(env));
+
+    // The heavier tasks stay 6-hourly (00/06/12/18 UTC).
+    if (hour % 6 === 0) {
+      run("oui-notifier-daily", runOuiNotifierDaily(env));
+      run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
+      run("iot-onboard-fees", refreshOnboardFees(env));
+    }
+    // OUI data changes infrequently — refresh once daily at midnight UTC.
     if (hour === 0) run("multi-gateway-oui-cache", refreshOuiCache(env));
   },
 };
