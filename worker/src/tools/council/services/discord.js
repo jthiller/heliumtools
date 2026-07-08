@@ -71,6 +71,21 @@ export async function fetchChannelMessages(env) {
   return { messages: all, complete };
 }
 
+// Replace user-mention tokens (<@id> / <@!id>) with a readable "@Name" using the
+// users Discord resolves in the message payload, so prose like "shout out to <@123>"
+// renders as "shout out to @Jacob" instead of the frontend's "@member" fallback.
+// `mentions` is the mapped shape ({ id, username, displayName }). Tokens with no
+// matching user (role/channel mentions, or a user absent from the payload) are left
+// as-is for the frontend to degrade.
+export function resolveMentions(content, mentions) {
+  if (!content || !Array.isArray(mentions) || mentions.length === 0) return content;
+  const byId = new Map(mentions.map((u) => [u.id, u.displayName || u.username]));
+  return content.replace(/<@!?(\d+)>/g, (tok, id) => {
+    const name = byId.get(id);
+    return name ? `@${name}` : tok;
+  });
+}
+
 // Discord CDN avatar URL for a user id + avatar hash, or null for a default
 // (hashless) avatar. Only cdn.discordapp.com is produced, which the validator's
 // host allowlist accepts. Exported for reuse by proxy re-attribution.

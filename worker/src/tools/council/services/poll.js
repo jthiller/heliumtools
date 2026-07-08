@@ -4,7 +4,7 @@
 // A full read every run means `complete: true`, so deleted messages soft-remove.
 
 import { COUNCIL_CHANNEL_ID, COUNCIL_GUILD_ID } from "../config.js";
-import { fetchChannelMessages, mapMessage } from "./discord.js";
+import { fetchChannelMessages, mapMessage, resolveMentions } from "./discord.js";
 import { classifyMessage } from "./classify.js";
 import { applyProxyAttribution } from "./proxy.js";
 import { validatePayload } from "./validate.js";
@@ -27,7 +27,10 @@ export async function pollCouncil(env) {
     .map(mapMessage)
     .filter(Boolean)
     .map((m) => ({ ...m, kind: classifyMessage(m) }))
-    .map(applyProxyAttribution);
+    .map(applyProxyAttribution)
+    // Resolve @mention tokens to readable "@Name" (after proxy, which needs the raw
+    // <@id> in the first line). Uses the mentions Discord resolved in the payload.
+    .map((m) => ({ ...m, content: resolveMentions(m.content, m.mentions) }));
 
   // Guard against the "Message Content intent disabled" failure mode: Discord then
   // returns 200 with empty content on every message. Committing that as a complete
