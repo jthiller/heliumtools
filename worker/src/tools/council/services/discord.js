@@ -40,14 +40,25 @@ export async function fetchChannelMessages(env) {
 
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
     if (res.status === 401) throw new Error("Discord rejected the bot token (401)");
-    if (res.status === 403) {
-      throw new Error("Bot lacks access to the channel (403), check View Channel + Read Message History");
+    if (!res.ok) {
+      // Include Discord's own error message/code (e.g. "Missing Access" 50001 vs
+      // "Missing Permissions" 50013) — safe to surface, no secrets — so a setup
+      // problem is diagnosable from the /refresh response.
+      let detail = "";
+      try {
+        const e = await res.json();
+        if (e?.message) detail = `: ${e.message}${e.code ? ` (code ${e.code})` : ""}`;
+      } catch {
+        // no JSON body
+      }
+      if (res.status === 403) {
+        throw new Error(
+          `Bot lacks channel access (403)${detail}. Grant the bot View Channel + Read Message History on #advisory-council`,
+        );
+      }
+      if (res.status === 429) throw new Error(`Discord rate limited the poll (429)${detail}`);
+      throw new Error(`Discord messages fetch failed (${res.status})${detail}`);
     }
-    if (res.status === 429) {
-      // Light polling should never hit this; surface it rather than hammering.
-      throw new Error("Discord rate limited the poll (429)");
-    }
-    if (!res.ok) throw new Error(`Discord messages fetch failed (${res.status})`);
 
     const batch = await res.json();
     if (!Array.isArray(batch) || batch.length === 0) break;
