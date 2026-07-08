@@ -1,6 +1,7 @@
 import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handleIngest } from "./handlers/ingest.js";
 import { handleRefresh } from "./handlers/refresh.js";
+import { handleDiag } from "./handlers/diag.js";
 import { handleNominations } from "./handlers/nominations.js";
 
 // Cron entry: the Discord-bot poller (primary ingest source). Re-exported so the
@@ -37,6 +38,11 @@ export async function handleCouncilRequest(request, env, ctx) {
         return jsonResponse({ error: "Method not allowed" }, 405);
       }
       return handleRefresh(request, env);
+    case "/diag":
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "Method not allowed" }, 405);
+      }
+      return handleDiag(request, env);
     case "/nominations":
       if (request.method !== "GET") {
         return jsonResponse({ error: "Method not allowed" }, 405);
