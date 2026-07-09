@@ -74,6 +74,7 @@ export const NOMINATION_MIN_CHARS = 400;
 // `name` is separately curator-owned, editable in the Framer UI without a redeploy.)
 export const NAME_OVERRIDES = {
   eme0967: "Eric Eife",
+  keith_rettig: "Keith Rettig",
 };
 
 // KV keys. The public feed is cached briefly; the replay-guard meta is written
