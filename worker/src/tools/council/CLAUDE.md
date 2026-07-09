@@ -66,7 +66,7 @@ or re-approve held items. There is **no auto-grandfather**; approval is always a
 explicit `/moderate` call (the deploy seeded the vetted set that was live at cutover).
 The review itself is the `council-review` skill, run hourly by a scheduled local Claude
 session (see Touchpoints). Note: a newly-approved candidate not yet in the Framer
-collection is logged by the sync, not auto-created (update-only), so it needs a manual add.
+collection is auto-created by the sync (it create-or-updates approved items by handle).
 
 **Election timeline** (`config.js`, hard-coded dates for this one election):
 - **Nominations close `2026-07-12T23:59:59.999Z`** (`NOMINATIONS_CLOSE_MS`). After that
@@ -127,9 +127,11 @@ only. The blind `/council` page (`/nominations`) still shows all reactions.
 **How the marketing site consumes it:** Framer does not pull this endpoint directly.
 A local hourly launchd job (`org.heliumtools.council-framer-sync`, see Touchpoints →
 "This machine") *pushes* this feed into the designer's "Nominations" Framer collection
-via the `@framer/agent` CLI, matched by Discord handle (update-only). So the marketing
-page's freshness depends on that local job running (Mac awake, `@framer/agent` still
-authorized), not on the endpoint alone.
+via the `@framer/agent` CLI, matched by Discord handle: it **create-or-updates** — an
+existing item is updated in place, and an approved `/cms` candidate with no matching item
+is created (auto-published). Since `/cms` is gated to approved-only, creating from it only
+ever publishes reviewed candidates. So the marketing page's freshness depends on that local
+job running (Mac awake, `@framer/agent` still authorized), not on the endpoint alone.
 
 ## Adding the bot (Wick gauntlet)
 
@@ -335,8 +337,8 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
   session and execs `council-framer-sync.js` (both in `~/.config/heliumtools/`; logs to
   `council-framer-sync.log` + `council-framer-sync.launchd.log`). It pushes `/council/cms`
   into the "Nominations" collection of the Helium.com Framer project
-  (`wfVkOsvjtre4gvABHzvs`), matched by Discord handle (update-only; new candidates are
-  logged, not auto-created). Relies on `@framer/agent` auth persisted from
+  (`wfVkOsvjtre4gvABHzvs`), matched by Discord handle (create-or-update: approved `/cms`
+  candidates with no matching item are auto-created/published). Relies on `@framer/agent` auth persisted from
   `npx @framer/agent setup` (installed skills under `~/.agents/skills` + `~/.claude/skills/framer*`).
 - Memories `council-tool-ops`, `council-scrape-harvest-race` (keep
   `claude-in-chrome-exfiltration-filter` — it's general).

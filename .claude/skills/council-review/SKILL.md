@@ -73,8 +73,9 @@ a bad one is the failure we're preventing.
 - The only write you make is `POST /council/moderate`. Do not touch anything else, do not
   post to Discord, do not publish Framer. Approving simply lets the existing pipeline
   publish; the hourly Framer sync then picks approved items up.
-- A newly-approved candidate who isn't yet in the Framer collection is *logged* by the
-  sync, not auto-created (the sync is update-only to preserve the designer's curation).
-  Note any such new approvals in your report so the designer can add them.
+- Approving is all you need to do: the hourly Framer sync create-or-updates by handle, so
+  a newly-approved candidate is **auto-created/published** to the marketing collection on
+  the next run. (Its name/avatar come from our feed and are un-curated until the designer
+  polishes them — note new approvals in your report so they know one landed.)
 - This is a temporary election tool; see `worker/src/tools/council/CLAUDE.md` for the full
   picture and teardown.
