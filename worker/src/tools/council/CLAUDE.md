@@ -130,8 +130,12 @@ A local hourly launchd job (`org.heliumtools.council-framer-sync`, see Touchpoin
 via the `@framer/agent` CLI, matched by Discord handle: it **create-or-updates** — an
 existing item is updated in place, and an approved `/cms` candidate with no matching item
 is created (auto-published). Since `/cms` is gated to approved-only, creating from it only
-ever publishes reviewed candidates. So the marketing page's freshness depends on that local
-job running (Mac awake, `@framer/agent` still authorized), not on the endpoint alone.
+ever publishes reviewed candidates. **`name` is curator-owned**: set once at create from
+the feed's lifted name, then never overwritten on update — so a designer rename (e.g. the
+lifted "EME" → "Eric Eife") sticks. Everything else (body, date, reactions, endorsements)
+refreshes each run, and `avatar` is only (re)hosted when the item has none. So the marketing
+page's freshness depends on that local job running (Mac awake, `@framer/agent` still
+authorized), not on the endpoint alone.
 
 ## Adding the bot (Wick gauntlet)
 

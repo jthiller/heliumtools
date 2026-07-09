@@ -75,7 +75,8 @@ a bad one is the failure we're preventing.
   publish; the hourly Framer sync then picks approved items up.
 - Approving is all you need to do: the hourly Framer sync create-or-updates by handle, so
   a newly-approved candidate is **auto-created/published** to the marketing collection on
-  the next run. (Its name/avatar come from our feed and are un-curated until the designer
-  polishes them — note new approvals in your report so they know one landed.)
+  the next run. (Its name/avatar come from our feed and are un-curated at first; the
+  designer can rename it and the edit sticks — `name` is curator-owned after create. Note
+  new approvals in your report so they know one landed.)
 - This is a temporary election tool; see `worker/src/tools/council/CLAUDE.md` for the full
   picture and teardown.
