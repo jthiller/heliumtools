@@ -67,6 +67,15 @@ export const POLL_STOP_MS = Date.parse("2026-07-19T23:59:59.999Z");
 // the CLAUDE.md note on upgrading to LLM classification if it proves too coarse.
 export const NOMINATION_MIN_CHARS = 400;
 
+// Per-candidate display-name overrides, keyed by lowercase Discord handle (no @). The
+// name-lift falls back to a member's Discord display name when their nomination has no
+// clean name line (e.g. "EME", "KeithR"); override those to the real name here. Applied
+// in assemble.js to `candidateName`, so it fixes BOTH /nominations and /cms. (Framer's
+// `name` is separately curator-owned, editable in the Framer UI without a redeploy.)
+export const NAME_OVERRIDES = {
+  eme0967: "Eric Eife",
+};
+
 // KV keys. The public feed is cached briefly; the replay-guard meta is written
 // with no TTL (it must outlive any single snapshot to reject out-of-order pushes).
 export const NOMINATIONS_CACHE_KEY = "council:nominations";

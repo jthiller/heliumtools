@@ -4,7 +4,12 @@
 // filtered out of the output but kept in the id map so reply chains through them
 // still resolve.
 
-import { COUNCIL_GUILD_ID, COUNCIL_CHANNEL_ID, NOMINATIONS_CLOSE_MS } from "../config.js";
+import {
+  COUNCIL_GUILD_ID,
+  COUNCIL_CHANNEL_ID,
+  NOMINATIONS_CLOSE_MS,
+  NAME_OVERRIDES,
+} from "../config.js";
 import { presentNomination } from "./present.js";
 
 // The ballot freezes at the nominations-close instant: a message posted after it can't
@@ -73,9 +78,11 @@ export function assembleNominations(rows) {
     if (!withinBallot(row)) continue; // ballot frozen at close — no new nominations
     const base = toPublic(row);
     // Presentation fields (same logic the /council page uses): the lifted candidate
-    // name and the body with any redundant name-header line removed.
+    // name and the body with any redundant name-header line removed. A per-handle
+    // NAME_OVERRIDES entry (config.js) wins over the lift when set.
     const { candidateName, body } = presentNomination(base.content, base.authorDisplayName);
-    const nom = { ...base, candidateName, body, endorsements: [] };
+    const override = NAME_OVERRIDES[String(base.authorUsername || "").toLowerCase()];
+    const nom = { ...base, candidateName: override || candidateName, body, endorsements: [] };
     nominations.push(nom);
     nominationById.set(row.id, nom);
   }
