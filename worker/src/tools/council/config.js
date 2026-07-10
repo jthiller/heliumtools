@@ -75,6 +75,7 @@ export const NOMINATION_MIN_CHARS = 400;
 export const NAME_OVERRIDES = {
   eme0967: "Eric Eife",
   keith_rettig: "Keith Rettig",
+  perro69696969: "Pepe Ortiz",
 };
 
 // KV keys. The public feed is cached briefly; the replay-guard meta is written
