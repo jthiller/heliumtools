@@ -20,7 +20,8 @@ function trimTrailingSymbols(s) {
 
 // Lift the candidate's name. Returns { name, strip } — strip=true when the name was
 // its own header line (drop it from the body), false when pulled from prose. null
-// when nothing confidently found. Mirrors the frontend parser exactly.
+// when nothing confidently found. (The /council page consumes candidateName/body from
+// here, so this is the single source of truth for both surfaces.)
 function parseCandidateName(rawContent) {
   const content = rawContent || "";
   const nl = content.indexOf("\n");
@@ -31,6 +32,17 @@ function parseCandidateName(rawContent) {
     if (sep) {
       const name = trimTrailingSymbols(sep[1]);
       if (nameOk(name)) return { name, strip: true };
+    }
+    // "Adrian Clint / Waveform: Council Nomination" — a metadata header where a
+    // multi-word name leads, followed by a separator and (anywhere after) the line
+    // ending in a nomination marker. Lift the name, drop the whole line. The space
+    // requirement avoids lifting a lone lead-in word ("Note: … nomination").
+    const titled = firstLine.match(
+      /^([\p{L}][\p{L} .,'’-]{1,43}?)\s*[/|:–—]\s*.*\b(?:nomination|candidacy|application)\s*$/iu,
+    );
+    if (titled) {
+      const name = trimTrailingSymbols(titled[1]);
+      if (nameOk(name) && /\s/.test(name)) return { name, strip: true };
     }
     const bare = trimTrailingSymbols(firstLine);
     if (nameOk(bare) && bare.split(/\s+/).length <= 5 && !/[.!?]$/.test(bare)) {
