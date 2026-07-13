@@ -12,8 +12,17 @@ export const PROPOSAL_PROGRAM = new PublicKey(
   "propFYxqmVcufMhk5esNMrexq2ogHbbC2kP9PU1qxKs",
 );
 
-// The vote this blind page is built for. Used when no :proposalId is supplied.
-export const DEFAULT_PROPOSAL = "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo";
+// The vote the blind page currently features. Used when no :proposalId is
+// supplied. Current: the HIP-149 Advisory Council election (5 community seats).
+export const DEFAULT_PROPOSAL = "EejcqoypTXfix3m8GrPwLPQfs1P16yCPhiyzkMLvLRx4";
+
+// Proposals we always keep tracked (and in the /vote/proposals index) even when
+// they're no longer the default — past votes this page featured. The default
+// proposal is implicitly tracked and doesn't need to be listed here.
+export const KNOWN_PROPOSALS = [
+  // HIP-149: Utility and Emissions Realignment (yes/no; resolved)
+  "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo",
+];
 
 // Anchor account discriminator = sha256("account:VoteMarkerV0")[..8], used as
 // the getProgramAccounts type filter. Verified against the published IDL.
@@ -36,6 +45,10 @@ export const VOTE_SNAPSHOT_CRON = "*/15 * * * *";
 // cron stops). Refreshed every cron tick, so for tracked proposals it never
 // actually expires.
 export const SNAPSHOT_TTL = 3 * 24 * 60 * 60;
+// A resolved/cancelled proposal is immutable, so its snapshot is frozen (the
+// cron stops refreshing it) and stored much longer. If it ever expires, the
+// next viewer's cold-start rebuild recreates it from chain + D1 history.
+export const RESOLVED_SNAPSHOT_TTL = 30 * 24 * 60 * 60;
 // A snapshot older than this is "stale": the next viewer triggers a
 // single-flight background refresh. Comfortably above the 15-min cron cadence
 // so steady-state viewers never refresh.
@@ -82,6 +95,26 @@ export const TRACK_TTL_DAYS = 8;
 // Proxy/delegate name registry (helium-vote-proxies) — changes only on PR merge,
 // so cache it for hours.
 export const PROXY_MAP_CACHE_TTL = 6 * 60 * 60;
+
+// --- Resolution settings (end time + election seats) ----------------------
+// A proposal's scheduled end time and, for elections, the number of winning
+// seats live in the state-controller's ResolutionSettingsV0 account (an RPN
+// node list), reached via ProposalConfigV0.state_controller. Decoded layouts
+// verified against @helium/modular-governance-idls 0.1.6.
+export const STATE_CONTROLLER_PROGRAM = "stcfiqW3fwD9QCd8Bqr1NBLrs7dftZHBQe7RiMMA4aM";
+// sha256("account:ResolutionSettingsV0")[..8] (from the published IDL).
+export const RESOLUTION_SETTINGS_DISCRIMINATOR = [169, 38, 51, 69, 190, 118, 10, 130];
+// sha256("account:ProposalConfigV0")[..8] (from the published IDL).
+export const PROPOSAL_CONFIG_DISCRIMINATOR = [162, 41, 210, 200, 205, 177, 228, 11];
+// Proposal configs are effectively immutable once a vote is live; cache the
+// decoded meta (end time / seats) per config address.
+export const RESOLUTION_META_CACHE_TTL = 6 * 60 * 60;
+
+// --- Vote index (/vote/proposals) ------------------------------------------
+// Every snapshot refresh upserts a compact per-proposal row into the D1
+// `vote_proposals` catalog, which the index page lists. Cached briefly in KV so
+// index viewers don't hit D1 per request.
+export const PROPOSALS_CACHE_TTL = 60;
 
 // The roster groups markers (one per voting position) by voter; we compute
 // aggregates over every marker but only return the heaviest N voters to the

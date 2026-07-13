@@ -1,7 +1,9 @@
 // Manual Borsh decoders for Helium governance accounts. No Anchor dependency in
 // the worker; field order/types verified against source:
-//   ProposalV0 / Choice / ProposalState — helium/modular-governance
-//     programs/proposal/src/state.rs
+//   ProposalV0 / Choice / ProposalState / ProposalConfigV0 —
+//     helium/modular-governance programs/proposal/src/state.rs
+//   ResolutionSettingsV0 / ResolutionNode — helium/modular-governance
+//     programs/state-controller/src/state.rs (via @helium/modular-governance-idls)
 //   VoteMarkerV0 — helium/helium-program-library
 //     programs/voter-stake-registry/src/state/marker.rs
 //   discriminators — sha256("account:<Name>")[..8], confirmed against the IDLs.
@@ -127,6 +129,72 @@ export function decodeProposal(buf) {
     tags,
     choices,
   };
+}
+
+/**
+ * ProposalConfigV0 (proposal program): vote_controller: Pubkey,
+ * state_controller: Pubkey (the ResolutionSettingsV0 account), on_vote_hook:
+ * Pubkey, name: String, bump_seed: u8. `state_controller` is what we're after —
+ * it holds the vote's resolution rules (end time, election seat count).
+ */
+export function decodeProposalConfig(buf) {
+  const r = new Reader(buf);
+  r.skip(DISC);
+  const voteController = r.pubkey();
+  const stateController = r.pubkey();
+  const onVoteHook = r.pubkey();
+  const name = r.string();
+  return {
+    voteController: voteController.toBase58(),
+    stateController: stateController.toBase58(),
+    onVoteHook: onVoteHook.toBase58(),
+    name,
+  };
+}
+
+/**
+ * ResolutionSettingsV0 (state-controller program): name: String, settings:
+ * ResolutionStrategy { nodes: Vec<ResolutionNode> }, bump_seed: u8.
+ *
+ * ResolutionNode enum (Borsh 1-byte tag, order per the published IDL):
+ *   0 Resolved{choices:Vec<u16>} · 1 EndTimestamp{end_ts:i64} ·
+ *   2 OffsetFromStartTs{offset:i64} · 3 ChoiceVoteWeight{weight_threshold:u128} ·
+ *   4 ChoicePercentage{percentage:i32} · 5 Top{n:u16} · 6 NumResolved{n:u16} ·
+ *   7 And · 8 Or · 9 Not{choice_name:String} · 10 TotalWeight{weight_threshold:u128} ·
+ *   11 ChoicePercentageOfCurrent{percentage:i32}
+ *
+ * The nodes form an RPN program; we only *summarize* the operands we can render
+ * (scheduled end, top-N seats). An unknown tag aborts the parse (offsets after
+ * it can't be trusted) and returns just what was decoded so far as `partial`.
+ */
+export function decodeResolutionSettings(buf) {
+  const r = new Reader(buf);
+  r.skip(DISC);
+  const name = r.string();
+  const count = r.u32();
+  const nodes = [];
+  let partial = false;
+  for (let i = 0; i < count; i++) {
+    const tag = r.u8();
+    switch (tag) {
+      case 0: nodes.push({ kind: "resolved", choices: r.vecU16() }); break;
+      case 1: nodes.push({ kind: "endTimestamp", endTs: Number(r.i64()) }); break;
+      case 2: nodes.push({ kind: "offsetFromStartTs", offset: Number(r.i64()) }); break;
+      case 3: nodes.push({ kind: "choiceVoteWeight", weightThreshold: r.u128() }); break;
+      case 4: nodes.push({ kind: "choicePercentage", percentage: r.buf.readInt32LE(r.o) }); r.skip(4); break;
+      case 5: nodes.push({ kind: "top", n: r.u16() }); break;
+      case 6: nodes.push({ kind: "numResolved", n: r.u16() }); break;
+      case 7: nodes.push({ kind: "and" }); break;
+      case 8: nodes.push({ kind: "or" }); break;
+      case 9: nodes.push({ kind: "not", choiceName: r.string() }); break;
+      case 10: nodes.push({ kind: "totalWeight", weightThreshold: r.u128() }); break;
+      case 11: nodes.push({ kind: "choicePercentageOfCurrent", percentage: r.buf.readInt32LE(r.o) }); r.skip(4); break;
+      default:
+        partial = true;
+        i = count; // unknown variant — stop; later bytes are unreadable
+    }
+  }
+  return { name, nodes, partial };
 }
 
 /**

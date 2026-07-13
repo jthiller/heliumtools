@@ -66,6 +66,26 @@ export async function getRecordedMarkers(env, id) {
 }
 
 /**
+ * Every recorded vote event for a proposal, decoded for aggregation — the
+ * source for rebuilding a resolved vote's roster after its markers close.
+ * Rows: { marker, voter, choices:[idx], weight:string, flipped:0|1 }.
+ */
+export async function getEventRows(env, id) {
+  if (!env.DB) return [];
+  await ensureSchema(env);
+  const { results } = await env.DB.prepare(
+    `SELECT marker, voter, choices_json, weight, flipped FROM vote_events WHERE proposal = ?`,
+  ).bind(id).all();
+  return (results || []).map((r) => ({
+    marker: r.marker,
+    voter: r.voter,
+    choices: safeParse(r.choices_json),
+    weight: r.weight,
+    flipped: r.flipped === 1,
+  }));
+}
+
+/**
  * The marker pubkeys a given voter holds on a proposal (one per position).
  * `flippedOnly` restricts to positions that changed their vote — the only ones
  * worth parsing for the flip timeline, which also bounds the work for a wallet

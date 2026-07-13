@@ -77,6 +77,30 @@ CREATE TABLE IF NOT EXISTS vote_events (
 CREATE INDEX IF NOT EXISTS idx_vote_events_proposal_ts ON vote_events (proposal, ts);
 CREATE INDEX IF NOT EXISTS idx_vote_events_unresolved ON vote_events (proposal, flip_resolved);
 
+-- Vote tool: durable per-proposal catalog behind GET /vote/proposals (the index
+-- page of current + past votes). One compact row per tracked proposal, upserted
+-- on every snapshot refresh; settled (resolved/cancelled) rows stop changing.
+-- Self-provisions via CREATE TABLE IF NOT EXISTS (no manual migration).
+CREATE TABLE IF NOT EXISTS vote_proposals (
+  address TEXT PRIMARY KEY,       -- ProposalV0 account pubkey
+  name TEXT,
+  status TEXT NOT NULL,           -- derived UI status (active/passed/failed/completed/…)
+  state TEXT NOT NULL,            -- raw on-chain state kind (voting/resolved/…)
+  created_at INTEGER,             -- unix seconds
+  start_ts INTEGER,               -- voting-open time, when known
+  end_ts INTEGER,                 -- actual end (resolved) or scheduled close (open)
+  max_choices INTEGER,            -- ProposalV0.max_choices_per_voter
+  seats INTEGER,                  -- election winners (ResolutionNode Top{n}); null for yes/no
+  total_weight TEXT,              -- u128 sum of choice weights (native units) as a string
+  total_ve_hnt REAL,              -- same in human veHNT (multi-choice counts a ballot once per chosen candidate)
+  voted_ve_hnt REAL,              -- distinct participating veHNT (each position counted once)
+  unique_voters INTEGER,
+  winning_json TEXT,              -- [choiceIndex, ...] once resolved
+  choices_json TEXT,              -- [{index,name,veHnt,percent}, ...] summary for cards
+  tags_json TEXT,                 -- ["HIP 149", ...]
+  updated_at INTEGER NOT NULL     -- ms timestamp of the upserting snapshot
+);
+
 -- Council tool: one row per scraped Discord message (worker/src/tools/council),
 -- keyed by (channel_id, message snowflake). A single table holds nominations,
 -- supporting replies, and chatter (the `kind` column) — re-classification between

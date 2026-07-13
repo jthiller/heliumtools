@@ -12,6 +12,11 @@ async function get(path, params) {
   return data;
 }
 
+/** Index of tracked current + past votes (compact D1 catalog rows). */
+export function fetchProposals() {
+  return get("/proposals", {});
+}
+
 /** Decoded ProposalV0 + outcome (choices, weights, percentages, status). */
 export function fetchProposal(id) {
   return get("/proposal", id ? { id } : {});

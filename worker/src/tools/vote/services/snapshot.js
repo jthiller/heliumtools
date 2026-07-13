@@ -9,16 +9,20 @@ import {
   buildActivityData,
   fetchProposalMarkers,
   aggregateVotes,
+  aggregateVotesFromEvents,
   VoteError,
 } from "./builders.js";
 import { recordProposalVotes } from "./recording.js";
 import { resolveProposalFlips } from "./flips.js";
 import { getCirculatingVeHnt, refreshCirculatingVeHnt } from "./circulating.js";
-import { getFlippedMarkers } from "./history.js";
+import { getFlippedMarkers, getEventRows, getUnresolvedMarkers } from "./history.js";
 import { getProxyMap } from "./proxies.js";
+import { upsertCatalogRow, hasCatalogRow } from "./catalog.js";
 import {
   DEFAULT_PROPOSAL,
+  KNOWN_PROPOSALS,
   SNAPSHOT_TTL,
+  RESOLVED_SNAPSHOT_TTL,
   SNAPSHOT_STALE_MS,
   REFRESH_LOCK_TTL,
   TRACK_TTL_DAYS,
@@ -90,33 +94,63 @@ export async function refreshSnapshot(env, id) {
     const circulating = await getCirculatingVeHnt(env).catch(() => null);
     if (circulating) p.value.circulating = circulating;
 
+    const settled = isSettled(p.value);
+    let votes = markersResult ? aggregateVotes(markersResult, id) : null;
+
+    // End-state counting: markers close once a proposal resolves, so the live
+    // scan zeroes every marker-derived metric (voters, per-choice voter counts,
+    // roster). Rebuild the final roster from the recorded D1 vote events — the
+    // proposal account's choice weights remain the authoritative tally.
+    if (settled && (!votes || votes.markerCount === 0)) {
+      try {
+        const rows = await getEventRows(env, id);
+        if (rows.length > 0) votes = aggregateVotesFromEvents(rows, id);
+      } catch (e) {
+        console.error("vote roster reconstruction failed", id, e?.message);
+      }
+    }
+
     const snapshot = {
       snapshotAt: Date.now(),
       proposal: p.value,
-      votes: markersResult ? aggregateVotes(markersResult, id) : null,
+      votes,
       activity,
     };
+    // Stamp settled snapshots as end-state complete. The stamp (not the status)
+    // is what freezes them: snapshots stored by pre-reconstruction code lack it,
+    // so they get exactly one corrective refresh that rebuilds the roster.
+    if (settled) snapshot.final = true;
 
     // Enrich roster rows: flag voters who changed a vote on any position (from
     // the prior cron's recording — the icon may lag a flip by one cycle), and
     // resolve registered proxy/delegate names. Drop the internal per-position
-    // marker list from the wire.
+    // marker list from the wire. (Reconstructed rosters carry `flipped` from the
+    // event rows already and have no marker lists — they only need proxy names.)
     if (snapshot.votes) {
-      const [flipped, proxyMap] = await Promise.all([getFlippedMarkers(env, id), getProxyMap(env)]);
+      const proxyMap = await getProxyMap(env);
+      const flipped = snapshot.votes.reconstructed ? null : await getFlippedMarkers(env, id);
       for (const v of snapshot.votes.votes) {
-        v.flipped = Array.isArray(v.markers) && v.markers.some((mk) => flipped.has(mk));
+        if (flipped) v.flipped = Array.isArray(v.markers) && v.markers.some((mk) => flipped.has(mk));
         const proxy = proxyMap[v.voter];
         if (proxy) v.proxyName = proxy.name;
         delete v.markers;
       }
     }
 
-    await kvPutJson(env, snapKey(id), snapshot, SNAPSHOT_TTL);
+    // Resolved/cancelled snapshots are immutable — store them long; the index
+    // catalog row is durable either way.
+    await kvPutJson(env, snapKey(id), snapshot, settled ? RESOLVED_SNAPSHOT_TTL : SNAPSHOT_TTL);
+    await upsertCatalogRow(env, snapshot).catch((e) => console.error("vote catalog upsert failed", id, e?.message));
     await trackProposal(env, id);
     return { snapshot, markers: markersResult ? markersResult.markers : null };
   } finally {
     await releaseLock(env, id);
   }
+}
+
+/** A settled proposal (resolved/cancelled) can never change again. */
+function isSettled(proposal) {
+  return proposal && (proposal.state === "resolved" || proposal.state === "cancelled");
 }
 
 /** Refresh, then record any new votes from the markers we just fetched. */
@@ -131,7 +165,11 @@ async function refreshAndRecord(env, id) {
  */
 export async function getOrRefreshSnapshot(env, id, ctx) {
   const snap = await getSnapshot(env, id);
-  const fresh = snap && Date.now() - snap.snapshotAt < SNAPSHOT_STALE_MS;
+  // A `final` snapshot (settled + end-state roster already rebuilt) is
+  // immutable — serve it frozen with no background refresh. Settled snapshots
+  // from before the reconstruction existed aren't stamped, so they take the
+  // stale path once and come back corrected.
+  const fresh = snap && (snap.final || Date.now() - snap.snapshotAt < SNAPSHOT_STALE_MS);
   if (fresh) return snap;
 
   if (snap) {
@@ -166,6 +204,11 @@ export async function getTrackedProposals(env) {
   const set = (await kvGetJson(env, TRACK_KEY)) || {};
   const cutoff = Date.now() - TRACK_TTL_DAYS * 86400_000;
   const ids = Object.keys(set).filter((k) => set[k] >= cutoff);
+  // Pinned ids (the current default + past featured votes) are always tracked,
+  // so they stay in the index catalog and settle cleanly after resolution.
+  for (const pinned of [...KNOWN_PROPOSALS].reverse()) {
+    if (!ids.includes(pinned)) ids.unshift(pinned);
+  }
   if (!ids.includes(DEFAULT_PROPOSAL)) ids.unshift(DEFAULT_PROPOSAL);
   return ids;
 }
@@ -188,6 +231,22 @@ export async function runVoteSnapshots(env) {
   let budget = MAX_NEW_MARKERS_PER_RUN;
   for (const id of ids) {
     try {
+      // A proposal whose stored snapshot is `final` (settled, end-state roster
+      // rebuilt) is immutable — don't re-poll it every tick. Two exceptions
+      // keep it converging: make sure its index catalog row exists (the
+      // snapshot might predate the catalog), and keep refreshing while the
+      // flip resolver still has undecoded markers, so the frozen roster picks
+      // up the last flip flags before going quiet.
+      const stored = await getSnapshot(env, id);
+      if (stored && stored.final) {
+        const pendingFlips = await getUnresolvedMarkers(env, id, 1).catch(() => []);
+        if (pendingFlips.length === 0) {
+          if (!(await hasCatalogRow(env, id).catch(() => true))) {
+            await upsertCatalogRow(env, stored).catch((e) => console.error("vote catalog backfill failed", id, e?.message));
+          }
+          continue;
+        }
+      }
       const r = await refreshSnapshot(env, id);
       if (r && r.markers && budget > 0) {
         budget -= await recordProposalVotes(env, id, { markers: r.markers, limit: budget });

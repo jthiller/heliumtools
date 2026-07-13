@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   ArrowTopRightOnSquareIcon,
   ArrowPathIcon,
@@ -9,6 +9,7 @@ import {
   XCircleIcon,
   CheckBadgeIcon,
   ClockIcon,
+  Squares2X2Icon,
 } from "@heroicons/react/24/outline";
 import {
   LineChart,
@@ -27,106 +28,21 @@ import { readChartColors } from "../lib/chartColors.js";
 import useDarkMode from "../lib/useDarkMode.js";
 import { numberFormatter, truncateString } from "../lib/utils.js";
 import { fetchProposal, fetchVotes, fetchActivity, fetchHistory, fetchVoterHistory } from "../lib/voteApi.js";
+import {
+  fmtVeHnt, fmtDate, relTime, StatusPill, isFinalStatus,
+  choiceTone, choiceHex, NEUTRAL_HUE_COUNT,
+} from "./voteUi.jsx";
 
-// The vote this blind page is built for. /vote with no id falls back to it.
-const DEFAULT_PROPOSAL = "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo";
+// The vote the blind page currently features. /vote with no id falls back to
+// it. Current: the HIP-149 Advisory Council election (5 community seats).
+// Past votes stay reachable from the /votes index.
+const DEFAULT_PROPOSAL = "EejcqoypTXfix3m8GrPwLPQfs1P16yCPhiyzkMLvLRx4";
 // The worker snapshots on a ~15-min cron and serves everyone from cache, so
 // there's no value in viewers polling fast — these just refresh the view.
 const POLL_MS = 60_000;
 const HISTORY_POLL_MS = 5 * 60_000;
 
-// ─── formatting ────────────────────────────────────────────────────────────
-
-function fmtVeHnt(n, { compact = true } = {}) {
-  if (n === null || n === undefined) return "—";
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "—";
-  if (v === 0) return "0";
-  if (compact && v >= 1_000_000) {
-    return (v / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "M";
-  }
-  if (compact && v >= 10_000) {
-    const k = Math.round(v / 1000);
-    return k >= 1000
-      ? (k / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "M"
-      : k.toLocaleString() + "k";
-  }
-  if (v < 1) return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function fmtDate(unixSec) {
-  if (!unixSec) return "—";
-  return new Date(unixSec * 1000).toLocaleDateString(undefined, {
-    year: "numeric", month: "short", day: "numeric",
-  });
-}
-
-function relTime(unixSec) {
-  if (!unixSec) return "—";
-  const diff = Math.floor(Date.now() / 1000 - unixSec);
-  if (diff < 0) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
-  return fmtDate(unixSec);
-}
-
-const STATUS_META = {
-  active:    { label: "Voting open", dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400", pulse: true },
-  passed:    { label: "Passed",      dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
-  failed:    { label: "Failed",      dot: "bg-rose-500",    text: "text-rose-600 dark:text-rose-400" },
-  completed: { label: "Resolved",    dot: "bg-violet-500",  text: "text-violet-600 dark:text-violet-400" },
-  cancelled: { label: "Cancelled",   dot: "bg-content-tertiary", text: "text-content-tertiary" },
-  draft:     { label: "Draft",       dot: "bg-amber-400",   text: "text-amber-600 dark:text-amber-400" },
-  unknown:   { label: "Unknown",     dot: "bg-content-tertiary", text: "text-content-tertiary" },
-};
-
-// Choice color: For/Yes → emerald, Against/No → rose, otherwise cycle accents.
-const NEUTRAL_TONES = [
-  { text: "text-sky-600 dark:text-sky-400", bar: "bg-sky-500" },
-  { text: "text-violet-600 dark:text-violet-400", bar: "bg-violet-500" },
-  { text: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500" },
-  { text: "text-pink-600 dark:text-pink-400", bar: "bg-pink-500" },
-];
-function choiceTone(name, index) {
-  const n = (name || "").toLowerCase();
-  if (n.startsWith("for") || n.startsWith("yes")) {
-    return { text: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" };
-  }
-  if (n.startsWith("against") || n.startsWith("no")) {
-    return { text: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500" };
-  }
-  return NEUTRAL_TONES[index % NEUTRAL_TONES.length];
-}
-
-// recharts strokes take hex, not Tailwind classes — keep this palette aligned
-// with choiceTone above.
-const NEUTRAL_HEX = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#ec4899"];
-function choiceHex(name, index) {
-  const n = (name || "").toLowerCase();
-  if (n.startsWith("for") || n.startsWith("yes")) return "#10b981";
-  if (n.startsWith("against") || n.startsWith("no")) return "#f43f5e";
-  return NEUTRAL_HEX[index % NEUTRAL_HEX.length];
-}
-
 // ─── results ─────────────────────────────────────────────────────────────────
-
-function StatusPill({ status }) {
-  const meta = STATUS_META[status] || STATUS_META.unknown;
-  return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em]">
-      <span className={`relative flex h-2 w-2`}>
-        {meta.pulse && (
-          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${meta.dot} opacity-60`} />
-        )}
-        <span className={`relative inline-flex h-2 w-2 rounded-full ${meta.dot}`} />
-      </span>
-      <span className={meta.text}>{meta.label}</span>
-    </span>
-  );
-}
 
 // Live time-remaining for an open proposal; falls back to the end date once it
 // resolves. Ticks once a second in its own leaf state so it never re-renders
@@ -225,10 +141,10 @@ function ChoiceBar({ choice, isWinner, isResolved, voterCount }) {
 }
 
 // --- Governance thresholds for this proposal ---------------------------------
-// Approval: a choice passes with a two-thirds (66%) supermajority of votes CAST.
+// Approval: a HIP passes with a two-thirds (66.67%) supermajority of votes CAST.
 // Quorum: minimum participation as a share of total circulating veHNT — set this
 // once we have the figure and the quorum line/verdict light up automatically.
-const APPROVAL_THRESHOLD_PCT = 66;
+const APPROVAL_THRESHOLD_PCT = 200 / 3; // two-thirds
 const QUORUM_THRESHOLD_PCT = null; // e.g. 33 ⇒ "33% of circulating must vote"
 
 // The choice that "approval" refers to (the For/Yes side of a yes-no proposal).
@@ -237,22 +153,30 @@ function approvalChoice(choices) {
 }
 
 // Election-night approval meter: For as a share of votes CAST against a fixed
-// 66% "to pass" line — like watching a tally climb toward 270. Only shown for
-// yes-no proposals (where a For/Yes choice exists).
+// two-thirds "to pass" line — like watching a tally climb toward 270. Only for
+// yes-no proposals: a For/Yes choice must exist and there must be at most one
+// other choice (a multi-candidate election has no pass line).
 function ApprovalMeter({ proposal }) {
   const voted = proposal.totalVeHnt || 0;
   const forChoice = approvalChoice(proposal.choices);
-  if (!forChoice || !(voted > 0)) return null;
+  if (!forChoice || !(voted > 0) || (proposal.choices || []).length > 2) return null;
 
   const forPct = (forChoice.veHnt / voted) * 100;
   const passing = forPct >= APPROVAL_THRESHOLD_PCT;
-  const isResolved = ["passed", "failed", "completed"].includes(proposal.status);
+  const isResolved = isFinalStatus(proposal.status);
+  // Once resolved, the verdict is the chain's outcome — the threshold math is
+  // only a live projection (the two could disagree, e.g. on a quorum failure).
   const label = isResolved
-    ? (passing ? "Passed" : "Did not pass")
+    ? (proposal.status === "passed" ? "Passed" : "Did not pass")
     : (passing ? "On track to pass" : "Below threshold");
 
+  // Once resolved, color the verdict by the chain's outcome too.
+  const good = isResolved ? proposal.status === "passed" : passing;
+  const thresholdLabel = `${APPROVAL_THRESHOLD_PCT.toFixed(1)}%`;
+
   // Order the combined bar For → others → Against so the green grows from the
-  // left toward the 66% line and the red anchors the right, election-night style.
+  // left toward the two-thirds line and the red anchors the right,
+  // election-night style.
   const choices = proposal.choices || [];
   const isAgainst = (c) => /^(against|no)\b/i.test(c.name || "");
   const ordered = [
@@ -265,7 +189,7 @@ function ApprovalMeter({ proposal }) {
     <div className="px-6 py-5 border-b border-border-muted">
       <div className="flex items-center justify-between gap-3">
         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${
-          passing
+          good
             ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
             : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
         }`}>
@@ -273,12 +197,12 @@ function ApprovalMeter({ proposal }) {
         </span>
         <span className="text-xs text-content-secondary tabular-nums">
           <span className="font-semibold text-content">{forPct.toFixed(1)}%</span>
-          {" "}{forChoice.name} · {APPROVAL_THRESHOLD_PCT}% to pass
+          {" "}{forChoice.name} · {thresholdLabel} to pass
         </span>
       </div>
       <div className="relative mt-2.5">
         <div className="flex h-4 w-full overflow-hidden rounded-full bg-surface-inset"
-          role="img" aria-label={`${forChoice.name} ${forPct.toFixed(1)}% of votes cast; ${APPROVAL_THRESHOLD_PCT}% needed to pass`}>
+          role="img" aria-label={`${forChoice.name} ${forPct.toFixed(1)}% of votes cast; ${thresholdLabel} needed to pass`}>
           {ordered.map((c) => (
             <div
               key={c.index}
@@ -288,7 +212,7 @@ function ApprovalMeter({ proposal }) {
             />
           ))}
         </div>
-        {/* Fixed 66% "to pass" line — the marker never moves. */}
+        {/* Fixed two-thirds "to pass" line — the marker never moves. */}
         <div className="pointer-events-none absolute inset-y-0" style={{ left: `${APPROVAL_THRESHOLD_PCT}%` }}>
           <div className="h-full w-0.5 -translate-x-1/2 bg-content ring-1 ring-surface-raised/60" />
         </div>
@@ -296,27 +220,42 @@ function ApprovalMeter({ proposal }) {
       <div className="relative mt-1 h-3">
         <span className="absolute -translate-x-1/2 font-mono text-[10px] text-content-tertiary tabular-nums"
           style={{ left: `${APPROVAL_THRESHOLD_PCT}%` }}>
-          {APPROVAL_THRESHOLD_PCT}%
+          {thresholdLabel}
         </span>
       </div>
     </div>
   );
 }
 
-// Turnout: how much of the TOTAL circulating veHNT has voted, broken down by
-// choice, with the unvoted remainder. `circulating` is the network-wide voting
-// power (computed server-side); absent until the worker has first computed it,
-// in which case the whole card is hidden rather than showing a bogus 100%.
-function VoteProgress({ proposal }) {
+// Turnout: how much of the TOTAL circulating veHNT has voted, with the unvoted
+// remainder. `circulating` is the network-wide voting power (computed
+// server-side); absent until the worker has first computed it, in which case
+// the whole card is hidden rather than showing a bogus 100%.
+//
+// Counting: on a yes-no vote the proposal's summed choice weights ARE the
+// participating veHNT. On a multi-choice election a single ballot adds its
+// weight to EVERY candidate it backs (up to maxChoicesPerVoter), so that sum
+// overcounts participation — the roster's distinct total (each position counted
+// once) is the honest numerator, and the by-choice breakdown moves to the
+// outcome card where it means "support", not "turnout".
+function VoteProgress({ proposal, votes }) {
   const circulating = proposal.circulating?.veHnt;
+  const multi = (proposal.maxChoicesPerVoter || 1) > 1;
   if (!(circulating > 0)) return null;
 
-  const voted = proposal.totalVeHnt || 0;
+  const distinct = votes && !votes.unavailable ? votes.totalVeHnt : null;
+  // Multi-choice with no roster yet → wait rather than overcount.
+  const voted = multi ? distinct : (proposal.totalVeHnt || 0);
+  if (voted == null) return null;
+
   const pct = Math.min(100, (voted / circulating) * 100);
   const remainder = Math.max(0, circulating - voted);
   const share = (v) => Math.min(100, (v / circulating) * 100);
-  // Heaviest choices first; only choices with weight get a segment/legend row.
-  const segs = (proposal.choices || []).filter((c) => c.veHnt > 0).sort((a, b) => b.veHnt - a.veHnt);
+  // Yes-no: per-choice segments (they sum to the turnout). Multi-choice: one
+  // aggregate segment — per-candidate shares of circulating would overlap.
+  const segs = multi
+    ? []
+    : (proposal.choices || []).filter((c) => c.veHnt > 0).sort((a, b) => b.veHnt - a.veHnt);
   const positions = proposal.circulating?.positions;
 
   return (
@@ -338,6 +277,11 @@ function VoteProgress({ proposal }) {
             of voting power has voted
           </span>
         </p>
+        {multi && (
+          <p className="mt-1 text-xs text-content-tertiary">
+            Each ballot counted once, however many candidates it backs.
+          </p>
+        )}
         {QUORUM_THRESHOLD_PCT != null && (
           <p className="mt-1 text-xs text-content-secondary">
             {pct >= QUORUM_THRESHOLD_PCT
@@ -346,20 +290,28 @@ function VoteProgress({ proposal }) {
           </p>
         )}
 
-        {/* Stacked progress bar: each choice's share of the full circulating
-            total, left-to-right; the unfilled track is the unvoted remainder.
-            When a quorum is configured, a fixed marker shows the line. */}
+        {/* Stacked progress bar against the full circulating total; the
+            unfilled track is the unvoted remainder. When a quorum is
+            configured, a fixed marker shows the line. */}
         <div className="relative mt-4">
           <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-inset" role="img"
             aria-label={`${pct.toFixed(1)}% of circulating veHNT has voted`}>
-            {segs.map((c) => (
+            {multi ? (
               <div
-                key={c.index}
-                className={`${choiceTone(c.name, c.index).bar} h-full first:rounded-l-full`}
-                style={{ width: `${share(c.veHnt)}%` }}
-                title={`${c.name}: ${fmtVeHnt(c.veHnt)} veHNT (${share(c.veHnt).toFixed(1)}%)`}
+                className="h-full rounded-l-full bg-accent"
+                style={{ width: `${pct}%` }}
+                title={`Voted: ${fmtVeHnt(voted)} veHNT (${pct.toFixed(1)}%)`}
               />
-            ))}
+            ) : (
+              segs.map((c) => (
+                <div
+                  key={c.index}
+                  className={`${choiceTone(c.name, c.index).bar} h-full first:rounded-l-full`}
+                  style={{ width: `${share(c.veHnt)}%` }}
+                  title={`${c.name}: ${fmtVeHnt(c.veHnt)} veHNT (${share(c.veHnt).toFixed(1)}%)`}
+                />
+              ))
+            )}
           </div>
           {QUORUM_THRESHOLD_PCT != null && (
             <div className="pointer-events-none absolute inset-y-0" style={{ left: `${Math.min(100, QUORUM_THRESHOLD_PCT)}%` }}
@@ -370,18 +322,31 @@ function VoteProgress({ proposal }) {
         </div>
 
         <ul className="mt-4 space-y-1.5">
-          {segs.map((c) => (
-            <li key={c.index} className="flex items-center justify-between gap-3 text-xs">
+          {multi ? (
+            <li className="flex items-center justify-between gap-3 text-xs">
               <span className="flex items-center gap-2 min-w-0">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${choiceTone(c.name, c.index).bar}`} />
-                <span className="text-content truncate">{c.name}</span>
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
+                <span className="text-content truncate">Voted</span>
               </span>
               <span className="flex items-center gap-3 shrink-0 tabular-nums">
-                <span className="text-content-secondary">{fmtVeHnt(c.veHnt)}</span>
-                <span className="w-14 text-right text-content-tertiary">{share(c.veHnt).toFixed(1)}%</span>
+                <span className="text-content-secondary">{fmtVeHnt(voted)}</span>
+                <span className="w-14 text-right text-content-tertiary">{pct.toFixed(1)}%</span>
               </span>
             </li>
-          ))}
+          ) : (
+            segs.map((c) => (
+              <li key={c.index} className="flex items-center justify-between gap-3 text-xs">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${choiceTone(c.name, c.index).bar}`} />
+                  <span className="text-content truncate">{c.name}</span>
+                </span>
+                <span className="flex items-center gap-3 shrink-0 tabular-nums">
+                  <span className="text-content-secondary">{fmtVeHnt(c.veHnt)}</span>
+                  <span className="w-14 text-right text-content-tertiary">{share(c.veHnt).toFixed(1)}%</span>
+                </span>
+              </li>
+            ))
+          )}
           <li className="flex items-center justify-between gap-3 text-xs">
             <span className="flex items-center gap-2 min-w-0">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-surface-inset ring-1 ring-inset ring-border" />
@@ -400,6 +365,8 @@ function VoteProgress({ proposal }) {
 
 function OutcomeCard({ proposal, votes }) {
   const isResolved = ["passed", "failed", "completed"].includes(proposal.status);
+  const multi = (proposal.maxChoicesPerVoter || 1) > 1;
+  const seats = proposal.seats || null;
   const winners = new Set(
     proposal.winningChoices && proposal.winningChoices.length
       ? proposal.winningChoices
@@ -418,18 +385,41 @@ function OutcomeCard({ proposal, votes }) {
     return m;
   }, [votes]);
 
+  // On a multi-choice election the summed choice weights count a ballot once
+  // per candidate it backs — the honest headline is the roster's distinct
+  // total (each position once). Yes-no proposals: the sums are identical.
+  const distinct = votes && !votes.unavailable ? votes.totalVeHnt : null;
+  const powerVeHnt = multi ? distinct : proposal.totalVeHnt;
+  // Where to draw the elected-seats cut. Live: a projection after the leading
+  // `seats` rows. Resolved: the chain's winner set is authoritative — only draw
+  // the line if the winners are exactly the top block of the sort (ties or
+  // unusual resolution rules could break that, in which case badges carry it).
+  let cutAfter = null;
+  if (seats && sorted.length > seats) {
+    if (!isResolved) {
+      cutAfter = seats;
+    } else if (winners.size && sorted.slice(0, winners.size).every((c) => winners.has(c.index))) {
+      cutAfter = winners.size;
+    }
+  }
+
   return (
     <div className="rounded-2xl bg-surface-raised shadow-soft">
       <ApprovalMeter proposal={proposal} />
       <div className="grid grid-cols-2 divide-x divide-border-muted border-b border-border-muted">
         <div className="px-6 py-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
-            Total voting power
+            {multi ? "Voting power voted" : "Total voting power"}
           </p>
           <p className="mt-2 font-display text-3xl font-semibold text-content tabular-nums leading-none">
-            {fmtVeHnt(proposal.totalVeHnt)}
+            {fmtVeHnt(powerVeHnt)}
             <span className="ml-1.5 text-sm font-sans text-content-secondary">veHNT</span>
           </p>
+          {multi && (
+            <p className="mt-1.5 text-[11px] text-content-tertiary">
+              Distinct veHNT — each ballot may back up to {proposal.maxChoicesPerVoter} candidates.
+            </p>
+          )}
         </div>
         <div className="px-6 py-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-content-tertiary">
@@ -446,14 +436,25 @@ function OutcomeCard({ proposal, votes }) {
         </div>
       </div>
       <div className="px-6 py-3 divide-y divide-border-muted">
-        {sorted.map((choice) => (
-          <ChoiceBar
-            key={choice.index}
-            choice={choice}
-            isWinner={winners.has(choice.index)}
-            isResolved={isResolved}
-            voterCount={votersByChoice.get(choice.index)}
-          />
+        {sorted.map((choice, pos) => (
+          <div key={choice.index}>
+            {/* Elected-seats cut line: everything above wins a seat. */}
+            {cutAfter != null && pos === cutAfter && (
+              <div className="flex items-center gap-3 pt-3 pb-0.5" role="separator">
+                <span className="h-px flex-1 border-t border-dashed border-content-tertiary/50" />
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-content-tertiary">
+                  {isResolved ? `Top ${seats} elected` : `Top ${seats} win seats`}
+                </span>
+                <span className="h-px flex-1 border-t border-dashed border-content-tertiary/50" />
+              </div>
+            )}
+            <ChoiceBar
+              choice={choice}
+              isWinner={winners.has(choice.index)}
+              isResolved={isResolved}
+              voterCount={votersByChoice.get(choice.index)}
+            />
+          </div>
         ))}
       </div>
     </div>
@@ -608,12 +609,21 @@ function VoterRoster({ proposal, votes, error }) {
         <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-content-tertiary">
           Voters
         </h2>
-        {votes && (
-          <span className="font-mono text-[11px] text-content-tertiary tabular-nums">
-            {numberFormatter.format(votes.uniqueVoters)} voter{votes.uniqueVoters === 1 ? "" : "s"}
-            {votes.truncated && ` · top ${numberFormatter.format(votes.returned)}`}
-          </span>
-        )}
+        <span className="flex items-baseline gap-2">
+          {votes?.reconstructed && (
+            <Tooltip content="This vote has resolved and its on-chain vote markers are closed. The final roster is rebuilt from the votes this page recorded while the vote was open; the tallies above are read from the proposal itself.">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-content-tertiary border-b border-dotted border-content-tertiary cursor-help">
+                final roster
+              </span>
+            </Tooltip>
+          )}
+          {votes && (
+            <span className="font-mono text-[11px] text-content-tertiary tabular-nums">
+              {numberFormatter.format(votes.uniqueVoters)} voter{votes.uniqueVoters === 1 ? "" : "s"}
+              {votes.truncated && ` · top ${numberFormatter.format(votes.returned)}`}
+            </span>
+          )}
+        </span>
       </header>
       {error ? (
         <p className="px-5 py-6 text-sm text-content-tertiary">Couldn't load voters.</p>
@@ -739,35 +749,69 @@ const VoteTrendChart = memo(function VoteTrendChart({ history, proposal }) {
   const points = history?.points || [];
   const voteCount = history?.total ?? points.length;
 
-  const series = useMemo(
-    () =>
-      (proposal?.choices || []).map((c) => ({
-        key: `c${c.index}`,
-        name: c.name,
-        color: choiceHex(c.name, c.index),
-      })),
-    [proposal?.choices],
-  );
+  // A line per choice reads fine up to the palette's 8 distinct hues; beyond
+  // that (a crowded election) the leaders keep their own lines and the tail is
+  // folded into one dashed gray "Others" — repeating hues on a chart would make
+  // lines unidentifiable. Charted choices keep index order so their colors stay
+  // with the candidate, not their rank.
+  const { series, charted, othersKey } = useMemo(() => {
+    const choices = proposal?.choices || [];
+    let chartedChoices = choices;
+    if (choices.length > NEUTRAL_HUE_COUNT) {
+      const leaders = new Set(
+        [...choices]
+          .sort((a, b) => b.veHnt - a.veHnt)
+          .slice(0, NEUTRAL_HUE_COUNT)
+          .map((c) => c.index),
+      );
+      chartedChoices = choices.filter((c) => leaders.has(c.index));
+    }
+    const s = chartedChoices.map((c, pos) => ({
+      key: `c${c.index}`,
+      name: c.name,
+      color: choiceHex(c.name, choices.length > NEUTRAL_HUE_COUNT ? pos : c.index, dark),
+      dash: null,
+    }));
+    const folded = choices.length > chartedChoices.length;
+    if (folded) {
+      s.push({
+        key: "others",
+        name: `Others (${choices.length - chartedChoices.length})`,
+        color: colors?.tickText || "#9ca3af",
+        dash: "4 3",
+      });
+    }
+    return {
+      series: s,
+      charted: new Set(chartedChoices.map((c) => c.index)),
+      othersKey: folded ? "others" : null,
+    };
+  }, [proposal?.choices, dark, colors]);
 
-  // One row per vote (precise blockTime). Every choice gets a value on every
-  // row (0 until its first vote) so the cumulative step-lines stay continuous.
-  // Seed a zero point at voting-open so each line starts at the baseline.
+  // One row per vote (precise blockTime). Every charted choice gets a value on
+  // every row (0 until its first vote) so the cumulative step-lines stay
+  // continuous; non-charted choices sum into the Others line. Seed a zero point
+  // at voting-open so each line starts at the baseline.
   const data = useMemo(() => {
-    const indices = (proposal?.choices || []).map((c) => c.index);
     const rows = points.map((pt) => {
-      const byIdx = new Map((pt.choices || []).map((c) => [c.index, c.veHnt]));
       const row = { t: pt.ts * 1000 };
-      for (const idx of indices) row[`c${idx}`] = byIdx.get(idx) ?? 0;
+      for (const idx of charted) row[`c${idx}`] = 0;
+      if (othersKey) row[othersKey] = 0;
+      for (const c of pt.choices || []) {
+        if (charted.has(c.index)) row[`c${c.index}`] = c.veHnt;
+        else if (othersKey) row[othersKey] += c.veHnt;
+      }
       return row;
     });
     const startSec = proposal?.startTs || proposal?.createdAt;
     if (startSec && rows.length && rows[0].t > startSec * 1000) {
       const seed = { t: startSec * 1000 };
-      for (const idx of indices) seed[`c${idx}`] = 0;
+      for (const idx of charted) seed[`c${idx}`] = 0;
+      if (othersKey) seed[othersKey] = 0;
       rows.unshift(seed);
     }
     return rows;
-  }, [points, proposal?.choices, proposal?.startTs, proposal?.createdAt]);
+  }, [points, charted, othersKey, proposal?.startTs, proposal?.createdAt]);
 
   if (data.length === 0) {
     return (
@@ -835,6 +879,7 @@ const VoteTrendChart = memo(function VoteTrendChart({ history, proposal }) {
                 dataKey={s.key}
                 name={s.name}
                 stroke={s.color}
+                strokeDasharray={s.dash || undefined}
                 dot={false}
                 strokeWidth={2}
                 isAnimationActive={false}
@@ -873,9 +918,12 @@ export default function Vote() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Keep the latest id in a ref so the polling effect doesn't restart on every
-  // render but always fetches the current proposal.
+  // render but always fetches the current proposal. Same trick for the status:
+  // once a vote is final there's nothing to poll for.
   const idRef = useRef(proposalId);
   idRef.current = proposalId;
+  const finalRef = useRef(false);
+  finalRef.current = !!proposal && !proposal.warming && isFinalStatus(proposal.status);
 
   const refresh = useCallback(async () => {
     const id = idRef.current;
@@ -922,17 +970,18 @@ export default function Vote() {
     refreshHistory();
   }, [proposalId, refresh, refreshHistory]);
 
-  // Auto-refresh while the tab is visible.
+  // Auto-refresh while the tab is visible — until the vote is final, after
+  // which the data can't change and polling is just noise.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!document.hidden) refresh();
+      if (!document.hidden && !finalRef.current) refresh();
     }, POLL_MS);
     return () => clearInterval(interval);
   }, [refresh]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!document.hidden) refreshHistory();
+      if (!document.hidden && !finalRef.current) refreshHistory();
     }, HISTORY_POLL_MS);
     return () => clearInterval(interval);
   }, [refreshHistory]);
@@ -970,25 +1019,50 @@ export default function Vote() {
                   <Countdown endTs={proposal.endTs} status={proposal.status} />
                 </div>
                 <div className="flex items-center gap-3">
-                  <Tooltip content="Polled on-chain by the worker on a schedule (~every 15 min) and served from cache — so viewing this page doesn't hit the RPC.">
-                    <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
-                      {proposal.snapshotAt ? `data ${relTime(Math.floor(proposal.snapshotAt / 1000))}` : ""}
-                    </span>
-                  </Tooltip>
-                  <button
-                    onClick={() => refresh()}
-                    disabled={refreshing}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-mono uppercase tracking-wide text-content-secondary hover:text-content hover:border-content-tertiary transition disabled:opacity-50"
-                    aria-label="Refresh"
+                  {isFinalStatus(proposal.status) ? (
+                    <Tooltip content="This vote has resolved — the results below are final and no longer refresh.">
+                      <span className="font-mono text-[11px] text-content-tertiary uppercase tracking-wide border-b border-dotted border-content-tertiary cursor-help">
+                        Final results
+                      </span>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip content="Polled on-chain by the worker on a schedule (~every 15 min) and served from cache — so viewing this page doesn't hit the RPC.">
+                      <span className="font-mono text-[11px] text-content-tertiary tabular-nums border-b border-dotted border-content-tertiary cursor-help">
+                        {proposal.snapshotAt ? `data ${relTime(Math.floor(proposal.snapshotAt / 1000))}` : ""}
+                      </span>
+                    </Tooltip>
+                  )}
+                  {!isFinalStatus(proposal.status) && (
+                    <button
+                      onClick={() => refresh()}
+                      disabled={refreshing}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-mono uppercase tracking-wide text-content-secondary hover:text-content hover:border-content-tertiary transition disabled:opacity-50"
+                      aria-label="Refresh"
+                    >
+                      <ArrowPathIcon className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                      Refresh
+                    </button>
+                  )}
+                  <Link
+                    to="/votes"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-mono uppercase tracking-wide text-content-secondary hover:text-content hover:border-content-tertiary transition"
                   >
-                    <ArrowPathIcon className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-                    Refresh
-                  </button>
+                    <Squares2X2Icon className="h-3.5 w-3.5" />
+                    All votes
+                  </Link>
                 </div>
               </div>
               <h1 className="font-display text-3xl sm:text-4xl font-bold text-content tracking-[-0.03em] leading-tight">
                 {proposal.name || truncateString(proposal.address, 6, 6)}
               </h1>
+              {proposal.seats && (proposal.choices || []).length > 2 && (
+                <p className="mt-2 text-sm text-content-secondary">
+                  Electing the top {proposal.seats} of {proposal.choices.length} candidates
+                  {proposal.maxChoicesPerVoter > 1 &&
+                    ` — each ballot may back up to ${proposal.maxChoicesPerVoter}`}
+                  .
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-content-tertiary font-mono">
                 <span>Created {fmtDate(proposal.createdAt)}</span>
                 {proposal.status === "active" && proposal.startTs && (
@@ -1018,7 +1092,7 @@ export default function Vote() {
 
             <OutcomeCard proposal={proposal} votes={votes} />
 
-            <VoteProgress proposal={proposal} />
+            <VoteProgress proposal={proposal} votes={votes} />
 
             <VoteTrendChart history={history} proposal={proposal} />
 

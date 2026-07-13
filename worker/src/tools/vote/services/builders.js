@@ -7,6 +7,7 @@ import { VSR_PROGRAM } from "../../../lib/helium-solana.js";
 import { getAccount, getProgramAccounts, getSignaturesForAddress, getTransaction } from "./rpc.js";
 import { decodeProposal, decodeVoteMarker } from "./decode.js";
 import { getProposalContent } from "./content.js";
+import { getResolutionMeta, scheduledEndTs } from "./resolution.js";
 import { decodeVoteInstructions } from "./voteDecode.js";
 import { tallyChoices, deriveStatus, proposalTiming, weightToVeHnt } from "../utils.js";
 import {
@@ -62,6 +63,10 @@ export async function buildProposalData(env, address) {
   const { startTs, endTs } = proposalTiming(proposal.state);
   const content = await getProposalContent(env, address, proposal.uri);
 
+  // Resolution rules (scheduled end + election seat count) live behind the
+  // proposal config. Best-effort: null leaves the response exactly as before.
+  const resolution = await getResolutionMeta(env, proposal.proposalConfig);
+
   return {
     address,
     name: proposal.name,
@@ -74,7 +79,12 @@ export async function buildProposalData(env, address) {
     status,
     createdAt: proposal.createdAt,
     startTs,
-    endTs,
+    // Resolved proposals carry their actual end; open ones get the *scheduled*
+    // close from the resolution settings (feeds the countdown).
+    endTs: endTs ?? scheduledEndTs(resolution, startTs),
+    // Election seat count (ResolutionNode Top{n}) — e.g. 5 for the council
+    // election. Null for plain yes/no votes and unknown controllers.
+    seats: resolution?.seats ?? null,
     maxChoicesPerVoter: proposal.maxChoicesPerVoter,
     decimals: VOTE_WEIGHT_DECIMALS,
     totalWeight: totalWeight.toString(),
@@ -192,6 +202,90 @@ export function aggregateVotes({ markers, scanCapped }, address) {
       // Distinct choices this voter's positions back, heaviest first.
       choices: [...v.choices.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([i]) => i),
       markers: v.markers,
+    })),
+  };
+}
+
+/**
+ * Rebuild the voter roster from recorded D1 vote events — the end-state path.
+ * VoteMarkerV0 accounts close once a proposal resolves, so the live scan goes
+ * empty and marker-derived metrics (voters, per-choice voter counts, roster)
+ * would zero out. The `vote_events` table holds each marker's final state
+ * (voter, choices, weight, flipped), so a resolved vote's roster is rebuilt
+ * from there instead. Output mirrors aggregateVotes, plus `reconstructed: true`
+ * so clients can label it; per-row `flipped` comes straight from the events
+ * (no marker join), and the delegation (`proxy`) badge is unknown post-close.
+ *
+ * Caveats (best-effort by nature): votes cast in the final minutes before
+ * resolution may be missing if the cron never saw them, and a marker
+ * relinquished *before* resolution lingers with its last recorded state. The
+ * proposal account's own choice weights stay the authoritative tally.
+ */
+export function aggregateVotesFromEvents(rows, address) {
+  const perChoice = new Map();
+  const byVoter = new Map();
+  let totalWeight = 0n;
+  let markerCount = 0;
+
+  for (const row of rows) {
+    let weight;
+    try {
+      weight = BigInt(row.weight);
+    } catch {
+      continue; // unreadable row — skip rather than corrupt the totals
+    }
+    const choices = Array.isArray(row.choices) ? row.choices : [];
+    markerCount += 1;
+    totalWeight += weight;
+    for (const c of choices) {
+      perChoice.set(c, (perChoice.get(c) || 0n) + weight);
+    }
+    let v = byVoter.get(row.voter);
+    if (!v) {
+      v = { voter: row.voter, weight: 0n, choices: new Map(), positions: 0, flipped: false };
+      byVoter.set(row.voter, v);
+    }
+    v.weight += weight;
+    v.positions += 1;
+    if (row.flipped) v.flipped = true;
+    for (const c of choices) v.choices.set(c, (v.choices.get(c) || 0n) + weight);
+  }
+
+  const voters = [...byVoter.values()].sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
+  const returned = voters.slice(0, MAX_VOTERS_RETURNED);
+
+  const voterCountPerChoice = new Map();
+  for (const v of byVoter.values()) {
+    for (const c of v.choices.keys()) {
+      voterCountPerChoice.set(c, (voterCountPerChoice.get(c) || 0) + 1);
+    }
+  }
+
+  return {
+    proposal: address,
+    reconstructed: true,
+    markerCount,
+    uniqueVoters: byVoter.size,
+    totalWeight: totalWeight.toString(),
+    totalVeHnt: weightToVeHnt(totalWeight),
+    truncated: voters.length > returned.length,
+    scanCapped: false,
+    returned: returned.length,
+    perChoice: Array.from(perChoice.entries())
+      .map(([index, weight]) => ({
+        index,
+        weight: weight.toString(),
+        veHnt: weightToVeHnt(weight),
+        voters: voterCountPerChoice.get(index) || 0,
+      }))
+      .sort((a, b) => a.index - b.index),
+    votes: returned.map((v) => ({
+      voter: v.voter,
+      weight: v.weight.toString(),
+      veHnt: weightToVeHnt(v.weight),
+      positions: v.positions,
+      flipped: v.flipped,
+      choices: [...v.choices.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([i]) => i),
     })),
   };
 }
