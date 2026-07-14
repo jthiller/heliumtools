@@ -108,6 +108,11 @@ export async function refreshSnapshot(env, id) {
       } catch (e) {
         console.error("vote roster reconstruction failed", id, e?.message);
       }
+      // Still empty (nothing recorded to rebuild from — e.g. the vote resolved
+      // before this page ever tracked it): the roster is UNKNOWABLE, not zero.
+      // Null keeps the catalog's COALESCE from blanking real prior figures
+      // with zeros and lets the UI show unknowns instead of "0 voters".
+      if (votes && votes.markerCount === 0) votes = null;
     }
 
     const snapshot = {
@@ -119,7 +124,15 @@ export async function refreshSnapshot(env, id) {
     // Stamp settled snapshots as end-state complete. The stamp (not the status)
     // is what freezes them: snapshots stored by pre-reconstruction code lack it,
     // so they get exactly one corrective refresh that rebuilds the roster.
-    if (settled) snapshot.final = true;
+    // Don't stamp while the flip resolver still has undecoded markers — the
+    // roster above read the flags as they currently stand, and the resolver
+    // runs AFTER the refresh loop each cron tick, so freezing now would lose
+    // the final batch of ⇄ flags. Unstamped settled snapshots keep refreshing
+    // (once per tick) until the backlog drains, then freeze fully converged.
+    if (settled) {
+      const pendingFlips = await getUnresolvedMarkers(env, id, 1).catch(() => [{}]);
+      if (pendingFlips.length === 0) snapshot.final = true;
+    }
 
     // Enrich roster rows: flag voters who changed a vote on any position (from
     // the prior cron's recording — the icon may lag a flip by one cycle), and
@@ -232,21 +245,17 @@ export async function runVoteSnapshots(env) {
   let budget = MAX_NEW_MARKERS_PER_RUN;
   for (const id of ids) {
     try {
-      // A proposal whose stored snapshot is `final` (settled, end-state roster
-      // rebuilt) is immutable — don't re-poll it every tick. Two exceptions
-      // keep it converging: make sure its index catalog row exists (the
-      // snapshot might predate the catalog), and keep refreshing while the
-      // flip resolver still has undecoded markers, so the frozen roster picks
-      // up the last flip flags before going quiet.
+      // A proposal whose stored snapshot is `final` is immutable AND fully
+      // converged — refreshSnapshot only stamps it once the flip resolver's
+      // backlog is empty, so the stamp alone is the skip condition. Just make
+      // sure its index catalog row exists (the snapshot might predate the
+      // catalog).
       const stored = await getSnapshot(env, id);
       if (stored && stored.final) {
-        const pendingFlips = await getUnresolvedMarkers(env, id, 1).catch(() => []);
-        if (pendingFlips.length === 0) {
-          if (!(await hasCatalogRow(env, id).catch(() => true))) {
-            await upsertCatalogRow(env, stored).catch((e) => console.error("vote catalog backfill failed", id, e?.message));
-          }
-          continue;
+        if (!(await hasCatalogRow(env, id).catch(() => true))) {
+          await upsertCatalogRow(env, stored).catch((e) => console.error("vote catalog backfill failed", id, e?.message));
         }
+        continue;
       }
       const r = await refreshSnapshot(env, id);
       if (r && r.markers && budget > 0) {

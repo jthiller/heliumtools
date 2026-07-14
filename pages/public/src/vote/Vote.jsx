@@ -30,7 +30,7 @@ import { numberFormatter, truncateString } from "../lib/utils.js";
 import { fetchProposal, fetchVotes, fetchActivity, fetchHistory, fetchVoterHistory } from "../lib/voteApi.js";
 import {
   fmtVeHnt, fmtDate, relTime, StatusPill, isFinalStatus, hasOutcome,
-  isMultiChoice, participatingVeHnt, isElection,
+  isMultiChoice, participatingVeHnt, isElection, electedChoices,
   choiceTone, choiceHex, NEUTRAL_HUE_COUNT,
 } from "./voteUi.jsx";
 
@@ -367,10 +367,16 @@ function OutcomeCard({ proposal, votes }) {
   const isResolved = hasOutcome(proposal.status);
   const multi = isMultiChoice(proposal);
   const seats = proposal.seats || null;
+  // The elected slate (chain winners, extended to the full seat count when the
+  // on-chain resolution names fewer — see electedChoices); falls back to the
+  // live leader for open votes and to leadingIndex for winnerless outcomes.
+  const elected = electedChoices(proposal);
   const winners = new Set(
-    proposal.winningChoices && proposal.winningChoices.length
-      ? proposal.winningChoices
-      : proposal.leadingIndex >= 0 ? [proposal.leadingIndex] : [],
+    elected.length
+      ? elected.map((c) => c.index)
+      : proposal.winningChoices && proposal.winningChoices.length
+        ? proposal.winningChoices
+        : proposal.leadingIndex >= 0 ? [proposal.leadingIndex] : [],
   );
   const choices = proposal.choices || [];
   const sorted = useMemo(
@@ -389,17 +395,15 @@ function OutcomeCard({ proposal, votes }) {
   // per candidate it backs — the honest headline is the roster's distinct
   // total (each position once). Yes-no proposals: the sums are identical.
   const powerVeHnt = multi ? participatingVeHnt(votes) : proposal.totalVeHnt;
-  // Where to draw the elected-seats cut. Live: a projection after the leading
-  // `seats` rows. Resolved: the chain's winner set is authoritative — only draw
-  // the line if the winners are exactly the top block of the sort (ties or
-  // unusual resolution rules could break that, in which case badges carry it).
+  // Where to draw the elected-seats cut (the label always says `seats`, so the
+  // divider must sit at `seats` too). Live: a projection after the leading
+  // rows. Resolved: only when the elected set is exactly the top block of the
+  // sort — ties or unusual resolutions (more winners than seats) suppress the
+  // line and the badges alone carry the outcome.
   let cutAfter = null;
   if (seats && sorted.length > seats) {
-    if (!isResolved) {
-      cutAfter = seats;
-    } else if (winners.size && sorted.slice(0, winners.size).every((c) => winners.has(c.index))) {
-      cutAfter = winners.size;
-    }
+    const topBlockElected = sorted.slice(0, seats).every((c) => winners.has(c.index));
+    cutAfter = !isResolved || (winners.size === seats && topBlockElected) ? seats : null;
   }
 
   return (
@@ -425,8 +429,10 @@ function OutcomeCard({ proposal, votes }) {
             Voters
           </p>
           <p className="mt-2 font-display text-3xl font-semibold text-content tabular-nums leading-none">
-            {votes ? numberFormatter.format(votes.uniqueVoters) : "—"}
-            {votes && votes.markerCount !== votes.uniqueVoters && (
+            {/* An unavailable roster means the count is unknown, not zero —
+                e.g. a vote that resolved before this page ever tracked it. */}
+            {votes && !votes.unavailable ? numberFormatter.format(votes.uniqueVoters) : "—"}
+            {votes && !votes.unavailable && votes.markerCount !== votes.uniqueVoters && (
               <span className="ml-1.5 text-sm font-sans text-content-secondary">
                 · {numberFormatter.format(votes.markerCount)} positions
               </span>

@@ -12,6 +12,7 @@ import { decodeVoteInstructions } from "./voteDecode.js";
 import { tallyChoices, deriveStatus, proposalTiming, weightToVeHnt } from "../utils.js";
 import {
   PROPOSAL_PROGRAM,
+  PROPOSAL_OVERRIDES,
   VOTE_WEIGHT_DECIMALS,
   VOTE_MARKER_DISCRIMINATOR,
   MAX_VOTERS_RETURNED,
@@ -84,9 +85,11 @@ export async function buildProposalData(env, address) {
     // Resolved proposals carry their actual end; open ones get the *scheduled*
     // close from the resolution settings (feeds the countdown).
     endTs: endTs ?? scheduledEndTs(resolution, startTs),
-    // Election seat count (ResolutionNode Top{n}) — e.g. 5 for the council
-    // election. Null for plain yes/no votes and unknown controllers.
-    seats: resolution?.seats ?? null,
+    // Election seat count: the per-proposal override wins (governance rules
+    // the chain doesn't carry — see PROPOSAL_OVERRIDES), else the resolution
+    // settings' Top{n}. Beware: the standard HNT config is Top{1}, which is a
+    // resolution formality, not a seat count. Null for unknown controllers.
+    seats: PROPOSAL_OVERRIDES[address]?.seats ?? resolution?.seats ?? null,
     maxChoicesPerVoter: proposal.maxChoicesPerVoter,
     decimals: VOTE_WEIGHT_DECIMALS,
     totalWeight: totalWeight.toString(),

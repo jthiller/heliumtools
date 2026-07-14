@@ -26,6 +26,7 @@ class Reader {
   u8() { const v = this.buf.readUInt8(this.o); this.o += 1; return v; }
   u16() { const v = this.buf.readUInt16LE(this.o); this.o += 2; return v; }
   u32() { const v = this.buf.readUInt32LE(this.o); this.o += 4; return v; }
+  i32() { const v = this.buf.readInt32LE(this.o); this.o += 4; return v; }
   i64() { const v = this.buf.readBigInt64LE(this.o); this.o += 8; return v; }
   u128() {
     const lo = this.buf.readBigUInt64LE(this.o);
@@ -181,14 +182,14 @@ export function decodeResolutionSettings(buf) {
       case 1: nodes.push({ kind: "endTimestamp", endTs: Number(r.i64()) }); break;
       case 2: nodes.push({ kind: "offsetFromStartTs", offset: Number(r.i64()) }); break;
       case 3: nodes.push({ kind: "choiceVoteWeight", weightThreshold: r.u128() }); break;
-      case 4: nodes.push({ kind: "choicePercentage", percentage: r.buf.readInt32LE(r.o) }); r.skip(4); break;
+      case 4: nodes.push({ kind: "choicePercentage", percentage: r.i32() }); break;
       case 5: nodes.push({ kind: "top", n: r.u16() }); break;
       case 6: nodes.push({ kind: "numResolved", n: r.u16() }); break;
       case 7: nodes.push({ kind: "and" }); break;
       case 8: nodes.push({ kind: "or" }); break;
       case 9: nodes.push({ kind: "not", choiceName: r.string() }); break;
       case 10: nodes.push({ kind: "totalWeight", weightThreshold: r.u128() }); break;
-      case 11: nodes.push({ kind: "choicePercentageOfCurrent", percentage: r.buf.readInt32LE(r.o) }); r.skip(4); break;
+      case 11: nodes.push({ kind: "choicePercentageOfCurrent", percentage: r.i32() }); break;
       default:
         partial = true;
         i = count; // unknown variant — stop; later bytes are unreadable

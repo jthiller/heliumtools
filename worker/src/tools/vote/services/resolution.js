@@ -15,7 +15,9 @@ import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
 import { getAccount } from "./rpc.js";
 import { decodeProposalConfig, decodeResolutionSettings } from "./decode.js";
 import {
+  PROPOSAL_PROGRAM,
   STATE_CONTROLLER_PROGRAM,
+  PROPOSAL_CONFIG_DISCRIMINATOR,
   RESOLUTION_SETTINGS_DISCRIMINATOR,
   RESOLUTION_META_CACHE_TTL,
 } from "../config.js";
@@ -35,11 +37,23 @@ export async function getResolutionMeta(env, proposalConfig) {
   if (!proposalConfig) return null;
   const cacheKey = `vote:resmeta:${proposalConfig}`;
   const cached = await kvGetJson(env, cacheKey);
-  if (cached) return cached;
+  // `unknown` is the cached negative result (a controller we can't summarize):
+  // without it every cron tick re-pays two getAccount calls for such proposals.
+  if (cached) return cached.unknown ? null : cached;
 
   try {
+    // Both accounts are type-checked (owner + Anchor discriminator) before
+    // decoding — a proposal can name any account as its config, and reading
+    // field offsets out of the wrong account type would yield garbage keys.
     const configAcc = await getAccount(env, proposalConfig);
-    if (!configAcc) return null;
+    if (
+      !configAcc ||
+      configAcc.owner !== PROPOSAL_PROGRAM.toBase58() ||
+      !hasDiscriminator(configAcc.buf, PROPOSAL_CONFIG_DISCRIMINATOR)
+    ) {
+      await kvPutJson(env, cacheKey, { unknown: true }, RESOLUTION_META_CACHE_TTL);
+      return null;
+    }
     const config = decodeProposalConfig(configAcc.buf);
 
     const settingsAcc = await getAccount(env, config.stateController);
@@ -49,6 +63,7 @@ export async function getResolutionMeta(env, proposalConfig) {
       !hasDiscriminator(settingsAcc.buf, RESOLUTION_SETTINGS_DISCRIMINATOR)
     ) {
       // A custom state controller we don't understand — nothing to summarize.
+      await kvPutJson(env, cacheKey, { unknown: true }, RESOLUTION_META_CACHE_TTL);
       return null;
     }
     const settings = decodeResolutionSettings(settingsAcc.buf);
@@ -59,9 +74,15 @@ export async function getResolutionMeta(env, proposalConfig) {
       else if (node.kind === "offsetFromStartTs") meta.offsetFromStart = node.offset;
       else if (node.kind === "top") meta.seats = node.n;
     }
-    await kvPutJson(env, cacheKey, meta, RESOLUTION_META_CACHE_TTL);
+    // A partial decode (unknown node aborted the parse) may be missing later
+    // operands — serve it this cycle but never cache the truncated summary,
+    // so a decoder fix takes effect without waiting out stale KV.
+    if (!settings.partial) {
+      await kvPutJson(env, cacheKey, meta, RESOLUTION_META_CACHE_TTL);
+    }
     return meta;
   } catch (e) {
+    // Transient fetch failure — uncached so the next refresh retries.
     console.error("vote resolution meta failed", proposalConfig, e?.message);
     return null;
   }

@@ -80,6 +80,27 @@ export function isElection(proposal) {
   return !!proposal?.seats && (proposal?.choices || []).length > 2;
 }
 
+/**
+ * The choices to present as elected once a vote has an outcome, heaviest
+ * first. The chain's `winningChoices` is authoritative when it covers the
+ * seat count — but an election can resolve with fewer on-chain winners than
+ * real seats (the standard HNT config resolves Top{1} as a formality while
+ * HIP-149 seats the top five), in which case the slate fills from the top of
+ * the tally. Works on both the detail proposal and index catalog row shapes.
+ */
+export function electedChoices(p) {
+  if (!hasOutcome(p?.status)) return [];
+  const choices = p.choices || [];
+  const byIndex = new Map(choices.map((c) => [c.index, c]));
+  const chain = (p.winningChoices || [])
+    .map((i) => byIndex.get(i))
+    .filter(Boolean)
+    .sort((a, b) => (b.veHnt || 0) - (a.veHnt || 0));
+  const seats = p.seats || 0;
+  if (chain.length >= seats) return chain;
+  return [...choices].sort((a, b) => (b.veHnt || 0) - (a.veHnt || 0)).slice(0, seats);
+}
+
 export function StatusPill({ status }) {
   const meta = STATUS_META[status] || STATUS_META.unknown;
   return (
@@ -116,12 +137,18 @@ const NEUTRAL_TONES = [
   { text: "text-fuchsia-600 dark:text-fuchsia-400", bar: "bg-fuchsia-500" },
 ];
 
+// Word-boundary matches, not bare prefixes: an election candidate named
+// "Nova Labs" or "Fortune" must NOT inherit the Against/For semantics —
+// only names that literally lead with the word (For/Yes/Against/No) do.
+const FOR_NAME_RE = /^(for|yes)\b/i;
+const AGAINST_NAME_RE = /^(against|no)\b/i;
+
 export function choiceTone(name, index) {
-  const n = (name || "").toLowerCase();
-  if (n.startsWith("for") || n.startsWith("yes")) {
+  const n = name || "";
+  if (FOR_NAME_RE.test(n)) {
     return { text: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" };
   }
-  if (n.startsWith("against") || n.startsWith("no")) {
+  if (AGAINST_NAME_RE.test(n)) {
     return { text: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500" };
   }
   return NEUTRAL_TONES[index % NEUTRAL_TONES.length];
@@ -133,9 +160,9 @@ const NEUTRAL_HEX_LIGHT = ["#0ea5e9", "#f59e0b", "#8b5cf6", "#ec4899", "#6366f1"
 const NEUTRAL_HEX_DARK  = ["#0284c7", "#d97706", "#8b5cf6", "#ec4899", "#6366f1", "#ea580c", "#0d9488", "#d946ef"];
 
 export function choiceHex(name, index, dark = false) {
-  const n = (name || "").toLowerCase();
-  if (n.startsWith("for") || n.startsWith("yes")) return dark ? "#059669" : "#10b981";
-  if (n.startsWith("against") || n.startsWith("no")) return dark ? "#e11d48" : "#f43f5e";
+  const n = name || "";
+  if (FOR_NAME_RE.test(n)) return dark ? "#059669" : "#10b981";
+  if (AGAINST_NAME_RE.test(n)) return dark ? "#e11d48" : "#f43f5e";
   const hexes = dark ? NEUTRAL_HEX_DARK : NEUTRAL_HEX_LIGHT;
   return hexes[index % hexes.length];
 }
