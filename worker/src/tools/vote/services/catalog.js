@@ -5,6 +5,7 @@
 // changing; the active vote's row updates each cron tick.
 
 import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
+import { safeParseJson } from "../utils.js";
 import { PROPOSALS_CACHE_TTL } from "../config.js";
 
 const LIST_CACHE_KEY = "vote:catalog";
@@ -139,9 +140,9 @@ export async function listCatalog(env) {
       totalVeHnt: r.total_ve_hnt,
       votedVeHnt: r.voted_ve_hnt,
       uniqueVoters: r.unique_voters,
-      winningChoices: safeParse(r.winning_json),
-      choices: safeParse(r.choices_json) || [],
-      tags: safeParse(r.tags_json) || [],
+      winningChoices: safeParseJson(r.winning_json),
+      choices: safeParseJson(r.choices_json, []),
+      tags: safeParseJson(r.tags_json, []),
       updatedAt: r.updated_at,
     }));
   }
@@ -149,13 +150,4 @@ export async function listCatalog(env) {
   const body = { proposals };
   await kvPutJson(env, LIST_CACHE_KEY, body, PROPOSALS_CACHE_TTL);
   return body;
-}
-
-function safeParse(s) {
-  if (s == null) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
 }

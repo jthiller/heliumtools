@@ -42,7 +42,7 @@ export function relTime(unixSec) {
 
 // ─── status ──────────────────────────────────────────────────────────────────
 
-export const STATUS_META = {
+const STATUS_META = {
   active:    { label: "Voting open", dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400", pulse: true },
   passed:    { label: "Passed",      dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
   failed:    { label: "Failed",      dot: "bg-rose-500",    text: "text-rose-600 dark:text-rose-400" },
@@ -55,6 +55,29 @@ export const STATUS_META = {
 /** A vote that can no longer change (resolved or cancelled). */
 export function isFinalStatus(status) {
   return ["passed", "failed", "completed", "cancelled"].includes(status);
+}
+
+/** A vote with an on-chain outcome — resolved, not merely over (cancelled has
+ * no outcome: no winners, no pass/fail verdict). */
+export function hasOutcome(status) {
+  return ["passed", "failed", "completed"].includes(status);
+}
+
+/** Ballots may back more than one choice, so the proposal's per-choice weight
+ * sum overcounts participation — counting rules must use the roster instead. */
+export function isMultiChoice(proposal) {
+  return (proposal?.maxChoicesPerVoter || 1) > 1;
+}
+
+/** Distinct participating veHNT from the roster (each position counted once),
+ * or null while the roster hasn't loaded / was unavailable that cycle. */
+export function participatingVeHnt(votes) {
+  return votes && !votes.unavailable ? votes.totalVeHnt : null;
+}
+
+/** An election: a seat count deciding among more than two candidates. */
+export function isElection(proposal) {
+  return !!proposal?.seats && (proposal?.choices || []).length > 2;
 }
 
 export function StatusPill({ status }) {
@@ -82,7 +105,7 @@ export function StatusPill({ status }) {
 // its rank. Beyond 8 the cycle repeats; surfaces that rely on color alone (the
 // trend chart) must fold the tail into "Others" instead of cycling.
 
-export const NEUTRAL_TONES = [
+const NEUTRAL_TONES = [
   { text: "text-sky-600 dark:text-sky-400",         bar: "bg-sky-500 dark:bg-sky-600" },
   { text: "text-amber-600 dark:text-amber-400",     bar: "bg-amber-500 dark:bg-amber-600" },
   { text: "text-violet-600 dark:text-violet-400",   bar: "bg-violet-500" },

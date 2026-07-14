@@ -127,8 +127,10 @@ export async function refreshSnapshot(env, id) {
     // marker list from the wire. (Reconstructed rosters carry `flipped` from the
     // event rows already and have no marker lists — they only need proxy names.)
     if (snapshot.votes) {
-      const proxyMap = await getProxyMap(env);
-      const flipped = snapshot.votes.reconstructed ? null : await getFlippedMarkers(env, id);
+      const [proxyMap, flipped] = await Promise.all([
+        getProxyMap(env),
+        snapshot.votes.reconstructed ? null : getFlippedMarkers(env, id),
+      ]);
       for (const v of snapshot.votes.votes) {
         if (flipped) v.flipped = Array.isArray(v.markers) && v.markers.some((mk) => flipped.has(mk));
         const proxy = proxyMap[v.voter];
@@ -137,11 +139,13 @@ export async function refreshSnapshot(env, id) {
       }
     }
 
-    // Resolved/cancelled snapshots are immutable — store them long; the index
-    // catalog row is durable either way.
-    await kvPutJson(env, snapKey(id), snapshot, settled ? RESOLVED_SNAPSHOT_TTL : SNAPSHOT_TTL);
-    await upsertCatalogRow(env, snapshot).catch((e) => console.error("vote catalog upsert failed", id, e?.message));
-    await trackProposal(env, id);
+    // Persist: KV snapshot (long TTL once settled — immutable), the durable
+    // index catalog row, and the tracked set. Independent stores, so parallel.
+    await Promise.all([
+      kvPutJson(env, snapKey(id), snapshot, settled ? RESOLVED_SNAPSHOT_TTL : SNAPSHOT_TTL),
+      upsertCatalogRow(env, snapshot).catch((e) => console.error("vote catalog upsert failed", id, e?.message)),
+      trackProposal(env, id),
+    ]);
     return { snapshot, markers: markersResult ? markersResult.markers : null };
   } finally {
     await releaseLock(env, id);
@@ -203,14 +207,11 @@ export async function trackProposal(env, id) {
 export async function getTrackedProposals(env) {
   const set = (await kvGetJson(env, TRACK_KEY)) || {};
   const cutoff = Date.now() - TRACK_TTL_DAYS * 86400_000;
-  const ids = Object.keys(set).filter((k) => set[k] >= cutoff);
+  const viewed = Object.keys(set).filter((k) => set[k] >= cutoff);
   // Pinned ids (the current default + past featured votes) are always tracked,
   // so they stay in the index catalog and settle cleanly after resolution.
-  for (const pinned of [...KNOWN_PROPOSALS].reverse()) {
-    if (!ids.includes(pinned)) ids.unshift(pinned);
-  }
-  if (!ids.includes(DEFAULT_PROPOSAL)) ids.unshift(DEFAULT_PROPOSAL);
-  return ids;
+  const pinned = [DEFAULT_PROPOSAL, ...KNOWN_PROPOSALS.filter((id) => id !== DEFAULT_PROPOSAL)];
+  return [...pinned, ...viewed.filter((id) => !pinned.includes(id))];
 }
 
 /** Cron entry point — refresh every tracked proposal, recording history. */

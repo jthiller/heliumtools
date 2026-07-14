@@ -5,7 +5,7 @@ import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import { numberFormatter } from "../lib/utils.js";
 import { fetchProposals } from "../lib/voteApi.js";
-import { fmtVeHnt, fmtDate, StatusPill, isFinalStatus, choiceTone } from "./voteUi.jsx";
+import { fmtVeHnt, fmtDate, StatusPill, isFinalStatus, isElection, choiceTone } from "./voteUi.jsx";
 
 // Blind index page (like /vote itself, deliberately not on the landing page):
 // every governance vote this site has tracked, current first, each linking to
@@ -13,6 +13,9 @@ import { fmtVeHnt, fmtDate, StatusPill, isFinalStatus, choiceTone } from "./vote
 // past votes stay listed long after their on-chain markers close.
 
 const POLL_MS = 60_000;
+// Display cap for a card's leader list when the election's seat count isn't
+// known — a layout bound, not a claim about how many seats there are.
+const LEADERS_SHOWN = 5;
 
 function winnerNames(p) {
   if (!Array.isArray(p.winningChoices) || p.winningChoices.length === 0) return [];
@@ -34,7 +37,7 @@ function Standings({ p }) {
   if (choices.length <= 2) {
     const total = choices.reduce((acc, c) => acc + (c.veHnt || 0), 0);
     const top = choices[0];
-    if (!(total > 0) || !top) return null;
+    if (!(total > 0)) return null;
     const tone = choiceTone(top.name, top.index);
     return (
       <p className="text-xs text-content-secondary truncate">
@@ -45,7 +48,8 @@ function Standings({ p }) {
   }
 
   // Election: the winner list (resolved) or current leaders (live).
-  const listed = final && winnerNames(p).length ? winnerNames(p) : choices.slice(0, p.seats || 5);
+  const winners = final ? winnerNames(p) : [];
+  const listed = winners.length ? winners : choices.slice(0, p.seats || LEADERS_SHOWN);
   const more = choices.length - listed.length;
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-content-secondary">
@@ -85,7 +89,7 @@ function VoteCard({ p }) {
         <h2 className="font-display text-lg font-semibold text-content tracking-[-0.02em] leading-snug">
           {p.name || p.address}
         </h2>
-        {p.seats && (p.choices || []).length > 2 && (
+        {isElection(p) && (
           <p className="mt-0.5 text-xs text-content-tertiary">
             {p.seats}-seat election · {p.choices.length} candidates
           </p>

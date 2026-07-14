@@ -29,7 +29,8 @@ import useDarkMode from "../lib/useDarkMode.js";
 import { numberFormatter, truncateString } from "../lib/utils.js";
 import { fetchProposal, fetchVotes, fetchActivity, fetchHistory, fetchVoterHistory } from "../lib/voteApi.js";
 import {
-  fmtVeHnt, fmtDate, relTime, StatusPill, isFinalStatus,
+  fmtVeHnt, fmtDate, relTime, StatusPill, isFinalStatus, hasOutcome,
+  isMultiChoice, participatingVeHnt, isElection,
   choiceTone, choiceHex, NEUTRAL_HUE_COUNT,
 } from "./voteUi.jsx";
 
@@ -163,7 +164,7 @@ function ApprovalMeter({ proposal }) {
 
   const forPct = (forChoice.veHnt / voted) * 100;
   const passing = forPct >= APPROVAL_THRESHOLD_PCT;
-  const isResolved = isFinalStatus(proposal.status);
+  const isResolved = hasOutcome(proposal.status);
   // Once resolved, the verdict is the chain's outcome — the threshold math is
   // only a live projection (the two could disagree, e.g. on a quorum failure).
   const label = isResolved
@@ -240,12 +241,11 @@ function ApprovalMeter({ proposal }) {
 // outcome card where it means "support", not "turnout".
 function VoteProgress({ proposal, votes }) {
   const circulating = proposal.circulating?.veHnt;
-  const multi = (proposal.maxChoicesPerVoter || 1) > 1;
+  const multi = isMultiChoice(proposal);
   if (!(circulating > 0)) return null;
 
-  const distinct = votes && !votes.unavailable ? votes.totalVeHnt : null;
   // Multi-choice with no roster yet → wait rather than overcount.
-  const voted = multi ? distinct : (proposal.totalVeHnt || 0);
+  const voted = multi ? participatingVeHnt(votes) : (proposal.totalVeHnt || 0);
   if (voted == null) return null;
 
   const pct = Math.min(100, (voted / circulating) * 100);
@@ -364,8 +364,8 @@ function VoteProgress({ proposal, votes }) {
 }
 
 function OutcomeCard({ proposal, votes }) {
-  const isResolved = ["passed", "failed", "completed"].includes(proposal.status);
-  const multi = (proposal.maxChoicesPerVoter || 1) > 1;
+  const isResolved = hasOutcome(proposal.status);
+  const multi = isMultiChoice(proposal);
   const seats = proposal.seats || null;
   const winners = new Set(
     proposal.winningChoices && proposal.winningChoices.length
@@ -388,8 +388,7 @@ function OutcomeCard({ proposal, votes }) {
   // On a multi-choice election the summed choice weights count a ballot once
   // per candidate it backs — the honest headline is the roster's distinct
   // total (each position once). Yes-no proposals: the sums are identical.
-  const distinct = votes && !votes.unavailable ? votes.totalVeHnt : null;
-  const powerVeHnt = multi ? distinct : proposal.totalVeHnt;
+  const powerVeHnt = multi ? participatingVeHnt(votes) : proposal.totalVeHnt;
   // Where to draw the elected-seats cut. Live: a projection after the leading
   // `seats` rows. Resolved: the chain's winner set is authoritative — only draw
   // the line if the winners are exactly the top block of the sort (ties or
@@ -918,12 +917,13 @@ export default function Vote() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Keep the latest id in a ref so the polling effect doesn't restart on every
-  // render but always fetches the current proposal. Same trick for the status:
+  // render but always fetches the current proposal. Same trick for finality:
   // once a vote is final there's nothing to poll for.
+  const isFinal = !!proposal && !proposal.warming && isFinalStatus(proposal.status);
   const idRef = useRef(proposalId);
   idRef.current = proposalId;
   const finalRef = useRef(false);
-  finalRef.current = !!proposal && !proposal.warming && isFinalStatus(proposal.status);
+  finalRef.current = isFinal;
 
   const refresh = useCallback(async () => {
     const id = idRef.current;
@@ -1019,7 +1019,7 @@ export default function Vote() {
                   <Countdown endTs={proposal.endTs} status={proposal.status} />
                 </div>
                 <div className="flex items-center gap-3">
-                  {isFinalStatus(proposal.status) ? (
+                  {isFinal ? (
                     <Tooltip content="This vote has resolved — the results below are final and no longer refresh.">
                       <span className="font-mono text-[11px] text-content-tertiary uppercase tracking-wide border-b border-dotted border-content-tertiary cursor-help">
                         Final results
@@ -1032,7 +1032,7 @@ export default function Vote() {
                       </span>
                     </Tooltip>
                   )}
-                  {!isFinalStatus(proposal.status) && (
+                  {!isFinal && (
                     <button
                       onClick={() => refresh()}
                       disabled={refreshing}
@@ -1055,7 +1055,7 @@ export default function Vote() {
               <h1 className="font-display text-3xl sm:text-4xl font-bold text-content tracking-[-0.03em] leading-tight">
                 {proposal.name || truncateString(proposal.address, 6, 6)}
               </h1>
-              {proposal.seats && (proposal.choices || []).length > 2 && (
+              {isElection(proposal) && (
                 <p className="mt-2 text-sm text-content-secondary">
                   Electing the top {proposal.seats} of {proposal.choices.length} candidates
                   {proposal.maxChoicesPerVoter > 1 &&

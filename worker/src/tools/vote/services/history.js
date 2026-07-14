@@ -5,7 +5,7 @@
 // coarse intervals). Rows are appended incrementally by the snapshot cron.
 
 import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
-import { weightToVeHnt } from "../utils.js";
+import { weightToVeHnt, safeParseJson } from "../utils.js";
 import { HISTORY_CACHE_TTL, MAX_HISTORY_POINTS } from "../config.js";
 
 let schemaReady = false;
@@ -226,11 +226,8 @@ function downsample(points, max) {
   return out;
 }
 
+// choices_json must always yield an array (even if the stored value is junk).
 function safeParse(s) {
-  try {
-    const v = JSON.parse(s);
-    return Array.isArray(v) ? v : [];
-  } catch {
-    return [];
-  }
+  const v = safeParseJson(s, []);
+  return Array.isArray(v) ? v : [];
 }
