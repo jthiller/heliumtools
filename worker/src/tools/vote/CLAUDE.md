@@ -8,6 +8,10 @@ past vote**. Works for any proposal; election-aware (multi-choice, seat counts).
 - **Featured vote** (`DEFAULT_PROPOSAL`, in both `config.js` and `Vote.jsx`):
   `EejcqoypTXfix3m8GrPwLPQfs1P16yCPhiyzkMLvLRx4` — the HIP-149 Advisory Council
   election (top **5** of the candidates win; each ballot may back up to 5).
+  The seat count comes from `PROPOSAL_OVERRIDES` in `config.js`, **not** the
+  chain: the election runs on the standard HNT proposal config, whose
+  resolution settings end in `Top{1}` — on-chain it names a single "winning"
+  choice as a formality, and the five-seat rule exists only in HIP-149's text.
 - **Past featured votes** stay pinned via `KNOWN_PROPOSALS` (worker `config.js`)
   so they remain tracked + indexed: HIP-149 itself
   (`4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo`, resolved).
@@ -42,13 +46,15 @@ The RPC is **only ever touched server-side**:
   is stamped `final: true` (after the end-state roster rebuild below), stored
   with the longer `RESOLVED_SNAPSHOT_TTL`, and then **not refreshed again** —
   the cron skips it (only backfilling its index catalog row if missing) and
-  viewers are served it frozen with no staleness check. Two convergence
-  escapes: settled snapshots written by pre-`final` code lack the stamp, so
-  they get exactly one corrective refresh; and while the flip resolver still
-  has undecoded markers for the proposal, the cron keeps refreshing so the
-  frozen roster carries the last flip flags before going quiet. If a frozen
-  snapshot ever expires, the next viewer's cold-start rebuild recreates it
-  from chain + D1.
+  viewers are served it frozen with no staleness check. The stamp is only
+  applied once the flip resolver's backlog for the proposal is **empty**
+  (`getUnresolvedMarkers` = 0): the resolver runs *after* the refresh loop
+  each tick, so stamping earlier would freeze a roster missing the final
+  batch of ⇄ flags — an unstamped settled snapshot keeps refreshing once per
+  tick until the backlog drains, then freezes fully converged. (Settled
+  snapshots written by pre-`final` code also lack the stamp and get the same
+  corrective refresh.) If a frozen snapshot ever expires, the next viewer's
+  cold-start rebuild recreates it from chain + D1.
 
 The frontend polls the worker every 60s (history every 5 min) — cheap KV/D1
 reads, no RPC — and shows freshness from the snapshot's `snapshotAt` (replaced
@@ -66,11 +72,16 @@ The fix: when a refresh finds the proposal settled and the marker scan empty,
 `aggregateVotesFromEvents` (builders.js) rebuilds the votes payload from the D1
 `vote_events` rows (each marker's final voter/choices/weight/flipped state),
 marked `reconstructed: true` on the wire; the frontend labels it "final
-roster". Caveats, accepted as best-effort: votes cast in the final minutes
-before resolution are missing if no cron tick saw them; a marker relinquished
-*before* resolution lingers with its last recorded state; the per-position
-`proxy` badge is unknown post-close (proxy *names* still resolve). The tally
-shown above the roster always comes from the proposal account, not the rebuild.
+roster". If D1 has **nothing** to rebuild from (a vote that resolved before
+this page ever tracked it), the roster is *unknowable, not zero*: the snapshot
+stores `votes: null` (served as `unavailable: true`), the UI shows "—" instead
+of "0 voters", and the catalog's COALESCE keeps any real prior figures instead
+of being blanked with zeros. Caveats, accepted as best-effort: votes cast in
+the final minutes before resolution are missing if no cron tick saw them; a
+marker relinquished *before* resolution lingers with its last recorded state;
+the per-position `proxy` badge is unknown post-close (proxy *names* still
+resolve). The tally shown above the roster always comes from the proposal
+account, not the rebuild.
 
 ## Resolution settings — scheduled end + election seats
 
@@ -78,14 +89,20 @@ shown above the roster always comes from the proposal account, not the rebuild.
 Both live in the state controller's **`ResolutionSettingsV0`** (an RPN node
 list), reached via **`ProposalConfigV0.state_controller`**:
 `services/resolution.js` fetches + decodes both accounts (layouts verified
-against `@helium/modular-governance-idls` 0.1.6; owner + discriminator checked)
-and summarizes the renderable operands — `EndTimestamp{end_ts}` /
+against `@helium/modular-governance-idls` 0.1.6; **owner + discriminator
+checked on both** — a proposal can name any account as its config) and
+summarizes the renderable operands — `EndTimestamp{end_ts}` /
 `OffsetFromStartTs{offset}` → the proposal's **`endTs` while still open** (the
-countdown), `Top{n}` → **`seats`** (5 for the council election). KV-cached per
-config address (`vote:resmeta:<config>`, `RESOLUTION_META_CACHE_TTL`);
-best-effort — any failure or unknown controller leaves `endTs`/`seats` null and
-the UI renders as before. Unknown node variants abort the parse (`partial`)
-rather than mis-read offsets.
+countdown), `Top{n}` → **`seats`**. KV-cached per config address
+(`vote:resmeta:<config>`, `RESOLUTION_META_CACHE_TTL`); unknown/mistyped
+controllers are negative-cached (`{unknown:true}`) so they don't re-pay two
+RPC calls every tick; a `partial` decode (unknown node variant aborts the
+parse rather than mis-read offsets) is served but **never cached**, so a
+decoder fix takes effect immediately. Best-effort throughout — failure leaves
+`endTs`/`seats` null and the UI renders as before. **`seats` precedence:**
+`PROPOSAL_OVERRIDES[address].seats` (governance rules the chain doesn't
+carry) → `Top{n}` → null; the standard HNT config's `Top{1}` is a resolution
+formality, never a real seat count.
 
 ## Vote index — `/vote/proposals` + the `/votes` page
 
@@ -302,10 +319,12 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   resolved the verdict/color follow the **chain outcome**, not the threshold
   math), outcome card (headline stat is the **distinct** participating veHNT
   from `votes.totalVeHnt` on multi-choice elections — the proposal's per-choice
-  sum counts a ballot once per candidate it backs; a dashed **"Top N win
-  seats" cut line** sits after the leading `proposal.seats` rows while live,
-  and after the winner block when resolved iff winners are exactly the top of
-  the sort), outcome bars (each choice as a share of summed choice weight, with
+  sum counts a ballot once per candidate it backs; winner badges come from the
+  **`electedChoices` slate** (chain winners extended to `seats` from the top of
+  the tally); a dashed **"Top N win seats" cut line** sits after the leading
+  `proposal.seats` rows while live, and when resolved only if the slate is
+  exactly the top `seats` block of the sort), outcome bars (each choice as a
+  share of summed choice weight, with
   its **distinct voter count** from `votes.perChoice[].voters`),
   **`VoteProgress`** ("Turnout" card — participation vs **total circulating**
   veHNT; per-choice stacked segments on yes-no votes, a single aggregate
@@ -329,14 +348,18 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   leading/elected names, voter + veHNT stats), each card linking to
   `/vote/:proposalId`. Polls every 60s.
 - `pages/public/src/vote/voteUi.jsx` — shared primitives for both pages:
-  formatting (`fmtVeHnt`/`fmtDate`/`relTime`), `STATUS_META`/`StatusPill`/
-  `isFinalStatus`, and the **choice color system**: emerald/rose reserved for
-  For/Against; candidates draw from a fixed 8-hue order (sky, amber, violet,
-  pink, indigo, orange, teal, fuchsia — chosen by maximizing worst adjacent-pair
-  CVD ΔE, validated light *and* dark, with darker dark-mode steps for
-  sky/amber/orange/teal). Hues are assigned by choice index (entity-stable);
-  `choiceHex(name, index, dark)` for chart strokes, `choiceTone` for Tailwind
-  text/bar classes.
+  formatting (`fmtVeHnt`/`fmtDate`/`relTime`), `StatusPill`, the vote-shape
+  predicates (`isFinalStatus`/`hasOutcome`/`isMultiChoice`/`isElection`/
+  `participatingVeHnt`), the **`electedChoices` slate rule** (chain
+  `winningChoices` when they cover the seat count, else top-`seats` by tally),
+  and the **choice color system**: emerald/rose reserved for names leading
+  with the words For/Yes/Against/No (word-boundary match, so candidate names
+  like "Nova…" keep their hue); candidates draw from a fixed 8-hue order (sky,
+  amber, violet, pink, indigo, orange, teal, fuchsia — chosen by maximizing
+  worst adjacent-pair CVD ΔE, validated light *and* dark, with darker
+  dark-mode steps for sky/amber/orange/teal). Hues are assigned by choice
+  index (entity-stable); `choiceHex(name, index, dark)` for chart strokes,
+  `choiceTone` for Tailwind text/bar classes.
 - Routes `/vote`, `/vote/:proposalId`, and `/votes` in `main.jsx` —
   **deliberately absent from `Landing.jsx`** (blind pages).
 - `pages/public/src/lib/voteApi.js` — API client (`fetchProposals`/
@@ -437,6 +460,14 @@ upserted on every snapshot refresh, `PRIMARY KEY (address)`. Self-provisions in
   both `total_ve_hnt` and `voted_ve_hnt`.
 - **`seats`/scheduled `endTs` are best-effort** — a custom state controller or
   unknown resolution node leaves them null; the UI must render without them.
+- **`Top{1}` ≠ one seat.** The shared HNT proposal config resolves a single
+  top choice for every vote, elections included. Real seat counts come from
+  `PROPOSAL_OVERRIDES`; the frontend's `electedChoices` fills the elected
+  slate from the tally when the chain names fewer winners than seats.
+- **Choice-name semantics use word boundaries** — `choiceTone`/`choiceHex`
+  match `/^(for|yes)\b/` and `/^(against|no)\b/`, so a candidate named
+  "Nova…"/"Fortune…" keeps their index hue. A candidate literally named
+  "No …"/"For …" as the first word would still collide (accepted residual).
 - **Recording is incremental and capped** — a huge first vote backfills over
   several cron ticks; don't expect the whole history instantly.
 - **Cron isolation** — anything added to `scheduled()` outside the 15-min branch

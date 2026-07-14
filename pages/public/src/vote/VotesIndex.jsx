@@ -5,7 +5,7 @@ import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import { numberFormatter } from "../lib/utils.js";
 import { fetchProposals } from "../lib/voteApi.js";
-import { fmtVeHnt, fmtDate, StatusPill, isFinalStatus, isElection, choiceTone } from "./voteUi.jsx";
+import { fmtVeHnt, fmtDate, StatusPill, isFinalStatus, isElection, electedChoices, choiceTone } from "./voteUi.jsx";
 
 // Blind index page (like /vote itself, deliberately not on the landing page):
 // every governance vote this site has tracked, current first, each linking to
@@ -17,19 +17,9 @@ const POLL_MS = 60_000;
 // known — a layout bound, not a claim about how many seats there are.
 const LEADERS_SHOWN = 5;
 
-function winnerNames(p) {
-  if (!Array.isArray(p.winningChoices) || p.winningChoices.length === 0) return [];
-  const byIndex = new Map((p.choices || []).map((c) => [c.index, c]));
-  return p.winningChoices
-    .map((i) => byIndex.get(i))
-    .filter(Boolean)
-    .sort((a, b) => (b.veHnt || 0) - (a.veHnt || 0));
-}
-
 // The election-night one-liner under each card title: leaders while live,
-// winners once resolved, pass/fail margin for yes-no votes.
+// the elected slate once resolved, pass/fail margin for yes-no votes.
 function Standings({ p }) {
-  const final = isFinalStatus(p.status);
   const choices = [...(p.choices || [])].sort((a, b) => (b.veHnt || 0) - (a.veHnt || 0));
   if (choices.length === 0) return null;
 
@@ -47,22 +37,23 @@ function Standings({ p }) {
     );
   }
 
-  // Election: the winner list (resolved) or current leaders (live).
-  const winners = final ? winnerNames(p) : [];
+  // Election: the elected slate (chain winners extended to the seat count —
+  // see electedChoices) once there's an outcome, else the current leaders.
+  const winners = electedChoices(p);
   const listed = winners.length ? winners : choices.slice(0, p.seats || LEADERS_SHOWN);
   const more = choices.length - listed.length;
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-content-secondary">
       <span className="font-mono text-[10px] uppercase tracking-wide text-content-tertiary">
-        {final ? "Elected" : "Leading"}
+        {winners.length ? "Elected" : "Leading"}
       </span>
       {listed.map((c) => (
         <span key={c.index} className="inline-flex items-center gap-1 min-w-0">
-          {final && <CheckBadgeIcon className={`h-3.5 w-3.5 shrink-0 ${choiceTone(c.name, c.index).text}`} />}
+          {winners.length > 0 && <CheckBadgeIcon className={`h-3.5 w-3.5 shrink-0 ${choiceTone(c.name, c.index).text}`} />}
           <span className={`truncate font-medium ${choiceTone(c.name, c.index).text}`}>{c.name}</span>
         </span>
       ))}
-      {!final && more > 0 && <span className="text-content-tertiary">+{more} more</span>}
+      {!winners.length && more > 0 && <span className="text-content-tertiary">+{more} more</span>}
     </p>
   );
 }

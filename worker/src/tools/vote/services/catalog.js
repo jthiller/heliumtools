@@ -98,6 +98,17 @@ export async function upsertCatalogRow(env, snapshot) {
     JSON.stringify(p.tags || []),
     Date.now(),
   ).run();
+
+  // Drop the list cache so the index reflects this row on the next request —
+  // the TTL is only a read shield, not an acceptable staleness window for a
+  // vote that just appeared or just resolved.
+  if (env.KV) {
+    try {
+      await env.KV.delete(LIST_CACHE_KEY);
+    } catch {
+      /* TTL covers it */
+    }
+  }
 }
 
 /** Whether a catalog row exists (cron uses this to backfill frozen proposals). */

@@ -24,6 +24,17 @@ export const KNOWN_PROPOSALS = [
   "4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo",
 ];
 
+// Per-proposal display overrides, applied over the chain-derived values.
+// The council election resolves through the standard HNT proposal config,
+// whose resolution settings end in Top{1} — on-chain it names a single
+// "winning" choice as a formality. The HIP-149 rule that the top FIVE
+// candidates take seats exists nowhere on-chain, so the real seat count is
+// pinned here (and the frontend fills the elected slate from the tally when
+// the chain names fewer winners than seats).
+export const PROPOSAL_OVERRIDES = {
+  EejcqoypTXfix3m8GrPwLPQfs1P16yCPhiyzkMLvLRx4: { seats: 5 },
+};
+
 // Anchor account discriminator = sha256("account:VoteMarkerV0")[..8], used as
 // the getProgramAccounts type filter. Verified against the published IDL.
 // (ProposalV0 is identified by its program owner, not a discriminator.)
