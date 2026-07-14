@@ -2,14 +2,22 @@
 
 A **blind page** (intentionally *not* linked from the landing page) that shows
 live vote activity, outcomes, and a **per-vote historical trend chart** for a
-Helium governance proposal. Built for vote
-`4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo`, but works for any proposal.
+Helium governance proposal, plus an **index page of every tracked current and
+past vote**. Works for any proposal; election-aware (multi-choice, seat counts).
+
+- **Featured vote** (`DEFAULT_PROPOSAL`, in both `config.js` and `Vote.jsx`):
+  `EejcqoypTXfix3m8GrPwLPQfs1P16yCPhiyzkMLvLRx4` — the HIP-149 Advisory Council
+  election (top **5** of the candidates win; each ballot may back up to 5).
+- **Past featured votes** stay pinned via `KNOWN_PROPOSALS` (worker `config.js`)
+  so they remain tracked + indexed: HIP-149 itself
+  (`4zLh9V1wiZJ3GffytCnqQA9FX1VQSM3kXxx22RpzPXWo`, resolved).
 
 Everything is read from **our own Solana RPC** (`SOLANA_RPC_URL`), mirroring how
 heliumvote.com queries on-chain.
 
-- **Blind URL:** `https://heliumtools.org/vote/<proposalId>` (and `/vote` alone
-  falls back to the default proposal above).
+- **Blind URLs:** `https://heliumtools.org/vote/<proposalId>`; `/vote` alone
+  falls back to the featured vote; **`/votes` is the index** of current + past
+  votes (each card links to its detail page).
 
 ## Polling model — the worker polls, viewers read cache
 
@@ -26,12 +34,69 @@ The RPC is **only ever touched server-side**:
 - The cron is branched on in `worker/src/index.js scheduled()` via
   `VOTE_SNAPSHOT_CRON`; the 6-hourly tasks do **not** run on the 15-min tick
   (guarded by both the cron-string branch and a `minute === 0` backstop).
-- **Tracked set:** the default proposal is always tracked; any other proposal
-  that's viewed (and refreshed once) is added to a KV set (`vote:tracked`) and
-  kept on the cron's list until `TRACK_TTL_DAYS` after it was last seen.
+- **Tracked set:** the default proposal and every `KNOWN_PROPOSALS` id are
+  always tracked; any other proposal that's viewed (and refreshed once) is
+  added to a KV set (`vote:tracked`) and kept on the cron's list until
+  `TRACK_TTL_DAYS` after it was last seen.
+- **Settled proposals freeze.** A snapshot whose proposal is resolved/cancelled
+  is stamped `final: true` (after the end-state roster rebuild below), stored
+  with the longer `RESOLVED_SNAPSHOT_TTL`, and then **not refreshed again** —
+  the cron skips it (only backfilling its index catalog row if missing) and
+  viewers are served it frozen with no staleness check. Two convergence
+  escapes: settled snapshots written by pre-`final` code lack the stamp, so
+  they get exactly one corrective refresh; and while the flip resolver still
+  has undecoded markers for the proposal, the cron keeps refreshing so the
+  frozen roster carries the last flip flags before going quiet. If a frozen
+  snapshot ever expires, the next viewer's cold-start rebuild recreates it
+  from chain + D1.
 
 The frontend polls the worker every 60s (history every 5 min) — cheap KV/D1
-reads, no RPC — and shows freshness from the snapshot's `snapshotAt`.
+reads, no RPC — and shows freshness from the snapshot's `snapshotAt` (replaced
+by a "Final results" label once settled; polling also stops then).
+
+## End-state counting — resolved votes rebuild their roster from D1
+
+**Markers close after a proposal resolves**, so the live `getProgramAccounts`
+scan returns nothing and every marker-derived metric (unique voters, per-choice
+voter counts, the roster itself) would zero out — which is exactly what the
+page used to show for an ended vote. `ProposalV0.choices[].weight` (the tally)
+survives resolution and stays authoritative; the roster does not.
+
+The fix: when a refresh finds the proposal settled and the marker scan empty,
+`aggregateVotesFromEvents` (builders.js) rebuilds the votes payload from the D1
+`vote_events` rows (each marker's final voter/choices/weight/flipped state),
+marked `reconstructed: true` on the wire; the frontend labels it "final
+roster". Caveats, accepted as best-effort: votes cast in the final minutes
+before resolution are missing if no cron tick saw them; a marker relinquished
+*before* resolution lingers with its last recorded state; the per-position
+`proxy` badge is unknown post-close (proxy *names* still resolve). The tally
+shown above the roster always comes from the proposal account, not the rebuild.
+
+## Resolution settings — scheduled end + election seats
+
+`ProposalV0` only carries an end time once resolved, and never a seat count.
+Both live in the state controller's **`ResolutionSettingsV0`** (an RPN node
+list), reached via **`ProposalConfigV0.state_controller`**:
+`services/resolution.js` fetches + decodes both accounts (layouts verified
+against `@helium/modular-governance-idls` 0.1.6; owner + discriminator checked)
+and summarizes the renderable operands — `EndTimestamp{end_ts}` /
+`OffsetFromStartTs{offset}` → the proposal's **`endTs` while still open** (the
+countdown), `Top{n}` → **`seats`** (5 for the council election). KV-cached per
+config address (`vote:resmeta:<config>`, `RESOLUTION_META_CACHE_TTL`);
+best-effort — any failure or unknown controller leaves `endTs`/`seats` null and
+the UI renders as before. Unknown node variants abort the parse (`partial`)
+rather than mis-read offsets.
+
+## Vote index — `/vote/proposals` + the `/votes` page
+
+Every snapshot refresh upserts a compact row into D1 **`vote_proposals`**
+(`services/catalog.js`): name, status/state, dates, `seats`, tallies (both the
+per-choice-sum `total_ve_hnt` and the distinct `voted_ve_hnt`), voter count,
+winners, a `choices_json` summary, tags. Roster-derived columns COALESCE so a
+failed marker fetch can't blank them. `GET /vote/proposals` serves the table
+(active first, then newest-ended; KV-cached `PROPOSALS_CACHE_TTL`), and the
+frontend `/votes` index lists Live / Past cards from it. Rows are durable —
+past votes stay listed long after snapshots expire and markers close.
 
 ## History — precise per-vote time-series
 
@@ -105,17 +170,26 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 `VOTE_SNAPSHOT_CRON` for the cron) → `handlers/`.
 
 **Endpoints (all GET, read-only, served from snapshot/D1 — not RPC):**
+- `GET /vote/proposals` — the index: every cataloged proposal (current + past)
+  as compact rows from D1 `vote_proposals`, live votes first.
 - `GET /vote/proposal?id=` — authoritative outcome + `snapshotAt`. `202
   {warming:true}` while the first snapshot builds. Carries `circulating`
   (`{ veHnt, veHntNative, positions, asOf }`) — total network veHNT voting power,
   the participation denominator — when it has been computed (omitted otherwise).
+  Also `endTs` (actual end when resolved, *scheduled* close while open) and
+  `seats` (election winner count, from the resolution settings; null for
+  yes/no votes).
 - `GET /vote/votes?id=` — voter roster **grouped by voter** (one row per wallet:
   total veHNT summed across their positions, distinct choices, `positions` count,
   `flipped`, and `proxyName` for registered delegates) + per-choice aggregates
   (`perChoice[]`: `weight`/`veHnt` and `voters` = distinct voters backing that
   choice, counted over **all** voters not just the returned top N; a split voter
   counts toward each choice) + `snapshotAt` (`unavailable:true` if the roster
-  fetch failed that cycle).
+  fetch failed that cycle). `totalVeHnt` here is the **distinct participating
+  veHNT** (each position once) — on a multi-choice election this is smaller than
+  the proposal's per-choice sum and is the honest turnout numerator. Once a vote
+  settles and markers close the payload is rebuilt from D1 (`reconstructed:true`
+  — see End-state counting).
 - `GET /vote/activity?id=` — recent transactions (newest first) + `snapshotAt`.
   Each vote/relinquish row is decoded to carry `action`, `choices` (direction),
   `weight`/`veHnt` (size, summed over the positions the tx voted), and `voter`;
@@ -131,12 +205,22 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   `getProgramAccounts`, `getSignaturesForAddress`) over the shared `rpc`
   primitive in `worker/src/lib/solanaRpc.js`.
 - `services/decode.js` — manual Borsh decoders for `ProposalV0` /
-  `VoteMarkerV0`; a `Reader` cursor handles the variable-length proposal layout.
-- `services/builders.js` — RPC→object builders (`buildProposalData`,
+  `VoteMarkerV0` / `ProposalConfigV0` / `ResolutionSettingsV0`; a `Reader`
+  cursor handles the variable-length layouts.
+- `services/resolution.js` — `getResolutionMeta` (proposal config → resolution
+  settings → `{ endTimestamp, offsetFromStart, seats }`, KV-cached) and
+  `scheduledEndTs`. See "Resolution settings" above.
+- `services/catalog.js` — the D1 `vote_proposals` index table:
+  `upsertCatalogRow` (called from every snapshot refresh), `hasCatalogRow`
+  (cron backfill check for frozen proposals), `listCatalog` (the `/proposals`
+  response, KV-cached).
+- `services/builders.js` — RPC→object builders (`buildProposalData` — now also
+  attaching `seats` + the scheduled `endTs` from `resolution.js`,
   `buildActivityData` — decodes each recent tx for vote direction + size, taking
   the snapshot's `markers` for per-position weights), `fetchProposalMarkers`
   (shared by the roster and the recorder), `aggregateVotes` (pure: markers →
   **per-voter** roster, summing veHNT across each wallet's positions),
+  `aggregateVotesFromEvents` (same shape from D1 rows — the end-state rebuild),
   `emptyVotesData`, and `VoteError`.
 - `services/voteDecode.js` — shared VSR instruction decoding (`decodeVsrInstruction`,
   `decodeVoteInstructions`, `actionsForMarker`); the single source of the vote/
@@ -210,32 +294,61 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   by wallet-dashboard).
 
 ### Frontend
-- `pages/public/src/vote/Vote.jsx` — status pill, **`ApprovalMeter`** (election-night
-  pass bar atop the outcome card: For as a share of votes **cast** against a fixed
-  `APPROVAL_THRESHOLD_PCT` = 66% "to pass" line, with an On-track/Below verdict;
-  only for yes-no proposals), outcome bars (each choice as a share of **voted**
-  veHNT, with its **distinct voter count** from `votes.perChoice[].voters`),
-  **`VoteProgress`** ("Turnout" card — each choice as a share of **total
-  circulating** veHNT in one stacked bar, plus an unvoted remainder and the
-  overall participation %; hidden until `proposal.circulating` exists; a quorum
-  marker + verdict appear when `QUORUM_THRESHOLD_PCT` is set — currently `null`
-  pending the figure), **`VoteTrendChart`** (recharts; one `stepAfter` line per choice,
-  cumulative veHNT at precise vote times, seeded with a zero point at voting-open;
-  `memo`'d so live-data polls don't reconcile it), voter roster (rows flagged
-  `flipped` show a ⇄ icon and expand to that voter's vote timeline via
-  `/voter-history`), activity feed (vote rows show direction + size), collapsible
-  details. Polls
-  live data every 60s and history every 5 min while visible; freshness from
-  `snapshotAt`. No wallet connect. Routes `/vote` and `/vote/:proposalId` in
-  `main.jsx` — **deliberately absent from `Landing.jsx`** (blind page).
-- `pages/public/src/lib/voteApi.js` — API client
-  (`fetchProposal`/`fetchVotes`/`fetchActivity`/`fetchHistory`).
+- `pages/public/src/vote/Vote.jsx` — status pill + countdown (works while open
+  now that `endTs` carries the scheduled close), **`ApprovalMeter`**
+  (election-night pass bar atop the outcome card: For as a share of votes
+  **cast** against a fixed `APPROVAL_THRESHOLD_PCT` = two-thirds (66.67%) "to
+  pass" line; **only for ≤2-choice proposals** with a For/Yes side, and once
+  resolved the verdict/color follow the **chain outcome**, not the threshold
+  math), outcome card (headline stat is the **distinct** participating veHNT
+  from `votes.totalVeHnt` on multi-choice elections — the proposal's per-choice
+  sum counts a ballot once per candidate it backs; a dashed **"Top N win
+  seats" cut line** sits after the leading `proposal.seats` rows while live,
+  and after the winner block when resolved iff winners are exactly the top of
+  the sort), outcome bars (each choice as a share of summed choice weight, with
+  its **distinct voter count** from `votes.perChoice[].voters`),
+  **`VoteProgress`** ("Turnout" card — participation vs **total circulating**
+  veHNT; per-choice stacked segments on yes-no votes, a single aggregate
+  segment on multi-choice elections where per-candidate shares would overlap /
+  overcount, using the distinct `votes.totalVeHnt`; hidden until
+  `proposal.circulating` exists — and, for multi-choice, until the roster
+  loads; a quorum marker + verdict appear when `QUORUM_THRESHOLD_PCT` is set —
+  currently `null` pending the figure), **`VoteTrendChart`** (recharts; one
+  `stepAfter` line per choice, cumulative veHNT at precise vote times, seeded
+  with a zero point at voting-open; `memo`'d so live-data polls don't reconcile
+  it; **beyond 8 choices only the 8 heaviest get lines** — colors would repeat —
+  **and the tail folds into a dashed gray "Others"**), voter roster (rows
+  flagged `flipped` show a ⇄ icon and expand to that voter's vote timeline via
+  `/voter-history`; a "final roster" tag when `votes.reconstructed`), activity
+  feed (vote rows show direction + size), collapsible details, an **"All
+  votes"** link to `/votes`. Polls live data every 60s and history every 5 min
+  while visible — **stopping once the vote is final** ("Final results" replaces
+  the freshness label and the refresh button). No wallet connect.
+- `pages/public/src/vote/VotesIndex.jsx` — the `/votes` index page: Live / Past
+  card lists from `/vote/proposals` (status pill, end date, seat count,
+  leading/elected names, voter + veHNT stats), each card linking to
+  `/vote/:proposalId`. Polls every 60s.
+- `pages/public/src/vote/voteUi.jsx` — shared primitives for both pages:
+  formatting (`fmtVeHnt`/`fmtDate`/`relTime`), `STATUS_META`/`StatusPill`/
+  `isFinalStatus`, and the **choice color system**: emerald/rose reserved for
+  For/Against; candidates draw from a fixed 8-hue order (sky, amber, violet,
+  pink, indigo, orange, teal, fuchsia — chosen by maximizing worst adjacent-pair
+  CVD ΔE, validated light *and* dark, with darker dark-mode steps for
+  sky/amber/orange/teal). Hues are assigned by choice index (entity-stable);
+  `choiceHex(name, index, dark)` for chart strokes, `choiceTone` for Tailwind
+  text/bar classes.
+- Routes `/vote`, `/vote/:proposalId`, and `/votes` in `main.jsx` —
+  **deliberately absent from `Landing.jsx`** (blind pages).
+- `pages/public/src/lib/voteApi.js` — API client (`fetchProposals`/
+  `fetchProposal`/`fetchVotes`/`fetchActivity`/`fetchHistory`/`fetchVoterHistory`).
 
 ## On-Chain Data Model (verified against source)
 
 | Account | Program | ID |
 |---|---|---|
 | `ProposalV0` | proposal (modular-governance) | `propFYxqmVcufMhk5esNMrexq2ogHbbC2kP9PU1qxKs` |
+| `ProposalConfigV0` | proposal (modular-governance) | (same program) |
+| `ResolutionSettingsV0` | state-controller (modular-governance) | `stcfiqW3fwD9QCd8Bqr1NBLrs7dftZHBQe7RiMMA4aM` |
 | `VoteMarkerV0` | voter-stake-registry (VSR) | `hvsrNC3NKbcryqDs2DocYHZ9yPKEVzdSjQG6RVtK1s8` |
 
 - **`ProposalV0`** (after 8-byte disc): `namespace`, `owner`, `state` enum,
@@ -252,6 +365,15 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
   memcmp offset), `mint` (104, the position NFT), `choices` Vec\<u16\>, `weight`
   u128, `bump_seed` u8, `_deprecated_relinquished` bool, `proxy_index` u16,
   `rent_refund` Pubkey. **No timestamp** (hence the marker-creation-tx lookup).
+- **`ProposalConfigV0`** (after disc): `vote_controller` Pubkey,
+  `state_controller` Pubkey (→ the resolution settings account), `on_vote_hook`
+  Pubkey, `name` String, `bump_seed` u8.
+- **`ResolutionSettingsV0`** (after disc): `name` String, `settings.nodes`
+  Vec\<ResolutionNode\> (RPN), `bump_seed` u8. Node enum order (per the IDL):
+  `0 Resolved{Vec<u16>}` · `1 EndTimestamp{i64}` · `2 OffsetFromStartTs{i64}` ·
+  `3 ChoiceVoteWeight{u128}` · `4 ChoicePercentage{i32}` · `5 Top{u16}` ·
+  `6 NumResolved{u16}` · `7 And` · `8 Or` · `9 Not{String}` ·
+  `10 TotalWeight{u128}` · `11 ChoicePercentageOfCurrent{i32}`.
 
 ### Outcome / status (mirrors heliumvote `getDerivedProposalState`)
 - `percent[i] = weight[i] * 10000 / totalWeight / 100`.
@@ -263,8 +385,12 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
 ## Storage
 
 ### KV
-- `vote:snap:<id>` — combined snapshot `{ snapshotAt, proposal, votes, activity }`
-  (`SNAPSHOT_TTL`), the single source viewers read.
+- `vote:snap:<id>` — combined snapshot `{ snapshotAt, proposal, votes, activity,
+  final? }` (`SNAPSHOT_TTL`, or `RESOLVED_SNAPSHOT_TTL` once settled), the
+  single source viewers read.
+- `vote:resmeta:<proposalConfig>` — decoded resolution-settings summary
+  (`RESOLUTION_META_CACHE_TTL`).
+- `vote:catalog` — cached `/vote/proposals` response (`PROPOSALS_CACHE_TTL`).
 - `vote:lock:<id>` — single-flight refresh lock (`REFRESH_LOCK_TTL`).
 - `vote:tracked` — `{ id: lastSeenMs }` set the cron iterates.
 - `vote:content:<id>` — cached off-chain body (`CONTENT_CACHE_TTL`).
@@ -284,17 +410,33 @@ EXISTS` (+ `ALTER TABLE ADD COLUMN` migrations for `flipped` and `flip_resolved`
 also in `worker/schema.sql`). Because `flip_resolved` defaults to 0, the migration
 re-queues every existing row for accurate re-decoding by the resolver. Rows for a
 changed marker are upserted in place (INSERT OR REPLACE). Cumulative is computed
-at read time. (The earlier bucketed `vote_snapshots` table is superseded; it's
+at read time. Doubles as the **end-state roster source** once a resolved vote's
+markers close. (The earlier bucketed `vote_snapshots` table is superseded; it's
 harmless if it lingers in an existing DB.)
+
+### D1 — `vote_proposals`
+The index catalog: one row per tracked proposal (see "Vote index" above),
+upserted on every snapshot refresh, `PRIMARY KEY (address)`. Self-provisions in
+`services/catalog.js`; mirrored in `worker/schema.sql`.
 
 ## Gotchas
 - **u128 weights are 16 bytes LE** — BigInt; format via `weightToVeHnt` (÷1e8).
 - **`VoteMarkerV0` fields after `choices` are variably positioned** — parse the
   vec first. memcmp uses base58 of the discriminator + proposal at offset 72, on
   the **VSR** program.
-- **Markers close after a proposal resolves** → empty roster + un-backfillable
-  history are expected post-resolution; `ProposalV0.choices[].weight` stays
-  authoritative, and already-recorded events persist.
+- **Markers close after a proposal resolves** → the live roster scan goes empty
+  and history becomes un-backfillable; `ProposalV0.choices[].weight` stays
+  authoritative, already-recorded events persist, and the roster payload is
+  **rebuilt from those events** (`reconstructed: true`) — don't "fix" the empty
+  scan by re-querying markers.
+- **Multi-choice elections double-count by design in the proposal account**: a
+  ballot's weight is added to *every* choice it backs, so
+  `sum(choices[].weight)` ≠ participating veHNT. Use the roster's
+  `totalVeHnt` (each position once) for turnout/participation, and the choice
+  weights only for per-candidate support. This is why `vote_proposals` stores
+  both `total_ve_hnt` and `voted_ve_hnt`.
+- **`seats`/scheduled `endTs` are best-effort** — a custom state controller or
+  unknown resolution node leaves them null; the UI must render without them.
 - **Recording is incremental and capped** — a huge first vote backfills over
   several cron ticks; don't expect the whole history instantly.
 - **Cron isolation** — anything added to `scheduled()` outside the 15-min branch

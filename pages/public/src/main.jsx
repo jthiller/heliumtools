@@ -109,6 +109,7 @@ const IotOnboard = lazy(() => import("./iot-onboard/IotOnboard.jsx"));
 const UpdateLocation = lazy(() => import("./update-location/UpdateLocation.jsx"));
 const VeHnt = lazy(() => import("./ve-hnt/VeHnt.jsx"));
 const Vote = lazy(() => import("./vote/Vote.jsx"));
+const VotesIndex = lazy(() => import("./vote/VotesIndex.jsx"));
 const Council = lazy(() => import("./council/Council.jsx"));
 const WalletDashboard = lazy(() => import("./wallet-dashboard/WalletDashboard.jsx"));
 const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
@@ -130,10 +131,13 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/iot-onboard" element={<SolanaProvider><IotOnboard /></SolanaProvider>} />
             <Route path="/update-location" element={<SolanaProvider><UpdateLocation /></SolanaProvider>} />
             <Route path="/ve-hnt" element={<SolanaProvider><VeHnt /></SolanaProvider>} />
-            {/* Blind page (intentionally not linked from the landing page):
-                live governance vote activity + outcomes, read via our worker RPC. */}
+            {/* Blind pages (intentionally not linked from the landing page):
+                live governance vote activity + outcomes, read via our worker
+                RPC. /vote shows the current featured vote; /votes indexes
+                every tracked current + past vote. */}
             <Route path="/vote" element={<Vote />} />
             <Route path="/vote/:proposalId" element={<Vote />} />
+            <Route path="/votes" element={<VotesIndex />} />
             {/* Blind page (intentionally not linked from the landing page):
                 Advisory Council nominees scraped from the Helium Discord. */}
             <Route path="/council" element={<Council />} />

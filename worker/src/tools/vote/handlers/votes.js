@@ -6,8 +6,10 @@ import { emptyVotesData } from "../services/builders.js";
 /**
  * GET /vote/votes?id=<pubkey>
  * The voter roster (VoteMarkerV0 accounts), served from the stored snapshot.
- * Modern Helium closes markers after resolution, so a resolved proposal may
- * have an empty roster — final tallies always come from /vote/proposal.
+ * Modern Helium closes markers after resolution, so a resolved proposal's
+ * roster is rebuilt from D1 vote events instead (`reconstructed: true`);
+ * final tallies always come from /vote/proposal. An empty roster remains
+ * possible for a vote that resolved before this page ever tracked it.
  */
 export async function handleVotes(url, env, ctx) {
   const p = resolveProposal(url);

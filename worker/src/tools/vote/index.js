@@ -2,6 +2,7 @@ import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { checkIpRateLimit } from "../../lib/rateLimit.js";
 import { MAX_REQUESTS_PER_MINUTE, VOTE_SNAPSHOT_CRON } from "./config.js";
 import { handleProposal } from "./handlers/proposal.js";
+import { handleProposals } from "./handlers/proposals.js";
 import { handleVotes } from "./handlers/votes.js";
 import { handleActivity } from "./handlers/activity.js";
 import { handleHistory } from "./handlers/history.js";
@@ -13,8 +14,10 @@ export { runVoteSnapshots, VOTE_SNAPSHOT_CRON };
 
 /**
  * Vote (governance proposal) tool — prefix `/vote`.
+ *   GET /vote/proposals      — index of tracked current + past votes (D1 catalog)
  *   GET /vote/proposal?id=  — decoded ProposalV0 + outcome
- *   GET /vote/votes?id=     — voter roster (VoteMarkerV0)
+ *   GET /vote/votes?id=     — voter roster (VoteMarkerV0; reconstructed from D1
+ *                             history once a resolved vote's markers close)
  *   GET /vote/activity?id=  — recent vote transactions
  *   GET /vote/history?id=   — recorded tally time-series (for charting)
  *   GET /vote/voter-history?id=&voter= — one voter's vote/flip timeline
@@ -41,6 +44,7 @@ export async function handleVoteRequest(request, env, ctx) {
   if (limitErr) return limitErr;
 
   switch (url.pathname) {
+    case "/proposals": return handleProposals(env);
     case "/proposal": return handleProposal(url, env, ctx);
     case "/votes": return handleVotes(url, env, ctx);
     case "/activity": return handleActivity(url, env, ctx);

@@ -5,7 +5,7 @@
 // coarse intervals). Rows are appended incrementally by the snapshot cron.
 
 import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
-import { weightToVeHnt } from "../utils.js";
+import { weightToVeHnt, safeParseJson } from "../utils.js";
 import { HISTORY_CACHE_TTL, MAX_HISTORY_POINTS } from "../config.js";
 
 let schemaReady = false;
@@ -63,6 +63,26 @@ export async function getRecordedMarkers(env, id) {
     `SELECT marker, choices_json FROM vote_events WHERE proposal = ?`,
   ).bind(id).all();
   return new Map((results || []).map((r) => [r.marker, r.choices_json]));
+}
+
+/**
+ * Every recorded vote event for a proposal, decoded for aggregation — the
+ * source for rebuilding a resolved vote's roster after its markers close.
+ * Rows: { marker, voter, choices:[idx], weight:string, flipped:0|1 }.
+ */
+export async function getEventRows(env, id) {
+  if (!env.DB) return [];
+  await ensureSchema(env);
+  const { results } = await env.DB.prepare(
+    `SELECT marker, voter, choices_json, weight, flipped FROM vote_events WHERE proposal = ?`,
+  ).bind(id).all();
+  return (results || []).map((r) => ({
+    marker: r.marker,
+    voter: r.voter,
+    choices: safeParse(r.choices_json),
+    weight: r.weight,
+    flipped: r.flipped === 1,
+  }));
 }
 
 /**
@@ -206,11 +226,8 @@ function downsample(points, max) {
   return out;
 }
 
+// choices_json must always yield an array (even if the stored value is junk).
 function safeParse(s) {
-  try {
-    const v = JSON.parse(s);
-    return Array.isArray(v) ? v : [];
-  } catch {
-    return [];
-  }
+  const v = safeParseJson(s, []);
+  return Array.isArray(v) ? v : [];
 }

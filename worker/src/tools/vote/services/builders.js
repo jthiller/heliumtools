@@ -7,6 +7,7 @@ import { VSR_PROGRAM } from "../../../lib/helium-solana.js";
 import { getAccount, getProgramAccounts, getSignaturesForAddress, getTransaction } from "./rpc.js";
 import { decodeProposal, decodeVoteMarker } from "./decode.js";
 import { getProposalContent } from "./content.js";
+import { getResolutionMeta, scheduledEndTs } from "./resolution.js";
 import { decodeVoteInstructions } from "./voteDecode.js";
 import { tallyChoices, deriveStatus, proposalTiming, weightToVeHnt } from "../utils.js";
 import {
@@ -60,7 +61,13 @@ export async function buildProposalData(env, address) {
   const { totalWeight, results, leadingIndex } = tallyChoices(proposal.choices);
   const status = deriveStatus(proposal.state, proposal.choices);
   const { startTs, endTs } = proposalTiming(proposal.state);
-  const content = await getProposalContent(env, address, proposal.uri);
+  // The off-chain body and the resolution rules (scheduled end + election seat
+  // count, behind the proposal config) are independent — fetch concurrently.
+  // Resolution meta is best-effort: null leaves the response as before.
+  const [content, resolution] = await Promise.all([
+    getProposalContent(env, address, proposal.uri),
+    getResolutionMeta(env, proposal.proposalConfig),
+  ]);
 
   return {
     address,
@@ -74,7 +81,12 @@ export async function buildProposalData(env, address) {
     status,
     createdAt: proposal.createdAt,
     startTs,
-    endTs,
+    // Resolved proposals carry their actual end; open ones get the *scheduled*
+    // close from the resolution settings (feeds the countdown).
+    endTs: endTs ?? scheduledEndTs(resolution, startTs),
+    // Election seat count (ResolutionNode Top{n}) — e.g. 5 for the council
+    // election. Null for plain yes/no votes and unknown controllers.
+    seats: resolution?.seats ?? null,
     maxChoicesPerVoter: proposal.maxChoicesPerVoter,
     decimals: VOTE_WEIGHT_DECIMALS,
     totalWeight: totalWeight.toString(),
@@ -125,32 +137,39 @@ export async function fetchProposalMarkers(env, address) {
 }
 
 /**
- * Aggregate already-fetched markers into the voter-roster response. Pure, so
- * the snapshotter can fetch markers once (via fetchProposalMarkers) and feed
- * them to both this and the history recorder without a second getProgramAccounts.
+ * Shared roster builder: normalized vote records → the voter-roster wire
+ * object. Both aggregation paths (live markers, recorded D1 events) feed this
+ * so the roster shape, voter sort, MAX_VOTERS_RETURNED cap, and per-choice
+ * voter counts can never drift between them. Records: { voter, weight: BigInt,
+ * choices: [idx], proxy?, marker?, flipped? }.
+ *
+ * Live rows carry `proxy` + `markers` (the snapshot enrichment joins flip
+ * flags onto markers, then drops them from the wire); reconstructed rows carry
+ * `flipped` directly (no markers exist once a vote settles).
  */
-export function aggregateVotes({ markers, scanCapped }, address) {
+function buildRoster(records, address, { reconstructed = false, scanCapped = false } = {}) {
   const perChoice = new Map();      // choiceIndex -> total weight (across all positions)
   const byVoter = new Map();        // voter -> aggregated record
   let totalWeight = 0n;
 
-  for (const m of markers) {
-    totalWeight += m.weight;
-    for (const c of m.choices) {
-      perChoice.set(c, (perChoice.get(c) || 0n) + m.weight);
+  for (const rec of records) {
+    totalWeight += rec.weight;
+    for (const c of rec.choices) {
+      perChoice.set(c, (perChoice.get(c) || 0n) + rec.weight);
     }
-    let v = byVoter.get(m.voter);
+    let v = byVoter.get(rec.voter);
     if (!v) {
-      v = { voter: m.voter, weight: 0n, choices: new Map(), markers: [], positions: 0, proxy: false };
-      byVoter.set(m.voter, v);
+      v = { voter: rec.voter, weight: 0n, choices: new Map(), markers: [], positions: 0, proxy: false, flipped: false };
+      byVoter.set(rec.voter, v);
     }
-    v.weight += m.weight;
+    v.weight += rec.weight;
     v.positions += 1;
-    v.markers.push(m.pubkey);
-    if (m.proxyIndex > 0) v.proxy = true;
+    if (rec.marker) v.markers.push(rec.marker);
+    if (rec.proxy) v.proxy = true;
+    if (rec.flipped) v.flipped = true;
     // Track this voter's weight per choice (a wallet's positions can back
     // different choices — a "split", distinct from a temporal flip).
-    for (const c of m.choices) v.choices.set(c, (v.choices.get(c) || 0n) + m.weight);
+    for (const c of rec.choices) v.choices.set(c, (v.choices.get(c) || 0n) + rec.weight);
   }
 
   const voters = [...byVoter.values()].sort((a, b) => (a.weight < b.weight ? 1 : a.weight > b.weight ? -1 : 0));
@@ -168,7 +187,8 @@ export function aggregateVotes({ markers, scanCapped }, address) {
 
   return {
     proposal: address,
-    markerCount: markers.length,
+    ...(reconstructed ? { reconstructed: true } : {}),
+    markerCount: records.length,
     uniqueVoters: byVoter.size,
     totalWeight: totalWeight.toString(),
     totalVeHnt: weightToVeHnt(totalWeight),
@@ -188,12 +208,63 @@ export function aggregateVotes({ markers, scanCapped }, address) {
       weight: v.weight.toString(),
       veHnt: weightToVeHnt(v.weight),
       positions: v.positions,
-      proxy: v.proxy,
+      ...(reconstructed
+        ? { flipped: v.flipped }
+        : { proxy: v.proxy, markers: v.markers }),
       // Distinct choices this voter's positions back, heaviest first.
       choices: [...v.choices.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([i]) => i),
-      markers: v.markers,
     })),
   };
+}
+
+/**
+ * Aggregate already-fetched markers into the voter-roster response. Pure, so
+ * the snapshotter can fetch markers once (via fetchProposalMarkers) and feed
+ * them to both this and the history recorder without a second getProgramAccounts.
+ */
+export function aggregateVotes({ markers, scanCapped }, address) {
+  const records = markers.map((m) => ({
+    voter: m.voter,
+    weight: m.weight,
+    choices: m.choices,
+    proxy: m.proxyIndex > 0,
+    marker: m.pubkey,
+  }));
+  return buildRoster(records, address, { scanCapped });
+}
+
+/**
+ * Rebuild the voter roster from recorded D1 vote events — the end-state path.
+ * VoteMarkerV0 accounts close once a proposal resolves, so the live scan goes
+ * empty and marker-derived metrics (voters, per-choice voter counts, roster)
+ * would zero out. The `vote_events` table holds each marker's final state
+ * (voter, choices, weight, flipped), so a resolved vote's roster is rebuilt
+ * from there instead. Output mirrors aggregateVotes, plus `reconstructed: true`
+ * so clients can label it; per-row `flipped` comes straight from the events
+ * (no marker join), and the delegation (`proxy`) badge is unknown post-close.
+ *
+ * Caveats (best-effort by nature): votes cast in the final minutes before
+ * resolution may be missing if the cron never saw them, and a marker
+ * relinquished *before* resolution lingers with its last recorded state. The
+ * proposal account's own choice weights stay the authoritative tally.
+ */
+export function aggregateVotesFromEvents(rows, address) {
+  const records = [];
+  for (const row of rows) {
+    let weight;
+    try {
+      weight = BigInt(row.weight);
+    } catch {
+      continue; // unreadable row — skip rather than corrupt the totals
+    }
+    records.push({
+      voter: row.voter,
+      weight,
+      choices: Array.isArray(row.choices) ? row.choices : [],
+      flipped: !!row.flipped,
+    });
+  }
+  return buildRoster(records, address, { reconstructed: true });
 }
 
 /**

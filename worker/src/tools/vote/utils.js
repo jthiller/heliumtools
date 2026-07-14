@@ -5,6 +5,16 @@ import { VOTE_WEIGHT_DECIMALS, DEFAULT_PROPOSAL } from "./config.js";
 
 const WEIGHT_SCALE = 10n ** BigInt(VOTE_WEIGHT_DECIMALS);
 
+/** JSON.parse that returns `fallback` instead of throwing on bad input. */
+export function safeParseJson(s, fallback = null) {
+  if (s == null) return fallback;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return fallback;
+  }
+}
+
 /** Parse a base58 string into a PublicKey, or return null if invalid. */
 export function parseProposalId(input) {
   if (!input || typeof input !== "string") return null;
