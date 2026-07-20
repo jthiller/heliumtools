@@ -8,8 +8,38 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
-import { Card, Skeleton, SEARCH_INPUT_CLASS } from "./primitives.jsx";
-import { deviceLabel, fmtDate, fmtToken, lifetimeUi, isEarning } from "../format.js";
+import { Card, Dot, Skeleton, SEARCH_INPUT_CLASS } from "./primitives.jsx";
+import {
+  deviceLabel,
+  fmtDate,
+  fmtToken,
+  lifetimeUi,
+  isEarning,
+  iotStatusOf,
+  IOT_STATUS_LABEL,
+  IOT_STATUS_COLOR,
+} from "../format.js";
+
+// Sort order for the IoT status column: actionable states first.
+const IOT_STATUS_RANK = { inactive: 0, settingUp: 1, unknown: 2, active: 3, pending: 4 };
+const IOT_STATUS_TEXT = {
+  active: "text-emerald-600 dark:text-emerald-400",
+  inactive: "text-rose-600 dark:text-rose-400",
+  settingUp: "text-amber-600 dark:text-amber-400",
+  unknown: "text-content-tertiary",
+};
+
+/** Table cell for the IoT connectivity column. */
+function IotStatusCell({ status }) {
+  if (status === null) return <span className="text-content-tertiary">—</span>;
+  if (status === "pending") return <span className="text-content-tertiary">…</span>;
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${IOT_STATUS_TEXT[status]}`}>
+      <Dot color={IOT_STATUS_COLOR[status]} />
+      {IOT_STATUS_LABEL[status]}
+    </span>
+  );
+}
 
 const ACTION_BTN =
   "inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-content-secondary transition hover:border-content-tertiary";
@@ -32,7 +62,14 @@ function Th({ children, sortKey, sort, onSort, className = "" }) {
   );
 }
 
-export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, loading }) {
+export default function FleetTableCard({
+  hotspots,
+  rewardsByKey,
+  rewardsDone,
+  iotStatusByKey,
+  iotDataThrough,
+  loading,
+}) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [copied, setCopied] = useState(null);
@@ -51,7 +88,13 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
     }
     const enriched = list.map((h) => {
       const r = rewardsByKey[h.entityKey];
-      return { ...h, _earning: isEarning(r), _iotLife: lifetimeUi(r, "iot"), _hntLife: lifetimeUi(r, "hnt") };
+      return {
+        ...h,
+        _earning: isEarning(r),
+        _iotLife: lifetimeUi(r, "iot"),
+        _hntLife: lifetimeUi(r, "hnt"),
+        _iotStatus: iotStatusOf(h, iotStatusByKey?.[h.entityKey], iotDataThrough),
+      };
     });
     const dir = sort.dir === "asc" ? 1 : -1;
     enriched.sort((a, b) => {
@@ -61,6 +104,11 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
         case "location": av = `${a.state || ""}${a.city || ""}`; bv = `${b.state || ""}${b.city || ""}`; break;
         case "created": av = a.createdAt || ""; bv = b.createdAt || ""; break;
         case "lifetime": av = a._hntLife; bv = b._hntLife; break;
+        // Non-IoT rows (no status) rank after every real status (ascending).
+        case "status":
+          av = a._iotStatus === null ? 99 : IOT_STATUS_RANK[a._iotStatus];
+          bv = b._iotStatus === null ? 99 : IOT_STATUS_RANK[b._iotStatus];
+          break;
         default: av = (a.name || "").toLowerCase(); bv = (b.name || "").toLowerCase();
       }
       if (av < bv) return -1 * dir;
@@ -68,7 +116,7 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
       return 0;
     });
     return enriched;
-  }, [hotspots, rewardsByKey, query, sort]);
+  }, [hotspots, rewardsByKey, iotStatusByKey, iotDataThrough, query, sort]);
 
   const onSort = useCallback(
     (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" })),
@@ -95,7 +143,7 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
   const downloadCsv = useCallback(() => {
     const header = [
       "name", "entity_key", "asset_id", "network", "device_type",
-      "city", "state", "country", "h3_location", "created_at", "lifetime_iot", "lifetime_hnt",
+      "city", "state", "country", "h3_location", "created_at", "iot_status", "lifetime_iot", "lifetime_hnt",
     ];
     const esc = (v) => {
       let s = v == null ? "" : String(v);
@@ -104,9 +152,11 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const lines = [header.join(",")];
+    // Machine-friendly status keywords; blank for non-IoT rows and unfetched lookups.
+    const statusCsv = (s) => (s === null || s === "pending" ? "" : s === "settingUp" ? "setting_up" : s);
     for (const r of rows) {
       lines.push(
-        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, r._iotLife, r._hntLife]
+        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, statusCsv(r._iotStatus), r._iotLife, r._hntLife]
           .map(esc)
           .join(","),
       );
@@ -161,21 +211,26 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
               <Th sortKey="location" sort={sort} onSort={onSort}>Location</Th>
               <Th sortKey="created" sort={sort} onSort={onSort}>Created</Th>
               <Th sortKey="lifetime" sort={sort} onSort={onSort} className="text-right">Lifetime HNT</Th>
-              <th className="px-3 py-2 font-medium">Status</th>
+              <Th sortKey="status" sort={sort} onSort={onSort}>
+                <span title="IoT connectivity: connected to the Helium Packet Router during the most recent reported day">
+                  Status
+                </span>
+              </Th>
+              <th className="px-3 py-2 font-medium">Rewards</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={`sk-${i}`}>
-                  <td colSpan={6} className="px-3 py-2">
+                  <td colSpan={7} className="px-3 py-2">
                     <Skeleton className="h-5 w-full" />
                   </td>
                 </tr>
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-sm text-content-tertiary">
+                <td colSpan={7} className="px-3 py-10 text-center text-sm text-content-tertiary">
                   {query ? "No Hotspots match your search." : "No Hotspots."}
                 </td>
               </tr>
@@ -193,6 +248,9 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
                 <td className="px-3 py-2 text-content-secondary">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
                   {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
+                </td>
+                <td className="px-3 py-2">
+                  <IotStatusCell status={r._iotStatus} />
                 </td>
                 <td className="px-3 py-2">
                   {r._earning == null ? (

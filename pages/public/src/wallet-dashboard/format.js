@@ -91,6 +91,71 @@ export function deviceLabel(key) {
   return DEVICE_LABEL[key] || key || "Unknown";
 }
 
+// ── IoT connectivity (api-iot.heliumtools.org) ───────────────────────────────
+// Per-day granularity: "active" = connected to the Helium Packet Router during
+// the liveness feed's most recent reported day, anchored to `dataThrough` (the
+// feed's newest event timestamp) — not "online right now".
+
+export const IOT_STATUS_LABEL = {
+  active: "Active",
+  inactive: "Inactive",
+  settingUp: "Setting up",
+  unknown: "Unknown",
+};
+
+// Dot/marker colors (shared by the table and the map, like NETWORK_COLOR).
+export const IOT_STATUS_COLOR = {
+  active: "#059669", // emerald-600 — matches the IoT network color
+  inactive: "#e11d48", // rose-600
+  settingUp: "#d97706", // amber-600
+  unknown: "#94a3b8", // slate-400
+};
+
+/**
+ * Derive one Hotspot's IoT connectivity state from its api-iot lookup entry.
+ *   "active" | "inactive" — the service's per-day liveness verdict
+ *   "settingUp"           — created after `dataThrough`, so the feed hasn't
+ *                           reported on it yet (per the API reference: treat as
+ *                           setting up, not inactive)
+ *   "unknown"             — lookup failed, or the address isn't in the
+ *                           service's inventory
+ *   "pending"             — not fetched yet (scan still running)
+ *   null                  — not an IoT Hotspot (no IoT status applies)
+ */
+export function iotStatusOf(hotspot, entry, dataThrough) {
+  if (!(hotspot?.networks || []).includes("iot")) return null;
+  if (entry === undefined) return "pending";
+  if (entry === null) return "unknown";
+  const active = !entry.notFound && entry.status === 0;
+  if (!active && dataThrough && hotspot.createdAt) {
+    const created = new Date(hotspot.createdAt);
+    const through = new Date(dataThrough);
+    if (!Number.isNaN(created.getTime()) && !Number.isNaN(through.getTime()) && created > through) {
+      return "settingUp";
+    }
+  }
+  if (entry.notFound) return "unknown";
+  return active ? "active" : "inactive";
+}
+
+/**
+ * Aggregate per-Hotspot IoT connectivity into fleet counts for the tiles/hero.
+ * `counted` excludes still-pending lookups so percentages stay honest during
+ * the progressive scan.
+ */
+export function aggregateIotStatus(hotspots, statusByKey, dataThrough) {
+  const agg = { active: 0, inactive: 0, settingUp: 0, unknown: 0, iotTotal: 0, counted: 0 };
+  for (const h of hotspots || []) {
+    const s = iotStatusOf(h, statusByKey?.[h.entityKey], dataThrough);
+    if (s === null) continue;
+    agg.iotTotal++;
+    if (s === "pending") continue;
+    agg.counted++;
+    agg[s]++;
+  }
+  return agg;
+}
+
 /** Reward-token decimals (IOT/MOBILE = 6, HNT = 8). */
 export const REWARD_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
 

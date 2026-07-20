@@ -1,6 +1,14 @@
 import { useMemo } from "react";
 import { Card, Skeleton } from "./primitives.jsx";
-import { fmtCount, fmtUsd, fmtDate, isEarning, hotspotLifetimeUsd, DC_PER_USD } from "../format.js";
+import {
+  fmtCount,
+  fmtUsd,
+  fmtDate,
+  isEarning,
+  iotStatusOf,
+  hotspotLifetimeUsd,
+  DC_PER_USD,
+} from "../format.js";
 
 function InsightRow({ label, value, tone }) {
   const valueClass =
@@ -17,7 +25,16 @@ function InsightRow({ label, value, tone }) {
   );
 }
 
-export default function OperatorAnalyticsCard({ hotspots, rewardsByKey, rewardsDone, prices, stats }) {
+export default function OperatorAnalyticsCard({
+  hotspots,
+  rewardsByKey,
+  rewardsDone,
+  iotStatusByKey,
+  iotStatusDone,
+  iotDataThrough,
+  prices,
+  stats,
+}) {
   // Stable index — built once per fleet, not rebuilt on every reward batch.
   const byKey = useMemo(
     () => new Map((hotspots || []).map((h) => [h.entityKey, h])),
@@ -48,6 +65,20 @@ export default function OperatorAnalyticsCard({ hotspots, rewardsByKey, rewardsD
     return { idleNames, lowest };
   }, [hotspots, byKey, rewardsByKey, prices]);
 
+  // IoT Hotspots the liveness feed marked inactive — didn't connect to the
+  // Packet Router during the most recent reported day. The most actionable
+  // signal here: an earning Hotspot that recently dropped offline shows up in
+  // this list long before its rewards flatline.
+  const inactiveIotNames = useMemo(() => {
+    const names = [];
+    for (const h of hotspots || []) {
+      if (iotStatusOf(h, iotStatusByKey?.[h.entityKey], iotDataThrough) === "inactive") {
+        names.push(h.name || h.entityKey);
+      }
+    }
+    return names;
+  }, [hotspots, iotStatusByKey, iotDataThrough]);
+
   if (!stats || !analysis) {
     return (
       <Card title="Operator insights">
@@ -61,9 +92,14 @@ export default function OperatorAnalyticsCard({ hotspots, rewardsByKey, rewardsD
   return (
     <Card
       title="Operator insights"
-      subtitle={!rewardsDone ? "Reward scan in progress…" : "Actionable fleet health"}
+      subtitle={!rewardsDone || !iotStatusDone ? "Fleet scan in progress…" : "Actionable fleet health"}
     >
       <div className="divide-y divide-border">
+        <InsightRow
+          label={`Inactive IoT Hotspots${iotDataThrough ? ` (as of ${fmtDate(iotDataThrough)})` : ""}`}
+          value={fmtCount(inactiveIotNames.length)}
+          tone={inactiveIotNames.length > 0 ? "warn" : "ok"}
+        />
         <InsightRow
           label="Idle Hotspots (no rewards)"
           value={fmtCount(analysis.idleNames.length)}
@@ -81,6 +117,18 @@ export default function OperatorAnalyticsCard({ hotspots, rewardsByKey, rewardsD
         <InsightRow label="Oldest deployment" value={fmtDate(stats.oldestCreatedAt)} />
         <InsightRow label="Newest deployment" value={fmtDate(stats.newestCreatedAt)} />
       </div>
+
+      {inactiveIotNames.length > 0 && (
+        <div className="mt-3 rounded-lg bg-rose-50 p-3 dark:bg-rose-950/30">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-rose-700/80 dark:text-rose-300/80">
+            Inactive IoT Hotspots
+          </div>
+          <div className="text-xs text-rose-700 dark:text-rose-300">
+            {inactiveIotNames.slice(0, 4).join(", ")}
+            {inactiveIotNames.length > 4 && ` and ${inactiveIotNames.length - 4} more`}
+          </div>
+        </div>
+      )}
 
       {analysis.idleNames.length > 0 && (
         <div className="mt-3 rounded-lg bg-surface-inset p-3">

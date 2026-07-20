@@ -5,7 +5,8 @@ import StatusBanner from "../components/StatusBanner.jsx";
 import { fetchSummary, fetchFleet } from "../lib/walletDashboardApi.js";
 import { fetchPositions } from "../lib/veHntApi.js";
 import useFleetRewards from "./useFleetRewards.js";
-import { aggregateRewards } from "./format.js";
+import useFleetIotStatus from "./useFleetIotStatus.js";
+import { aggregateRewards, aggregateIotStatus } from "./format.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
 import BalancesCard from "./cards/BalancesCard.jsx";
@@ -166,6 +167,14 @@ export default function WalletDashboard() {
     () => aggregateRewards(rewardsState.rewardsByKey),
     [rewardsState.rewardsByKey],
   );
+  // IoT connectivity (active/inactive) from api-iot.heliumtools.org, fetched
+  // directly from the browser — the service is CORS-open and edge-cached.
+  const iotStatusState = useFleetIotStatus(fleet?.hotspots);
+  const iotStatusAgg = useMemo(
+    () =>
+      aggregateIotStatus(fleet?.hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough),
+    [fleet?.hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough],
+  );
   const prices = summary?.prices;
   // Every reward batch failed (e.g. rate-limited) even though the wallet has
   // Hotspots — surface "unavailable" instead of a misleading $0.
@@ -209,6 +218,8 @@ export default function WalletDashboard() {
             rewards={rewardsAgg}
             rewardsDone={rewardsState.done}
             rewardsUnavailable={rewardsUnavailable}
+            iotStatus={iotStatusAgg}
+            iotStatusDone={iotStatusState.done}
             prices={prices}
             governance={governance}
             govLoading={govLoading}
@@ -231,6 +242,8 @@ export default function WalletDashboard() {
                 <FleetMap
                   hotspots={fleet?.hotspots || []}
                   rewardsByKey={rewardsState.rewardsByKey}
+                  iotStatusByKey={iotStatusState.statusByKey}
+                  iotDataThrough={iotStatusState.dataThrough}
                   wallet={wallet}
                 />
               )}
@@ -257,6 +270,8 @@ export default function WalletDashboard() {
               hotspots={fleet?.hotspots || []}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
+              iotStatusByKey={iotStatusState.statusByKey}
+              iotDataThrough={iotStatusState.dataThrough}
               loading={fleetLoading}
             />
           </div>
@@ -268,7 +283,14 @@ export default function WalletDashboard() {
 
           {/* Analytics gauges */}
           <div className="lg:col-span-4">
-            <FleetCompositionCard stats={summary?.fleet} rewards={rewardsAgg} rewardsDone={rewardsState.done} />
+            <FleetCompositionCard
+              stats={summary?.fleet}
+              rewards={rewardsAgg}
+              rewardsDone={rewardsState.done}
+              iotStatus={iotStatusAgg}
+              iotStatusDone={iotStatusState.done}
+              iotDataThrough={iotStatusState.dataThrough}
+            />
           </div>
           <div className="lg:col-span-4">
             <GeoCard regions={summary?.fleet?.regions} />
@@ -282,6 +304,9 @@ export default function WalletDashboard() {
               hotspots={fleet?.hotspots}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
+              iotStatusByKey={iotStatusState.statusByKey}
+              iotStatusDone={iotStatusState.done}
+              iotDataThrough={iotStatusState.dataThrough}
               prices={prices}
               stats={summary?.fleet}
             />

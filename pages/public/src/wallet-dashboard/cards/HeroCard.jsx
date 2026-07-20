@@ -49,9 +49,13 @@ function HeroStat({ label, value, valueClass = "text-content", sub }) {
   );
 }
 
-export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, prices, governance, govLoading }) {
+export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, prices, governance, govLoading }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
+  // IoT connectivity: share of scanned IoT Hotspots that connected to the
+  // Packet Router during the liveness feed's most recent reported day.
+  const iotCounted = iotStatus?.counted || 0;
+  const iotActivePct = iotCounted ? Math.round((iotStatus.active / iotCounted) * 100) : null;
   // Wallet-wide unclaimed value: Hotspot pending + veHNT delegation pending.
   const unclaimedUsd = unclaimedTotalUsd(rewards, governance, prices);
   // "…" only while a source is still loading and we have nothing yet.
@@ -95,6 +99,13 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
         <div className="flex flex-wrap items-stretch gap-y-5 divide-x divide-border">
           <HeroStat label="Hotspots" value={loading ? "—" : fmtCount(fleetCount)} />
           <HeroStat label="Oldest Hotspot" value={loading ? "—" : fmtDate(summary?.fleet?.oldestCreatedAt)} />
+          {(iotStatus?.iotTotal || 0) > 0 && (
+            <HeroStat
+              label="IoT Active"
+              value={iotActivePct == null ? (iotStatusDone ? "—" : "…") : `${iotActivePct}%`}
+              sub={iotCounted ? `${iotStatus.active} of ${iotCounted}` : null}
+            />
+          )}
           <HeroStat
             label="Earning"
             value={earningPct == null ? (rewardsDone ? "—" : "…") : `${earningPct}%`}
