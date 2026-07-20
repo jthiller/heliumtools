@@ -53,12 +53,13 @@ export const D1_BATCH_CHUNK = 50;
 //   nominations + endorsements to postedAt <= this). The poll keeps running, so reaction
 //   counts on the frozen set stay live. This is a read-time bound (deterministic, no
 //   clock check): before the date it filters nothing; after it, later posts are excluded.
-// - POLL_STOP_MS: the bot runs one more week for reactions only, then stops. After this
-//   instant pollCouncil() no-ops, so the page freezes at its final snapshot. Safety
-//   backstop so the bot never polls the community Discord indefinitely; extend by editing
-//   + redeploying, and see the CLAUDE.md teardown.
+// - POLL_STOP_MS: after this instant pollCouncil() no-ops, so the worker stops calling
+//   Discord and the page freezes at its final snapshot. Brought forward to 2026-07-15
+//   when the Discord bot was removed (was 2026-07-19, the planned reaction-only week):
+//   with the bot gone the poll would otherwise 403 hourly, so stopping it keeps the
+//   worker quiet and the last-polled reactions preserved. See the CLAUDE.md teardown.
 export const NOMINATIONS_CLOSE_MS = Date.parse("2026-07-12T23:59:59.999Z");
-export const POLL_STOP_MS = Date.parse("2026-07-19T23:59:59.999Z");
+export const POLL_STOP_MS = Date.parse("2026-07-15T00:00:00.000Z");
 
 // Heuristic classification (services/classify.js) for the Discord-bot poller. Real
 // nominations are long self-intro posts; a top-level message at least this many
