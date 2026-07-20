@@ -75,9 +75,11 @@ collection is auto-created by the sync (it create-or-updates approved items by h
   check): a no-op before the date, a freeze after. The poll keeps running, so **reaction
   counts on the frozen set stay live**. Endorsements freeze too (only reactions change
   post-close); relax that by dropping the `withinBallot` check in the support loop.
-- **Poll stops `2026-07-19T23:59:59.999Z`** (`POLL_STOP_MS`, one week later). `pollCouncil`
-  no-ops after this, freezing the page at its final snapshot — a backstop so the bot never
-  polls the community Discord indefinitely. Extend by editing the constant + redeploying.
+- **Poll stopped `2026-07-15T00:00:00Z`** (`POLL_STOP_MS`). `pollCouncil` no-ops after
+  this, freezing the page at its final snapshot. Brought forward from the planned
+  2026-07-19 when the **Discord bot was removed** (2026-07-15) — with the bot gone the
+  poll would 403 hourly, so stopping it keeps the worker quiet. The worker no longer
+  calls Discord; `DISCORD_BOT_TOKEN` is now unused (deleted in full teardown).
 
 Page freshness is the last successful poll; the frontend shows an honest "data N ago"
 from `scrapedAt`. The manual-push skill lives at **`.claude/skills/council-scrape/`**
@@ -364,14 +366,16 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 
 ## Teardown (after the election)
 
-Timing: the poll **auto-stops after `POLL_STOP_MS` (2026-07-19)**, so data freezes on its
-own — there's no rush, but the bot is still a guild member and all the infra below still
-exists until you run this checklist.
+Timing: the poll is **stopped** (`POLL_STOP_MS` = 2026-07-15), so the worker no longer
+calls Discord and the data is frozen at its final snapshot. The rest of the infra below
+still exists until you run this checklist.
 
-1. **Remove the bot.** Kick **heliumtools-council** from the Official Helium Community
-   server (and delete the Discord application if you like). Wick's join-gate filters are
-   already back on, so no filter changes are needed — just remove any Wick whitelist
-   entry that was added for the bot.
+1. **Remove the bot.** *Worker side done* — the poll is stopped (2026-07-15), so the bot
+   is no longer used. Remaining (Discord admin, done in the Discord UI): kick
+   **heliumtools-council** (app/user id `1524254437181358140`) from the Official Helium
+   Community server, and optionally delete the Discord application. Wick's join-gate
+   filters are already back on, so no filter changes are needed — just remove any Wick
+   whitelist/immunity entry that was added for the bot id.
 2. **Worker code**: delete `worker/src/tools/council/`; in `worker/src/index.js` remove
    the import, the `/council` route, and the `run("council-poll", …)` line. Decide on
    the cron: simplest is to leave the hourly cron + `hour % 6` gating as-is (the other
