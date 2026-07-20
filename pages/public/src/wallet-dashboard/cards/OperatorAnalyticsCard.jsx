@@ -10,6 +10,29 @@ import {
   DC_PER_USD,
 } from "../format.js";
 
+/** Callout listing the first few Hotspot names with an "and N more" overflow. */
+function NameCallout({ title, names, tone }) {
+  const styles =
+    tone === "warn"
+      ? {
+          box: "bg-rose-50 dark:bg-rose-950/30",
+          head: "text-rose-700/80 dark:text-rose-300/80",
+          text: "text-rose-700 dark:text-rose-300",
+        }
+      : { box: "bg-surface-inset", head: "text-content-tertiary", text: "text-content-secondary" };
+  return (
+    <div className={`mt-3 rounded-lg p-3 ${styles.box}`}>
+      <div className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${styles.head}`}>
+        {title}
+      </div>
+      <div className={`text-xs ${styles.text}`}>
+        {names.slice(0, 4).join(", ")}
+        {names.length > 4 && ` and ${names.length - 4} more`}
+      </div>
+    </div>
+  );
+}
+
 function InsightRow({ label, value, tone }) {
   const valueClass =
     tone === "warn"
@@ -119,28 +142,10 @@ export default function OperatorAnalyticsCard({
       </div>
 
       {inactiveIotNames.length > 0 && (
-        <div className="mt-3 rounded-lg bg-rose-50 p-3 dark:bg-rose-950/30">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-rose-700/80 dark:text-rose-300/80">
-            Inactive IoT Hotspots
-          </div>
-          <div className="text-xs text-rose-700 dark:text-rose-300">
-            {inactiveIotNames.slice(0, 4).join(", ")}
-            {inactiveIotNames.length > 4 && ` and ${inactiveIotNames.length - 4} more`}
-          </div>
-        </div>
+        <NameCallout title="Inactive IoT Hotspots" names={inactiveIotNames} tone="warn" />
       )}
 
-      {analysis.idleNames.length > 0 && (
-        <div className="mt-3 rounded-lg bg-surface-inset p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
-            Idle Hotspots
-          </div>
-          <div className="text-xs text-content-secondary">
-            {analysis.idleNames.slice(0, 4).join(", ")}
-            {analysis.idleNames.length > 4 && ` and ${analysis.idleNames.length - 4} more`}
-          </div>
-        </div>
-      )}
+      {analysis.idleNames.length > 0 && <NameCallout title="Idle Hotspots" names={analysis.idleNames} />}
 
       {analysis.lowest.length > 0 && (
         <div className="mt-2 rounded-lg bg-surface-inset p-3">

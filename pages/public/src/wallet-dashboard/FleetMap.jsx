@@ -7,6 +7,7 @@ import { cellToLatLng } from "h3-js";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import useDarkMode from "../lib/useDarkMode.js";
 import CopyButton from "../components/CopyButton.jsx";
+import { Dot } from "./cards/primitives.jsx";
 import {
   deviceLabel,
   isEarning,
@@ -76,14 +77,21 @@ export default function FleetMap({
 
   // IoT Hotspots the liveness feed marked inactive — highlighted over the idle
   // dimming (an offline Hotspot is the most actionable thing on this map).
+  // Membership usually doesn't change on a status flush, so reuse the previous
+  // Set when it's equal — a fresh identity would rebuild the deck.gl layer and
+  // re-run getFillColor for every point.
+  const prevInactiveRef = useRef(new Set());
   const inactiveSet = useMemo(() => {
-    const s = new Set();
+    const next = new Set();
     for (const h of hotspots) {
       if (iotStatusOf(h, iotStatusByKey[h.entityKey], iotDataThrough) === "inactive") {
-        s.add(h.entityKey);
+        next.add(h.entityKey);
       }
     }
-    return s;
+    const prev = prevInactiveRef.current;
+    if (next.size === prev.size && [...next].every((k) => prev.has(k))) return prev;
+    prevInactiveRef.current = next;
+    return next;
   }, [hotspots, iotStatusByKey, iotDataThrough]);
 
   // Fit to bounds once per wallet (keyed on wallet+size, so switching to another
@@ -216,8 +224,9 @@ function LegendRow({ color, label }) {
 
 function FleetMapDetail({ hotspot, rewards, iotStatus, iotDataThrough, onClose }) {
   const earning = isEarning(rewards);
-  // Real verdicts only — "pending" (scan running) and null (non-IoT) stay quiet.
-  const showStatus = ["active", "inactive", "settingUp", "unknown"].includes(iotStatus);
+  // Resolved verdicts only — "pending" (scan running) and null (non-IoT) have
+  // no label and stay quiet.
+  const showStatus = iotStatus in IOT_STATUS_LABEL;
   return (
     <div className="absolute bottom-3 left-3 right-3 max-w-sm rounded-xl bg-surface-raised/95 p-3 text-sm shadow-lg backdrop-blur sm:right-auto">
       <div className="flex items-start justify-between gap-2">
@@ -227,10 +236,7 @@ function FleetMapDetail({ hotspot, rewards, iotStatus, iotDataThrough, onClose }
             <span>{deviceLabel(hotspot.deviceType)}</span>
             {showStatus && (
               <span className="inline-flex items-center gap-1">
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: IOT_STATUS_COLOR[iotStatus] }}
-                />
+                <Dot color={IOT_STATUS_COLOR[iotStatus]} />
                 {IOT_STATUS_LABEL[iotStatus]}
                 {(iotStatus === "active" || iotStatus === "inactive") && iotDataThrough
                   ? ` as of ${fmtDate(iotDataThrough)}`

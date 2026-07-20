@@ -1,6 +1,30 @@
 import { Card, DistroBar, Skeleton } from "./primitives.jsx";
 import { NETWORK_LABEL, NETWORK_COLOR, deviceLabel, plural, fmtDate } from "../format.js";
 
+/** One count tile in the connectivity/activity pairs. */
+function StatTile({ value, label, tone }) {
+  const styles =
+    tone === "ok"
+      ? {
+          box: "bg-emerald-50 dark:bg-emerald-950/30",
+          value: "text-emerald-700 dark:text-emerald-300",
+          label: "text-emerald-700/70 dark:text-emerald-300/70",
+        }
+      : tone === "warn"
+        ? {
+            box: "bg-rose-50 dark:bg-rose-950/30",
+            value: "text-rose-700 dark:text-rose-300",
+            label: "text-rose-700/70 dark:text-rose-300/70",
+          }
+        : { box: "bg-surface-inset", value: "text-content-secondary", label: "text-content-tertiary" };
+  return (
+    <div className={`flex-1 rounded-lg px-3 py-2 ${styles.box}`}>
+      <div className={`text-lg font-semibold tabular-nums ${styles.value}`}>{value}</div>
+      <div className={`text-xs ${styles.label}`}>{label}</div>
+    </div>
+  );
+}
+
 export default function FleetCompositionCard({
   stats,
   rewards,
@@ -24,6 +48,15 @@ export default function FleetCompositionCard({
     .slice(0, 5);
   const earning = rewards?.earning ?? null;
   const idle = rewards?.idle ?? null;
+  // Show live counts once the first flush lands; "…" only before any data.
+  const iotSettled = iotStatusDone || (iotStatus?.counted || 0) > 0;
+  const iotFootnote = [
+    iotStatus?.settingUp > 0 && `${iotStatus.settingUp} setting up`,
+    iotStatus?.unknown > 0 && `${iotStatus.unknown} unknown`,
+    iotDataThrough && `as of ${fmtDate(iotDataThrough)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <Card title="Fleet composition" subtitle={plural(total, "Hotspot")}>
@@ -49,30 +82,10 @@ export default function FleetCompositionCard({
             {!iotStatusDone && <span className="normal-case text-content-tertiary">(scanning…)</span>}
           </div>
           <div className="flex gap-2">
-            <div className="flex-1 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30">
-              <div className="text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
-                {iotStatusDone || iotStatus.counted > 0 ? iotStatus.active : "…"}
-              </div>
-              <div className="text-xs text-emerald-700/70 dark:text-emerald-300/70">Active</div>
-            </div>
-            <div className="flex-1 rounded-lg bg-rose-50 px-3 py-2 dark:bg-rose-950/30">
-              <div className="text-lg font-semibold tabular-nums text-rose-700 dark:text-rose-300">
-                {iotStatusDone || iotStatus.counted > 0 ? iotStatus.inactive : "…"}
-              </div>
-              <div className="text-xs text-rose-700/70 dark:text-rose-300/70">Inactive</div>
-            </div>
+            <StatTile value={iotSettled ? iotStatus.active : "…"} label="Active" tone="ok" />
+            <StatTile value={iotSettled ? iotStatus.inactive : "…"} label="Inactive" tone="warn" />
           </div>
-          {(iotStatus.settingUp > 0 || iotStatus.unknown > 0 || iotDataThrough) && (
-            <div className="mt-1.5 text-[11px] text-content-tertiary">
-              {[
-                iotStatus.settingUp > 0 && `${iotStatus.settingUp} setting up`,
-                iotStatus.unknown > 0 && `${iotStatus.unknown} unknown`,
-                iotDataThrough && `as of ${fmtDate(iotDataThrough)}`,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-          )}
+          {iotFootnote && <div className="mt-1.5 text-[11px] text-content-tertiary">{iotFootnote}</div>}
         </div>
       )}
 
@@ -81,16 +94,8 @@ export default function FleetCompositionCard({
           Activity {!rewardsDone && <span className="normal-case text-content-tertiary">(scanning…)</span>}
         </div>
         <div className="flex gap-2">
-          <div className="flex-1 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30">
-            <div className="text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
-              {earning ?? "…"}
-            </div>
-            <div className="text-xs text-emerald-700/70 dark:text-emerald-300/70">Earning</div>
-          </div>
-          <div className="flex-1 rounded-lg bg-surface-inset px-3 py-2">
-            <div className="text-lg font-semibold tabular-nums text-content-secondary">{idle ?? "…"}</div>
-            <div className="text-xs text-content-tertiary">Idle</div>
-          </div>
+          <StatTile value={earning ?? "…"} label="Earning" tone="ok" />
+          <StatTile value={idle ?? "…"} label="Idle" />
         </div>
       </div>
     </Card>

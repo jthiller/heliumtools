@@ -20,8 +20,10 @@ import {
   IOT_STATUS_COLOR,
 } from "../format.js";
 
-// Sort order for the IoT status column: actionable states first.
+// Sort order for the IoT status column: actionable states first. Non-IoT rows
+// (null status) fall through the ?? to rank last in ascending order.
 const IOT_STATUS_RANK = { inactive: 0, settingUp: 1, unknown: 2, active: 3, pending: 4 };
+const iotStatusRank = (s) => IOT_STATUS_RANK[s] ?? 99;
 const IOT_STATUS_TEXT = {
   active: "text-emerald-600 dark:text-emerald-400",
   inactive: "text-rose-600 dark:text-rose-400",
@@ -74,6 +76,14 @@ export default function FleetTableCard({
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [copied, setCopied] = useState(null);
 
+  // Status is deliberately NOT baked into the memo'd rows: the scan's periodic
+  // statusByKey flushes would otherwise re-clone and re-sort the whole table
+  // each time. Cells derive it per render (O(1) lookup per visible row), and
+  // the memo depends on the live map only while actually sorting by status.
+  const statusOf = (h) => iotStatusOf(h, iotStatusByKey?.[h.entityKey], iotDataThrough);
+  const statusSortByKey = sort.key === "status" ? iotStatusByKey : null;
+  const statusSortDataThrough = sort.key === "status" ? iotDataThrough : null;
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = hotspots || [];
@@ -88,13 +98,7 @@ export default function FleetTableCard({
     }
     const enriched = list.map((h) => {
       const r = rewardsByKey[h.entityKey];
-      return {
-        ...h,
-        _earning: isEarning(r),
-        _iotLife: lifetimeUi(r, "iot"),
-        _hntLife: lifetimeUi(r, "hnt"),
-        _iotStatus: iotStatusOf(h, iotStatusByKey?.[h.entityKey], iotDataThrough),
-      };
+      return { ...h, _earning: isEarning(r), _iotLife: lifetimeUi(r, "iot"), _hntLife: lifetimeUi(r, "hnt") };
     });
     const dir = sort.dir === "asc" ? 1 : -1;
     enriched.sort((a, b) => {
@@ -104,11 +108,7 @@ export default function FleetTableCard({
         case "location": av = `${a.state || ""}${a.city || ""}`; bv = `${b.state || ""}${b.city || ""}`; break;
         case "created": av = a.createdAt || ""; bv = b.createdAt || ""; break;
         case "lifetime": av = a._hntLife; bv = b._hntLife; break;
-        // Non-IoT rows (no status) rank after every real status (ascending).
-        case "status":
-          av = a._iotStatus === null ? 99 : IOT_STATUS_RANK[a._iotStatus];
-          bv = b._iotStatus === null ? 99 : IOT_STATUS_RANK[b._iotStatus];
-          break;
+        case "status": av = iotStatusRank(statusOf(a)); bv = iotStatusRank(statusOf(b)); break;
         default: av = (a.name || "").toLowerCase(); bv = (b.name || "").toLowerCase();
       }
       if (av < bv) return -1 * dir;
@@ -116,7 +116,10 @@ export default function FleetTableCard({
       return 0;
     });
     return enriched;
-  }, [hotspots, rewardsByKey, iotStatusByKey, iotDataThrough, query, sort]);
+    // statusSort* stand in for the live status map/anchor so status flushes only
+    // invalidate the pipeline while the user is sorted by status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hotspots, rewardsByKey, statusSortByKey, statusSortDataThrough, query, sort]);
 
   const onSort = useCallback(
     (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" })),
@@ -156,7 +159,7 @@ export default function FleetTableCard({
     const statusCsv = (s) => (s === null || s === "pending" ? "" : s === "settingUp" ? "setting_up" : s);
     for (const r of rows) {
       lines.push(
-        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, statusCsv(r._iotStatus), r._iotLife, r._hntLife]
+        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, statusCsv(statusOf(r)), r._iotLife, r._hntLife]
           .map(esc)
           .join(","),
       );
@@ -168,7 +171,9 @@ export default function FleetTableCard({
     a.download = "hotspots.csv";
     a.click();
     URL.revokeObjectURL(url);
-  }, [rows]);
+    // statusOf reads iotStatusByKey/iotDataThrough — export reflects the live scan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, iotStatusByKey, iotDataThrough]);
 
   return (
     <Card
@@ -250,7 +255,7 @@ export default function FleetTableCard({
                   {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
                 </td>
                 <td className="px-3 py-2">
-                  <IotStatusCell status={r._iotStatus} />
+                  <IotStatusCell status={statusOf(r)} />
                 </td>
                 <td className="px-3 py-2">
                   {r._earning == null ? (

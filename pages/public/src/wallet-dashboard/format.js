@@ -103,13 +103,35 @@ export const IOT_STATUS_LABEL = {
   unknown: "Unknown",
 };
 
+// The canonical set of resolved verdicts `iotStatusOf` can settle on. Consumers
+// keying per-surface maps (sort ranks, text classes, CSV names) key off these.
+export const IOT_STATUSES = Object.keys(IOT_STATUS_LABEL);
+
 // Dot/marker colors (shared by the table and the map, like NETWORK_COLOR).
 export const IOT_STATUS_COLOR = {
-  active: "#059669", // emerald-600 — matches the IoT network color
+  active: NETWORK_COLOR.iot,
   inactive: "#e11d48", // rose-600
   settingUp: "#d97706", // amber-600
   unknown: "#94a3b8", // slate-400
 };
+
+/**
+ * Whether a fleet row participates in IoT connectivity at all — on the IoT
+ * network AND addressable by entityKey. The fetch hook's eligibility filter and
+ * `iotStatusOf`'s null-gate share this predicate so "pending" means exactly
+ * "eligible for a lookup that hasn't resolved yet".
+ */
+export function hasIotStatus(hotspot) {
+  return Boolean(hotspot?.entityKey) && (hotspot?.networks || []).includes("iot");
+}
+
+// `dataThrough` is one shared ISO string re-checked for every Hotspot — parse
+// it once per value, not per call.
+let dataThroughMemo = { iso: null, ms: NaN };
+function dataThroughToMs(iso) {
+  if (dataThroughMemo.iso !== iso) dataThroughMemo = { iso, ms: new Date(iso).getTime() };
+  return dataThroughMemo.ms;
+}
 
 /**
  * Derive one Hotspot's IoT connectivity state from its api-iot lookup entry.
@@ -120,22 +142,23 @@ export const IOT_STATUS_COLOR = {
  *   "unknown"             — lookup failed, or the address isn't in the
  *                           service's inventory
  *   "pending"             — not fetched yet (scan still running)
- *   null                  — not an IoT Hotspot (no IoT status applies)
+ *   null                  — no IoT status applies (see hasIotStatus)
+ * Resolved verdicts are exactly the IOT_STATUSES keys. Invalid dates compare
+ * false and simply fall through to inactive/unknown.
  */
 export function iotStatusOf(hotspot, entry, dataThrough) {
-  if (!(hotspot?.networks || []).includes("iot")) return null;
+  if (!hasIotStatus(hotspot)) return null;
   if (entry === undefined) return "pending";
   if (entry === null) return "unknown";
-  const active = !entry.notFound && entry.status === 0;
-  if (!active && dataThrough && hotspot.createdAt) {
-    const created = new Date(hotspot.createdAt);
-    const through = new Date(dataThrough);
-    if (!Number.isNaN(created.getTime()) && !Number.isNaN(through.getTime()) && created > through) {
-      return "settingUp";
-    }
+  if (!entry.notFound && entry.status === 0) return "active";
+  if (
+    dataThrough &&
+    hotspot.createdAt &&
+    new Date(hotspot.createdAt).getTime() > dataThroughToMs(dataThrough)
+  ) {
+    return "settingUp";
   }
-  if (entry.notFound) return "unknown";
-  return active ? "active" : "inactive";
+  return entry.notFound ? "unknown" : "inactive";
 }
 
 /**
@@ -144,7 +167,8 @@ export function iotStatusOf(hotspot, entry, dataThrough) {
  * the progressive scan.
  */
 export function aggregateIotStatus(hotspots, statusByKey, dataThrough) {
-  const agg = { active: 0, inactive: 0, settingUp: 0, unknown: 0, iotTotal: 0, counted: 0 };
+  const agg = { iotTotal: 0, counted: 0 };
+  for (const s of IOT_STATUSES) agg[s] = 0;
   for (const h of hotspots || []) {
     const s = iotStatusOf(h, statusByKey?.[h.entityKey], dataThrough);
     if (s === null) continue;
