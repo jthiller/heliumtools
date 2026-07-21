@@ -45,6 +45,23 @@ export function fmtDate(value) {
   return dateFmt.format(d);
 }
 
+const dateFmtUtc = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+/** Format an instant as its UTC calendar date. For per-UTC-day feed anchors
+ * (the IoT liveness `dataThrough`) — local-time formatting would shift the
+ * data day by one for viewers west of UTC. */
+export function fmtDateUtc(value) {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return dateFmtUtc.format(d);
+}
+
 /** Relative time from unix seconds (transactions) → "3h ago", "2d ago". */
 export function fmtAgoSeconds(sec) {
   if (!sec) return "—";
@@ -89,6 +106,99 @@ export const DEVICE_LABEL = {
 /** Human label for a device-type key (falls back to the raw key). */
 export function deviceLabel(key) {
   return DEVICE_LABEL[key] || key || "Unknown";
+}
+
+// ── IoT connectivity (api-iot.heliumtools.org) ───────────────────────────────
+// Per-day granularity: "active" = connected to the Helium Packet Router during
+// the liveness feed's most recent reported day, anchored to `dataThrough` (the
+// feed's newest event timestamp) — not "online right now".
+
+export const IOT_STATUS_LABEL = {
+  active: "Active",
+  inactive: "Inactive",
+  settingUp: "Setting up",
+  unknown: "Unknown",
+};
+
+// The canonical set of resolved verdicts `iotStatusOf` can settle on (the
+// IOT_STATUS_LABEL keys). Internal — consumers get the vocabulary via LABEL.
+const IOT_STATUSES = Object.keys(IOT_STATUS_LABEL);
+
+// Dot/marker colors (shared by the table and the map, like NETWORK_COLOR).
+export const IOT_STATUS_COLOR = {
+  active: NETWORK_COLOR.iot,
+  inactive: "#e11d48", // rose-600
+  settingUp: "#d97706", // amber-600
+  unknown: "#94a3b8", // slate-400
+};
+
+/**
+ * Whether a fleet row participates in IoT connectivity at all — on the IoT
+ * network AND addressable by entityKey. The fetch hook's eligibility filter and
+ * `iotStatusOf`'s null-gate share this predicate so "pending" means exactly
+ * "eligible for a lookup that hasn't resolved yet".
+ */
+export function hasIotStatus(hotspot) {
+  return Boolean(hotspot?.entityKey) && (hotspot?.networks || []).includes("iot");
+}
+
+/**
+ * Derive one Hotspot's IoT connectivity state from its api-iot lookup entry.
+ *   "active" | "inactive" — the service's per-day liveness verdict
+ *   "settingUp"           — created after the feed's newest data, so it hasn't
+ *                           been reported on yet (per the API reference: treat
+ *                           as setting up, not inactive)
+ *   "unknown"             — lookup failed, or the address isn't in the
+ *                           service's inventory
+ *   "pending"             — not fetched yet (scan still running)
+ *   null                  — no IoT status applies (see hasIotStatus)
+ * Resolved verdicts are exactly the IOT_STATUS_LABEL keys. Invalid dates
+ * compare false and simply fall through to inactive/unknown.
+ */
+export function iotStatusOf(hotspot, entry, dataThrough) {
+  if (!hasIotStatus(hotspot)) return null;
+  if (entry === undefined) return "pending";
+  if (entry === null) return "unknown";
+  if (!entry.notFound && entry.status === 0) return "active";
+  // Anchor "created after the feed" to the dataThrough this entry was computed
+  // against; the fleet-wide anchor is only a fallback (404 entries carry none).
+  // Mixing them would mispair verdict and anchor when a scan spans a feed-day
+  // rollover (per-address edge caches expire independently).
+  const anchor = entry.dataThrough ?? dataThrough;
+  if (anchor && hotspot.createdAt && new Date(hotspot.createdAt).getTime() > new Date(anchor).getTime()) {
+    return "settingUp";
+  }
+  return entry.notFound ? "unknown" : "inactive";
+}
+
+/**
+ * Fleet rows whose derived IoT status is "inactive" — the single definition of
+ * "inactive for display", shared by the map highlight and the insights list so
+ * the two surfaces can't disagree.
+ */
+export function iotInactiveHotspots(hotspots, statusByKey, dataThrough) {
+  return (hotspots || []).filter(
+    (h) => iotStatusOf(h, statusByKey?.[h.entityKey], dataThrough) === "inactive",
+  );
+}
+
+/**
+ * Aggregate per-Hotspot IoT connectivity into fleet counts for the tiles/hero.
+ * `counted` excludes still-pending lookups so percentages stay honest during
+ * the progressive scan.
+ */
+export function aggregateIotStatus(hotspots, statusByKey, dataThrough) {
+  const agg = { iotTotal: 0, counted: 0 };
+  for (const s of IOT_STATUSES) agg[s] = 0;
+  for (const h of hotspots || []) {
+    const s = iotStatusOf(h, statusByKey?.[h.entityKey], dataThrough);
+    if (s === null) continue;
+    agg.iotTotal++;
+    if (s === "pending") continue;
+    agg.counted++;
+    agg[s]++;
+  }
+  return agg;
 }
 
 /** Reward-token decimals (IOT/MOBILE = 6, HNT = 8). */

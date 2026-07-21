@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 import {
   MagnifyingGlassIcon,
   ArrowDownTrayIcon,
@@ -8,8 +8,87 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
-import { Card, Skeleton, SEARCH_INPUT_CLASS } from "./primitives.jsx";
-import { deviceLabel, fmtDate, fmtToken, lifetimeUi, isEarning } from "../format.js";
+import { Card, Dot, Skeleton, SEARCH_INPUT_CLASS } from "./primitives.jsx";
+import {
+  deviceLabel,
+  fmtDate,
+  fmtToken,
+  lifetimeUi,
+  isEarning,
+  iotStatusOf,
+  IOT_STATUS_LABEL,
+  IOT_STATUS_COLOR,
+} from "../format.js";
+
+// Per-surface maps keyed by the iotStatusOf vocabulary (IOT_STATUS_LABEL keys
+// plus "pending"). Sort ranks put actionable states first; non-IoT rows (null
+// status) fall through the ?? to rank last in ascending order.
+const IOT_STATUS_RANK = { inactive: 0, settingUp: 1, unknown: 2, active: 3, pending: 4 };
+const iotStatusRank = (s) => IOT_STATUS_RANK[s] ?? 99;
+const IOT_STATUS_TEXT = {
+  active: "text-emerald-600 dark:text-emerald-400",
+  inactive: "text-rose-600 dark:text-rose-400",
+  settingUp: "text-amber-600 dark:text-amber-400",
+  unknown: "text-content-tertiary",
+};
+// Machine names for the CSV export. "pending" is emitted as-is so a mid-scan
+// export is distinguishable from a non-IoT row (blank); only null maps to "".
+const IOT_STATUS_CSV = {
+  active: "active",
+  inactive: "inactive",
+  settingUp: "setting_up",
+  unknown: "unknown",
+  pending: "pending",
+};
+
+/** Table cell for the IoT connectivity column. */
+function IotStatusCell({ status }) {
+  if (status === null) return <span className="text-content-tertiary">—</span>;
+  if (status === "pending") return <span className="text-content-tertiary">…</span>;
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${IOT_STATUS_TEXT[status]}`}>
+      <Dot color={IOT_STATUS_COLOR[status]} />
+      {IOT_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+/**
+ * One table row, memo'd so the progressive scans stay cheap: a status flush
+ * re-renders only the rows whose `status` prop actually changed (row object
+ * identities are stable across status flushes — see the rows memo below).
+ * Rewards flushes re-clone the row objects, so those still repaint every row.
+ */
+const FleetRow = memo(function FleetRow({ row: r, status, rewardsDone }) {
+  return (
+    <tr className="hover:bg-surface-inset/60">
+      <td className="px-3 py-2">
+        <div className="max-w-[180px] truncate font-medium text-content">{r.name || "—"}</div>
+        <div className="max-w-[180px] truncate font-mono text-[10px] text-content-tertiary">{r.entityKey}</div>
+      </td>
+      <td className="px-3 py-2 text-content-secondary">{deviceLabel(r.deviceType)}</td>
+      <td className="px-3 py-2 text-content-secondary">
+        {[r.city, r.state].filter(Boolean).join(", ") || "—"}
+      </td>
+      <td className="px-3 py-2 text-content-secondary">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
+      <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
+        {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
+      </td>
+      <td className="px-3 py-2">
+        <IotStatusCell status={status} />
+      </td>
+      <td className="px-3 py-2">
+        {r._earning == null ? (
+          <span className="text-content-tertiary">…</span>
+        ) : r._earning ? (
+          <span className="text-emerald-600 dark:text-emerald-400">Earning</span>
+        ) : (
+          <span className="text-content-tertiary">Idle</span>
+        )}
+      </td>
+    </tr>
+  );
+});
 
 const ACTION_BTN =
   "inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-content-secondary transition hover:border-content-tertiary";
@@ -32,10 +111,25 @@ function Th({ children, sortKey, sort, onSort, className = "" }) {
   );
 }
 
-export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, loading }) {
+export default function FleetTableCard({
+  hotspots,
+  rewardsByKey,
+  rewardsDone,
+  iotStatusByKey,
+  iotDataThrough,
+  loading,
+}) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [copied, setCopied] = useState(null);
+
+  // Status is deliberately NOT baked into the memo'd rows: the scan's periodic
+  // statusByKey flushes would otherwise re-clone and re-sort the whole table
+  // each time. Cells derive it per render (O(1) lookup per visible row), and
+  // the memo depends on the live map only while actually sorting by status.
+  const statusOf = (h) => iotStatusOf(h, iotStatusByKey?.[h.entityKey], iotDataThrough);
+  const statusSortByKey = sort.key === "status" ? iotStatusByKey : null;
+  const statusSortDataThrough = sort.key === "status" ? iotDataThrough : null;
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -54,6 +148,10 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
       return { ...h, _earning: isEarning(r), _iotLife: lifetimeUi(r, "iot"), _hntLife: lifetimeUi(r, "hnt") };
     });
     const dir = sort.dir === "asc" ? 1 : -1;
+    // Derive status ranks once per row, not once per comparison (n vs n·log n
+    // iotStatusOf calls per sort).
+    const rankByKey =
+      sort.key === "status" ? new Map(enriched.map((h) => [h.entityKey, iotStatusRank(statusOf(h))])) : null;
     enriched.sort((a, b) => {
       let av, bv;
       switch (sort.key) {
@@ -61,6 +159,7 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
         case "location": av = `${a.state || ""}${a.city || ""}`; bv = `${b.state || ""}${b.city || ""}`; break;
         case "created": av = a.createdAt || ""; bv = b.createdAt || ""; break;
         case "lifetime": av = a._hntLife; bv = b._hntLife; break;
+        case "status": av = rankByKey.get(a.entityKey); bv = rankByKey.get(b.entityKey); break;
         default: av = (a.name || "").toLowerCase(); bv = (b.name || "").toLowerCase();
       }
       if (av < bv) return -1 * dir;
@@ -68,7 +167,10 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
       return 0;
     });
     return enriched;
-  }, [hotspots, rewardsByKey, query, sort]);
+    // statusSort* stand in for the live status map/anchor so status flushes
+    // only invalidate the pipeline while the user is sorted by status. Any new
+    // statusOf use inside this memo must go through the same stand-ins.
+  }, [hotspots, rewardsByKey, statusSortByKey, statusSortDataThrough, query, sort]);
 
   const onSort = useCallback(
     (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" })),
@@ -95,7 +197,7 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
   const downloadCsv = useCallback(() => {
     const header = [
       "name", "entity_key", "asset_id", "network", "device_type",
-      "city", "state", "country", "h3_location", "created_at", "lifetime_iot", "lifetime_hnt",
+      "city", "state", "country", "h3_location", "created_at", "iot_status", "lifetime_iot", "lifetime_hnt",
     ];
     const esc = (v) => {
       let s = v == null ? "" : String(v);
@@ -106,7 +208,7 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
     const lines = [header.join(",")];
     for (const r of rows) {
       lines.push(
-        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, r._iotLife, r._hntLife]
+        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, IOT_STATUS_CSV[statusOf(r)] ?? "", r._iotLife, r._hntLife]
           .map(esc)
           .join(","),
       );
@@ -118,7 +220,8 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
     a.download = "hotspots.csv";
     a.click();
     URL.revokeObjectURL(url);
-  }, [rows]);
+    // statusOf reads iotStatusByKey/iotDataThrough — export reflects the live scan.
+  }, [rows, iotStatusByKey, iotDataThrough]);
 
   return (
     <Card
@@ -161,49 +264,32 @@ export default function FleetTableCard({ hotspots, rewardsByKey, rewardsDone, lo
               <Th sortKey="location" sort={sort} onSort={onSort}>Location</Th>
               <Th sortKey="created" sort={sort} onSort={onSort}>Created</Th>
               <Th sortKey="lifetime" sort={sort} onSort={onSort} className="text-right">Lifetime HNT</Th>
-              <th className="px-3 py-2 font-medium">Status</th>
+              <Th sortKey="status" sort={sort} onSort={onSort}>
+                <span title="IoT connectivity: connected to the Helium Packet Router during the most recent reported day">
+                  Status
+                </span>
+              </Th>
+              <th className="px-3 py-2 font-medium">Rewards</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={`sk-${i}`}>
-                  <td colSpan={6} className="px-3 py-2">
+                  <td colSpan={7} className="px-3 py-2">
                     <Skeleton className="h-5 w-full" />
                   </td>
                 </tr>
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-sm text-content-tertiary">
+                <td colSpan={7} className="px-3 py-10 text-center text-sm text-content-tertiary">
                   {query ? "No Hotspots match your search." : "No Hotspots."}
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
-              <tr key={r.entityKey} className="hover:bg-surface-inset/60">
-                <td className="px-3 py-2">
-                  <div className="max-w-[180px] truncate font-medium text-content">{r.name || "—"}</div>
-                  <div className="max-w-[180px] truncate font-mono text-[10px] text-content-tertiary">{r.entityKey}</div>
-                </td>
-                <td className="px-3 py-2 text-content-secondary">{deviceLabel(r.deviceType)}</td>
-                <td className="px-3 py-2 text-content-secondary">
-                  {[r.city, r.state].filter(Boolean).join(", ") || "—"}
-                </td>
-                <td className="px-3 py-2 text-content-secondary">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
-                  {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
-                </td>
-                <td className="px-3 py-2">
-                  {r._earning == null ? (
-                    <span className="text-content-tertiary">…</span>
-                  ) : r._earning ? (
-                    <span className="text-emerald-600 dark:text-emerald-400">Earning</span>
-                  ) : (
-                    <span className="text-content-tertiary">Idle</span>
-                  )}
-                </td>
-              </tr>
+                <FleetRow key={r.entityKey} row={r} status={statusOf(r)} rewardsDone={rewardsDone} />
               ))
             )}
           </tbody>

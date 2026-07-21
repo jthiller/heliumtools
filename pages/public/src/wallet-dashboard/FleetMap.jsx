@@ -7,11 +7,17 @@ import { cellToLatLng } from "h3-js";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import useDarkMode from "../lib/useDarkMode.js";
 import CopyButton from "../components/CopyButton.jsx";
+import { Dot } from "./cards/primitives.jsx";
 import {
   deviceLabel,
   isEarning,
+  fmtDateUtc,
   fmtToken,
   lifetimeUi,
+  iotStatusOf,
+  iotInactiveHotspots,
+  IOT_STATUS_LABEL,
+  IOT_STATUS_COLOR,
   NETWORK_COLOR,
   accountUrl,
 } from "./format.js";
@@ -25,6 +31,7 @@ const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)
 const IOT_COLOR = hexToRgb(NETWORK_COLOR.iot);
 const MOBILE_COLOR = hexToRgb(NETWORK_COLOR.mobile);
 const IDLE_COLOR = [148, 163, 184]; // map-only "idle" state, no card equivalent
+const INACTIVE_COLOR = hexToRgb(IOT_STATUS_COLOR.inactive);
 
 const INITIAL_VIEW = { longitude: -98.5, latitude: 39.8, zoom: 3.2, pitch: 0, bearing: 0 };
 
@@ -37,7 +44,13 @@ function h3HexToLatLng(hex) {
   }
 }
 
-export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = null }) {
+export default function FleetMap({
+  hotspots = [],
+  rewardsByKey = {},
+  iotStatusByKey = {},
+  iotDataThrough = null,
+  wallet = null,
+}) {
   const dark = useDarkMode();
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [selected, setSelected] = useState(null); // entityKey
@@ -62,6 +75,15 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
     }
     return s;
   }, [rewardsByKey]);
+
+  // IoT Hotspots the liveness feed marked inactive — highlighted over the idle
+  // dimming (an offline Hotspot is the most actionable thing on this map).
+  // Built from the mappable subset so the legend row only appears when an
+  // inactive dot is actually drawn.
+  const inactiveSet = useMemo(
+    () => new Set(iotInactiveHotspots(mappable, iotStatusByKey, iotDataThrough).map((h) => h.entityKey)),
+    [mappable, iotStatusByKey, iotDataThrough],
+  );
 
   // Fit to bounds once per wallet (keyed on wallet+size, so switching to another
   // wallet re-centers even if it has the same Hotspot count) without fighting pan/zoom.
@@ -101,11 +123,13 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
         data: mappable,
         getPosition: (d) => [d.coords[1], d.coords[0]],
         getFillColor: (d) =>
-          idleSet.has(d.entityKey)
-            ? IDLE_COLOR
-            : d.network === "mobile"
-              ? MOBILE_COLOR
-              : IOT_COLOR,
+          inactiveSet.has(d.entityKey)
+            ? INACTIVE_COLOR
+            : idleSet.has(d.entityKey)
+              ? IDLE_COLOR
+              : d.network === "mobile"
+                ? MOBILE_COLOR
+                : IOT_COLOR,
         getLineColor: (d) => (d.entityKey === selected ? [255, 255, 255] : [255, 255, 255, 150]),
         getRadius: (d) => (d.entityKey === selected ? 7 : 4),
         radiusMinPixels: 3,
@@ -117,13 +141,13 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
         highlightColor: [14, 165, 233, 120],
         onClick: (info) => info.object && setSelected(info.object.entityKey),
         updateTriggers: {
-          getFillColor: [idleSet],
+          getFillColor: [idleSet, inactiveSet],
           getLineColor: [selected],
           getRadius: [selected],
         },
       }),
     ],
-    [mappable, idleSet, selected],
+    [mappable, idleSet, inactiveSet, selected],
   );
 
   const selectedHotspot = useMemo(
@@ -149,6 +173,9 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
       <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1 rounded-lg bg-surface-raised/90 px-3 py-2 text-xs shadow-soft backdrop-blur">
         <LegendRow color={`rgb(${IOT_COLOR.join(",")})`} label="IoT" />
         <LegendRow color={`rgb(${MOBILE_COLOR.join(",")})`} label="Mobile" />
+        {inactiveSet.size > 0 && (
+          <LegendRow color={`rgb(${INACTIVE_COLOR.join(",")})`} label="Inactive (IoT)" />
+        )}
         {idleSet.size > 0 && <LegendRow color={`rgb(${IDLE_COLOR.join(",")})`} label="Idle (no rewards)" />}
       </div>
 
@@ -164,6 +191,12 @@ export default function FleetMap({ hotspots = [], rewardsByKey = {}, wallet = nu
         <FleetMapDetail
           hotspot={selectedHotspot}
           rewards={rewardsByKey[selectedHotspot.entityKey]}
+          iotStatus={iotStatusOf(
+            selectedHotspot,
+            iotStatusByKey[selectedHotspot.entityKey],
+            iotDataThrough,
+          )}
+          iotDataThrough={iotDataThrough}
           onClose={() => setSelected(null)}
         />
       )}
@@ -180,15 +213,27 @@ function LegendRow({ color, label }) {
   );
 }
 
-function FleetMapDetail({ hotspot, rewards, onClose }) {
+function FleetMapDetail({ hotspot, rewards, iotStatus, iotDataThrough, onClose }) {
   const earning = isEarning(rewards);
+  // Resolved verdicts only — "pending" (scan running) and null (non-IoT) have
+  // no label and stay quiet.
+  const showStatus = iotStatus in IOT_STATUS_LABEL;
   return (
     <div className="absolute bottom-3 left-3 right-3 max-w-sm rounded-xl bg-surface-raised/95 p-3 text-sm shadow-lg backdrop-blur sm:right-auto">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate font-medium text-content">{hotspot.name || "Unnamed Hotspot"}</div>
-          <div className="mt-0.5 text-xs text-content-tertiary">
-            {deviceLabel(hotspot.deviceType)}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-content-tertiary">
+            <span>{deviceLabel(hotspot.deviceType)}</span>
+            {showStatus && (
+              <span className="inline-flex items-center gap-1">
+                <Dot color={IOT_STATUS_COLOR[iotStatus]} />
+                {IOT_STATUS_LABEL[iotStatus]}
+                {(iotStatus === "active" || iotStatus === "inactive") && iotDataThrough
+                  ? ` as of ${fmtDateUtc(iotDataThrough)}`
+                  : ""}
+              </span>
+            )}
           </div>
         </div>
         <button

@@ -1,7 +1,10 @@
+import { memo } from "react";
 import { Card, Stat, Skeleton, CardEmpty, Badge } from "./primitives.jsx";
 import { fmtToken } from "../format.js";
 
-export default function GovernanceCard({ positions, loading, error, wallet }) {
+// memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
+// this card's props are referentially stable across those, so skip the churn.
+export default memo(function GovernanceCard({ positions, loading, error, wallet }) {
   const govHref = wallet ? `/ve-hnt?wallet=${encodeURIComponent(wallet)}` : "/ve-hnt";
   if (loading) {
     return (
@@ -67,4 +70,4 @@ export default function GovernanceCard({ positions, loading, error, wallet }) {
       )}
     </Card>
   );
-}
+});

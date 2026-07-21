@@ -27,8 +27,14 @@ re-implementing on-chain logic.
   reloads don't consume the rate limit. The client fans the fleet out to this in
   batches of 50. Lifetime/earning-vs-idle analytics derive from it.
 
-**Served by OTHER tools, called directly from the client:**
+**Served by OTHER tools/services, called directly from the client:**
 - Governance: `GET /ve-hnt/positions?wallet=`
+- IoT connectivity: `GET https://api-iot.heliumtools.org/v1/gateways/{address}`
+  (helium-iot-service, a separate deployment — source at
+  `jthiller/helium-iot-service`). One GET per IoT Hotspot (there is no batch
+  endpoint by design); the service is keyless, CORS-open, and edge-cached ~5 min
+  specifically to absorb per-row dashboard bursts, so the worker does NOT proxy
+  or cache it.
 - (The shared `POST /hotspot-claimer/wallet/rewards` is intentionally NOT used by
   the dashboard — it must stay live/uncached for actual claims. The dashboard owns
   the cached `/rewards` path above instead.)
@@ -57,12 +63,29 @@ re-implementing on-chain logic.
 - `pages/public/src/wallet-dashboard/FleetMap.jsx` — deck.gl + MapLibre map
   (adapted from the Hotspot Map tool).
 - `pages/public/src/wallet-dashboard/cards/*.jsx` — one component per bento tile.
+- `pages/public/src/wallet-dashboard/useFleetIotStatus.js` — progressive
+  per-IoT-Hotspot fan-out to api-iot (concurrency 8, chunked state flushes);
+  returns `statusByKey` + the feed's `dataThrough`.
 - `pages/public/src/lib/walletDashboardApi.js` — API client.
+- `pages/public/src/lib/iotStatusApi.js` — api-iot.heliumtools.org client
+  (`fetchGatewayStatus`; 404 ⇒ `{ notFound: true }`).
 
 ## Gotchas
 
-- **Never read Entity API `is_active`** — it is always `false`. Activity is
-  derived from rewards (zero lifetime ⇒ idle). See the repo memory note.
+- **Never read Entity API `is_active`** — it is always `false`. Earning/idle is
+  derived from rewards (zero lifetime ⇒ idle). See the repo memory note. IoT
+  *connectivity* (Active/Inactive) is a separate signal from api-iot (below) —
+  the two coexist: connectivity says "connected recently", earning says "has
+  ever rewarded".
+- **IoT status semantics** (api-iot.heliumtools.org): `status: 0` = active =
+  "connected to the Helium Packet Router during the most recent reported day".
+  Liveness lands once per UTC day, anchored to `dataThrough` (the feed's newest
+  event timestamp), never wall-clock — do NOT present it as "online right now";
+  the UI shows "as of `dataThrough`". A Hotspot created *after* `dataThrough`
+  hasn't been reported on yet ⇒ render "Setting up", not "Inactive"
+  (`iotStatusOf` in `format.js` owns this derivation). 404s and failed lookups
+  render "Unknown" — never mislabeled inactive. Mobile-only Hotspots have no
+  IoT status ("—").
 - The reward fan-out runs client-side with bounded concurrency, in batches of 50
   to the cached `/rewards` endpoint. Because rewards distribute ~daily, results are
   KV-cached (~15 min) and the endpoint is cache-first, so reloads are free and don't

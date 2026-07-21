@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Card, Skeleton, CardEmpty } from "./primitives.jsx";
 import { plural } from "../format.js";
 
@@ -8,7 +9,9 @@ function monthLabel(ym) {
   return `${months[Number(m) - 1] || "?"} ’${y.slice(2)}`;
 }
 
-export default function DeploymentTimelineCard({ timeline }) {
+// memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
+// this card's props are referentially stable across those, so skip the churn.
+export default memo(function DeploymentTimelineCard({ timeline }) {
   if (!timeline) {
     return (
       <Card title="Deployment timeline">
@@ -49,4 +52,4 @@ export default function DeploymentTimelineCard({ timeline }) {
       </div>
     </Card>
   );
-}
+});

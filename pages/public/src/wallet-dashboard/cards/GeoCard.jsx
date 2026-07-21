@@ -1,7 +1,10 @@
+import { memo } from "react";
 import { Card, DistroBar, Skeleton, CardEmpty } from "./primitives.jsx";
 import { plural } from "../format.js";
 
-export default function GeoCard({ regions }) {
+// memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
+// this card's props are referentially stable across those, so skip the churn.
+export default memo(function GeoCard({ regions }) {
   if (!regions) {
     return (
       <Card title="Geographic distribution">
@@ -29,4 +32,4 @@ export default function GeoCard({ regions }) {
       )}
     </Card>
   );
-}
+});

@@ -49,9 +49,16 @@ function HeroStat({ label, value, valueClass = "text-content", sub }) {
   );
 }
 
-export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, prices, governance, govLoading }) {
+export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, prices, governance, govLoading }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
+  // IoT connectivity: share of IoT Hotspots the liveness feed actually REPORTED
+  // on (active + inactive) that connected during its most recent reported day.
+  // Unknown (failed lookups) and setting-up Hotspots are excluded from the
+  // denominator — otherwise an api-iot outage would render as "IoT Active 0%",
+  // indistinguishable from the whole fleet being offline.
+  const iotKnown = (iotStatus?.active || 0) + (iotStatus?.inactive || 0);
+  const iotActivePct = iotKnown ? Math.round((iotStatus.active / iotKnown) * 100) : null;
   // Wallet-wide unclaimed value: Hotspot pending + veHNT delegation pending.
   const unclaimedUsd = unclaimedTotalUsd(rewards, governance, prices);
   // "…" only while a source is still loading and we have nothing yet.
@@ -95,6 +102,13 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
         <div className="flex flex-wrap items-stretch gap-y-5 divide-x divide-border">
           <HeroStat label="Hotspots" value={loading ? "—" : fmtCount(fleetCount)} />
           <HeroStat label="Oldest Hotspot" value={loading ? "—" : fmtDate(summary?.fleet?.oldestCreatedAt)} />
+          {(iotStatus?.iotTotal || 0) > 0 && (
+            <HeroStat
+              label="IoT Active"
+              value={iotActivePct == null ? (iotStatusDone ? "—" : "…") : `${iotActivePct}%`}
+              sub={iotKnown ? `${iotStatus.active} of ${iotKnown} reported` : null}
+            />
+          )}
           <HeroStat
             label="Earning"
             value={earningPct == null ? (rewardsDone ? "—" : "…") : `${earningPct}%`}

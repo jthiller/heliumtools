@@ -1,10 +1,13 @@
+import { memo } from "react";
 import { CheckCircleIcon } from "@heroicons/react/24/outline";
 import { Card, Skeleton, Dot } from "./primitives.jsx";
 import { fmtToken, fmtUsd, TOKEN_META } from "../format.js";
 
 const ORDER = ["hnt", "mobile", "iot", "sol", "dc"];
 
-export default function BalancesCard({ tokens, loading }) {
+// memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
+// this card's props are referentially stable across those, so skip the churn.
+export default memo(function BalancesCard({ tokens, loading }) {
   return (
     <Card title="Token balances">
       {loading ? (
@@ -53,4 +56,4 @@ export default function BalancesCard({ tokens, loading }) {
       )}
     </Card>
   );
-}
+});
