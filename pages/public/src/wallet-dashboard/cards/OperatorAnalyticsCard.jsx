@@ -4,8 +4,10 @@ import {
   fmtCount,
   fmtUsd,
   fmtDate,
+  fmtDateUtc,
   isEarning,
-  iotStatusOf,
+  hasIotStatus,
+  iotInactiveHotspots,
   hotspotLifetimeUsd,
   DC_PER_USD,
 } from "../format.js";
@@ -92,15 +94,13 @@ export default function OperatorAnalyticsCard({
   // Packet Router during the most recent reported day. The most actionable
   // signal here: an earning Hotspot that recently dropped offline shows up in
   // this list long before its rewards flatline.
-  const inactiveIotNames = useMemo(() => {
-    const names = [];
-    for (const h of hotspots || []) {
-      if (iotStatusOf(h, iotStatusByKey?.[h.entityKey], iotDataThrough) === "inactive") {
-        names.push(h.name || h.entityKey);
-      }
-    }
-    return names;
-  }, [hotspots, iotStatusByKey, iotDataThrough]);
+  const inactiveIotNames = useMemo(
+    () => iotInactiveHotspots(hotspots, iotStatusByKey, iotDataThrough).map((h) => h.name || h.entityKey),
+    [hotspots, iotStatusByKey, iotDataThrough],
+  );
+  // Whether the fleet has any IoT Hotspots at all — mobile-only fleets get no
+  // IoT connectivity row (matching how every other surface gates on iotTotal).
+  const hasIotFleet = useMemo(() => (hotspots || []).some(hasIotStatus), [hotspots]);
 
   if (!stats || !analysis) {
     return (
@@ -118,11 +118,13 @@ export default function OperatorAnalyticsCard({
       subtitle={!rewardsDone || !iotStatusDone ? "Fleet scan in progress…" : "Actionable fleet health"}
     >
       <div className="divide-y divide-border">
-        <InsightRow
-          label={`Inactive IoT Hotspots${iotDataThrough ? ` (as of ${fmtDate(iotDataThrough)})` : ""}`}
-          value={fmtCount(inactiveIotNames.length)}
-          tone={inactiveIotNames.length > 0 ? "warn" : "ok"}
-        />
+        {hasIotFleet && (
+          <InsightRow
+            label={`Inactive IoT Hotspots${iotDataThrough ? ` (as of ${fmtDateUtc(iotDataThrough)})` : ""}`}
+            value={fmtCount(inactiveIotNames.length)}
+            tone={inactiveIotNames.length > 0 ? "warn" : "ok"}
+          />
+        )}
         <InsightRow
           label="Idle Hotspots (no rewards)"
           value={fmtCount(analysis.idleNames.length)}
@@ -148,14 +150,7 @@ export default function OperatorAnalyticsCard({
       {analysis.idleNames.length > 0 && <NameCallout title="Idle Hotspots" names={analysis.idleNames} />}
 
       {analysis.lowest.length > 0 && (
-        <div className="mt-2 rounded-lg bg-surface-inset p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
-            Lowest earners (per day)
-          </div>
-          <div className="text-xs text-content-secondary">
-            {analysis.lowest.map((p) => p.name).join(", ")}
-          </div>
-        </div>
+        <NameCallout title="Lowest earners (per day)" names={analysis.lowest.map((p) => p.name)} />
       )}
     </Card>
   );

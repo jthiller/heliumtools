@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import {
   ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
@@ -16,7 +16,9 @@ function prettyType(type) {
     .join(" ");
 }
 
-export default function TransactionsCard({ wallet }) {
+// memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
+// this card's props are referentially stable across those, so skip the churn.
+export default memo(function TransactionsCard({ wallet }) {
   const [txns, setTxns] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -120,4 +122,4 @@ export default function TransactionsCard({ wallet }) {
       )}
     </Card>
   );
-}
+});

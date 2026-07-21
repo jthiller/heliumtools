@@ -11,10 +11,11 @@ import { Dot } from "./cards/primitives.jsx";
 import {
   deviceLabel,
   isEarning,
-  fmtDate,
+  fmtDateUtc,
   fmtToken,
   lifetimeUi,
   iotStatusOf,
+  iotInactiveHotspots,
   IOT_STATUS_LABEL,
   IOT_STATUS_COLOR,
   NETWORK_COLOR,
@@ -77,22 +78,12 @@ export default function FleetMap({
 
   // IoT Hotspots the liveness feed marked inactive — highlighted over the idle
   // dimming (an offline Hotspot is the most actionable thing on this map).
-  // Membership usually doesn't change on a status flush, so reuse the previous
-  // Set when it's equal — a fresh identity would rebuild the deck.gl layer and
-  // re-run getFillColor for every point.
-  const prevInactiveRef = useRef(new Set());
-  const inactiveSet = useMemo(() => {
-    const next = new Set();
-    for (const h of hotspots) {
-      if (iotStatusOf(h, iotStatusByKey[h.entityKey], iotDataThrough) === "inactive") {
-        next.add(h.entityKey);
-      }
-    }
-    const prev = prevInactiveRef.current;
-    if (next.size === prev.size && [...next].every((k) => prev.has(k))) return prev;
-    prevInactiveRef.current = next;
-    return next;
-  }, [hotspots, iotStatusByKey, iotDataThrough]);
+  // Built from the mappable subset so the legend row only appears when an
+  // inactive dot is actually drawn.
+  const inactiveSet = useMemo(
+    () => new Set(iotInactiveHotspots(mappable, iotStatusByKey, iotDataThrough).map((h) => h.entityKey)),
+    [mappable, iotStatusByKey, iotDataThrough],
+  );
 
   // Fit to bounds once per wallet (keyed on wallet+size, so switching to another
   // wallet re-centers even if it has the same Hotspot count) without fighting pan/zoom.
@@ -239,7 +230,7 @@ function FleetMapDetail({ hotspot, rewards, iotStatus, iotDataThrough, onClose }
                 <Dot color={IOT_STATUS_COLOR[iotStatus]} />
                 {IOT_STATUS_LABEL[iotStatus]}
                 {(iotStatus === "active" || iotStatus === "inactive") && iotDataThrough
-                  ? ` as of ${fmtDate(iotDataThrough)}`
+                  ? ` as of ${fmtDateUtc(iotDataThrough)}`
                   : ""}
               </span>
             )}

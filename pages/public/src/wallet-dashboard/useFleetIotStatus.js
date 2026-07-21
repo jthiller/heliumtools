@@ -59,7 +59,12 @@ export default function useFleetIotStatus(hotspots) {
           const entry = await fetchGatewayStatus(h.entityKey);
           if (cancelled || runId !== runIdRef.current) return;
           statusByKey[h.entityKey] = entry;
-          if (!dataThrough && entry.dataThrough) dataThrough = entry.dataThrough;
+          // Keep the NEWEST anchor seen (ISO strings order lexicographically).
+          // First-wins would be nondeterministic under concurrency and could
+          // pin a stale day when a scan mixes cached and fresh lookups.
+          if (entry.dataThrough && (!dataThrough || entry.dataThrough > dataThrough)) {
+            dataThrough = entry.dataThrough;
+          }
         } catch {
           // Transport failure / 5xx — record as null so the Hotspot reads as
           // "unknown" instead of silently counting as inactive.

@@ -1,5 +1,5 @@
 import { Card, DistroBar, Skeleton } from "./primitives.jsx";
-import { NETWORK_LABEL, NETWORK_COLOR, deviceLabel, plural, fmtDate } from "../format.js";
+import { NETWORK_LABEL, NETWORK_COLOR, deviceLabel, plural, fmtDateUtc } from "../format.js";
 
 /** One count tile in the connectivity/activity pairs. */
 function StatTile({ value, label, tone }) {
@@ -49,11 +49,13 @@ export default function FleetCompositionCard({
   const earning = rewards?.earning ?? null;
   const idle = rewards?.idle ?? null;
   // Show live counts once the first flush lands; "…" only before any data.
-  const iotSettled = iotStatusDone || (iotStatus?.counted || 0) > 0;
+  // (When the scan is done, counted === iotTotal > 0, so this also covers the
+  // stale-done frame right after a fleet swap without flashing a false 0/0.)
+  const iotSettled = (iotStatus?.counted || 0) > 0;
   const iotFootnote = [
     iotStatus?.settingUp > 0 && `${iotStatus.settingUp} setting up`,
     iotStatus?.unknown > 0 && `${iotStatus.unknown} unknown`,
-    iotDataThrough && `as of ${fmtDate(iotDataThrough)}`,
+    iotDataThrough && `as of ${fmtDateUtc(iotDataThrough)}`,
   ]
     .filter(Boolean)
     .join(" · ");

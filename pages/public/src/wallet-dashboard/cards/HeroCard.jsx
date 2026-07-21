@@ -52,10 +52,13 @@ function HeroStat({ label, value, valueClass = "text-content", sub }) {
 export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, prices, governance, govLoading }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
-  // IoT connectivity: share of scanned IoT Hotspots that connected to the
-  // Packet Router during the liveness feed's most recent reported day.
-  const iotCounted = iotStatus?.counted || 0;
-  const iotActivePct = iotCounted ? Math.round((iotStatus.active / iotCounted) * 100) : null;
+  // IoT connectivity: share of IoT Hotspots the liveness feed actually REPORTED
+  // on (active + inactive) that connected during its most recent reported day.
+  // Unknown (failed lookups) and setting-up Hotspots are excluded from the
+  // denominator — otherwise an api-iot outage would render as "IoT Active 0%",
+  // indistinguishable from the whole fleet being offline.
+  const iotKnown = (iotStatus?.active || 0) + (iotStatus?.inactive || 0);
+  const iotActivePct = iotKnown ? Math.round((iotStatus.active / iotKnown) * 100) : null;
   // Wallet-wide unclaimed value: Hotspot pending + veHNT delegation pending.
   const unclaimedUsd = unclaimedTotalUsd(rewards, governance, prices);
   // "…" only while a source is still loading and we have nothing yet.
@@ -103,7 +106,7 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
             <HeroStat
               label="IoT Active"
               value={iotActivePct == null ? (iotStatusDone ? "—" : "…") : `${iotActivePct}%`}
-              sub={iotCounted ? `${iotStatus.active} of ${iotCounted}` : null}
+              sub={iotKnown ? `${iotStatus.active} of ${iotKnown} reported` : null}
             />
           )}
           <HeroStat
