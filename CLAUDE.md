@@ -24,7 +24,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Schema: `worker/schema.sql`
 - Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
 - Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
-- Cron: a single **hourly** trigger (`0 * * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron`: the 15-min tick drives the Vote snapshot/history poll only; on the hourly tick it runs the Council Discord poll every hour and gates the heavier tasks by hour — OUI notifier, DC purchase, IoT fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
+- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron`: the 15-min tick drives the Vote snapshot/history poll only; the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
 
 ### When to put something in `shared/` vs a specific tool
 Default to the tool's own directory. Hoist to `shared/` only when:
@@ -65,7 +65,6 @@ in this root file are a higher-level overview.
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
 | Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind pages** — live vote activity, outcomes + trend chart (`/vote`, election-aware), plus a current/past-votes index (`/votes`). Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC); resolved votes freeze and rebuild their roster from D1 |
-| Council | `worker/src/tools/council/CLAUDE.md` | **Blind page** - Discord #advisory-council nominees; worker-side bot poll (6-hourly cron) with a manual admin-token push override |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
 

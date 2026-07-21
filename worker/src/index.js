@@ -16,7 +16,6 @@ import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard
 import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
 import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
-import { handleCouncilRequest, pollCouncil } from "./tools/council/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
@@ -33,7 +32,6 @@ const routes = [
   { prefix: "/update-location", handler: handleUpdateLocationRequest },
   { prefix: "/ve-hnt", handler: handleVeHntRequest },
   { prefix: "/vote", handler: handleVoteRequest },
-  { prefix: "/council", handler: handleCouncilRequest },
   { prefix: "/wallet-dashboard", handler: handleWalletDashboardRequest },
   { prefix: "/shared", handler: handleSharedRequest },
 ];
@@ -77,16 +75,12 @@ export default {
       run("vote-snapshots", runVoteSnapshots(env));
       return;
     }
-    // Everything else runs on the hourly tick ("0 * * * *"). minute is always 0
-    // here; the backstop stays so a stray non-hourly tick can't fire these.
+    // Everything else runs on the 6-hourly tick ("0 0,6,12,18 * * *"). minute is
+    // always 0 here; the backstop stays so a stray off-schedule tick can't fire these.
     if (new Date(event.scheduledTime).getUTCMinutes() !== 0) return;
     const hour = new Date(event.scheduledTime).getUTCHours();
 
-    // Council nominations: poll the Discord channel every hour with the bot token
-    // (no-op until DISCORD_BOT_TOKEN is set).
-    run("council-poll", pollCouncil(env));
-
-    // The heavier tasks stay 6-hourly (00/06/12/18 UTC).
+    // The heavier tasks run 6-hourly (00/06/12/18 UTC).
     if (hour % 6 === 0) {
       run("oui-notifier-daily", runOuiNotifierDaily(env));
       run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));

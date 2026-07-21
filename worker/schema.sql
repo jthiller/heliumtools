@@ -100,34 +100,3 @@ CREATE TABLE IF NOT EXISTS vote_proposals (
   tags_json TEXT,                 -- ["HIP 149", ...]
   updated_at INTEGER NOT NULL     -- ms timestamp of the upserting snapshot
 );
-
--- Council tool: one row per scraped Discord message (worker/src/tools/council),
--- keyed by (channel_id, message snowflake). A single table holds nominations,
--- supporting replies, and chatter (the `kind` column) — re-classification between
--- scrapes is a plain INSERT OR REPLACE. Support→nomination linking is resolved at
--- read time (reply_to_id walk), never persisted. `last_seen_at` = the scrapedAt of
--- the last push that carried the row; after a complete scrape, rows older than the
--- new scrapedAt are soft-removed (removed = 1). author_id/author_username are
--- nullable (default avatars carry no user id; the DOM shows a display name, not
--- always a @handle). The worker self-provisions this via CREATE TABLE IF NOT EXISTS
--- (no manual migration); it holds no Discord credentials and runs no cron.
-CREATE TABLE IF NOT EXISTS council_messages (
-  channel_id  TEXT NOT NULL,
-  id          TEXT NOT NULL,            -- Discord message snowflake
-  guild_id    TEXT NOT NULL,
-  kind        TEXT NOT NULL,            -- 'nomination' | 'support' | 'other'
-  reply_to_id TEXT,
-  author_id           TEXT,             -- nullable: default avatars carry no user id
-  author_username     TEXT,             -- @handle, nullable (display name is what DOM shows)
-  author_display_name TEXT NOT NULL,
-  avatar_url  TEXT,
-  content     TEXT NOT NULL,
-  posted_at   INTEGER NOT NULL,         -- ms epoch
-  edited_at   INTEGER,
-  reactions_json TEXT NOT NULL DEFAULT '[]',  -- [{ emoji, count }]
-  removed     INTEGER NOT NULL DEFAULT 0,      -- 1 once a complete scrape stops carrying it
-  last_seen_at INTEGER NOT NULL,               -- scrapedAt of the last push carrying this row
-  PRIMARY KEY (channel_id, id)
-);
-CREATE INDEX IF NOT EXISTS idx_council_messages_live
-  ON council_messages (channel_id, removed, posted_at);

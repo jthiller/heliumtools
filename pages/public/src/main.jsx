@@ -110,7 +110,6 @@ const UpdateLocation = lazy(() => import("./update-location/UpdateLocation.jsx")
 const VeHnt = lazy(() => import("./ve-hnt/VeHnt.jsx"));
 const Vote = lazy(() => import("./vote/Vote.jsx"));
 const VotesIndex = lazy(() => import("./vote/VotesIndex.jsx"));
-const Council = lazy(() => import("./council/Council.jsx"));
 const WalletDashboard = lazy(() => import("./wallet-dashboard/WalletDashboard.jsx"));
 const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
 
@@ -138,9 +137,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/vote" element={<Vote />} />
             <Route path="/vote/:proposalId" element={<Vote />} />
             <Route path="/votes" element={<VotesIndex />} />
-            {/* Blind page (intentionally not linked from the landing page):
-                Advisory Council nominees scraped from the Helium Discord. */}
-            <Route path="/council" element={<Council />} />
             <Route path="/wallet-dashboard" element={<WalletDashboard />} />
             <Route path="/wallet-dashboard/:address" element={<WalletDashboard />} />
           </Routes>

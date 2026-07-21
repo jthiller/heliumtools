@@ -20,22 +20,9 @@ SOLANA_RPC_URL="https://your-rpc-provider.example/api-key/REPLACE_ME"
 # Resend API key for outbound alert email.
 RESEND_API_KEY="re_REPLACE_ME"
 # Bearer token guarding the OUI-notifier admin sync route
-# (worker/src/tools/oui-notifier/httpHandlers.js). Also the fallback token for the
-# Council ingest push when COUNCIL_INGEST_TOKEN is unset. Optional locally — those
-# routes return 503 if unset; not needed for general dev or cron.
+# (worker/src/tools/oui-notifier/httpHandlers.js). Optional locally — that route
+# returns 503 if unset; not needed for general dev or cron.
 ADMIN_TOKEN=""
-
-# --- Council (Discord nominations) ---
-# Read-only Discord bot token. The worker cron polls the #advisory-council channel
-# with it (Authorization: Bot <token>) — the primary ingest source. The bot must be
-# in the guild with View Channel + Read Message History on the channel and the
-# "Message Content" privileged intent enabled. Unset ⇒ the poll is a no-op.
-DISCORD_BOT_TOKEN=""
-# Dedicated bearer token guarding the manual POST /council/ingest override
-# (worker/src/tools/council/handlers/ingest.js). Preferred over ADMIN_TOKEN so it
-# can rotate independently of the OUI-notifier admin route. If unset, the handler
-# falls back to ADMIN_TOKEN; if both are unset the endpoint returns 503.
-COUNCIL_INGEST_TOKEN=""
 
 # --- DC Purchase (Coinbase Onramp) ---
 COINBASE_CDP_API_KEY="REPLACE_ME"

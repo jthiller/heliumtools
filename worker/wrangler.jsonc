@@ -100,12 +100,10 @@
     },
     "triggers": {
         "crons": [
-            // Hourly tick. scheduled() runs the Council Discord poll every hour and
-            // gates the heavier tasks (OUI notifier, DC purchase, IoT fees) to
-            // hour % 6 === 0 (00/06/12/18 UTC) and the OUI cache to 00:00 — so this
-            // single hourly cron replaced the old 0/6/12/18 crons without changing
-            // those tasks' cadence.
-            "0 * * * *", // UTC top of every hour
+            // 6-hourly batch tick. scheduled() runs OUI notifier, DC purchase, and
+            // IoT/Mobile fees at hour % 6 === 0 (00/06/12/18 UTC) and the multi-gateway
+            // OUI cache at 00:00.
+            "0 0,6,12,18 * * *", // UTC at 00/06/12/18
             // Vote tool: snapshot tracked proposals + record history every 15
             // min so viewers read cached data and never hit the RPC. Branched on
             // in scheduled() (VOTE_SNAPSHOT_CRON); the hourly tasks do NOT run on
