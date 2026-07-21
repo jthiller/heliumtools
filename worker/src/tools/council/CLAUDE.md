@@ -334,11 +334,14 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 - Desktop scheduled task `council-scrape` (currently disabled).
 - **Moderation review** — the committed `.claude/skills/council-review/` skill (the
   flag-negative rubric + procedure) driven by a desktop scheduled task `council-review`
-  (hourly at :10, `~/.claude/scheduled-tasks/council-review/`). A local Claude session
-  reads `GET /council/review` and pushes approve/reject to `POST /council/moderate`.
-- **Framer CMS sync (hourly re-push into the marketing site).** A launchd agent
+  (`~/.claude/scheduled-tasks/council-review/`). A local Claude session reads
+  `GET /council/review` and pushes approve/reject to `POST /council/moderate`.
+  **Scheduled task DISABLED 2026-07-15** (nominations closed; skill kept for manual runs).
+- **Framer CMS sync (hourly re-push into the marketing site).** *(launchd job REMOVED
+  2026-07-15 — plist unloaded + deleted; the `council-framer-sync.{js,sh,log,launchd.log}`
+  scripts remain inert in `~/.config/heliumtools/`.)* When it ran, a launchd agent
   `~/Library/LaunchAgents/org.heliumtools.council-framer-sync.plist` (label
-  `org.heliumtools.council-framer-sync`, fires hourly at :20) runs
+  `org.heliumtools.council-framer-sync`, fired hourly at :20) ran
   `~/.config/heliumtools/council-framer-sync.sh`, which opens a `@framer/agent` CLI
   session and execs `council-framer-sync.js` (both in `~/.config/heliumtools/`; logs to
   `council-framer-sync.log` + `council-framer-sync.launchd.log`). It pushes `/council/cms`
@@ -366,14 +369,24 @@ torn down afterward. Every place it touches, so teardown is a clean checklist:
 
 ## Teardown (after the election)
 
-Timing: the poll is **stopped** (`POLL_STOP_MS` = 2026-07-15), so the worker no longer
-calls Discord and the data is frozen at its final snapshot. The rest of the infra below
-still exists until you run this checklist.
+**Progress (as of 2026-07-15) — bot removed + automation stopped; page still live:**
+- Discord bot **`heliumtools-council`** removed from the server (by the user).
+- Worker poll **stopped** (`POLL_STOP_MS` = 2026-07-15) → no Discord calls; data frozen
+  at its final snapshot (12 nominations + last-polled reactions), still served.
+- Framer-sync launchd job **removed** (plist unloaded + deleted; scripts left inert in
+  `~/.config/heliumtools/`, `DISCORD_BOT_TOKEN` unused).
+- `council-review` scheduled task **disabled** (nominations closed; nothing to review).
+- Still LIVE for viewing results: the `/council` page, `/nominations`, `/cms`, the
+  admin endpoints (`/review`,`/moderate`,`/refresh`), D1 `council_messages`, the KV keys,
+  and the Framer collection. Full removal below runs on "tear down the council tool".
 
-1. **Remove the bot.** *Worker side done* — the poll is stopped (2026-07-15), so the bot
-   is no longer used. Remaining (Discord admin, done in the Discord UI): kick
-   **heliumtools-council** (app/user id `1524254437181358140`) from the Official Helium
-   Community server, and optionally delete the Discord application. Wick's join-gate
+Timing: nothing is actively running against Discord anymore, so there's no rush on the
+full teardown below.
+
+1. **Remove the bot.** *Done* — bot removed from the server + worker poll stopped
+   (2026-07-15). If not already: delete the Discord application
+   (**heliumtools-council**, app/user id `1524254437181358140`) and remove any Wick
+   whitelist/immunity entry for the bot id. Wick's join-gate
    filters are already back on, so no filter changes are needed — just remove any Wick
    whitelist/immunity entry that was added for the bot id.
 2. **Worker code**: delete `worker/src/tools/council/`; in `worker/src/index.js` remove
