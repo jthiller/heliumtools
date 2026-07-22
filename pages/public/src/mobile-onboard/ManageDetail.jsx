@@ -232,7 +232,12 @@ export default function ManageDetail({ hotspot, onBack }) {
             </div>
           ) : editingLocation ? (
             <div className="mt-3 space-y-3">
-              <LocationPicker lat={location.lat} lng={location.lng} onChange={setLocation} />
+              <LocationPicker
+                key={status?.location_hex || "no-location"}
+                lat={location.lat}
+                lng={location.lng}
+                onChange={setLocation}
+              />
               <div className="rounded-lg bg-surface-inset p-3 text-xs">
                 <div className="flex justify-between text-content-secondary">
                   <span>Cost</span>

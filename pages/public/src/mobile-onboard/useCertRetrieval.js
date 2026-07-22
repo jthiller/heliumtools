@@ -20,6 +20,13 @@ export default function useCertRetrieval(gatewayKey) {
 
   const submit = useCallback(async (info) => {
     setError(null);
+    // Guard the offchain-signing capability up front so a wallet that
+    // disconnected (or can't signMessage) yields a clear message instead of a
+    // raw TypeError from publicKey.toBase58().
+    if (!signMessage || !publicKey) {
+      setError("Connect a software wallet that owns this Hotspot to retrieve certificates.");
+      return;
+    }
     setState("signing");
     try {
       const payload = await signCertRequest(signMessage, publicKey.toBase58(), gatewayKey, info);
