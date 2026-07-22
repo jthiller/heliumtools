@@ -25,8 +25,3 @@ export const POSITIONS = [
   { key: "color", label: "Color", words: COLORS },
   { key: "animal", label: "Animal", words: ANIMALS },
 ];
-
-/** Split an animalHash name ("Adjective Color Animal") into lowercase words. */
-export function splitAnimalName(name) {
-  return String(name).toLowerCase().split(" ");
-}

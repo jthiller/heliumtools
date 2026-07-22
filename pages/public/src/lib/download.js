@@ -10,5 +10,8 @@ export function downloadTextFile(filename, text, mimeType = "text/plain") {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Defer revocation off the click tick: a.click() only initiates the download;
+  // the browser fetches the blob URL in a later task, and revoking it in the
+  // same tick can abort that fetch in some browsers (the standard FileSaver idiom).
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

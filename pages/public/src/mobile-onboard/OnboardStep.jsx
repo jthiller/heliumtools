@@ -35,7 +35,7 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
     try {
       const result = await requestOnboard(publicKey.toBase58(), gateway.b58, h3Cell);
       if (result.already_onboarded) {
-        onOnboarded(null);
+        onOnboarded();
         return;
       }
       if (result.dc_needed) {
@@ -46,8 +46,8 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
       }
       setSubmitState("signing");
       const txn = VersionedTransaction.deserialize(Buffer.from(result.transaction, "base64"));
-      const sig = await signAndBroadcast(txn, publicKey, sendTransaction, connection);
-      onOnboarded(sig);
+      await signAndBroadcast(txn, publicKey, sendTransaction, connection);
+      onOnboarded();
     } catch (err) {
       setError(err.data?.not_indexed
         ? "The Hotspot isn't indexed yet. Wait a few seconds and try again."

@@ -106,14 +106,6 @@ export function buildTokenFromPrivateKey(privateKey) {
 }
 
 /**
- * Generate a fresh gateway keypair and its onboarding token.
- * The private key never leaves this function.
- */
-export function generateGatewayToken() {
-  return buildTokenFromPrivateKey(ed25519.utils.randomPrivateKey());
-}
-
-/**
  * Decode + validate an onboarding token (browser-generated or pasted from
  * `helium-wallet hotspots add mobile token`). Verifies the embedded ed25519
  * gateway signature so a corrupted paste fails here instead of at the ECC

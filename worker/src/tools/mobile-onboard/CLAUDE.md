@@ -52,8 +52,9 @@ brownfield `ManageDetail`. Steps 2–5 stay silent about Helium Plus by design.
    `blockchain_txn` envelope, base64. **Verified field numbers** (helium/proto):
    owner=1, gateway=2, owner_signature=3, gateway_signature=4, payer=5,
    payer_signature=6, staking_fee=7, fee=8; envelope oneof `add_gateway = 1`.
-   `buildTokenFromPrivateKey(priv)` signs a chosen key and returns the token;
-   `generateGatewayToken()` = build from a fresh random key. The private key is
+   `buildTokenFromPrivateKey(priv)` signs a chosen key and returns the token
+   (the wizard generates keys via the grind worker and passes the chosen one
+   in). The private key is
    used once and discarded — certificates are later signed by the *wallet*, so
    the gateway secret is never needed again. Do NOT reuse
    `iot-onboard/bleProto.js`'s `add_gateway_v1` — that is the BLE
@@ -269,7 +270,7 @@ wallet-signed "Retrieve certificates" action).
   "Token" above.
 - `keygenWorker.js` — the key-grind Web Worker; see "Key grinding" above.
 - `animalWords.js` — the three positional dictionaries (from
-  `angry-purple-tiger/lib`) + `splitAnimalName`; powers the grind typeahead.
+  `angry-purple-tiger/lib`); powers the grind typeahead.
 - `pages/public/src/lib/mobileOnboardApi.js` — the six-endpoint client.
 
 ## Reused from other tools

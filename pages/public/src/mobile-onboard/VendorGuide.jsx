@@ -11,7 +11,7 @@ import {
   PARTNER_CARRIERS,
 } from "./vendors.js";
 
-export function CarrierBanner() {
+function CarrierBanner() {
   return (
     <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-xs text-sky-800 dark:border-sky-800/50 dark:bg-sky-950/40 dark:text-sky-200">
       Configured with the realms below, networks onboarded here serve{" "}

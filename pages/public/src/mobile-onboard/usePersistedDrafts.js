@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
  * localStorage-backed onboarding drafts so an interrupted wizard (e.g. issue
  * transaction paid, browser closed before onboard) is resumable. One key
  * holds a map of drafts keyed by gateway b58:
- *   { gateway, name, token, wallet, step, lat, lng, address, nasId, vendor,
+ *   { gateway, name, token, wallet, step, lat, lng, address, nasId,
  *     createdAt, updatedAt }
  * The token is public data (the gateway signature — no private key); it is
  * dropped from the draft once /status reports the entity issued, after which

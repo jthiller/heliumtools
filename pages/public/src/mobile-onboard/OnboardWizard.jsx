@@ -88,42 +88,56 @@ export default function OnboardWizard({ onOpenGuide }) {
     setStep("configure");
   };
 
-  const handleFinish = () => {
-    deleteDraft(gateway.b58);
+  // Wipe all per-Hotspot wizard state. Used when finishing, starting fresh, or
+  // abandoning a resume — so a stale draft's token can never bleed into a new
+  // run (TokenStep keys its committed view on gateway && token).
+  const resetDraftState = () => {
     setGateway(null);
     setToken(null);
     setIssuePayload(null);
     setLocation({ lat: "", lng: "" });
     setCertForm({ address: "", nasId: "" });
+  };
+
+  const handleFinish = () => {
+    deleteDraft(gateway.b58);
+    resetDraftState();
     setStep("intro");
   };
 
   const handleResume = async (draft) => {
     if (resumeState === "checking") return; // one resume at a time — no interleaving two drafts' state
     setResumeState("checking");
-    setGateway({ b58: draft.gateway, name: draft.name });
-    setToken(draft.token || null);
-    setLocation({ lat: draft.lat || "", lng: draft.lng || "" });
-    setCertForm({ address: draft.address || "", nasId: draft.nasId || "" });
     try {
       const status = await fetchGatewayStatus(draft.gateway);
+      // Only commit the draft into wizard state once the status fetch succeeds,
+      // so a transient /status failure leaves a clean slate (no half-applied
+      // gateway/token to resurrect on a later "Start onboarding").
+      if (!status.onboarded && !status.issued && !draft.token) {
+        resetDraftState();
+        setResumeState("This draft has no token and the Hotspot isn't on-chain, so it can't be resumed. Delete it and start over.");
+        return;
+      }
+      setGateway({ b58: draft.gateway, name: draft.name });
+      setToken(draft.token || null);
+      setLocation({ lat: draft.lat || "", lng: draft.lng || "" });
+      setCertForm({ address: draft.address || "", nasId: draft.nasId || "" });
       if (status.onboarded) {
         setStep(draft.step === "cert" ? "configure" : "cert");
       } else if (status.issued) {
         if (draft.token) {
+          setToken(null);
           saveDraft({ gateway: draft.gateway, token: null, step: "issued" });
         }
         setStep("onboard");
-      } else if (draft.token) {
+      } else {
         const parsed = parseGatewayToken(draft.token);
         setIssuePayload({ unsignedMsgHex: parsed.unsignedMsgHex, signatureHex: parsed.signatureHex });
         setStep("issue");
-      } else {
-        setResumeState("This draft has no token and the Hotspot isn't on-chain, so it can't be resumed. Delete it and start over.");
-        return;
       }
       setResumeState(null);
     } catch (err) {
+      resetDraftState();
       setResumeState(err.message);
     }
   };
@@ -171,7 +185,7 @@ export default function OnboardWizard({ onOpenGuide }) {
           drafts={drafts}
           walletB58={walletB58}
           connected={connected}
-          onStart={() => { setResumeState(null); setStep("token"); }}
+          onStart={() => { setResumeState(null); resetDraftState(); setStep("token"); }}
           onResume={handleResume}
           onDeleteDraft={(g) => { setResumeState(null); deleteDraft(g); }}
           onOpenGuide={onOpenGuide}
