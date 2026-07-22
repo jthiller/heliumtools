@@ -53,13 +53,14 @@ export async function handleIssue(request, env) {
   }
 
   // The AddGatewayV1 message is tiny (a few dozen bytes); the signature is a
-  // 64-byte ed25519. Bound both so a hostile payload can't be relayed to the
-  // verifier at size.
-  if (typeof unsigned_msg !== "string" || !/^[0-9a-fA-F]{2,2048}$/.test(unsigned_msg)) {
-    return jsonResponse({ error: "Invalid unsigned_msg — expected hex" }, 400);
+  // 64-byte ed25519. Require whole-byte (even-length) hex and bound the size in
+  // bytes so a hostile or malformed payload can't be relayed to the verifier
+  // (odd-length hex isn't byte-decodable and would only fail there, opaquely).
+  if (typeof unsigned_msg !== "string" || !/^(?:[0-9a-fA-F]{2}){1,1024}$/.test(unsigned_msg)) {
+    return jsonResponse({ error: "Invalid unsigned_msg — expected even-length hex" }, 400);
   }
-  if (typeof gateway_signature !== "string" || !/^[0-9a-fA-F]{2,256}$/.test(gateway_signature)) {
-    return jsonResponse({ error: "Invalid gateway_signature — expected hex" }, 400);
+  if (typeof gateway_signature !== "string" || !/^(?:[0-9a-fA-F]{2}){1,128}$/.test(gateway_signature)) {
+    return jsonResponse({ error: "Invalid gateway_signature — expected even-length hex" }, 400);
   }
 
   // Sanity: the gateway's Helium binary address is embedded verbatim in the
