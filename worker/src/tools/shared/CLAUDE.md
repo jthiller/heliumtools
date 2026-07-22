@@ -2,8 +2,8 @@
 
 Cross-tool worker utilities under the `/shared` route prefix. It holds
 tool-agnostic endpoints. Today that's a single endpoint: `/shared/geo`, which
-returns the requester's coarse Cloudflare-derived location and is currently
-consumed by one tool (multi-gateway).
+returns the requester's coarse Cloudflare-derived location and is consumed by
+multi-gateway and mobile-onboard.
 
 ## Architecture
 
@@ -45,10 +45,13 @@ pathname, returning `404` for anything unmatched.
 
 ## Related tools
 
-- **multi-gateway** (`pages/public/src/multi-gateway/MultiGateway.jsx`) — the only
-  current consumer. Calls `fetchGeo()` to seed a default map center / requester
-  location. See `pages/public/src/multi-gateway/` and the root `CLAUDE.md`
-  Multi-Gateway section.
+- **multi-gateway** (`pages/public/src/multi-gateway/MultiGateway.jsx`) — calls
+  `fetchGeo()` to seed a default map center / requester location. See
+  `pages/public/src/multi-gateway/` and the root `CLAUDE.md` Multi-Gateway
+  section.
+- **mobile-onboard** (`pages/public/src/mobile-onboard/LocationPicker.jsx`) —
+  calls `fetchGeo()` to seed the location picker's viewport (never the picked
+  value) when no location is set yet.
 
 ## When to put something in `shared/` vs a tool
 

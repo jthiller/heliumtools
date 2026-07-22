@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon, LockClosedIcon, WalletIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon, LockClosedIcon, WalletIcon, WifiIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import ShaderDithering from "../components/ShaderDithering.jsx";
 
@@ -63,6 +63,15 @@ const sections = [
         icon: SignalIcon,
         iconBg: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
         badge: null,
+      },
+      {
+        name: "Mobile WiFi Onboarding",
+        description:
+          "Convert a WiFi network into a Helium Mobile Hotspot. Register it on-chain, retrieve RadSec certificates, and manage onboarded networks.",
+        href: "/mobile-onboard",
+        icon: WifiIcon,
+        iconBg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
+        badge: "New",
       },
       {
         name: "Update Hotspot Location",

@@ -2,6 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { RPC_BATCH_SIZE } from "../config.js";
 import { titleCase } from "../utils.js";
 import { deriveIotInfoPDA, deriveMobileInfoPDA, hashEntityKey } from "./pda.js";
+import { parseMobileInfo as parseMobileInfoShared } from "../../../lib/helium-solana.js";
 
 /**
  * Batch fetch asset metadata from DAS using getAssetBatch.
@@ -148,91 +149,23 @@ function parseIotInfo(data) {
 }
 
 /**
- * Parse MobileHotspotInfoV0 account data.
- *
- * Layout (after 8-byte Anchor discriminator):
- *   asset:       Pubkey      (32 bytes)
- *   bump_seed:   u8          (1 byte)
- *   location:    Option<u64> (1 tag + 8 if Some)
- *   is_full:     bool        (1 byte)
- *   num_asserts: u16         (2 bytes)
- *   is_active:   bool        (1 byte)
- *   dc_fee:      u64         (8 bytes)
- *   device_type: u8 enum     (1 byte)
+ * Parse MobileHotspotInfoV0 account data into this tool's hotspot row shape.
+ * The byte-level walk lives in the shared lib (`parseMobileInfo` in
+ * lib/helium-solana.js — also consumed by mobile-onboard); this adapter maps
+ * its result onto the flat fields resolveLocations expects.
  */
 function parseMobileInfo(data) {
-  let offset = 8; // discriminator
-
-  // asset (32 bytes)
-  const asset = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
-  offset += 32;
-  // bump_seed (1 byte)
-  offset += 1;
-
-  // location: Option<u64>
-  let location = null;
-  const locTag = data.readUInt8(offset);
-  offset += 1;
-  if (locTag === 1) {
-    location = data.readBigUInt64LE(offset).toString();
-    offset += 8;
-  }
-
-  // is_full (1 byte)
-  offset += 1;
-  // num_asserts (2 bytes)
-  offset += 2;
-
-  // is_active (1 byte) - no longer used but must skip for offset
-  offset += 1;
-
-  // dc_fee (8 bytes)
-  offset += 8;
-
-  // device_type enum
-  const DEVICE_TYPES = ["cbrs", "wifiIndoor", "wifiOutdoor", "wifiDataOnly"];
-  const deviceTypeIndex = data.readUInt8(offset);
-  const deviceType = DEVICE_TYPES[deviceTypeIndex] || `unknown(${deviceTypeIndex})`;
-  offset += 1;
-
-  // deployment_info: Option<MobileDeploymentInfoV0>
-  let elevation = null;
-  let gain = null;
-  let azimuth = null;
-  let mechanicalDownTilt = null;
-  let electricalDownTilt = null;
-
-  if (offset < data.length) {
-    const deployTag = data.readUInt8(offset);
-    offset += 1;
-    if (deployTag === 1 && offset < data.length) {
-      const variant = data.readUInt8(offset);
-      offset += 1;
-      if (variant === 0 && offset + 14 <= data.length) {
-        // WifiInfoV0: antenna(u32), elevation(i32), azimuth(u16),
-        //             mechanical_down_tilt(u16), electrical_down_tilt(u16)
-        offset += 4; // antenna — skip
-        elevation = data.readInt32LE(offset);
-        offset += 4;
-        azimuth = data.readUInt16LE(offset);
-        offset += 2;
-        mechanicalDownTilt = data.readUInt16LE(offset);
-        offset += 2;
-        electricalDownTilt = data.readUInt16LE(offset);
-      }
-    }
-  }
-
+  const info = parseMobileInfoShared(data);
   return {
     network: "mobile",
-    location,
-    elevation,
-    gain,
-    asset,
-    deviceType,
-    azimuth,
-    mechanicalDownTilt,
-    electricalDownTilt,
+    location: info.location_dec,
+    elevation: info.deployment_info?.elevation ?? null,
+    gain: null,
+    asset: info.asset,
+    deviceType: info.device_type,
+    azimuth: info.deployment_info?.azimuth ?? null,
+    mechanicalDownTilt: info.deployment_info?.mechanical_down_tilt ?? null,
+    electricalDownTilt: info.deployment_info?.electrical_down_tilt ?? null,
   };
 }
 

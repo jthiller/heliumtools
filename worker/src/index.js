@@ -13,6 +13,7 @@ import { MultiGatewayHub } from "./tools/multi-gateway/hub.js";
 import { handleDcMintRequest } from "./tools/dc-mint/index.js";
 import { handleL1MigrationRequest } from "./tools/l1-migration/index.js";
 import { handleIotOnboardRequest, refreshOnboardFees } from "./tools/iot-onboard/index.js";
+import { handleMobileOnboardRequest, refreshMobileOnboardFees } from "./tools/mobile-onboard/index.js";
 import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
 import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
@@ -29,6 +30,7 @@ const routes = [
   { prefix: "/dc-mint", handler: handleDcMintRequest },
   { prefix: "/l1-migration", handler: handleL1MigrationRequest },
   { prefix: "/iot-onboard", handler: handleIotOnboardRequest },
+  { prefix: "/mobile-onboard", handler: handleMobileOnboardRequest },
   { prefix: "/update-location", handler: handleUpdateLocationRequest },
   { prefix: "/ve-hnt", handler: handleVeHntRequest },
   { prefix: "/vote", handler: handleVoteRequest },
@@ -85,6 +87,7 @@ export default {
       run("oui-notifier-daily", runOuiNotifierDaily(env));
       run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
       run("iot-onboard-fees", refreshOnboardFees(env));
+      run("mobile-onboard-fees", refreshMobileOnboardFees(env));
     }
     // OUI data changes infrequently — refresh once daily at midnight UTC.
     if (hour === 0) run("multi-gateway-oui-cache", refreshOuiCache(env));

@@ -1,10 +1,10 @@
 /**
  * Shared Helium × Solana helpers for issuing and onboarding data-only
- * (and full) IoT Hotspot entities.
+ * (and full) IoT and Mobile Hotspot entities.
  *
- * Extracted from multi-gateway/handlers/issue.js so that iot-onboard
- * (and any future tool) can reuse the same constants, PDA derivations,
- * instruction builders, Borsh encoders, and DAS helpers.
+ * Extracted from multi-gateway/handlers/issue.js so that iot-onboard,
+ * mobile-onboard (and any future tool) can reuse the same constants,
+ * PDA derivations, instruction builders, Borsh encoders, and DAS helpers.
  */
 import { PublicKey, TransactionInstruction, SystemProgram } from "@solana/web3.js";
 import { sha256 } from "js-sha256";
@@ -113,6 +113,12 @@ export function findPDA(seeds, programId) {
 
 export const MOBILE_MINT = new PublicKey("mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6");
 
+// Pyth PriceUpdateV2 account for MOBILE/USD. Required as the dnt_price
+// account of onboard_data_only_mobile_hotspot_v0 (the instruction burns no
+// MOBILE for wifiDataOnly devices, but the account must still be supplied).
+// Mirrors MOBILE_PRICE_KEY in helium-wallet-rs helium-lib/src/token.rs.
+export const MOBILE_PRICE_KEY = new PublicKey("DQ4C1tzvu28cwo1roN1Wm6TW35sfJEjLh517k3ZeWevx");
+
 // Static PDAs — derived from constants, computed once at module load
 export const DAO_KEY = findPDA([Buffer.from("dao"), HNT_MINT.toBuffer()], SUB_DAOS);
 export const IOT_SUB_DAO_KEY = findPDA([Buffer.from("sub_dao"), IOT_MINT.toBuffer()], SUB_DAOS);
@@ -121,13 +127,26 @@ export const DATA_ONLY_CONFIG_KEY = findPDA([Buffer.from("data_only_config"), DA
 export const DATA_ONLY_ESCROW_KEY = findPDA([Buffer.from("data_only_escrow"), DATA_ONLY_CONFIG_KEY.toBuffer()], ENTITY_MANAGER);
 export const ENTITY_CREATOR_KEY = findPDA([Buffer.from("entity_creator"), DAO_KEY.toBuffer()], ENTITY_MANAGER);
 export const REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_entity_config"), IOT_SUB_DAO_KEY.toBuffer(), Buffer.from("IOT")], ENTITY_MANAGER);
+export const MOBILE_REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_entity_config"), MOBILE_SUB_DAO_KEY.toBuffer(), Buffer.from("MOBILE")], ENTITY_MANAGER);
 export const DC_KEY = findPDA([Buffer.from("dc"), DC_MINT.toBuffer()], DATA_CREDITS);
 export const BUBBLEGUM_SIGNER_KEY = findPDA([Buffer.from("collection_cpi")], BUBBLEGUM);
 
 // ---------------------------------------------------------------------------
 // Dynamic PDAs
 // ---------------------------------------------------------------------------
+
+// A Helium entity-key b58 pubkey is ~51 chars (Solana pubkeys ~44); 64 is
+// generous headroom. Bounding the input here — before the O(n²) bs58.decode —
+// protects every PDA derivation (and thus every handler that derives a PDA
+// from a request param) from an unbounded-input CPU-amplification vector. All
+// callers already wrap derivation in try/catch, so an over-length key surfaces
+// as their normal "invalid key" error rather than burning Worker CPU.
+const MAX_ENTITY_KEY_LEN = 64;
+
 export function entityKeyHash(gatewayPubkeyB58) {
+  if (typeof gatewayPubkeyB58 !== "string" || gatewayPubkeyB58.length > MAX_ENTITY_KEY_LEN) {
+    throw new Error("Invalid entity key");
+  }
   const bytes = bs58.decode(gatewayPubkeyB58);
   return Buffer.from(sha256.arrayBuffer(bytes));
 }
@@ -138,6 +157,10 @@ export function keyToAssetKey(gatewayPubkeyB58) {
 
 export function iotInfoKey(gatewayPubkeyB58) {
   return findPDA([Buffer.from("iot_info"), REWARDABLE_ENTITY_CONFIG_KEY.toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
+}
+
+export function mobileInfoKey(gatewayPubkeyB58) {
+  return findPDA([Buffer.from("mobile_info"), MOBILE_REWARDABLE_ENTITY_CONFIG_KEY.toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
 }
 
 export function collectionMetadataKey(collection) {
@@ -362,6 +385,132 @@ export function buildUpdateIotInfoInstruction(owner, gatewayPubkeyB58, merkleTre
   return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
 }
 
+/**
+ * Build an onboard_data_only_mobile_hotspot_v0 instruction (converted WiFi
+ * networks; device_type is forced to wifiDataOnly on-chain). The connected
+ * wallet (owner) is payer + dc_fee_payer + hotspot_owner.
+ *
+ * Differs from the IoT data-only onboard in three verified ways (source:
+ * helium_entity_manager IDL — its account order deviates from the Rust client
+ * struct-literal order, so don't "fix" this against helium-wallet-rs source):
+ *  1. Args carry only `location` (no elevation/gain): data_hash, creator_hash,
+ *     root, index, location Option<u64>.
+ *  2. Three MOBILE accounts are added: dnt_burner (owner's MOBILE ATA)
+ *     directly after dc_burner, and dnt_mint + dnt_price between dc_mint and
+ *     dc. No MOBILE is burned for wifiDataOnly, but all three are required.
+ *  3. Only DC is burned: dc_onboarding_fee + location_staking_fee (when a
+ *     location is provided).
+ */
+export function buildOnboardMobileInstruction(owner, gatewayPubkeyB58, merkleTree, asset, proof, canopyDepth, opts = {}) {
+  const disc = anchorDiscriminator("onboard_data_only_mobile_hotspot_v0");
+
+  const dataHash = decodeCompressionHash(asset.compression.data_hash);
+  const creatorHash = decodeCompressionHash(asset.compression.creator_hash);
+  const root = Buffer.from(bs58.decode(proof.root));
+  const indexBuf = Buffer.alloc(4);
+  indexBuf.writeUInt32LE(asset.compression.leaf_id);
+
+  const data = Buffer.concat([
+    disc, dataHash, creatorHash, root, indexBuf,
+    encodeOptionU64(opts.location),   // H3 res-12 cell hex string → u64
+  ]);
+
+  const accounts = [
+    { pubkey: owner, isSigner: true, isWritable: true },                     // payer
+    { pubkey: owner, isSigner: true, isWritable: true },                     // dc_fee_payer
+    { pubkey: mobileInfoKey(gatewayPubkeyB58), isSigner: false, isWritable: true }, // mobile_info
+    { pubkey: owner, isSigner: true, isWritable: true },                     // hotspot_owner
+    { pubkey: merkleTree, isSigner: false, isWritable: false },              // merkle_tree
+    { pubkey: ataAddress(owner, DC_MINT), isSigner: false, isWritable: true }, // dc_burner
+    { pubkey: ataAddress(owner, MOBILE_MINT), isSigner: false, isWritable: true }, // dnt_burner
+    { pubkey: MOBILE_REWARDABLE_ENTITY_CONFIG_KEY, isSigner: false, isWritable: false }, // rewardable_entity_config
+    { pubkey: DATA_ONLY_CONFIG_KEY, isSigner: false, isWritable: false },    // data_only_config
+    { pubkey: DAO_KEY, isSigner: false, isWritable: false },                 // dao
+    { pubkey: keyToAssetKey(gatewayPubkeyB58), isSigner: false, isWritable: false }, // key_to_asset
+    { pubkey: MOBILE_SUB_DAO_KEY, isSigner: false, isWritable: true },       // sub_dao
+    { pubkey: DC_MINT, isSigner: false, isWritable: true },                  // dc_mint
+    { pubkey: MOBILE_MINT, isSigner: false, isWritable: true },              // dnt_mint
+    { pubkey: MOBILE_PRICE_KEY, isSigner: false, isWritable: false },        // dnt_price
+    { pubkey: DC_KEY, isSigner: false, isWritable: false },                  // dc
+    { pubkey: COMPRESSION, isSigner: false, isWritable: false },             // compression_program
+    { pubkey: DATA_CREDITS, isSigner: false, isWritable: false },            // data_credits_program
+    { pubkey: SPL_TOKEN, isSigner: false, isWritable: false },               // token_program
+    { pubkey: SPL_ATA, isSigner: false, isWritable: false },                 // associated_token_program
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
+    { pubkey: SUB_DAOS, isSigner: false, isWritable: false },                // helium_sub_daos_program
+  ];
+
+  const proofPath = proof.proof.slice(0, proof.proof.length - canopyDepth);
+  for (const proofKey of proofPath) {
+    accounts.push({ pubkey: new PublicKey(proofKey), isSigner: false, isWritable: false });
+  }
+
+  return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
+}
+
+/**
+ * Build an update_mobile_info_v0 instruction to re-assert an already-onboarded
+ * Mobile Hotspot's location. The connected wallet (owner) is payer +
+ * dc_fee_payer + hotspot_owner.
+ *
+ * Mirrors buildUpdateIotInfoInstruction with two deltas (verified against the
+ * helium_entity_manager IDL):
+ *  1. Borsh args: location Option<u64> FIRST, then data_hash, creator_hash,
+ *     root, index, and a trailing deployment_info
+ *     Option<MobileDeploymentInfoV0> — always encoded None (0x00) here, which
+ *     leaves any existing deployment_info unchanged on-chain (same behavior
+ *     as the helium-wallet CLI).
+ *  2. mobile_info / MOBILE rewardable_entity_config / MOBILE sub_dao replace
+ *     their IoT counterparts; account order is otherwise identical.
+ *
+ * A None location leaves the field unchanged; a Some location burns the
+ * MOBILE location_staking_fee in DC.
+ */
+export function buildUpdateMobileInfoInstruction(owner, gatewayPubkeyB58, merkleTree, asset, proof, canopyDepth, opts = {}) {
+  const disc = anchorDiscriminator("update_mobile_info_v0");
+
+  const dataHash = decodeCompressionHash(asset.compression.data_hash);
+  const creatorHash = decodeCompressionHash(asset.compression.creator_hash);
+  const root = Buffer.from(bs58.decode(proof.root));
+  const indexBuf = Buffer.alloc(4);
+  indexBuf.writeUInt32LE(asset.compression.leaf_id);
+
+  const data = Buffer.concat([
+    disc,
+    encodeOptionU64(opts.location),  // H3 cell hex string → u64, or None
+    dataHash, creatorHash, root, indexBuf,
+    Buffer.from([0]),                // deployment_info: Option = None
+  ]);
+
+  const accounts = [
+    { pubkey: owner, isSigner: true, isWritable: true },                        // payer
+    { pubkey: owner, isSigner: true, isWritable: true },                        // dc_fee_payer
+    { pubkey: mobileInfoKey(gatewayPubkeyB58), isSigner: false, isWritable: true }, // mobile_info
+    { pubkey: owner, isSigner: true, isWritable: true },                        // hotspot_owner
+    { pubkey: merkleTree, isSigner: false, isWritable: false },                 // merkle_tree
+    { pubkey: treeAuthorityKey(merkleTree), isSigner: false, isWritable: false }, // tree_authority
+    { pubkey: ataAddress(owner, DC_MINT), isSigner: false, isWritable: true },  // dc_burner
+    { pubkey: MOBILE_REWARDABLE_ENTITY_CONFIG_KEY, isSigner: false, isWritable: false }, // rewardable_entity_config
+    { pubkey: DAO_KEY, isSigner: false, isWritable: false },                    // dao
+    { pubkey: MOBILE_SUB_DAO_KEY, isSigner: false, isWritable: false },         // sub_dao
+    { pubkey: DC_MINT, isSigner: false, isWritable: true },                     // dc_mint
+    { pubkey: DC_KEY, isSigner: false, isWritable: false },                     // dc
+    { pubkey: BUBBLEGUM, isSigner: false, isWritable: false },                  // bubblegum_program
+    { pubkey: COMPRESSION, isSigner: false, isWritable: false },                // compression_program
+    { pubkey: DATA_CREDITS, isSigner: false, isWritable: false },               // data_credits_program
+    { pubkey: SPL_TOKEN, isSigner: false, isWritable: false },                  // token_program
+    { pubkey: SPL_ATA, isSigner: false, isWritable: false },                    // associated_token_program
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },    // system_program
+  ];
+
+  const proofPath = proof.proof.slice(0, proof.proof.length - canopyDepth);
+  for (const proofKey of proofPath) {
+    accounts.push({ pubkey: new PublicKey(proofKey), isSigner: false, isWritable: false });
+  }
+
+  return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
+}
+
 // ---------------------------------------------------------------------------
 // DAS API helpers
 // ---------------------------------------------------------------------------
@@ -463,4 +612,126 @@ export function parseIotInfo(buf) {
   const num_location_asserts = buf.readUInt16LE(off);
 
   return { location_dec, elevation, gain, is_full_hotspot, num_location_asserts };
+}
+
+// ---------------------------------------------------------------------------
+// MobileHotspotInfoV0 / MOBILE RewardableEntityConfigV0 parsing
+// ---------------------------------------------------------------------------
+
+/** MobileDeviceTypeV0 enum order (on-chain u8). wifiDataOnly = 3. */
+export const MOBILE_DEVICE_TYPES = ["cbrs", "wifiIndoor", "wifiOutdoor", "wifiDataOnly"];
+
+/**
+ * Parse a MobileHotspotInfoV0 account buffer.
+ *
+ * Layout (after 8-byte Anchor discriminator):
+ *   asset: Pubkey(32) + bump_seed: u8 + location: Option<u64>
+ *   + is_full_hotspot: bool + num_location_asserts: u16 + is_active: bool
+ *   + dc_onboarding_fee_paid: u64 + device_type: u8 enum
+ *   + deployment_info: Option<MobileDeploymentInfoV0>
+ * The account is resize_to_fit'd, so the trailing deployment_info bytes may
+ * be absent entirely — every read past device_type is length-guarded.
+ */
+export function parseMobileInfo(buf) {
+  let off = 8;
+
+  const asset = new PublicKey(buf.subarray(off, off + 32)).toBase58();
+  off += 32;
+  off += 1; // bump_seed
+
+  let location_dec = null;
+  const hasLoc = buf[off] === 1;
+  off += 1;
+  if (hasLoc) {
+    location_dec = buf.readBigUInt64LE(off).toString();
+    off += 8;
+  }
+
+  const is_full_hotspot = buf[off] === 1;
+  off += 1;
+  const num_location_asserts = buf.readUInt16LE(off);
+  off += 2;
+  const is_active = buf[off] === 1;
+  off += 1;
+  const dc_onboarding_fee_paid = Number(buf.readBigUInt64LE(off));
+  off += 8;
+
+  const deviceTypeIndex = buf.readUInt8(off);
+  off += 1;
+  const device_type = MOBILE_DEVICE_TYPES[deviceTypeIndex] || `unknown(${deviceTypeIndex})`;
+
+  // deployment_info: Option<MobileDeploymentInfoV0>; only the WifiInfoV0
+  // variant (0) is decoded — CbrsInfoV0 is legacy radio hardware.
+  let deployment_info = null;
+  if (off < buf.length && buf.readUInt8(off) === 1) {
+    off += 1;
+    if (off < buf.length) {
+      const variant = buf.readUInt8(off);
+      off += 1;
+      if (variant === 0 && off + 14 <= buf.length) {
+        deployment_info = {
+          antenna: buf.readUInt32LE(off),
+          elevation: buf.readInt32LE(off + 4),
+          azimuth: buf.readUInt16LE(off + 8),
+          mechanical_down_tilt: buf.readUInt16LE(off + 10),
+          electrical_down_tilt: buf.readUInt16LE(off + 12),
+        };
+      }
+    }
+  }
+
+  return {
+    asset,
+    location_dec,
+    is_full_hotspot,
+    num_location_asserts,
+    is_active,
+    dc_onboarding_fee_paid,
+    device_type,
+    deployment_info,
+  };
+}
+
+/**
+ * Parse the per-device-type fee schedule out of the MOBILE
+ * RewardableEntityConfigV0 account, keyed by MOBILE_DEVICE_TYPES name.
+ *
+ * Layout: disc(8) + authority(32) + symbol(4-byte len + bytes) + sub_dao(32)
+ * + settings enum: variant u8 (MobileConfigV2 = 3) + vec len u32
+ * + DeviceFeesV1 entries of 89 bytes each:
+ *   device_type u8 + dc_onboarding_fee u64 + location_staking_fee u64
+ *   + mobile_onboarding_fee_usd u64 + reserved u64[8].
+ * Fees are in DC (mobile_onboarding_fee_usd is USD with 6 decimals; 0 for
+ * wifiDataOnly today).
+ */
+export function parseMobileConfigFees(buf) {
+  let off = 8 + 32;
+  const symbolLen = buf.readUInt32LE(off);
+  off += 4 + symbolLen;
+  off += 32; // sub_dao
+
+  const variant = buf.readUInt8(off);
+  off += 1;
+  if (variant !== 3) {
+    throw new Error(`Unexpected MOBILE config settings variant ${variant} (expected MobileConfigV2 = 3)`);
+  }
+
+  const count = buf.readUInt32LE(off);
+  off += 4;
+  const ENTRY_SIZE = 1 + 8 + 8 + 8 + 64;
+  const fees = {};
+  for (let i = 0; i < count; i++) {
+    const base = off + i * ENTRY_SIZE;
+    const deviceTypeIndex = buf.readUInt8(base);
+    const name = MOBILE_DEVICE_TYPES[deviceTypeIndex] || `unknown(${deviceTypeIndex})`;
+    fees[name] = {
+      dc_onboarding_fee: Number(buf.readBigUInt64LE(base + 1)),
+      location_staking_fee: Number(buf.readBigUInt64LE(base + 9)),
+      mobile_onboarding_fee_usd: Number(buf.readBigUInt64LE(base + 17)),
+    };
+  }
+  if (!fees.wifiDataOnly) {
+    throw new Error("wifiDataOnly fees not found in MOBILE RewardableEntityConfigV0");
+  }
+  return fees;
 }

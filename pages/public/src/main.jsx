@@ -106,6 +106,7 @@ const HotspotMap = lazy(() => import("./hotspot-map/HotspotMap.jsx"));
 const MultiGateway = lazy(() => import("./multi-gateway/MultiGateway.jsx"));
 const DcMintTool = lazy(() => import("./dc-mint/DcMintTool.jsx"));
 const IotOnboard = lazy(() => import("./iot-onboard/IotOnboard.jsx"));
+const MobileOnboard = lazy(() => import("./mobile-onboard/MobileOnboard.jsx"));
 const UpdateLocation = lazy(() => import("./update-location/UpdateLocation.jsx"));
 const VeHnt = lazy(() => import("./ve-hnt/VeHnt.jsx"));
 const Vote = lazy(() => import("./vote/Vote.jsx"));
@@ -128,6 +129,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/multi-gateway" element={<SolanaProvider><MultiGateway /></SolanaProvider>} />
             <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
             <Route path="/iot-onboard" element={<SolanaProvider><IotOnboard /></SolanaProvider>} />
+            <Route path="/mobile-onboard" element={<SolanaProvider><MobileOnboard /></SolanaProvider>} />
             <Route path="/update-location" element={<SolanaProvider><UpdateLocation /></SolanaProvider>} />
             <Route path="/ve-hnt" element={<SolanaProvider><VeHnt /></SolanaProvider>} />
             {/* Blind pages (intentionally not linked from the landing page):
