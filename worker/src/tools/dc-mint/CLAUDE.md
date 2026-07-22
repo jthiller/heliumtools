@@ -134,6 +134,13 @@ prefix router in `worker/src/index.js`.
 - **iot-onboard** (`pages/public/src/iot-onboard/IotOnboard.jsx`) — imports
   `confirmAndVerify` from `../dc-mint/solanaUtils.js` to verify its onboarding
   transactions. It does **not** use the modal or build-mint endpoint.
+- **update-location** (`pages/public/src/update-location/UpdatePanel.jsx`) —
+  imports `DcMintModal`, `DC_MINT`, and `signAndBroadcast` for the DC-gated
+  location re-assert flow.
+- **mobile-onboard** (`pages/public/src/mobile-onboard/`) — imports
+  `DcMintModal` (OnboardStep.jsx, ManageDetail.jsx) and `signAndBroadcast`
+  (IssueStep.jsx, OnboardStep.jsx, ManageDetail.jsx) for its onboard and
+  location-update flows.
 - **dc-purchase** (`worker/src/tools/dc-purchase/`) — the source of truth for the
   shared Helium/Solana constants (`DATA_CREDITS_PROGRAM_ID`, `HELIUM_SUB_DAOS_PROGRAM_ID`,
   `HNT_MINT`, `DC_MINT`, `IOT_MINT`, `HNT_DECIMALS`) that `lib/solana.js` and the

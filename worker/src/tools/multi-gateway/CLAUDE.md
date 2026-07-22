@@ -8,9 +8,9 @@ transactions (`handlers/issue.js`) to register a gateway to a Solana wallet.
 
 Packet data comes from an upstream LoRaWAN aggregator host (default
 `hotspot.heliumtools.org`, `lib/host.js`); see "Upstream / Fork". This is the
-only consumer of the issue/onboard instruction builders in
-`worker/src/lib/helium-solana.js`, and the only tool in the repo backed by a
-Durable Object.
+only consumer of the IoT onboard builder (`buildOnboardInstruction`) in
+`worker/src/lib/helium-solana.js` (`buildIssueInstruction` is shared with
+mobile-onboard), and the only tool in the repo backed by a Durable Object.
 
 ## Upstream / Fork
 
@@ -256,7 +256,8 @@ NwkID per a fixed bit-width table, assembles the 24-bit NetID.
 
 Two-step Solana flow, both built server-side in `handlers/issue.js` using
 `worker/src/lib/helium-solana.js` (multi-gateway is the **only consumer** of
-`buildIssueInstruction` / `buildOnboardInstruction` — `iot-onboard` delegates to
+`buildOnboardInstruction`; `buildIssueInstruction` is also used by
+mobile-onboard — `iot-onboard` delegates to
 the Helium onboarding server instead). Note both steps register the gateway as a
 **data-only IoT Hotspot** (1M-DC tier; no PoC) — `buildOnboardInstruction`
 supports a `full` mode but this tool always builds data-only.
@@ -307,8 +308,8 @@ entered antenna gain by 10. The DC balance check uses `ONBOARD_DC_COST=100000`
   locally via the shared lib. The two are independent; do not converge them
   without care.
 - **`worker/src/lib/helium-solana.js`** — multi-gateway is the sole consumer of
-  `buildIssueInstruction` / `buildOnboardInstruction` (and the related PDA/offset
-  exports). Changes there affect this tool only.
+  `buildOnboardInstruction`; `buildIssueInstruction` and the related PDA/offset
+  exports are shared with **mobile-onboard**. Changes there affect both tools.
 
 ## On-Chain Programs
 

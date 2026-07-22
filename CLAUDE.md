@@ -24,7 +24,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Schema: `worker/schema.sql`
 - Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
 - Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
-- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron`: the 15-min tick drives the Vote snapshot/history poll only; the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
+- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron`: the 15-min tick drives the Vote snapshot/history poll only; the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees, Mobile fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
 
 ### When to put something in `shared/` vs a specific tool
 Default to the tool's own directory. Hoist to `shared/` only when:
@@ -59,6 +59,7 @@ in this root file are a higher-level overview.
 | DC Mint | `worker/src/tools/dc-mint/CLAUDE.md` | HNT→DC burn; `DcMintModal` reused by other tools |
 | Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **disabled / Coming Soon** |
 | IoT Hotspot Onboarding | `worker/src/tools/iot-onboard/CLAUDE.md` | Web Bluetooth + dewi.org onboarding proxy |
+| Mobile WiFi Onboarding | `worker/src/tools/mobile-onboard/CLAUDE.md` | Self-serve converted WiFi networks → Mobile data-only Hotspots; locally-built txns + RadSec cert proxy |
 | Update Hotspot Location | `worker/src/tools/update-location/CLAUDE.md` | Wallet-driven re-assert of `update_iot_info_v0` (location/elevation/gain) on onboarded IoT Hotspots |
 | Multi-Gateway | `worker/src/tools/multi-gateway/CLAUDE.md` | Live packet dashboard; runs the `jthiller/multi-gateway` fork |
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
@@ -127,7 +128,7 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 
 ### Helium-Solana Shared Library (`worker/src/lib/helium-solana.js`)
 - All Helium program IDs, token mints, and static PDAs (computed once at module load)
-- `buildIssueInstruction()` / `buildOnboardInstruction()` — used by `multi-gateway` only; `iot-onboard` delegates to the Helium onboarding server
+- `buildIssueInstruction()` — used by `multi-gateway` and `mobile-onboard`; `buildOnboardInstruction()` — `multi-gateway` only (`mobile-onboard` has its own `buildOnboardMobileInstruction`/`buildUpdateMobileInfoInstruction`); `iot-onboard` delegates to the Helium onboarding server
 - DAS helpers: `fetchAsset()`, `fetchAssetProof()`, `getCanopyDepth()`
 - Anchor discriminators, Borsh Option encoding
 
