@@ -32,6 +32,7 @@ export default function ManageTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [notFound, setNotFound] = useState(null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -49,10 +50,13 @@ export default function ManageTab() {
         if (cancelled) return;
         const mobile = (data.hotspots || []).filter((h) => (h.networks || []).includes("mobile"));
         setHotspots(mobile);
-        // Auto-open the Hotspot an expired-link recovery pointed the operator at.
+        // Auto-open the Hotspot an expired-link recovery pointed the operator
+        // at. If it isn't in this wallet's fleet, say so rather than silently
+        // showing an unfiltered list the operator has to search by hand.
         if (requestedHotspot) {
           const match = mobile.find((h) => h.entityKey === requestedHotspot);
           if (match) setSelected(match);
+          else setNotFound(requestedHotspot);
         }
       })
       .catch((err) => !cancelled && setError(err.message))
@@ -137,6 +141,14 @@ export default function ManageTab() {
               className={SEARCH_CLASS}
             />
           </div>
+
+          {notFound && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-300">
+              The Hotspot in that link (<span className="font-mono">{notFound.slice(0, 12)}…</span>)
+              isn't owned by this wallet. Connect the wallet that owns it, or pick it from the list
+              below.
+            </div>
+          )}
 
           {rows.length === 0 ? (
             <p className="py-8 text-center text-sm text-content-tertiary">No Mobile Hotspots match.</p>

@@ -297,7 +297,7 @@ export default function ManageDetail({ hotspot, onBack }) {
               Links are short-lived; regenerate here whenever one expires.
             </p>
             <div className="mt-3">
-              <AgentBriefPanel gateway={{ b58: hotspot.entityKey, name: hotspot.name || hotspot.entityKey }} compact />
+              <AgentBriefPanel gateway={{ b58: hotspot.entityKey, name: hotspot.name || hotspot.entityKey }} />
             </div>
           </div>
         )}

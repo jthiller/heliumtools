@@ -9,7 +9,10 @@ import { handleCreateAgentBrief, handleGetArtifact } from "./handlers/agentBrief
 
 // Capability-link routes: /agent-brief/<id> (markdown, re-readable) and
 // /agent-certs/<id> (single-use bundle). Ids are 192-bit base64url.
-const ARTIFACT_ROUTE = /^\/agent-(brief|certs)\/([A-Za-z0-9_-]{16,64})$/;
+// Deliberately permissive on the id: a malformed or truncated id must fall
+// through to the same 410 as an expired one, not a different status that
+// tells a prober their id was merely the wrong shape.
+const ARTIFACT_ROUTE = /^\/agent-(brief|certs)\/(.*)$/;
 
 /**
  * Mobile WiFi Onboarding — prefix `/mobile-onboard`.

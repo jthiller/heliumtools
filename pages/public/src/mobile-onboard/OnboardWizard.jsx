@@ -23,7 +23,7 @@ const STEPS = [
 
 /**
  * The onboarding step machine: intro → token → issue → onboard → cert →
- * configure. Owns the wizard state and mirrors it into a localStorage draft
+ * configure → agent. Owns the wizard state and mirrors it into a localStorage draft
  * after every completed step so an interrupted flow (browser closed after
  * the issue transaction, DC top-up detour, …) resumes cleanly. Resume always
  * re-derives the true step from /status — chain state wins over the draft.

@@ -239,23 +239,40 @@ their access point with them.
 
 **Storage** — `agent_artifacts` in D1 (`services/artifacts.js`, self-provisioning
 + mirrored in `worker/schema.sql`). Ids are 192 bits of CSPRNG and are the only
-authorization, so they are never logged in full (8-char prefix only). Single-use
-reads are **one atomic statement** (`DELETE … WHERE id AND expires_at > now AND
-one_time AND kind RETURNING …`) — verified: 6 concurrent fetches deliver the
-payload exactly once. **`kind` is matched inside the query**, not after the read:
-checking it afterwards let a request to the wrong route consume and destroy a
-single-use artifact without delivering it. Expiry is enforced in every WHERE, so
-a logically-expired row the cron hasn't purged is never served.
+authorization. Our own event log truncates them to 8 chars, but **the id rides in
+the URL path and this Worker runs `observability.logs` with `invocation_logs`, so
+Cloudflare's invocation logs (and `wrangler tail`) record it in full** — do not
+claim ids are never logged. Single-use reads are **one atomic statement**
+(`DELETE … WHERE id AND expires_at > now AND one_time AND kind RETURNING …`) —
+verified: 6 concurrent fetches deliver the payload exactly once. **`kind` is
+matched inside the query**, not after the read: checking it afterwards let a
+request to the wrong route consume and destroy a single-use artifact without
+delivering it. Expiry is enforced in every WHERE, so a logically-expired row the
+cron hasn't purged is never served, and the purge runs on the **15-min** tick
+(on the 6-hourly one a spent 2h link could sit in D1 for ~8h). Malformed,
+truncated, and empty ids all fall through to the same 410 as expired ones, so a
+prober learns nothing from the status code.
 
 > **Accepted risk.** The `certs` artifact holds the RadSec **private key** in
 > the clear — the one deliberate exception to the tool's otherwise
 > nothing-is-persisted posture. Bounded by: single-use, 2h, unguessable id,
-> Nova-verified ownership, cron purge, regenerate-invalidates-prior, a
+> Nova-verified ownership, 15-min purge, regenerate-invalidates-prior, a
 > signature freshness check (a captured `{location_data, signature}` pair
 > would otherwise mint artifacts forever), and never logging payloads.
 > `CertDownloads` copy is scoped to the download path accordingly, and the
 > generate step discloses the storage. Describe *application* behavior only —
 > do not claim irrecoverable destruction.
+>
+> **Named retention/exposure surfaces** (the bounding list is only honest if
+> these are stated): D1 Time Travel keeps deleted rows ~30 days — accepted as
+> platform behavior; **Cloudflare invocation logs record the full capability id**
+> from the URL path; and **the 24h brief embeds the cert URL**, so possession of
+> the brief link is equivalent to possession of the key until that link is used
+> — which is why the UI labels the brief link as a secret. Anything that fetches
+> a URL out of the brief (link scanners, unfurlers, a prefetching agent) both
+> burns the single-use link and receives the key, which is why the brief tells
+> the agent to treat an unexpectedly-consumed link as a compromise and reissue
+> rather than reuse.
 
 **The brief** (`services/brief.js`) is rendered server-side and deliberately
 shaped so an agent can't fake success:

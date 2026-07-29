@@ -13,7 +13,7 @@
  * tool's one deliberate persistence exception — short-lived, single-use,
  * behind an unguessable id, purged by cron. Never log payloads.
  */
-import { jsonResponse, corsHeaders } from "../../../lib/response.js";
+import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../../lib/rateLimit.js";
 import {
   validateSignedPayload,
@@ -38,6 +38,19 @@ const SIGNATURE_MAX_AGE_SECONDS = 600;
 /** Links are served by the worker; the manage/regenerate page is the app. */
 function workerOrigin(request) {
   return new URL(request.url).origin;
+}
+
+/**
+ * Hotspot names are angry-purple-tiger triples ("Salty Smoke Salmon"), so
+ * anything else is either a bug or an injection attempt against the brief.
+ * Reject rather than sanitize, falling back to the signed Hotspot key.
+ */
+function safeHotspotName(name, fallback) {
+  if (typeof name !== "string") return fallback;
+  const trimmed = name.trim();
+  return /^[A-Za-z]+(?: [A-Za-z]+){0,3}$/.test(trimmed) && trimmed.length <= 60
+    ? trimmed
+    : fallback;
 }
 
 function manageUrlFor(hotspot) {
@@ -127,7 +140,10 @@ export async function handleCreateAgentBrief(request, env) {
     const manageUrl = manageUrlFor(hotspotKey);
 
     const markdown = renderBrief({
-      hotspot: { b58: hotspotKey, name: typeof name === "string" ? name : hotspotKey },
+      // `name` is unsigned client input rendered into the brief an agent
+      // follows, so bound it to the angry-purple-tiger shape and fall back to
+      // the (signed) Hotspot key when it doesn't match.
+      hotspot: { b58: hotspotKey, name: safeHotspotName(name, hotspotKey) },
       vendor,
       nasId,
       address,
@@ -155,6 +171,11 @@ export async function handleCreateAgentBrief(request, env) {
     });
   } catch (err) {
     console.error("mobile-onboard agent-brief create error:", err.message);
+    // Never leave an orphaned cert row (a live private key with no consumer)
+    // behind when brief rendering or storage failed midway.
+    try {
+      await invalidateHotspotArtifacts(env, hotspotKey);
+    } catch {}
     return jsonResponse({ error: "Could not create the agent link" }, 500);
   }
 }
@@ -178,7 +199,14 @@ export async function handleGetArtifact(request, env, id, expectedKind) {
     // never consume (and destroy) a single-use artifact.
     found = await consumeArtifact(env, id, expectedKind);
   } catch (err) {
+    // A storage failure is not an expired link. Telling an agent "already used
+    // or expired" here would send the operator off regenerating a link that
+    // was never the problem.
     console.error("mobile-onboard artifact read error:", err.message);
+    return new Response(
+      "# Temporary problem retrieving this link\n\nThis is a server-side error, not an expired link. Wait a moment and try the same URL again before asking the operator to regenerate anything.\n",
+      { status: 503, headers: { "Content-Type": "text/markdown; charset=utf-8", ...baseHeaders } },
+    );
   }
 
   if (!found) {
@@ -193,5 +221,3 @@ export async function handleGetArtifact(request, env, id, expectedKind) {
     headers: { "Content-Type": found.contentType, ...baseHeaders },
   });
 }
-
-export { corsHeaders };

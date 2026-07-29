@@ -3,11 +3,11 @@ import VendorGuide from "./VendorGuide.jsx";
 import { SELF_SERVE_CARRIERS, PARTNER_CARRIERS } from "./vendors.js";
 
 /**
- * Final step: point the user at their vendor's configuration guide with the
- * shared RadSec/Passpoint constants inline, then the Helium Plus "graduation"
+ * AP setup step: the vendor configuration guide with the shared
+ * RadSec/Passpoint constants inline, plus the Helium Plus "graduation"
  * invitation — earned here, after the on-chain work succeeded, framed for once
- * the deployment is validated. Finishing deletes the draft; everything after
- * this lives in the Manage tab.
+ * the deployment is validated. Continues to the final "Configure with AI" step
+ * (AgentBriefStep), which is where the draft is finally deleted.
  */
 export default function ConfigureStep({ gateway, onContinue }) {
   return (

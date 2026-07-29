@@ -34,5 +34,9 @@ export function buildDeepLinks(briefUrl, hotspotName) {
  * actually reaches an agent able to call a controller API or SSH.
  */
 export function buildCliCommand(briefUrl, hotspotName) {
-  return `claude "${buildPrompt(briefUrl, hotspotName).replace(/"/g, '\\"').replace(/\n/g, " ")}"`;
+  const text = buildPrompt(briefUrl, hotspotName).replace(/\n/g, " ");
+  // Single quotes, so $, backticks and backslashes stay literal rather than
+  // being expanded by the shell. The only escape a POSIX single-quoted string
+  // needs is for the quote character itself.
+  return `claude '${text.replace(/'/g, `'\\''`)}'`;
 }

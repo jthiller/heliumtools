@@ -3,8 +3,9 @@
  *
  * An artifact is a blob (markdown brief, or a certificate bundle) reachable at
  * an unguessable URL for a bounded time. The id IS the capability — there is no
- * other authorization on the GET — so ids are 192 bits of CSPRNG and are never
- * logged in full.
+ * other authorization on the GET — so ids are 192 bits of CSPRNG. They are kept
+ * out of *our* application logs (see logEvent), but they do appear in
+ * Cloudflare's invocation logs because they ride in the URL path.
  *
  * PRIVACY: the `certs` kind holds the network's RadSec PRIVATE KEY. Never log
  * payloads, and never widen the read path beyond the id + expiry check below.
@@ -50,9 +51,15 @@ export function randomArtifactId() {
 }
 
 /**
- * Access-event log: enough for forensics ("was this link ever fetched?"),
- * never enough to reconstruct a capability. Only an 8-char id prefix is
- * recorded — a live brief id must not be reconstructable from logs.
+ * Access-event log: an 8-char id prefix only, so these lines alone can't
+ * reconstruct a capability.
+ *
+ * CAVEAT (do not claim otherwise): the id travels in the URL path, and this
+ * Worker runs with `observability.logs` + `invocation_logs` enabled, so
+ * Cloudflare's own invocation logs — and `wrangler tail` — record the FULL
+ * request URL. Anyone with Workers Observability read access, a Logpush sink,
+ * or a tail session can therefore see live ids. Workers Logs is an accepted
+ * retention surface for this feature, listed with the others in CLAUDE.md.
  */
 function logEvent(action, { id, kind, hotspot }) {
   console.log(

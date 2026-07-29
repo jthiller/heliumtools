@@ -79,6 +79,10 @@ export default {
     // — the hourly tasks below must NOT fire on this cadence.
     if (event.cron === VOTE_SNAPSHOT_CRON) {
       run("vote-snapshots", runVoteSnapshots(env));
+      // Expired agent artifacts can hold RadSec private key material, so purge
+      // them on the fast tick: on the 6-hourly cron a spent 2h link could sit
+      // in D1 for ~8h, well past the window disclosed to the operator.
+      run("mobile-onboard-artifact-purge", purgeExpiredArtifacts(env));
       return;
     }
     // Everything else runs on the 6-hourly tick ("0 0,6,12,18 * * *"). minute is
@@ -92,9 +96,6 @@ export default {
       run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
       run("iot-onboard-fees", refreshOnboardFees(env));
       run("mobile-onboard-fees", refreshMobileOnboardFees(env));
-      // Drop spent/expired agent capability artifacts (they can hold cert
-      // material, so don't let them linger past their window).
-      run("mobile-onboard-artifact-purge", purgeExpiredArtifacts(env));
     }
     // OUI data changes infrequently — refresh once daily at midnight UTC.
     if (hour === 0) run("multi-gateway-oui-cache", refreshOuiCache(env));

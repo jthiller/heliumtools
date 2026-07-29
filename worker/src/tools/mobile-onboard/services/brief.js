@@ -34,9 +34,11 @@ import {
 function clean(value, maxLen = 200) {
   return String(value ?? "")
     .replace(/[`\r\n]+/g, " ")
-    .replace(/^[#>\-*|]+/g, "")
     .replace(/\s+/g, " ")
     .trim()
+    // Strip structure characters only after trimming — doing it first let a
+    // single leading space smuggle them through.
+    .replace(/^[#>\-*|]+\s*/, "")
     .slice(0, maxLen);
 }
 
@@ -145,8 +147,32 @@ ${constRows}
 
 ## 3. Certificates
 
-${certUrl
-  ? `Fetch the RadSec certificate bundle here:
+${!certUrl
+  ? `The operator will supply the certificate files. Ask them to download
+\`<name>.pk\`, \`<name>.cer\`, and \`data-only.ca\` from ${manageUrl} and tell
+you where they are (or upload them through the console themselves). Never ask
+them to paste the private key into this conversation.`
+  : isGui
+    ? `${vendor.name} is configured through a web console, where installing a
+certificate is a **file upload**. A certificate fetched into your context cannot
+satisfy an upload dialog, so do not fetch it. Ask the operator to download
+\`<name>.pk\`, \`<name>.cer\`, and \`data-only.ca\` from
+
+    ${manageUrl}
+
+and upload them through the console themselves. Never ask them to paste the
+private key into this conversation.
+
+Only if you are driving the browser and this platform genuinely accepts pasted
+PEM text rather than a file, you may fetch the bundle once from:
+
+    ${certUrl}
+
+That link works once and expires ${fmtExpiry(certExpiresAt)}.
+
+The private key is secret. Do not print it, echo it into logs or transcripts,
+commit it, or send it anywhere other than this operator's own access point.`
+    : `Fetch the RadSec certificate bundle here:
 
     ${certUrl}
 
@@ -155,24 +181,17 @@ when you are ready to install the certificates, not while you are still
 planning. It returns JSON with three PEM values: \`radsec_private_key\`,
 \`radsec_certificate\`, and \`radsec_ca_chain\`.
 
-If the link is expired or already used, it will tell you how to get a fresh one
-— ask the operator, and treat that as routine rather than an error.
+Write those values to files only if the platform requires file paths, keep them
+outside any repository or shared directory, and delete them once installed.
 
-${isGui
-    ? `Because ${vendor.name} is configured through a web console, certificate
-installation is normally a **file upload**. In that case do not paste key
-material into the browser: ask the operator to download the three files from
-${manageUrl} and upload them through the console themselves.`
-    : `Write the three PEM values to files only if the platform requires file
-paths, keep them outside any repository or shared directory, and delete them
-once installed.`}
+If the link is expired or already used, it will tell you how to get a fresh one.
+Ask the operator, and treat that as routine rather than an error. **But if it is
+already used and neither you nor the operator used it, stop and tell them: that
+means someone else fetched their private key, and the certificate should be
+reissued rather than reused.**
 
 The private key is secret. Do not print it, echo it into logs or transcripts,
-commit it, or send it anywhere other than this operator's own access point.`
-  : `The operator will supply the certificate files. Ask them to download
-\`<name>.pk\`, \`<name>.cer\`, and \`data-only.ca\` from ${manageUrl} and tell
-you where they are (or upload them through the console themselves). Never ask
-them to paste the private key into this conversation.`}
+commit it, or send it anywhere other than this operator's own access point.`}
 
 ## 4. How to work: discover, propose, confirm, apply, verify
 
@@ -180,7 +199,10 @@ Follow these stages in order. Do not skip ahead.
 
 **Stage 1 — Discover (read-only).** Inspect the current configuration: existing
 SSIDs, VLANs and their IDs, trunk/uplink port tagging, RADIUS servers, firewall
-rules, and how the controller and APs reach each other. Change nothing.
+rules, and how the controller and APs reach each other. Change nothing. You will
+need the operator's access to read any of this — that is expected at this stage;
+what you must not do before approval is make changes or ask for elevated
+write/admin credentials beyond what read-only inspection requires.
 
 **Stage 2 — Record a rollback plan.** A full configuration export is not
 available on most cloud-managed platforms, so do not claim to take one. Instead
@@ -194,7 +216,7 @@ State the blast radius plainly, including anything that could interrupt service.
 
 **Stage 4 — Get explicit approval.** Stop and wait for the operator to type an
 approval. Do not infer consent from enthusiasm, silence, or an earlier "go
-ahead". Do not request or use admin credentials until after they approve.
+ahead". Do not request or use write/admin credentials until after they approve.
 
 **Stage 5 — Apply.** Make the approved changes, one at a time. After each
 change, confirm the controller is still reachable and its APs are still
@@ -318,8 +340,9 @@ The ${what} you requested is not available. ${why}
 
     ${manageUrl}
 
-and use **Regenerate agent link**, then paste you the new URL. This is routine,
-not an error — the links are deliberately short-lived.
+and use **Generate agent link** (or **Regenerate links**, if links are already
+shown), then paste you the new URL. This is routine, not an error. The links are
+deliberately short-lived.
 
 Do not guess, enumerate, or brute-force other links. They are not predictable
 and attempting it will not work.

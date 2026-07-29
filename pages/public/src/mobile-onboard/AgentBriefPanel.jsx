@@ -16,6 +16,10 @@ function useCountdown(expiresAtSeconds) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!expiresAtSeconds) return undefined;
+    // Re-baseline immediately: `now` was seeded at panel mount, which can be
+    // long before the links were minted, so the first render would otherwise
+    // overstate the remaining time.
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
   }, [expiresAtSeconds]);
@@ -57,9 +61,9 @@ function LinkRow({ label, url, expiryLabel, note }) {
  * wallet-signed (the same signature the certificate flow uses), which is also
  * what proves ownership to the worker.
  */
-export default function AgentBriefPanel({ gateway, defaultVendor = "", compact = false }) {
+export default function AgentBriefPanel({ gateway }) {
   const { publicKey, signMessage } = useWallet();
-  const [vendor, setVendor] = useState(defaultVendor);
+  const [vendor, setVendor] = useState("");
   const [state, setState] = useState("idle"); // idle | signing | creating | done
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -102,13 +106,6 @@ export default function AgentBriefPanel({ gateway, defaultVendor = "", compact =
 
   return (
     <div className="space-y-3">
-      {!compact && (
-        <p className="text-sm text-content-secondary">
-          Hand this to an AI assistant and it will walk you through configuring your access point.
-          If it can control your browser or a terminal, it can do most of the work with you.
-        </p>
-      )}
-
       {!canSign && (
         <OffchainSignWarning>
           Connect a software wallet that owns this Hotspot to generate a link.
@@ -148,7 +145,7 @@ export default function AgentBriefPanel({ gateway, defaultVendor = "", compact =
             label="Setup brief"
             url={result.briefUrl}
             expiryLabel={briefCountdown}
-            note="Give this link to your assistant. It contains your NAS ID and network settings."
+            note="Give this link to your assistant. Treat it as a secret: it carries your NAS ID and address, and it links to the certificate below, so anyone with it can reach your private key until that link is used."
           />
           <LinkRow
             label="Certificate bundle"
@@ -177,11 +174,17 @@ export default function AgentBriefPanel({ gateway, defaultVendor = "", compact =
             </span>
           </div>
 
+          {/* Regenerating must actually revoke: the create endpoint deletes
+              this Hotspot's prior artifacts server-side, so re-running it is
+              what makes the old links dead. Clearing local state alone would
+              leave them live and the copy below would be false. */}
           <button
-            onClick={() => { setResult(null); setState("idle"); }}
-            className="inline-flex items-center gap-1.5 text-xs text-content-tertiary hover:text-content-secondary"
+            onClick={generate}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 text-xs text-content-tertiary hover:text-content-secondary disabled:opacity-50"
           >
-            <ArrowPathIcon className="h-3.5 w-3.5" /> Regenerate links
+            <ArrowPathIcon className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
+            {state === "signing" ? "Sign in wallet…" : state === "creating" ? "Regenerating…" : "Regenerate links"}
           </button>
 
           <p className="text-[11px] leading-relaxed text-content-tertiary">

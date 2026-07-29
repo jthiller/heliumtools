@@ -21,12 +21,12 @@ export default function AgentBriefStep({ gateway, certsCreated, onBack, onFinish
       </div>
 
       {certsCreated ? (
-        <AgentBriefPanel gateway={gateway} compact />
+        <AgentBriefPanel gateway={gateway} />
       ) : (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-300">
-          This needs your RadSec certificates, which you skipped earlier. Create them from the
-          Manage tab (you'll need your installation address and NAS ID), then come back and generate
-          a link there.
+          This needs your RadSec certificates, which you skipped earlier. Go back to the
+          certificates step and create them (you'll need your installation address and NAS ID),
+          then return here.
         </div>
       )}
 

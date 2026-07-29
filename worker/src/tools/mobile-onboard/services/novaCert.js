@@ -54,8 +54,11 @@ export function isTimestampFresh(timestamp, maxAgeSeconds = 600) {
   const ts = Date.parse(timestamp);
   if (Number.isNaN(ts)) return false;
   const ageMs = Date.now() - ts;
-  // Allow a little clock skew in the future, bound staleness in the past.
-  return ageMs <= maxAgeSeconds * 1000 && ageMs >= -120_000;
+  // The timestamp comes from the browser's clock, so the future-side tolerance
+  // has to absorb real client skew (minutes fast is common) or an operator with
+  // a fast clock can never generate a link at all — an unrecoverable dead end,
+  // since re-signing just produces another future timestamp.
+  return ageMs <= maxAgeSeconds * 1000 && ageMs >= -15 * 60_000;
 }
 
 /**
