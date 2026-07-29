@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS vote_proposals (
 -- in full. Single-use rows are claimed atomically via DELETE ... RETURNING.
 -- Self-provisions via CREATE TABLE IF NOT EXISTS in services/artifacts.js.
 -- PRIVACY: `certs` payloads contain a RadSec private key; never log payloads.
-CREATE TABLE IF NOT EXISTS agent_artifacts (
+CREATE TABLE IF NOT EXISTS mobile_onboard_artifacts (
   id TEXT PRIMARY KEY,           -- 192-bit base64url capability token
   kind TEXT NOT NULL,            -- 'brief' | 'certs'
   hotspot TEXT NOT NULL,         -- helium b58, powers regenerate-invalidation
@@ -118,5 +118,5 @@ CREATE TABLE IF NOT EXISTS agent_artifacts (
   expires_at INTEGER NOT NULL,   -- unix seconds; enforced in every read
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_agent_artifacts_expires ON agent_artifacts (expires_at);
-CREATE INDEX IF NOT EXISTS idx_agent_artifacts_hotspot ON agent_artifacts (hotspot);
+CREATE INDEX IF NOT EXISTS idx_mobile_onboard_artifacts_expires ON mobile_onboard_artifacts (expires_at);
+CREATE INDEX IF NOT EXISTS idx_mobile_onboard_artifacts_hotspot ON mobile_onboard_artifacts (hotspot);

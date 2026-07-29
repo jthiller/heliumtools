@@ -21,10 +21,10 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Cloudflare Worker with D1 binding (`DB`), KV binding (`KV`), and a `MultiGatewayHub` Durable Object binding (`MULTI_GATEWAY_HUB`, used by Multi-Gateway). No R2 binding — IoT-onboard recovery firmware images live in a public R2 bucket referenced by a hard-coded `*.r2.dev` URL in the frontend
 - Entry point: `src/index.js` (HTTP routes + `scheduled()` handler)
 - Tools organized under `src/tools/` (e.g., `src/tools/oui-notifier/`)
-- Schema: `worker/schema.sql` (D1 tables include `agent_artifacts` — short-lived capability blobs for mobile-onboard's "Configure with AI" brief; see that tool's doc)
+- Schema: `worker/schema.sql` (D1 tables include `mobile_onboard_artifacts` — short-lived capability blobs for mobile-onboard's "Configure with AI" brief; see that tool's doc)
 - Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
 - Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
-- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron`: the 15-min tick drives the Vote snapshot/history poll only; the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees, Mobile fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
+- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron` against the `FAST_CRON` constant it owns: the 15-min tick drives the Vote snapshot/history poll and the mobile-onboard agent-artifact purge; the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees, Mobile fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
 
 ### When to put something in `shared/` vs a specific tool
 Default to the tool's own directory. Hoist to `shared/` only when:

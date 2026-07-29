@@ -12,12 +12,12 @@ import {
 import { h3ToLatLng, latLngToH3 } from "../lib/h3.js";
 import { signAndBroadcast } from "../dc-mint/solanaUtils.js";
 import DcMintModal from "../dc-mint/DcMintModal.jsx";
-import { fetchGatewayStatus, requestUpdate } from "../lib/mobileOnboardApi.js";
+import { fetchGatewayStatus, requestCert, requestUpdate } from "../lib/mobileOnboardApi.js";
 import LocationPicker from "./LocationPicker.jsx";
 import CertDownloads from "./CertDownloads.jsx";
 import OffchainSignWarning from "./OffchainSignWarning.jsx";
 import AgentBriefPanel from "./AgentBriefPanel.jsx";
-import useCertRetrieval from "./useCertRetrieval.js";
+import useSignedHotspotRequest from "./useSignedHotspotRequest.js";
 import { isBrownfield, mobileDeviceLabel } from "./deviceTypes.js";
 import { dcToUsd } from "./format.js";
 import { SELF_SERVE_CARRIERS, PARTNER_CARRIERS } from "./vendors.js";
@@ -40,11 +40,11 @@ export default function ManageDetail({ hotspot, onBack }) {
   const {
     state: certState,
     error: certError,
-    cert,
+    result: cert,
     busy: certBusy,
     canSign,
     submit: retrieveCerts,
-  } = useCertRetrieval(hotspot.entityKey);
+  } = useSignedHotspotRequest(hotspot.entityKey, requestCert);
 
   // Location update
   const [editingLocation, setEditingLocation] = useState(false);

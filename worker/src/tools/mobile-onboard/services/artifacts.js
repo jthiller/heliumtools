@@ -8,41 +8,55 @@
  * Cloudflare's invocation logs because they ride in the URL path.
  *
  * PRIVACY: the `certs` kind holds the network's RadSec PRIVATE KEY. Never log
- * payloads, and never widen the read path beyond the id + expiry check below.
- * This is the one deliberate exception to the tool's otherwise
+ * payloads, and never widen the read path beyond the id + kind + expiry check
+ * below. This is the one deliberate exception to the tool's otherwise
  * nothing-is-persisted posture (see handlers/cert.js and CLAUDE.md).
  */
 
+const TABLE = "mobile_onboard_artifacts";
 const MAX_PAYLOAD_BYTES = 256 * 1024;
 
-let schemaReady = false;
+/**
+ * The two kinds and their lifetimes. `oneTime` and `kind` are not independent —
+ * keeping the pair here means the mint and read paths can't disagree about
+ * whether something is single-use.
+ */
+export const ARTIFACT_KINDS = {
+  brief: { oneTime: false, ttlSeconds: 24 * 60 * 60 }, // re-readable across an install day
+  certs: { oneTime: true, ttlSeconds: 2 * 60 * 60 },   // covers a realistic staged session
+};
 
-async function ensureSchema(env) {
-  if (schemaReady || !env.DB) return;
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS agent_artifacts (
-       id TEXT PRIMARY KEY,
-       kind TEXT NOT NULL,
-       hotspot TEXT NOT NULL,
-       content_type TEXT NOT NULL,
-       payload TEXT NOT NULL,
-       one_time INTEGER NOT NULL DEFAULT 0,
-       expires_at INTEGER NOT NULL,
-       created_at INTEGER NOT NULL
-     )`,
-  ).run();
-  // expires_at drives the cron purge; hotspot drives regenerate-invalidation.
-  await env.DB.prepare(
-    `CREATE INDEX IF NOT EXISTS idx_agent_artifacts_expires ON agent_artifacts (expires_at)`,
-  ).run();
-  await env.DB.prepare(
-    `CREATE INDEX IF NOT EXISTS idx_agent_artifacts_hotspot ON agent_artifacts (hotspot)`,
-  ).run();
-  schemaReady = true;
+// Memoized promise, not a boolean: concurrent callers in a cold isolate would
+// otherwise each run the full DDL before the flag flipped.
+let schemaPromise = null;
+
+function ensureSchema(env) {
+  if (!env.DB) return Promise.resolve();
+  schemaPromise ??= env.DB.batch([
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS ${TABLE} (
+         id TEXT PRIMARY KEY,
+         kind TEXT NOT NULL,
+         hotspot TEXT NOT NULL,
+         content_type TEXT NOT NULL,
+         payload TEXT NOT NULL,
+         one_time INTEGER NOT NULL DEFAULT 0,
+         expires_at INTEGER NOT NULL,
+         created_at INTEGER NOT NULL
+       )`,
+    ),
+    // expires_at drives the cron purge; hotspot drives regenerate-invalidation.
+    env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_${TABLE}_expires ON ${TABLE} (expires_at)`),
+    env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_${TABLE}_hotspot ON ${TABLE} (hotspot)`),
+  ]).catch((err) => {
+    schemaPromise = null; // let a transient failure be retried
+    throw err;
+  });
+  return schemaPromise;
 }
 
-/** 192-bit unguessable, URL-safe id. */
-export function randomArtifactId() {
+/** 192-bit unguessable, URL-safe id. Minted before the write so a payload can embed a sibling's URL. */
+export function newArtifactId() {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   let bin = "";
@@ -70,105 +84,94 @@ function logEvent(action, { id, kind, hotspot }) {
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
+const toResult = (row) => ({
+  payload: row.payload,
+  contentType: row.content_type,
+  kind: row.kind,
+  hotspot: row.hotspot,
+});
+
+/** Wall-clock expiry for a kind. Callers compute it up front so the value they
+ *  render into a payload is the same one they store. */
+export const artifactExpiry = (kind) => nowSeconds() + ARTIFACT_KINDS[kind].ttlSeconds;
+
 /**
- * Store an artifact. Returns { id, expiresAt } (expiresAt in epoch seconds).
+ * Replace a Hotspot's artifacts with a new set, in a single transaction.
+ *
+ * Batched rather than issued statement-by-statement so a failure part-way
+ * cannot leave a live private key stranded with no consumer — either the whole
+ * set lands or none of it does, and no compensating cleanup is needed. Deleting
+ * first is what makes "Regenerate" genuinely revoke the links the operator (or
+ * an agent) may still be holding.
+ *
+ * @param {Array<{id,kind,contentType,payload,expiresAt}>} entries
  */
-export async function putArtifact(env, { kind, hotspot, contentType, payload, oneTime = false, ttlSeconds }) {
+export async function replaceHotspotArtifacts(env, hotspot, entries) {
   if (!env.DB) throw new Error("D1 binding unavailable");
-  if (typeof payload !== "string" || payload.length === 0) {
-    throw new Error("Artifact payload must be a non-empty string");
-  }
-  if (payload.length > MAX_PAYLOAD_BYTES) {
-    throw new Error("Artifact payload too large");
-  }
+  if (!hotspot) throw new Error("Missing hotspot");
   await ensureSchema(env);
 
-  const id = randomArtifactId();
   const created = nowSeconds();
-  const expiresAt = created + ttlSeconds;
+  for (const e of entries) {
+    if (!ARTIFACT_KINDS[e.kind]) throw new Error(`Unknown artifact kind: ${e.kind}`);
+    if (typeof e.payload !== "string" || !e.payload) {
+      throw new Error("Artifact payload must be a non-empty string");
+    }
+    if (e.payload.length > MAX_PAYLOAD_BYTES) throw new Error("Artifact payload too large");
+  }
 
-  await env.DB.prepare(
-    `INSERT INTO agent_artifacts (id, kind, hotspot, content_type, payload, one_time, expires_at, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-  )
-    .bind(id, kind, hotspot, contentType, payload, oneTime ? 1 : 0, expiresAt, created)
-    .run();
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM ${TABLE} WHERE hotspot = ?1`).bind(hotspot),
+    ...entries.map((e) =>
+      env.DB.prepare(
+        `INSERT INTO ${TABLE} (id, kind, hotspot, content_type, payload, one_time, expires_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+      ).bind(
+        e.id,
+        e.kind,
+        hotspot,
+        e.contentType,
+        e.payload,
+        ARTIFACT_KINDS[e.kind].oneTime ? 1 : 0,
+        e.expiresAt,
+        created,
+      ),
+    ),
+  ]);
 
-  logEvent("created", { id, kind, hotspot });
-  return { id, expiresAt };
+  for (const e of entries) logEvent("created", { id: e.id, kind: e.kind, hotspot });
 }
 
 /**
- * Read an artifact by id and kind, consuming it if it is single-use.
- * Returns { payload, contentType, kind, hotspot } or null when missing,
- * expired, of the wrong kind, or already consumed — callers must not
- * distinguish those cases to the client beyond the shared 410.
+ * Read an artifact by id and kind, consuming it if that kind is single-use.
+ * Returns null when missing, expired, of the wrong kind, or already consumed —
+ * callers must not distinguish those cases to the client beyond the shared 410.
  *
- * The single-use path is one atomic statement (`DELETE ... RETURNING`) so two
- * concurrent fetches cannot both receive the payload. Expiry is enforced in
- * the WHERE clause, so a logically-expired row that the cron has not purged
- * yet is never served.
+ * One statement either way. The single-use path is an atomic
+ * `DELETE … RETURNING`, so two concurrent fetches cannot both receive the
+ * payload; `kind` is matched *inside* the statement, because checking it after
+ * the read let a request to the wrong route consume (and destroy) a single-use
+ * artifact without delivering it. Expiry is enforced in the WHERE, so a
+ * logically-expired row the cron hasn't purged yet is never served.
  */
 export async function consumeArtifact(env, id, expectedKind) {
-  if (!env.DB || typeof id !== "string" || !id || !expectedKind) return null;
+  const spec = ARTIFACT_KINDS[expectedKind];
+  if (!env.DB || typeof id !== "string" || !id || !spec) return null;
   await ensureSchema(env);
   const now = nowSeconds();
 
-  // Single-use: atomically claim it. Exactly one concurrent caller wins.
-  // `kind` is matched in the statement, not after the read — checking it
-  // afterwards would let a request to the wrong route consume (and destroy) a
-  // single-use artifact without ever delivering it.
-  const claimed = await env.DB.prepare(
-    `DELETE FROM agent_artifacts
-      WHERE id = ?1 AND expires_at > ?2 AND one_time = 1 AND kind = ?3
-      RETURNING payload, content_type, kind, hotspot`,
-  )
-    .bind(id, now, expectedKind)
-    .first();
+  const sql = spec.oneTime
+    ? `DELETE FROM ${TABLE}
+        WHERE id = ?1 AND expires_at > ?2 AND kind = ?3 AND one_time = 1
+        RETURNING payload, content_type, kind, hotspot`
+    : `SELECT payload, content_type, kind, hotspot FROM ${TABLE}
+        WHERE id = ?1 AND expires_at > ?2 AND kind = ?3 AND one_time = 0`;
 
-  if (claimed) {
-    logEvent("consumed", { id, kind: claimed.kind, hotspot: claimed.hotspot });
-    return {
-      payload: claimed.payload,
-      contentType: claimed.content_type,
-      kind: claimed.kind,
-      hotspot: claimed.hotspot,
-    };
-  }
-
-  // Re-readable (the brief): serve without consuming.
-  const row = await env.DB.prepare(
-    `SELECT payload, content_type, kind, hotspot
-       FROM agent_artifacts
-      WHERE id = ?1 AND expires_at > ?2 AND one_time = 0 AND kind = ?3`,
-  )
-    .bind(id, now, expectedKind)
-    .first();
-
+  const row = await env.DB.prepare(sql).bind(id, now, expectedKind).first();
   if (!row) return null;
-  logEvent("served", { id, kind: row.kind, hotspot: row.hotspot });
-  return {
-    payload: row.payload,
-    contentType: row.content_type,
-    kind: row.kind,
-    hotspot: row.hotspot,
-  };
-}
 
-/**
- * Drop every artifact for a Hotspot. Called before minting a new set so
- * "Regenerate" genuinely invalidates the links the operator (or an agent) may
- * still be holding.
- */
-export async function invalidateHotspotArtifacts(env, hotspot) {
-  if (!env.DB || !hotspot) return 0;
-  await ensureSchema(env);
-  const res = await env.DB.prepare(`DELETE FROM agent_artifacts WHERE hotspot = ?1`)
-    .bind(hotspot)
-    .run();
-  const count = res?.meta?.changes ?? 0;
-  if (count > 0) logEvent("invalidated", { id: "-", kind: `x${count}`, hotspot });
-  return count;
+  logEvent(spec.oneTime ? "consumed" : "served", { id, kind: row.kind, hotspot: row.hotspot });
+  return toResult(row);
 }
 
 /** Cron: drop expired rows so spent/stale key material doesn't linger. */
@@ -176,7 +179,7 @@ export async function purgeExpiredArtifacts(env) {
   if (!env.DB) return 0;
   try {
     await ensureSchema(env);
-    const res = await env.DB.prepare(`DELETE FROM agent_artifacts WHERE expires_at <= ?1`)
+    const res = await env.DB.prepare(`DELETE FROM ${TABLE} WHERE expires_at <= ?1`)
       .bind(nowSeconds())
       .run();
     const count = res?.meta?.changes ?? 0;

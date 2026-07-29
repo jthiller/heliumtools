@@ -46,14 +46,22 @@ function fmtExpiry(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().replace("T", " ").replace(/\..+/, " UTC");
 }
 
+// The three value tables are the same for every Hotspot and every vendor, so
+// they're rendered once at module load rather than per request.
+const REALM_ROWS = NAI_REALMS.map(
+  (r) => `| ${r.carrier} | \`${r.realm}\` | ${r.domain ? `\`${r.domain}\`` : "—"} | EAP-TLS + Certificate |`,
+).join("\n");
+const CONST_ROWS = AP_CONSTANTS.map((c) => `| ${c.label} | ${c.value} |`).join("\n");
+const SERVER_ROWS = RADSEC_SERVERS.map((s, i) => `| Server ${i + 1} | \`${s}\` |`).join("\n");
+
 /**
  * @param {object} args
  * @param {{ b58: string, name: string }} args.hotspot
  * @param {{ name: string, slug: string, surface: string, docUrl: string }} args.vendor
  * @param {string} args.nasId          NAS ID from the certificate record (authoritative)
  * @param {string} args.address        installation address from the certificate record
- * @param {string|null} args.certUrl   single-use cert bundle URL (null if unavailable)
- * @param {number|null} args.certExpiresAt epoch seconds
+ * @param {string} args.certUrl        single-use cert bundle URL
+ * @param {number} args.certExpiresAt  epoch seconds
  * @param {string} args.manageUrl      where the operator regenerates links
  * @returns {string} markdown
  */
@@ -64,12 +72,12 @@ export function renderBrief({ hotspot, vendor, nasId, address, certUrl, certExpi
   const addr = clean(address, 200);
   const isGui = vendor.surface === "gui";
 
-  const realmRows = NAI_REALMS.map(
-    (r) => `| ${r.carrier} | \`${r.realm}\` | ${r.domain ? `\`${r.domain}\`` : "—"} | EAP-TLS + Certificate |`,
-  ).join("\n");
-
-  const constRows = AP_CONSTANTS.map((c) => `| ${c.label} | ${c.value} |`).join("\n");
-  const serverRows = RADSEC_SERVERS.map((s, i) => `| Server ${i + 1} | \`${s}\` |`).join("\n");
+  // RouterOS is the one platform where a lost connection during a change is
+  // routinely recoverable, but only if Safe Mode was armed beforehand.
+  const safeModeNote =
+    vendor.slug === "mikrotik"
+      ? `\n   For MikroTik/RouterOS specifically: enable **Safe Mode** before any change\n   so a lost connection auto-reverts, and take an \`/export\` first.`
+      : "";
 
   return `# Configure a Helium Mobile Hotspot: ${name}
 
@@ -126,7 +134,7 @@ Certificate sub-method. Some carriers also need a separate Domain value.
 
 | Carrier | NAI realm | Domain | Auth |
 |---|---|---|---|
-${realmRows}
+${REALM_ROWS}
 
 ### RadSec servers
 
@@ -135,7 +143,7 @@ over TLS, TCP port 2083.
 
 | | Address |
 |---|---|
-${serverRows}
+${SERVER_ROWS}
 
 Shared secret: \`${RADSEC_SHARED_SECRET}\`
 
@@ -143,17 +151,12 @@ Shared secret: \`${RADSEC_SHARED_SECRET}\`
 
 | Setting | Value |
 |---|---|
-${constRows}
+${CONST_ROWS}
 
 ## 3. Certificates
 
-${!certUrl
-  ? `The operator will supply the certificate files. Ask them to download
-\`<name>.pk\`, \`<name>.cer\`, and \`data-only.ca\` from ${manageUrl} and tell
-you where they are (or upload them through the console themselves). Never ask
-them to paste the private key into this conversation.`
-  : isGui
-    ? `${vendor.name} is configured through a web console, where installing a
+${isGui
+  ? `${vendor.name} is configured through a web console, where installing a
 certificate is a **file upload**. A certificate fetched into your context cannot
 satisfy an upload dialog, so do not fetch it. Ask the operator to download
 \`<name>.pk\`, \`<name>.cer\`, and \`data-only.ca\` from
@@ -172,7 +175,7 @@ That link works once and expires ${fmtExpiry(certExpiresAt)}.
 
 The private key is secret. Do not print it, echo it into logs or transcripts,
 commit it, or send it anywhere other than this operator's own access point.`
-    : `Fetch the RadSec certificate bundle here:
+  : `Fetch the RadSec certificate bundle here:
 
     ${certUrl}
 
@@ -230,12 +233,9 @@ anything you could not test.
 
 Use the highest-capability path actually available to you:
 
-1. **API or CLI**, if this platform offers one and the operator provides access.
-${vendor.slug === "mikrotik"
-    ? `   For MikroTik/RouterOS specifically: enable **Safe Mode** before any change
-   so a lost connection auto-reverts, and take an \`/export\` first.\n`
-    : ""}2. **Browser control** (a browser-automation or computer-use tool), driving the
-   web console yourself. ${isGui ? `This is usually the right path for ${vendor.name}.` : ""}
+1. **API or CLI**, if this platform offers one and the operator provides access.${safeModeNote}
+2. **Browser control** (a browser-automation or computer-use tool), driving the
+   web console yourself.${isGui ? ` This is usually the right path for ${vendor.name}.` : ""}
 3. **A reviewable config artifact** the operator applies themselves, if you can
    neither call an API nor drive a browser.
 4. **A guided walkthrough**, talking the operator through each screen, if you

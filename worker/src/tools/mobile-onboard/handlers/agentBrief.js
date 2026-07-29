@@ -23,16 +23,15 @@ import {
   hasCertMaterial,
 } from "../services/novaCert.js";
 import {
-  putArtifact,
+  newArtifactId,
+  artifactExpiry,
+  replaceHotspotArtifacts,
   consumeArtifact,
-  invalidateHotspotArtifacts,
 } from "../services/artifacts.js";
 import { renderBrief, renderExpiredNotice } from "../services/brief.js";
 import { findVendor } from "../services/apConfig.js";
 import { APP_MANAGE_URL } from "../config.js";
 
-const BRIEF_TTL_SECONDS = 24 * 60 * 60; // re-readable across an install day
-const CERT_TTL_SECONDS = 2 * 60 * 60;   // covers a realistic staged session
 const SIGNATURE_MAX_AGE_SECONDS = 600;
 
 /** Links are served by the worker; the manage/regenerate page is the app. */
@@ -112,33 +111,18 @@ export async function handleCreateAgentBrief(request, env) {
   const nasId = Array.isArray(result.data.nas_ids) ? result.data.nas_ids[0] : null;
   const address = result.data.location_address || "";
 
+  // Ids are minted before the write so the brief can embed the cert's URL, and
+  // both rows can then land in one batch: either the pair exists or neither
+  // does, so a mid-write failure can't strand a live private key with no brief
+  // to consume it.
+  const certId = newArtifactId();
+  const briefId = newArtifactId();
+  const certExpiresAt = artifactExpiry("certs");
+  const briefExpiresAt = artifactExpiry("brief");
+  const origin = workerOrigin(request);
+  const certUrl = `${origin}/mobile-onboard/agent-certs/${certId}`;
+
   try {
-    // Regenerating genuinely invalidates whatever the operator handed out before.
-    await invalidateHotspotArtifacts(env, hotspotKey);
-
-    const certBundle = {
-      hotspot: hotspotKey,
-      nas_id: nasId,
-      location_address: address,
-      radsec_private_key: result.data.radsec_private_key,
-      radsec_certificate: result.data.radsec_certificate,
-      radsec_ca_chain: result.data.radsec_ca_chain,
-      radsec_cert_expire: result.data.radsec_cert_expire ?? null,
-    };
-
-    const cert = await putArtifact(env, {
-      kind: "certs",
-      hotspot: hotspotKey,
-      contentType: "application/json",
-      payload: JSON.stringify(certBundle),
-      oneTime: true,
-      ttlSeconds: CERT_TTL_SECONDS,
-    });
-
-    const origin = workerOrigin(request);
-    const certUrl = `${origin}/mobile-onboard/agent-certs/${cert.id}`;
-    const manageUrl = manageUrlFor(hotspotKey);
-
     const markdown = renderBrief({
       // `name` is unsigned client input rendered into the brief an agent
       // follows, so bound it to the angry-purple-tiger shape and fall back to
@@ -148,36 +132,65 @@ export async function handleCreateAgentBrief(request, env) {
       nasId,
       address,
       certUrl,
-      certExpiresAt: cert.expiresAt,
-      manageUrl,
+      certExpiresAt,
+      manageUrl: manageUrlFor(hotspotKey),
     });
 
-    const brief = await putArtifact(env, {
-      kind: "brief",
-      hotspot: hotspotKey,
-      contentType: "text/markdown; charset=utf-8",
-      payload: markdown,
-      oneTime: false,
-      ttlSeconds: BRIEF_TTL_SECONDS,
-    });
+    // Replacing (not appending) is what makes "Regenerate" genuinely invalidate
+    // whatever the operator handed out before.
+    await replaceHotspotArtifacts(env, hotspotKey, [
+      {
+        id: certId,
+        kind: "certs",
+        expiresAt: certExpiresAt,
+        contentType: "application/json",
+        payload: JSON.stringify({
+          hotspot: hotspotKey,
+          nas_id: nasId,
+          location_address: address,
+          radsec_private_key: result.data.radsec_private_key,
+          radsec_certificate: result.data.radsec_certificate,
+          radsec_ca_chain: result.data.radsec_ca_chain,
+          radsec_cert_expire: result.data.radsec_cert_expire ?? null,
+        }),
+      },
+      {
+        id: briefId,
+        kind: "brief",
+        expiresAt: briefExpiresAt,
+        contentType: "text/markdown; charset=utf-8",
+        payload: markdown,
+      },
+    ]);
 
     return jsonResponse({
-      briefUrl: `${origin}/mobile-onboard/agent-brief/${brief.id}`,
+      briefUrl: `${origin}/mobile-onboard/agent-brief/${briefId}`,
       certUrl,
-      briefExpiresAt: brief.expiresAt,
-      certExpiresAt: cert.expiresAt,
+      briefExpiresAt,
+      certExpiresAt,
       vendor: vendor.slug,
       nas_id: nasId,
     });
   } catch (err) {
     console.error("mobile-onboard agent-brief create error:", err.message);
-    // Never leave an orphaned cert row (a live private key with no consumer)
-    // behind when brief rendering or storage failed midway.
-    try {
-      await invalidateHotspotArtifacts(env, hotspotKey);
-    } catch {}
     return jsonResponse({ error: "Could not create the agent link" }, 500);
   }
+}
+
+/**
+ * Every artifact response, including the error bodies, is written for an agent
+ * to read. A private key must never be cached by an intermediary or indexed, so
+ * the no-store/noindex pair is unconditional.
+ */
+function artifactResponse(body, status, contentType = "text/markdown; charset=utf-8") {
+  return new Response(body, {
+    status,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store, max-age=0",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
 }
 
 /**
@@ -186,13 +199,7 @@ export async function handleCreateAgentBrief(request, env) {
  * 410 with recovery instructions — the agent should never be able to tell
  * those apart, and should never be left guessing what to do next.
  */
-export async function handleGetArtifact(request, env, id, expectedKind) {
-  const baseHeaders = {
-    // A private key must never be cached by an intermediary, or indexed.
-    "Cache-Control": "no-store, max-age=0",
-    "X-Robots-Tag": "noindex, nofollow",
-  };
-
+export async function handleGetArtifact(env, id, expectedKind) {
   let found = null;
   try {
     // Kind is matched inside the query so a request to the wrong route can
@@ -203,21 +210,16 @@ export async function handleGetArtifact(request, env, id, expectedKind) {
     // or expired" here would send the operator off regenerating a link that
     // was never the problem.
     console.error("mobile-onboard artifact read error:", err.message);
-    return new Response(
+    return artifactResponse(
       "# Temporary problem retrieving this link\n\nThis is a server-side error, not an expired link. Wait a moment and try the same URL again before asking the operator to regenerate anything.\n",
-      { status: 503, headers: { "Content-Type": "text/markdown; charset=utf-8", ...baseHeaders } },
+      503,
     );
   }
 
-  if (!found) {
-    return new Response(renderExpiredNotice({ kind: expectedKind, manageUrl: manageUrlFor(null) }), {
-      status: 410,
-      headers: { "Content-Type": "text/markdown; charset=utf-8", ...baseHeaders },
-    });
-  }
-
-  return new Response(found.payload, {
-    status: 200,
-    headers: { "Content-Type": found.contentType, ...baseHeaders },
-  });
+  return found
+    ? artifactResponse(found.payload, 200, found.contentType)
+    : artifactResponse(
+        renderExpiredNotice({ kind: expectedKind, manageUrl: manageUrlFor(null) }),
+        410,
+      );
 }

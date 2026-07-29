@@ -32,7 +32,6 @@ export default function ManageTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [notFound, setNotFound] = useState(null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -51,18 +50,24 @@ export default function ManageTab() {
         const mobile = (data.hotspots || []).filter((h) => (h.networks || []).includes("mobile"));
         setHotspots(mobile);
         // Auto-open the Hotspot an expired-link recovery pointed the operator
-        // at. If it isn't in this wallet's fleet, say so rather than silently
-        // showing an unfiltered list the operator has to search by hand.
+        // at. If it isn't in this wallet's fleet, the notice below says so
+        // rather than silently showing an unfiltered list to search by hand.
         if (requestedHotspot) {
-          const match = mobile.find((h) => h.entityKey === requestedHotspot);
-          if (match) setSelected(match);
-          else setNotFound(requestedHotspot);
+          setSelected(mobile.find((h) => h.entityKey === requestedHotspot) || null);
         }
       })
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [connected, publicKey, requestedHotspot]);
+
+  // Derived, not stored: a stored flag survived both reconnecting a different
+  // wallet and backing out of the detail view, so the "not yours" notice could
+  // outlive the wallet it described.
+  const notFound =
+    requestedHotspot && hotspots && !hotspots.some((h) => h.entityKey === requestedHotspot)
+      ? requestedHotspot
+      : null;
 
   const rows = useMemo(() => {
     if (!hotspots) return [];

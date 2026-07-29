@@ -20,10 +20,15 @@ import {
 } from "./tools/mobile-onboard/index.js";
 import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
-import { handleVoteRequest, runVoteSnapshots, VOTE_SNAPSHOT_CRON } from "./tools/vote/index.js";
+import { handleVoteRequest, runVoteSnapshots } from "./tools/vote/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
+
+// The high-frequency trigger, branched on in scheduled(). MUST match the entry
+// in wrangler.jsonc triggers.crons. Owned here rather than by any one tool —
+// more than one tool now rides this tick.
+const FAST_CRON = "*/15 * * * *";
 
 const routes = [
   { prefix: "/oui-notifier", handler: handleOuiNotifierRequest },
@@ -74,10 +79,9 @@ export default {
         }),
       );
 
-    // High-frequency vote-snapshot tick (every 15 min): refresh the stored
-    // snapshot + append history so viewers never hit the RPC. Runs in isolation
-    // — the hourly tasks below must NOT fire on this cadence.
-    if (event.cron === VOTE_SNAPSHOT_CRON) {
+    // The fast tick (every 15 min). Runs in isolation — the 6-hourly tasks
+    // below must NOT fire on this cadence.
+    if (event.cron === FAST_CRON) {
       run("vote-snapshots", runVoteSnapshots(env));
       // Expired agent artifacts can hold RadSec private key material, so purge
       // them on the fast tick: on the 6-hourly cron a spent 2h link could sit

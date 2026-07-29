@@ -4,11 +4,12 @@ import AgentBriefPanel from "./AgentBriefPanel.jsx";
 /**
  * Final wizard step: hand the configuration off to an AI assistant.
  *
- * Requires certificates to exist — generating re-fetches the Hotspot's
- * certificate record, so an operator who chose "Later" on the certificate step
- * would otherwise hit an opaque rejection from the certificate service.
+ * Generating re-fetches the Hotspot's certificate record, so this only works
+ * once certificates exist. The panel names that as the recoverable cause when
+ * the request is rejected — a local "did they create certs?" flag would only
+ * hold on this surface, and Manage (which shows the same panel) can't know.
  */
-export default function AgentBriefStep({ gateway, certsCreated, onBack, onFinish }) {
+export default function AgentBriefStep({ gateway, onBack, onFinish }) {
   return (
     <div className="space-y-4">
       <div>
@@ -20,15 +21,7 @@ export default function AgentBriefStep({ gateway, certsCreated, onBack, onFinish
         </p>
       </div>
 
-      {certsCreated ? (
-        <AgentBriefPanel gateway={gateway} />
-      ) : (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-300">
-          This needs your RadSec certificates, which you skipped earlier. Go back to the
-          certificates step and create them (you'll need your installation address and NAS ID),
-          then return here.
-        </div>
-      )}
+      <AgentBriefPanel gateway={gateway} />
 
       <div className="flex flex-wrap gap-3 text-sm">
         <a

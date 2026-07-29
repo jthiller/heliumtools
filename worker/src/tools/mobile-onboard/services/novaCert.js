@@ -13,7 +13,7 @@ import { CERT_API_BASE, CERT_API_PATH } from "../config.js";
 
 // The signed LocationData payload is a small JSON blob (address + NAS IDs +
 // two pubkeys + timestamp); 4 KB of base64 is generous headroom.
-export const MAX_LOCATION_DATA_LEN = 4096;
+const MAX_LOCATION_DATA_LEN = 4096;
 const BASE64_RE = /^[A-Za-z0-9+/=]+$/;
 
 /** Returns an error string, or null when the signed payload looks well-formed. */

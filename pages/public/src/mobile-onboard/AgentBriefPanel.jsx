@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
 import { ArrowPathIcon, ArrowTopRightOnSquareIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import CopyButton from "../components/CopyButton.jsx";
 import { createAgentBrief } from "../lib/mobileOnboardApi.js";
-import { signCertRequest } from "./certRequest.js";
+import { formatDuration } from "../lib/utils.js";
 import { VENDORS } from "./vendors.js";
 import { buildPrompt, buildDeepLinks, buildCliCommand } from "./agentPrompt.js";
 import OffchainSignWarning from "./OffchainSignWarning.jsx";
+import useSignedHotspotRequest from "./useSignedHotspotRequest.js";
 
 const SELECT_CLASS =
   "mt-1 w-full rounded-lg border border-border bg-surface-inset px-3 py-2 text-sm text-content focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
@@ -26,10 +26,7 @@ function useCountdown(expiresAtSeconds) {
 
   if (!expiresAtSeconds) return null;
   const secondsLeft = expiresAtSeconds - Math.floor(now / 1000);
-  if (secondsLeft <= 0) return "expired";
-  const h = Math.floor(secondsLeft / 3600);
-  const m = Math.floor((secondsLeft % 3600) / 60);
-  return h > 0 ? `in ${h}h ${m}m` : `in ${Math.max(1, m)}m`;
+  return secondsLeft <= 0 ? "expired" : `in ${formatDuration(secondsLeft)}`;
 }
 
 function LinkRow({ label, url, expiryLabel, note }) {
@@ -62,36 +59,22 @@ function LinkRow({ label, url, expiryLabel, note }) {
  * what proves ownership to the worker.
  */
 export default function AgentBriefPanel({ gateway }) {
-  const { publicKey, signMessage } = useWallet();
   const [vendor, setVendor] = useState("");
-  const [state, setState] = useState("idle"); // idle | signing | creating | done
-  const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
+
+  // Same signed payload the certificate flow sends — no address/NAS fields,
+  // because this re-fetches the existing certificate record and the worker
+  // reads the authoritative NAS ID from that response.
+  const createBrief = useCallback(
+    (payload) => createAgentBrief({ ...payload, vendor, name: gateway.name }),
+    [vendor, gateway.name],
+  );
+  const { state, error, result, busy, canSign, submit } = useSignedHotspotRequest(
+    gateway.b58,
+    createBrief,
+  );
 
   const briefCountdown = useCountdown(result?.briefExpiresAt);
   const certCountdown = useCountdown(result?.certExpiresAt);
-  const canSign = !!signMessage && !!publicKey;
-
-  const generate = useCallback(async () => {
-    if (!vendor || !canSign) return;
-    setError(null);
-    setState("signing");
-    try {
-      // No address/NAS fields: this re-fetches the existing certificate record,
-      // and the worker reads the authoritative NAS ID from that response.
-      const payload = await signCertRequest(signMessage, publicKey.toBase58(), gateway.b58);
-      setState("creating");
-      setResult(await createAgentBrief({ ...payload, vendor, name: gateway.name }));
-      setState("done");
-    } catch (err) {
-      setError(
-        /reject|declin|cancel/i.test(err.message || "")
-          ? "Signature request was declined in the wallet."
-          : err.message,
-      );
-      setState("idle");
-    }
-  }, [vendor, canSign, signMessage, publicKey, gateway]);
 
   const deepLinks = useMemo(
     () => (result ? buildDeepLinks(result.briefUrl, gateway.name) : []),
@@ -101,8 +84,6 @@ export default function AgentBriefPanel({ gateway }) {
     () => (result ? buildCliCommand(result.briefUrl, gateway.name) : ""),
     [result, gateway.name],
   );
-
-  const busy = state === "signing" || state === "creating";
 
   return (
     <div className="space-y-3">
@@ -137,7 +118,18 @@ export default function AgentBriefPanel({ gateway }) {
         </div>
       )}
 
-      {error && <p className="text-sm text-rose-500">{error}</p>}
+      {error && (
+        <div className="text-sm text-rose-500">
+          <p>{error}</p>
+          {/* The brief is built from this Hotspot's certificate record, and
+              Nova answers "no record" and "wrong wallet" with the same
+              rejection, so name the recoverable cause rather than guessing. */}
+          <p className="mt-1 text-[11px] text-content-tertiary">
+            The brief is built from this Hotspot's certificate record. If you skipped the
+            certificate step, create certificates for it first.
+          </p>
+        </div>
+      )}
 
       {result ? (
         <div className="space-y-3">
@@ -179,12 +171,12 @@ export default function AgentBriefPanel({ gateway }) {
               what makes the old links dead. Clearing local state alone would
               leave them live and the copy below would be false. */}
           <button
-            onClick={generate}
-            disabled={busy}
+            onClick={() => submit()}
+            disabled={busy || !canSign}
             className="inline-flex items-center gap-1.5 text-xs text-content-tertiary hover:text-content-secondary disabled:opacity-50"
           >
             <ArrowPathIcon className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
-            {state === "signing" ? "Sign in wallet…" : state === "creating" ? "Regenerating…" : "Regenerate links"}
+            {state === "signing" ? "Sign in wallet…" : busy ? "Regenerating…" : "Regenerate links"}
           </button>
 
           <p className="text-[11px] leading-relaxed text-content-tertiary">
@@ -197,12 +189,12 @@ export default function AgentBriefPanel({ gateway }) {
         </div>
       ) : (
         <button
-          onClick={generate}
+          onClick={() => submit()}
           disabled={busy || !vendor || !canSign}
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           <SparklesIcon className="h-4 w-4" />
-          {state === "signing" ? "Sign in wallet…" : state === "creating" ? "Preparing…" : "Generate agent link"}
+          {state === "signing" ? "Sign in wallet…" : busy ? "Preparing…" : "Generate agent link"}
         </button>
       )}
     </div>

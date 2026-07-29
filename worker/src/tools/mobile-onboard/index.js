@@ -45,8 +45,7 @@ export async function handleMobileOnboardRequest(request, env) {
   const artifact = ARTIFACT_ROUTE.exec(pathname);
   if (artifact) {
     if (request.method !== "GET") return jsonResponse({ error: "Method not allowed" }, 405);
-    const kind = artifact[1] === "certs" ? "certs" : "brief";
-    return handleGetArtifact(request, env, artifact[2], kind);
+    return handleGetArtifact(env, artifact[2], artifact[1]);
   }
 
   if (request.method !== "POST") {

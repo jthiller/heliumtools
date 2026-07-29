@@ -40,10 +40,6 @@ export default function OnboardWizard({ onOpenGuide }) {
   const [fees, setFees] = useState(null);
   const [location, setLocation] = useState({ lat: "", lng: "" });
   const [certForm, setCertForm] = useState({ address: "", nasId: "" });
-  // Gates the agent step: generating a brief re-fetches the certificate record,
-  // so an operator who skipped cert creation must be told rather than shown an
-  // opaque rejection from the certificate service.
-  const [certsCreated, setCertsCreated] = useState(false);
   const [resumeState, setResumeState] = useState(null); // null | "checking" | error string
 
   useEffect(() => {
@@ -84,7 +80,6 @@ export default function OnboardWizard({ onOpenGuide }) {
 
   const handleCertDone = () => {
     saveDraft({ gateway: gateway.b58, step: "cert" });
-    setCertsCreated(true);
     setStep("configure");
   };
 
@@ -104,7 +99,6 @@ export default function OnboardWizard({ onOpenGuide }) {
     setIssuePayload(null);
     setLocation({ lat: "", lng: "" });
     setCertForm({ address: "", nasId: "" });
-    setCertsCreated(false);
   };
 
   const handleFinish = () => {
@@ -130,9 +124,6 @@ export default function OnboardWizard({ onOpenGuide }) {
       setToken(draft.token || null);
       setLocation({ lat: draft.lat || "", lng: draft.lng || "" });
       setCertForm({ address: draft.address || "", nasId: draft.nasId || "" });
-      // step "cert" is only saved once certificates were actually created
-      // (the skip path saves "onboarded"), so it's the resume signal too.
-      setCertsCreated(draft.step === "cert");
       if (status.onboarded) {
         setStep(draft.step === "cert" ? "configure" : "cert");
       } else if (status.issued) {
@@ -238,7 +229,6 @@ export default function OnboardWizard({ onOpenGuide }) {
       {step === "agent" && (
         <AgentBriefStep
           gateway={gateway}
-          certsCreated={certsCreated}
           onBack={() => setStep("configure")}
           onFinish={handleFinish}
         />
