@@ -9,7 +9,7 @@ import { SELF_SERVE_CARRIERS, PARTNER_CARRIERS } from "./vendors.js";
  * the deployment is validated. Finishing deletes the draft; everything after
  * this lives in the Manage tab.
  */
-export default function ConfigureStep({ gateway, onFinish }) {
+export default function ConfigureStep({ gateway, onContinue }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
@@ -54,10 +54,10 @@ export default function ConfigureStep({ gateway, onFinish }) {
       </div>
 
       <button
-        onClick={onFinish}
+        onClick={onContinue}
         className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
       >
-        Done
+        Continue
       </button>
     </div>
   );

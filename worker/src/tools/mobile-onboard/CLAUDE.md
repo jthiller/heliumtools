@@ -105,9 +105,10 @@ brownfield `ManageDetail`. Steps 2–5 stay silent about Helium Plus by design.
 ## Worker (API) — prefix `/mobile-onboard`
 
 Entry point: `index.js` → handlers under `handlers/`. Registered in
-`worker/src/index.js`; the fee refresh (`refreshMobileOnboardFees`) runs on the
-6-hourly cron branch next to the iot-onboard one. Bindings: `SOLANA_RPC_URL` +
-`KV` only.
+`worker/src/index.js`; the fee refresh (`refreshMobileOnboardFees`) and the
+agent-artifact purge (`purgeExpiredArtifacts`) run on the 6-hourly cron branch
+next to the iot-onboard one. Bindings: `SOLANA_RPC_URL` + `KV`, plus **`DB`
+(D1)** for the agent-brief artifacts below.
 
 **Endpoints:**
 - `GET /fees` — per-device-type `DeviceFeesV1` schedule from the MOBILE
@@ -214,6 +215,77 @@ Solana. The cert service's response flattens the `LocationInfo`
 shows the NAS ID + address from any cert fetch. On the Manage tab that is how
 an operator retrieves the NAS ID a Hotspot was issued for (via the same
 wallet-signed "Retrieve certificates" action).
+
+## Configure with AI — the agent brief
+
+The final wizard step (and a Manage panel) mints two short-lived **capability
+links** the operator hands to an LLM or coding agent, which then configures
+their access point with them.
+
+**Endpoints**
+- `POST /agent-brief { location_data, signature, vendor, name? }` — relays the
+  signed payload to Nova exactly as `/cert` does; **a 2xx from Nova is the
+  ownership proof**, so the worker verifies no signatures itself and anonymous
+  callers cannot write to D1. Then stores the cert bundle (single-use, 2h) and a
+  rendered markdown brief embedding that cert URL (re-readable, 24h), returning
+  both URLs + expiries. IP rate-limited (`rl:mo:brief`, 20/10min).
+- `GET /agent-brief/:id` → `text/markdown`; `GET /agent-certs/:id` → the bundle
+  **once**. Both send `Cache-Control: no-store` + `X-Robots-Tag: noindex`.
+- Missing / expired / consumed / wrong-kind all collapse to the **same 410 with
+  markdown recovery instructions** telling the agent to have the operator
+  regenerate at `…/mobile-onboard?tab=manage&hotspot=<b58>` (ManageTab
+  auto-opens that Hotspot). An agent must never be able to distinguish those
+  cases, or be left guessing.
+
+**Storage** — `agent_artifacts` in D1 (`services/artifacts.js`, self-provisioning
++ mirrored in `worker/schema.sql`). Ids are 192 bits of CSPRNG and are the only
+authorization, so they are never logged in full (8-char prefix only). Single-use
+reads are **one atomic statement** (`DELETE … WHERE id AND expires_at > now AND
+one_time AND kind RETURNING …`) — verified: 6 concurrent fetches deliver the
+payload exactly once. **`kind` is matched inside the query**, not after the read:
+checking it afterwards let a request to the wrong route consume and destroy a
+single-use artifact without delivering it. Expiry is enforced in every WHERE, so
+a logically-expired row the cron hasn't purged is never served.
+
+> **Accepted risk.** The `certs` artifact holds the RadSec **private key** in
+> the clear — the one deliberate exception to the tool's otherwise
+> nothing-is-persisted posture. Bounded by: single-use, 2h, unguessable id,
+> Nova-verified ownership, cron purge, regenerate-invalidates-prior, a
+> signature freshness check (a captured `{location_data, signature}` pair
+> would otherwise mint artifacts forever), and never logging payloads.
+> `CertDownloads` copy is scoped to the download path accordingly, and the
+> generate step discloses the storage. Describe *application* behavior only —
+> do not claim irrecoverable destruction.
+
+**The brief** (`services/brief.js`) is rendered server-side and deliberately
+shaped so an agent can't fake success:
+- Values come from the **certificate record** (NAS ID, address), not client
+  input, so "this must match your certificate" is true by construction.
+- It tells the agent to fetch `docs.helium.com/mobile/helium-plus-<slug>.md`
+  (raw markdown) for click-paths, with a **scope line** — that doc is an
+  injection surface for a credentialed agent, so it governs click-paths only.
+  Operator-typed fields are likewise framed as data, never instructions, and
+  are flattened/stripped by `clean()` so they cannot open a markdown block.
+- **Only executable asks.** No "export the config" (impossible on Meraki /
+  Aruba Central / Mist — record touched settings + a rollback list instead), and
+  verification is split into **agent-verifiable / operator-verifiable /
+  wait-for-data** tiers. Demanding a synthetic EAP-TLS association or ANQP
+  capture just produces an agent that claims it ran them.
+- **Additive-only safety rules, stated precisely.** Never edit existing SSIDs,
+  VLAN interfaces, or firewall rules; adding a VLAN *and tagging it onto trunks*
+  is allowed only after every affected port is in the approval diff (a bad trunk
+  edit can sever the controller from its APs); confirm out-of-band access first;
+  client isolation on the new SSID only.
+- Staged protocol: discover → record rollback → propose → **wait for typed
+  approval** → apply → verify, with no credentials requested before approval.
+- Per-vendor: `surface: "gui"` platforms get browser-control + file-upload
+  guidance (a PEM fetched into context can't satisfy an upload dialog);
+  MikroTik gets Safe Mode + `/export`.
+
+`services/apConfig.js` duplicates the realms/servers/constants from
+`pages/public/src/mobile-onboard/vendors.js` — the two deployables can't share a
+module, and contradicting the guide UI would be worse than the duplication.
+**Change both or neither.**
 
 ## Frontend (`pages/public/src/mobile-onboard/`)
 

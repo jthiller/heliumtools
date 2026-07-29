@@ -7,6 +7,7 @@ import {
   CheckCircleIcon,
   DocumentTextIcon,
   MapPinIcon,
+  SparklesIcon,
 } from "@heroicons/react/24/outline";
 import { h3ToLatLng, latLngToH3 } from "../lib/h3.js";
 import { signAndBroadcast } from "../dc-mint/solanaUtils.js";
@@ -15,6 +16,7 @@ import { fetchGatewayStatus, requestUpdate } from "../lib/mobileOnboardApi.js";
 import LocationPicker from "./LocationPicker.jsx";
 import CertDownloads from "./CertDownloads.jsx";
 import OffchainSignWarning from "./OffchainSignWarning.jsx";
+import AgentBriefPanel from "./AgentBriefPanel.jsx";
 import useCertRetrieval from "./useCertRetrieval.js";
 import { isBrownfield, mobileDeviceLabel } from "./deviceTypes.js";
 import { dcToUsd } from "./format.js";
@@ -283,6 +285,22 @@ export default function ManageDetail({ hotspot, onBack }) {
             </p>
           )}
         </div>
+
+        {brownfield && (
+          <div className="rounded-2xl bg-surface-raised p-5 shadow-soft">
+            <div className="flex items-center gap-2">
+              <SparklesIcon className="h-4 w-4 text-content-tertiary" />
+              <h3 className="font-display text-sm font-semibold text-content">Configure with AI</h3>
+            </div>
+            <p className="mt-1 text-xs text-content-tertiary">
+              Generate a link for an AI assistant to help configure this network's access point.
+              Links are short-lived; regenerate here whenever one expires.
+            </p>
+            <div className="mt-3">
+              <AgentBriefPanel gateway={{ b58: hotspot.entityKey, name: hotspot.name || hotspot.entityKey }} compact />
+            </div>
+          </div>
+        )}
 
         {brownfield && (
           <p className="px-1 text-xs text-content-tertiary">

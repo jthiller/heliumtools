@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { MagnifyingGlassIcon, MapPinIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
@@ -22,6 +23,10 @@ function place(h) {
  */
 export default function ManageTab() {
   const { connected, publicKey } = useWallet();
+  const [searchParams] = useSearchParams();
+  // Agents send operators here to regenerate an expired link, so `?hotspot=`
+  // must land directly on that Hotspot instead of an unfiltered list.
+  const requestedHotspot = searchParams.get("hotspot");
 
   const [hotspots, setHotspots] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -44,11 +49,16 @@ export default function ManageTab() {
         if (cancelled) return;
         const mobile = (data.hotspots || []).filter((h) => (h.networks || []).includes("mobile"));
         setHotspots(mobile);
+        // Auto-open the Hotspot an expired-link recovery pointed the operator at.
+        if (requestedHotspot) {
+          const match = mobile.find((h) => h.entityKey === requestedHotspot);
+          if (match) setSelected(match);
+        }
       })
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, [connected, publicKey]);
+  }, [connected, publicKey, requestedHotspot]);
 
   const rows = useMemo(() => {
     if (!hotspots) return [];
