@@ -104,10 +104,10 @@
             // IoT/Mobile fees at hour % 6 === 0 (00/06/12/18 UTC) and the multi-gateway
             // OUI cache at 00:00.
             "0 0,6,12,18 * * *", // UTC at 00/06/12/18
-            // Vote tool: snapshot tracked proposals + record history every 15
-            // min so viewers read cached data and never hit the RPC. Branched on
-            // in scheduled() (VOTE_SNAPSHOT_CRON); the hourly tasks do NOT run on
-            // this tick.
+            // Fast tick. Branched on in scheduled() against FAST_CRON: the Vote
+            // snapshot/history poll (so viewers read cached data and never hit
+            // the RPC) and the mobile-onboard agent-artifact purge. The 6-hourly
+            // tasks do NOT run on this tick.
             "*/15 * * * *"
         ]
     },
