@@ -3,7 +3,7 @@ import { ArrowPathIcon, ArrowTopRightOnSquareIcon, SparklesIcon } from "@heroico
 import CopyButton from "../components/CopyButton.jsx";
 import { createAgentBrief } from "../lib/mobileOnboardApi.js";
 import { formatDuration } from "../lib/utils.js";
-import { VENDORS } from "./vendors.js";
+import { VENDORS, OTHER_VENDOR } from "./vendors.js";
 import { buildPrompt, buildDeepLinks, buildCliCommand } from "./agentPrompt.js";
 import OffchainSignWarning from "./OffchainSignWarning.jsx";
 import useSignedHotspotRequest from "./useSignedHotspotRequest.js";
@@ -109,11 +109,15 @@ export default function AgentBriefPanel({ gateway }) {
             {VENDORS.map((v) => (
               <option key={v.slug} value={v.slug}>{v.name}</option>
             ))}
+            {/* Last, and not part of VENDORS: that list is the guide index. */}
+            <option value={OTHER_VENDOR.slug}>{OTHER_VENDOR.name}</option>
           </select>
           <p className="mt-1 text-[11px] text-content-tertiary">
-            The brief points the assistant at this platform's official Helium guide. Generating a
-            link stores your certificate bundle, including the private key, until the assistant
-            fetches it once or two hours pass.
+            {vendor === OTHER_VENDOR.slug
+              ? "There's no Helium guide for platforms like OpenWRT or Alta Labs yet, so the brief works from the vendor-agnostic guide and has the assistant identify your platform and confirm it supports Passpoint and RadSec before changing anything."
+              : "The brief points the assistant at this platform's official Helium guide."}{" "}
+            Generating a link stores your certificate bundle, including the private key, until the
+            assistant fetches it once or two hours pass.
           </p>
         </div>
       )}
