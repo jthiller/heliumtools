@@ -225,7 +225,7 @@ links** the operator hands to an LLM or coding agent, which then configures
 their access point with them.
 
 **Endpoints**
-- `POST /agent-brief { location_data, signature, vendor, name? }` — relays the
+- `POST /agent-brief { location_data, signature, vendor }` — relays the
   signed payload to Nova exactly as `/cert` does; **a 2xx from Nova is the
   ownership proof**, so the worker verifies no signatures itself and anonymous
   callers cannot write to D1. Then stores the cert bundle (single-use, 2h) and a
@@ -284,7 +284,12 @@ the mint and read paths cannot disagree about whether a kind is single-use.
 **The brief** (`services/brief.js`) is rendered server-side and deliberately
 shaped so an agent can't fake success:
 - Values come from the **certificate record** (NAS ID, address), not client
-  input, so "this must match your certificate" is true by construction.
+  input, so "this must match your certificate" is true by construction. The
+  Hotspot's name and key are deliberately **absent**: the agent never enters
+  either, so they were noise it could mistake for a value to configure, and
+  dropping the name removed the last unsigned client input in the document.
+- Framed as a **controller plus the access point(s) it manages**, never a
+  singular AP — the operator scopes which APs inherit the config.
 - It tells the agent to fetch `docs.helium.com/mobile/helium-plus-<slug>.md`
   (raw markdown) for click-paths, with a **scope line** — that doc is an
   injection surface for a credentialed agent, so it governs click-paths only.

@@ -39,26 +39,13 @@ function workerOrigin(request) {
   return new URL(request.url).origin;
 }
 
-/**
- * Hotspot names are angry-purple-tiger triples ("Salty Smoke Salmon"), so
- * anything else is either a bug or an injection attempt against the brief.
- * Reject rather than sanitize, falling back to the signed Hotspot key.
- */
-function safeHotspotName(name, fallback) {
-  if (typeof name !== "string") return fallback;
-  const trimmed = name.trim();
-  return /^[A-Za-z]+(?: [A-Za-z]+){0,3}$/.test(trimmed) && trimmed.length <= 60
-    ? trimmed
-    : fallback;
-}
-
 function manageUrlFor(hotspot) {
   return hotspot ? `${APP_MANAGE_URL}?tab=manage&hotspot=${encodeURIComponent(hotspot)}` : `${APP_MANAGE_URL}?tab=manage`;
 }
 
 /**
  * POST /agent-brief
- * Body: { location_data, signature, vendor, name? }
+ * Body: { location_data, signature, vendor }
  */
 export async function handleCreateAgentBrief(request, env) {
   const limited = await checkIpRateLimit(env, request, {
@@ -75,7 +62,7 @@ export async function handleCreateAgentBrief(request, env) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const { location_data, signature, vendor: vendorSlug, name } = body;
+  const { location_data, signature, vendor: vendorSlug } = body;
 
   const invalid = validateSignedPayload({ location_data, signature });
   if (invalid) return jsonResponse({ error: invalid }, 400);
@@ -123,11 +110,10 @@ export async function handleCreateAgentBrief(request, env) {
   const certUrl = `${origin}/mobile-onboard/agent-certs/${certId}`;
 
   try {
+    // The brief carries no Hotspot name or key: the agent never enters either
+    // one, so they were noise, and dropping the name removes the last piece of
+    // unsigned client input we rendered into a document an agent follows.
     const markdown = renderBrief({
-      // `name` is unsigned client input rendered into the brief an agent
-      // follows, so bound it to the angry-purple-tiger shape and fall back to
-      // the (signed) Hotspot key when it doesn't match.
-      hotspot: { b58: hotspotKey, name: safeHotspotName(name, hotspotKey) },
       vendor,
       nasId,
       address,

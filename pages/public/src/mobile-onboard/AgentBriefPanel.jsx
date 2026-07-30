@@ -65,8 +65,8 @@ export default function AgentBriefPanel({ gateway }) {
   // because this re-fetches the existing certificate record and the worker
   // reads the authoritative NAS ID from that response.
   const createBrief = useCallback(
-    (payload) => createAgentBrief({ ...payload, vendor, name: gateway.name }),
-    [vendor, gateway.name],
+    (payload) => createAgentBrief({ ...payload, vendor }),
+    [vendor],
   );
   const { state, error, result, busy, canSign, submit } = useSignedHotspotRequest(
     gateway.b58,
