@@ -52,7 +52,7 @@ function LinkRow({ label, url, expiryLabel, note }) {
 
 /**
  * "Configure with AI": mints a short-lived brief link the operator hands to an
- * LLM or coding agent, which then configures their access point with them.
+ * LLM or coding agent, which then configures their controller with them.
  *
  * Shared by the wizard's final step and the Manage detail view. Generation is
  * wallet-signed (the same signature the certificate flow uses), which is also
@@ -96,7 +96,7 @@ export default function AgentBriefPanel({ gateway }) {
       {!result && (
         <div>
           <label className="text-xs font-medium text-content-secondary" htmlFor="agent-vendor">
-            Your access point platform
+            Your controller platform
           </label>
           <select
             id="agent-vendor"

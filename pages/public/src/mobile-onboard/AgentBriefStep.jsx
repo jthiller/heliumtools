@@ -15,9 +15,9 @@ export default function AgentBriefStep({ gateway, onBack, onFinish }) {
       <div>
         <h3 className="font-display text-sm font-semibold text-content">Configure with AI</h3>
         <p className="mt-1 text-sm text-content-secondary">
-          Setting up the access point is the fiddly part: Passpoint realms, RadSec servers, and a
-          NAS ID that has to match your certificate exactly. Generate a link and hand it to an AI
-          assistant, which will work through it with you.
+          Adding the Passpoint SSID is the fiddly part: NAI realms, RadSec servers, certificates,
+          and a NAS ID that has to match yours exactly. Generate a link and hand it to an AI
+          assistant, which will work through your controller with you.
         </p>
       </div>
 

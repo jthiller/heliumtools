@@ -31,7 +31,7 @@ export default function CertStep({ gateway, address, nasId, onFormChange, onDone
       <div className="space-y-4">
         <p className="text-sm text-content-secondary">
           Certificates for <span className="font-medium text-content">{gateway.name}</span> are ready.
-          Download all three. Your access point needs them for RadSec.
+          Download all three. Your controller needs them for RadSec.
         </p>
         <CertDownloads cert={cert} baseName={gateway.name} />
         <button
@@ -47,7 +47,7 @@ export default function CertStep({ gateway, address, nasId, onFormChange, onDone
   return (
     <div className="space-y-4">
       <p className="text-sm text-content-secondary">
-        Create the RadSec certificates your access point uses to authenticate to the network. Your
+        Create the RadSec certificates your network uses to authenticate to Helium Mobile. Your
         wallet signs this request, with no transaction and no fee.
       </p>
 

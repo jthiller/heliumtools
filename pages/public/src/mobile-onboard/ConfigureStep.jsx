@@ -19,7 +19,7 @@ export default function ConfigureStep({ gateway, onContinue }) {
             {gateway.name} is onboarded to the Mobile network.
           </p>
           <p className="text-xs text-content-tertiary">
-            Last step: configure your access point with the certificates and the settings below.
+            Last step: configure your controller with the certificates and the settings below.
           </p>
         </div>
       </div>
@@ -30,7 +30,7 @@ export default function ConfigureStep({ gateway, onContinue }) {
         <p className="text-sm font-medium text-content">When you're ready to expand</p>
         <p className="mt-1 text-xs text-content-secondary">
           This Hotspot is set up to serve {SELF_SERVE_CARRIERS.join(", ")} subscribers. Once your
-          access point is live and you've validated real coverage and traffic, your deployment may be
+          network is live and you've validated real coverage and traffic, your deployment may be
           eligible to add {PARTNER_CARRIERS.names.join(", ")} through Helium Plus, on the same
           Hotspot, certificates, and access point configuration.
         </p>

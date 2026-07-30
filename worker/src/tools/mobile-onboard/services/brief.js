@@ -54,6 +54,11 @@ const REALM_ROWS = NAI_REALMS.map(
 ).join("\n");
 const CONST_ROWS = AP_CONSTANTS.map((c) => `| ${c.label} | ${c.value} |`).join("\n");
 const SERVER_ROWS = RADSEC_SERVERS.map((s, i) => `| Server ${i + 1} | \`${s}\` |`).join("\n");
+// Prose, so it needs "A, B, and C" rather than the bare comma join used in tables.
+const CARRIER_LIST =
+  SELF_SERVE_CARRIERS.length > 1
+    ? `${SELF_SERVE_CARRIERS.slice(0, -1).join(", ")}, and ${SELF_SERVE_CARRIERS.at(-1)}`
+    : SELF_SERVE_CARRIERS[0];
 
 /**
  * The Hotspot's name and key are deliberately absent from the brief. The agent
@@ -85,18 +90,27 @@ export function renderBrief({ vendor, nasId, address, certUrl, certExpiresAt, ma
 
   return `# Configure a ${vendor.name} network for Helium Mobile
 
-You are helping a network operator configure a **real, production WiFi
-network** — a ${vendor.name} controller and the access point(s) it manages — so it
-can serve Helium Mobile subscribers. Changes you make affect a live network that
-people and businesses may depend on right now. Work carefully and never make a
-change the operator has not explicitly approved.
+You are helping a network operator add a **Passpoint (Hotspot 2.0) SSID** to a
+**real, production WiFi network** — a ${vendor.name} controller and the access
+point(s) it manages — so it can serve cellular subscribers.
+
+Passpoint is what makes that automatic. A subscriber's phone discovers the SSID,
+matches one of the NAI realms in section 2 against its carrier, and authenticates
+by certificate over EAP-TLS against the RadSec servers, with no password and no
+action from the user. Every value in section 2 exists to make that handshake
+work, which is why none of them can be approximated.
+
+Changes you make affect a live network that people and businesses may depend on
+right now. Work carefully and never make a change the operator has not
+explicitly approved.
 
 - **Platform:** ${vendor.name}
 - **Installation address:** ${addr || "(not recorded)"}
 
-The work happens on the controller. How many access points inherit the new
-configuration depends on how the operator scopes it, which is theirs to decide
-in section 4 — do not assume one access point, and do not assume all of them.
+The work happens on the controller, and it is **additive**: one new SSID
+alongside whatever the operator already runs. How many access points inherit it
+depends on how the operator scopes it, which is theirs to decide in section 4 —
+do not assume one access point, and do not assume all of them.
 
 ## 1. Read the vendor guide first
 
@@ -341,9 +355,11 @@ what you can test, say so — an unverified claim is worse than an open question
 
 ## Context
 
-This Hotspot serves ${SELF_SERVE_CARRIERS.join(", ")} subscribers once
-configured. If the operator needs to serve additional carriers, that is handled
-through Helium Plus at https://helium.plus and does not change the setup above.
+Once configured, this network serves cellular subscribers from
+${CARRIER_LIST}.
+
+If the operator needs to serve additional carriers, that is handled through
+Helium Plus at https://helium.plus and does not change the setup above.
 
 Links in this brief expire. If one has, the operator can regenerate it at
 ${manageUrl}.

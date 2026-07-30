@@ -293,7 +293,7 @@ export default function ManageDetail({ hotspot, onBack }) {
               <h3 className="font-display text-sm font-semibold text-content">Configure with AI</h3>
             </div>
             <p className="mt-1 text-xs text-content-tertiary">
-              Generate a link for an AI assistant to help configure this network's access point.
+              Generate a link for an AI assistant to help configure this network's controller.
               Links are short-lived; regenerate here whenever one expires.
             </p>
             <div className="mt-3">
