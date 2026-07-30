@@ -313,11 +313,35 @@ shaped so an agent can't fake success:
 - Per-vendor: `surface: "gui"` platforms get browser-control + file-upload
   guidance (a PEM fetched into context can't satisfy an upload dialog);
   MikroTik gets Safe Mode + `/export`.
+- **`other` (unlisted platforms)** — `OTHER_VENDOR` in `apConfig.js`, selectable
+  as "Other / not listed" for OpenWRT, Alta Labs, or an operator who isn't sure.
+  `docUrl: null` is the flag `brief.js` branches on (`isUnlisted`), and it
+  changes three places: the heading and Platform line drop the vendor name;
+  §1 becomes **identify the platform** — read the vendor-agnostic + RadSecProxy
+  guides, then confirm the platform can actually do Passpoint/ANQP and RadSec
+  and say so honestly, because a plain WPA2-Enterprise SSID looks right and
+  serves nobody; §3 splits the certificate path by *how this controller
+  installs certs* (file upload ⇒ operator downloads, pasted PEM or CLI/API ⇒
+  agent may fetch) and says to ask rather than spend the single-use link on a
+  guess. `surface: "unknown"` so no GUI/CLI claim is made. Deliberately **not**
+  in `VENDORS`, on both sides: an "Other" entry there would link to a page that
+  doesn't exist. The slug allowlist stays closed — `other` is accepted,
+  `openwrt` is not.
+- **`VENDORS` is a subset of what docs.helium.com publishes, and can lag it.**
+  Do not write copy that asserts a guide count, or that "no guide exists," on
+  Helium's behalf — a review caught exactly that. The unlisted brief instead
+  sends the agent to `DOCS_INDEX_URL` (`docs.helium.com/llms.txt`, ~13 KB) to
+  look for a `helium-plus-<platform>` guide before falling back to the generic
+  one, so the brief self-corrects as Helium adds guides. Verify with:
+  `curl -s https://docs.helium.com/llms.txt | grep -oE 'helium-plus-[A-Za-z0-9-]+' | sort -u`
+  Note **two Meraki guides exist and are not interchangeable** (`meraki` =
+  RadSecProxy, `meraki-plus` = native RadSec); the labels say which.
 
 `services/apConfig.js` duplicates the realms/servers/constants from
 `pages/public/src/mobile-onboard/vendors.js` — the two deployables can't share a
 module, and contradicting the guide UI would be worse than the duplication.
-**Change both or neither.**
+**Change both or neither.** That includes `OTHER_VENDOR`: its `slug` is the wire
+value, so it must exist on both sides or the option is unselectable.
 
 ## Frontend (`pages/public/src/mobile-onboard/`)
 

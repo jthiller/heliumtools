@@ -18,7 +18,12 @@ export const VENDORS = [
   { name: "Aruba", slug: "aruba" },
   { name: "Aruba Central", slug: "aruba-central" },
   { name: "Cambium cnMaestro", slug: "cambium-cnmaestro" },
-  { name: "Cisco Meraki", slug: "meraki" },
+  { name: "Cisco Catalyst 5520", slug: "Cisco-WLC-5520" },
+  { name: "Cisco Catalyst 9800", slug: "Cisco-WLC-9800" },
+  // Two Meraki guides exist and they are not interchangeable: `meraki` is the
+  // RadSecProxy path, `meraki-plus` is native RadSec.
+  { name: "Cisco Meraki (native RadSec)", slug: "meraki-plus" },
+  { name: "Cisco Meraki (RadSecProxy)", slug: "meraki" },
   { name: "Extreme", slug: "extreme" },
   { name: "Fortinet", slug: "fortinet" },
   { name: "Juniper Mist", slug: "juniper-mist" },
@@ -26,6 +31,14 @@ export const VENDORS = [
   { name: "Ruckus", slug: "ruckus" },
   { name: "Ubiquiti", slug: "ubiquiti" },
 ].map((v) => ({ ...v, url: `${DOCS_BASE}/helium-plus-${v.slug}` }));
+
+// Offered in the "Configure with AI" vendor select only, for platforms this
+// tool has no guide slug for (OpenWRT, Alta Labs, ...). Deliberately NOT in
+// VENDORS: an "Other" entry there would link to a page that doesn't exist.
+// VENDORS is a subset of what docs.helium.com publishes and can lag it, so the
+// brief has the agent check the docs index before assuming no guide exists.
+// Mirrors OTHER_VENDOR in the worker's apConfig.js — the slug is the wire value.
+export const OTHER_VENDOR = { name: "Other / not listed", slug: "other" };
 
 export const EXTRA_GUIDES = [
   { name: "General conversion guide", url: `${DOCS_BASE}/helium-plus-generic`, description: "Vendor-agnostic Passpoint + RadSec setup" },
