@@ -36,7 +36,7 @@ The RPC is **only ever touched server-side**:
   **single-flight** (a KV lock), so N concurrent viewers cause at most one RPC
   refresh — never one per viewer.
 - The cron is branched on in `worker/src/index.js scheduled()` via
-  `VOTE_SNAPSHOT_CRON`; the 6-hourly tasks do **not** run on the 15-min tick
+  `FAST_CRON` in `src/index.js`; the 6-hourly tasks do **not** run on the 15-min tick
   (guarded by both the cron-string branch and a `minute === 0` backstop).
 - **Tracked set:** the default proposal and every `KNOWN_PROPOSALS` id are
   always tracked; any other proposal that's viewed (and refreshed once) is
@@ -183,8 +183,8 @@ This is the only source of truth for `flipped`:
 
 ### Worker (API) — prefix `/vote`
 
-Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots` /
-`VOTE_SNAPSHOT_CRON` for the cron) → `handlers/`.
+Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots`) →
+`handlers/`.
 
 **Endpoints (all GET, read-only, served from snapshot/D1 — not RPC):**
 - `GET /vote/proposals` — the index: every cataloged proposal (current + past)
@@ -472,7 +472,7 @@ upserted on every snapshot refresh, `PRIMARY KEY (address)`. Self-provisions in
   several cron ticks; don't expect the whole history instantly.
 - **Cron isolation** — anything added to `scheduled()` outside the 15-min branch
   must tolerate running only at the 6-hourly ticks; the vote work stays inside
-  the `VOTE_SNAPSHOT_CRON` branch.
+  the `FAST_CRON` branch.
 - **Snapshot/history are best-effort** — KV/D1 errors never fail a request.
 
 ## Environment

@@ -105,9 +105,12 @@ brownfield `ManageDetail`. Steps 2–5 stay silent about Helium Plus by design.
 ## Worker (API) — prefix `/mobile-onboard`
 
 Entry point: `index.js` → handlers under `handlers/`. Registered in
-`worker/src/index.js`; the fee refresh (`refreshMobileOnboardFees`) runs on the
-6-hourly cron branch next to the iot-onboard one. Bindings: `SOLANA_RPC_URL` +
-`KV` only.
+`worker/src/index.js`. Two cron cadences: the fee refresh
+(`refreshMobileOnboardFees`) runs on the 6-hourly branch next to the
+iot-onboard one, while the artifact purge (`purgeExpiredArtifacts`) runs on the
+**15-min `FAST_CRON` branch** — a spent 2h cert link left in D1 until the next
+6-hourly tick could outlive its disclosed window by hours. Bindings:
+`SOLANA_RPC_URL` + `KV`, plus **`DB` (D1)** for the agent-brief artifacts below.
 
 **Endpoints:**
 - `GET /fees` — per-device-type `DeviceFeesV1` schedule from the MOBILE
@@ -215,13 +218,114 @@ shows the NAS ID + address from any cert fetch. On the Manage tab that is how
 an operator retrieves the NAS ID a Hotspot was issued for (via the same
 wallet-signed "Retrieve certificates" action).
 
+## Configure with AI — the agent brief
+
+The final wizard step (and a Manage panel) mints two short-lived **capability
+links** the operator hands to an LLM or coding agent, which then configures
+their access point with them.
+
+**Endpoints**
+- `POST /agent-brief { location_data, signature, vendor }` — relays the
+  signed payload to Nova exactly as `/cert` does; **a 2xx from Nova is the
+  ownership proof**, so the worker verifies no signatures itself and anonymous
+  callers cannot write to D1. Then stores the cert bundle (single-use, 2h) and a
+  rendered markdown brief embedding that cert URL (re-readable, 24h), returning
+  both URLs + expiries. IP rate-limited (`rl:mo:brief`, 20/10min).
+- `GET /agent-brief/:id` → `text/markdown`; `GET /agent-certs/:id` → the bundle
+  **once**. Both send `Cache-Control: no-store` + `X-Robots-Tag: noindex`.
+- Missing / expired / consumed / wrong-kind all collapse to the **same 410 with
+  markdown recovery instructions** telling the agent to have the operator
+  regenerate. An agent must never be able to distinguish those cases, or be left
+  guessing. The **brief's** footer carries the
+  `…/mobile-onboard?tab=manage&hotspot=<b58>` deep link (ManageTab auto-opens
+  that Hotspot); the **410 body cannot** — a dead artifact leaves no row to read
+  the Hotspot from — so it names the bare Manage tab and tells the agent to
+  prefer the brief's link if it still has it.
+
+**Storage** — `mobile_onboard_artifacts` in D1 (`services/artifacts.js`, self-provisioning
++ mirrored in `worker/schema.sql`). Ids are 192 bits of CSPRNG and are the only
+authorization. Our own event log truncates them to 8 chars, but **the id rides in
+the URL path and this Worker runs `observability.logs` with `invocation_logs`, so
+Cloudflare's invocation logs (and `wrangler tail`) record it in full** — do not
+claim ids are never logged. Single-use reads are **one atomic statement**
+(`DELETE … WHERE id AND expires_at > now AND one_time AND kind RETURNING …`) —
+verified: 6 concurrent fetches deliver the payload exactly once. **`kind` is
+matched inside the query**, not after the read: checking it afterwards let a
+request to the wrong route consume and destroy a single-use artifact without
+delivering it. Expiry is enforced in every WHERE, so a logically-expired row the
+cron hasn't purged is never served, and the purge runs on the **15-min** tick
+(on the 6-hourly one a spent 2h link could sit in D1 for ~8h). Malformed,
+truncated, and empty ids all fall through to the same 410 as expired ones, so a
+prober learns nothing from the status code. Minting is a **single
+`DB.batch()`** (delete-this-Hotspot's-rows + both inserts): ids are minted up
+front so the brief can embed the cert URL, and the batch's atomicity is what
+guarantees a half-failed write can't strand a live private key with no brief to
+consume it. TTLs and the `one_time` flag live together in `ARTIFACT_KINDS`, so
+the mint and read paths cannot disagree about whether a kind is single-use.
+
+> **Accepted risk.** The `certs` artifact holds the RadSec **private key** in
+> the clear — the one deliberate exception to the tool's otherwise
+> nothing-is-persisted posture. Bounded by: single-use, 2h, unguessable id,
+> Nova-verified ownership, 15-min purge, regenerate-invalidates-prior, a
+> signature freshness check (a captured `{location_data, signature}` pair
+> would otherwise mint artifacts forever), and never logging payloads.
+> `CertDownloads` copy is scoped to the download path accordingly, and the
+> generate step discloses the storage. Describe *application* behavior only —
+> do not claim irrecoverable destruction.
+>
+> **Named retention/exposure surfaces** (the bounding list is only honest if
+> these are stated): D1 Time Travel keeps deleted rows ~30 days — accepted as
+> platform behavior; **Cloudflare invocation logs record the full capability id**
+> from the URL path; and **the 24h brief embeds the cert URL**, so possession of
+> the brief link is equivalent to possession of the key until that link is used
+> — which is why the UI labels the brief link as a secret. Anything that fetches
+> a URL out of the brief (link scanners, unfurlers, a prefetching agent) both
+> burns the single-use link and receives the key, which is why the brief tells
+> the agent to treat an unexpectedly-consumed link as a compromise and reissue
+> rather than reuse.
+
+**The brief** (`services/brief.js`) is rendered server-side and deliberately
+shaped so an agent can't fake success:
+- Values come from the **certificate record** (NAS ID, address), not client
+  input, so "this must match your certificate" is true by construction. The
+  Hotspot's name and key are deliberately **absent**: the agent never enters
+  either, so they were noise it could mistake for a value to configure, and
+  dropping the name removed the last unsigned client input in the document.
+- Framed as a **controller plus the access point(s) it manages**, never a
+  singular AP — the operator scopes which APs inherit the config.
+- It tells the agent to fetch `docs.helium.com/mobile/helium-plus-<slug>.md`
+  (raw markdown) for click-paths, with a **scope line** — that doc is an
+  injection surface for a credentialed agent, so it governs click-paths only.
+  Operator-typed fields are likewise framed as data, never instructions, and
+  are flattened/stripped by `clean()` so they cannot open a markdown block.
+- **Only executable asks.** No "export the config" (impossible on Meraki /
+  Aruba Central / Mist — record touched settings + a rollback list instead), and
+  verification is split into **agent-verifiable / operator-verifiable /
+  wait-for-data** tiers. Demanding a synthetic EAP-TLS association or ANQP
+  capture just produces an agent that claims it ran them.
+- **Additive-only safety rules, stated precisely.** Never edit existing SSIDs,
+  VLAN interfaces, or firewall rules; adding a VLAN *and tagging it onto trunks*
+  is allowed only after every affected port is in the approval diff (a bad trunk
+  edit can sever the controller from its APs); confirm out-of-band access first;
+  client isolation on the new SSID only.
+- Staged protocol: discover → record rollback → propose → **wait for typed
+  approval** → apply → verify, with no credentials requested before approval.
+- Per-vendor: `surface: "gui"` platforms get browser-control + file-upload
+  guidance (a PEM fetched into context can't satisfy an upload dialog);
+  MikroTik gets Safe Mode + `/export`.
+
+`services/apConfig.js` duplicates the realms/servers/constants from
+`pages/public/src/mobile-onboard/vendors.js` — the two deployables can't share a
+module, and contradicting the guide UI would be worse than the duplication.
+**Change both or neither.**
+
 ## Frontend (`pages/public/src/mobile-onboard/`)
 
 `MobileOnboard.jsx` — shell with three `?tab=`-synced tabs: **Onboard**
 (wizard), **Manage**, **AP Setup Guide** (works without a wallet).
 
 - `OnboardWizard.jsx` — step machine `intro → token → issue → onboard → cert
-  → configure`; owns state + localStorage drafts
+  → configure → agent`; owns state + localStorage drafts
   (`usePersistedDrafts.js`, key `heliumtools:mobile-onboard:drafts:v1`, one
   draft per gateway). The draft's token is public data (no private key) and is
   dropped once /status reports issued. **Resume re-derives the step from
@@ -235,6 +339,19 @@ wallet-signed "Retrieve certificates" action).
   + fee card + `DcMintModal` gate.
 - `CertStep.jsx` / `CertDownloads.jsx` — cert creation + downloads; "Later"
   skips to AP setup (certs retrievable from Manage).
+- `useSignedHotspotRequest.js` — **the** wallet-signature flow for all three
+  ownership-gated requests (create certs, re-fetch certs, mint agent links).
+  Takes the endpoint call as a parameter and owns
+  `idle | signing | requesting | done`, decline detection, and the `canSign`
+  (`signMessage`) capability check. Use it rather than re-implementing: the one
+  call site that rolled its own copy left its button enabled without `canSign`,
+  making it a silent no-op on wallets that can't sign offchain.
+- `AgentBriefPanel.jsx` / `AgentBriefStep.jsx` — "Configure with AI"; the panel
+  is shared by the wizard's final step and `ManageDetail`. It has **no
+  did-they-create-certs gate**: generation reads the certificate record, and
+  Nova answers "no record" and "wrong wallet" identically, so the panel names
+  the recoverable cause under the error instead. A wizard-local flag would also
+  have been invisible to Manage, which shows the same panel.
 - `ManageTab.jsx` / `ManageDetail.jsx` — wallet's Mobile Hotspots via
   `fetchFleet` filtered `networks.includes("mobile")` (update-location's exact
   pattern for "iot"). **Only brownfield (converted WiFi, on-chain device_type
@@ -271,7 +388,7 @@ wallet-signed "Retrieve certificates" action).
 - `keygenWorker.js` — the key-grind Web Worker; see "Key grinding" above.
 - `animalWords.js` — the three positional dictionaries (from
   `angry-purple-tiger/lib`); powers the grind typeahead.
-- `pages/public/src/lib/mobileOnboardApi.js` — the six-endpoint client.
+- `pages/public/src/lib/mobileOnboardApi.js` — the seven-endpoint client.
 
 ## Reused from other tools
 - `worker/src/lib/helium-solana.js` — everything on-chain (see above).
@@ -305,10 +422,11 @@ wallet-signed "Retrieve certificates" action).
 
 ## Environment / Secrets
 - `SOLANA_RPC_URL` — on-chain reads, DAS, LUT (never log or expose).
-- `KV` — fee cache (`mobile-onboard:fees:v1`).
-- No new env vars, bindings, or D1 tables. Nothing sent to the ECC verifier or
-  cert service is secret, but cert *responses* contain the user's RadSec
-  private key (see /cert).
+- `KV` — fee cache (`mobile-onboard:fees:v1`), and the POST rate limiters.
+- `DB` (D1) — the `mobile_onboard_artifacts` table only (see "Configure with AI").
+- No new env vars or secrets. Nothing sent to the ECC verifier or cert service
+  is secret, but cert *responses* contain the user's RadSec private key
+  (see /cert).
 
 ## External Dependencies
 - **ECC verifier** — `https://ecc-verifier.web.helium.io/verify` (shared with

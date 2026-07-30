@@ -5,6 +5,14 @@ import { handleIssue } from "./handlers/issue.js";
 import { handleOnboard } from "./handlers/onboard.js";
 import { handleUpdate } from "./handlers/update.js";
 import { handleCert } from "./handlers/cert.js";
+import { handleCreateAgentBrief, handleGetArtifact } from "./handlers/agentBrief.js";
+
+// Capability-link routes: /agent-brief/<id> (markdown, re-readable) and
+// /agent-certs/<id> (single-use bundle). Ids are 192-bit base64url.
+// Deliberately permissive on the id: a malformed or truncated id must fall
+// through to the same 410 as an expired one, not a different status that
+// tells a prober their id was merely the wrong shape.
+const ARTIFACT_ROUTE = /^\/agent-(brief|certs)\/(.*)$/;
 
 /**
  * Mobile WiFi Onboarding — prefix `/mobile-onboard`.
@@ -32,6 +40,14 @@ export async function handleMobileOnboardRequest(request, env) {
     return jsonResponse(await getMobileOnboardFees(env));
   }
 
+  // Agent capability links are fetched by LLMs/agents, so they are plain GETs
+  // returning markdown or JSON (never the tool's usual JSON envelope).
+  const artifact = ARTIFACT_ROUTE.exec(pathname);
+  if (artifact) {
+    if (request.method !== "GET") return jsonResponse({ error: "Method not allowed" }, 405);
+    return handleGetArtifact(env, artifact[2], artifact[1]);
+  }
+
   if (request.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
@@ -41,9 +57,11 @@ export async function handleMobileOnboardRequest(request, env) {
   if (pathname === "/onboard") return handleOnboard(request, env);
   if (pathname === "/update") return handleUpdate(request, env);
   if (pathname === "/cert") return handleCert(request, env);
+  if (pathname === "/agent-brief") return handleCreateAgentBrief(request, env);
 
   return jsonResponse({ error: "Not found" }, 404);
 }
 
-// Cron entry — re-exported through worker/src/index.js scheduled().
+// Cron entries — re-exported through worker/src/index.js scheduled().
 export { refreshMobileOnboardFees } from "./services/fees.js";
+export { purgeExpiredArtifacts } from "./services/artifacts.js";

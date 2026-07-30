@@ -48,10 +48,6 @@ export const VOTE_WEIGHT_DECIMALS = 8;
 // The worker polls the RPC on a cron and stores a combined snapshot; viewers
 // only ever read the stored snapshot, so per-viewer traffic never hits the RPC.
 
-// Cron that drives snapshotting. MUST match the entry added to
-// wrangler.jsonc triggers.crons. Branched on in src/index.js scheduled().
-export const VOTE_SNAPSHOT_CRON = "*/15 * * * *";
-
 // How long a stored snapshot survives without a refresh (safety net if the
 // cron stops). Refreshed every cron tick, so for tracked proposals it never
 // actually expires.

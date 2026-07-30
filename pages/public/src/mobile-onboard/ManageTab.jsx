@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { MagnifyingGlassIcon, MapPinIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
@@ -22,6 +23,10 @@ function place(h) {
  */
 export default function ManageTab() {
   const { connected, publicKey } = useWallet();
+  const [searchParams] = useSearchParams();
+  // Agents send operators here to regenerate an expired link, so `?hotspot=`
+  // must land directly on that Hotspot instead of an unfiltered list.
+  const requestedHotspot = searchParams.get("hotspot");
 
   const [hotspots, setHotspots] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -44,11 +49,25 @@ export default function ManageTab() {
         if (cancelled) return;
         const mobile = (data.hotspots || []).filter((h) => (h.networks || []).includes("mobile"));
         setHotspots(mobile);
+        // Auto-open the Hotspot an expired-link recovery pointed the operator
+        // at. If it isn't in this wallet's fleet, the notice below says so
+        // rather than silently showing an unfiltered list to search by hand.
+        if (requestedHotspot) {
+          setSelected(mobile.find((h) => h.entityKey === requestedHotspot) || null);
+        }
       })
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, [connected, publicKey]);
+  }, [connected, publicKey, requestedHotspot]);
+
+  // Derived, not stored: a stored flag survived both reconnecting a different
+  // wallet and backing out of the detail view, so the "not yours" notice could
+  // outlive the wallet it described.
+  const notFound =
+    requestedHotspot && hotspots && !hotspots.some((h) => h.entityKey === requestedHotspot)
+      ? requestedHotspot
+      : null;
 
   const rows = useMemo(() => {
     if (!hotspots) return [];
@@ -127,6 +146,14 @@ export default function ManageTab() {
               className={SEARCH_CLASS}
             />
           </div>
+
+          {notFound && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-300">
+              The Hotspot in that link (<span className="font-mono">{notFound.slice(0, 12)}…</span>)
+              isn't owned by this wallet. Connect the wallet that owns it, or pick it from the list
+              below.
+            </div>
+          )}
 
           {rows.length === 0 ? (
             <p className="py-8 text-center text-sm text-content-tertiary">No Mobile Hotspots match.</p>

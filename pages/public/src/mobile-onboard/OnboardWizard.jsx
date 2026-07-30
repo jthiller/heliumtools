@@ -10,6 +10,7 @@ import IssueStep from "./IssueStep.jsx";
 import OnboardStep from "./OnboardStep.jsx";
 import CertStep from "./CertStep.jsx";
 import ConfigureStep from "./ConfigureStep.jsx";
+import AgentBriefStep from "./AgentBriefStep.jsx";
 
 const STEPS = [
   { key: "token", label: "Token" },
@@ -17,11 +18,12 @@ const STEPS = [
   { key: "onboard", label: "Location" },
   { key: "cert", label: "Certificates" },
   { key: "configure", label: "AP setup" },
+  { key: "agent", label: "Configure" },
 ];
 
 /**
  * The onboarding step machine: intro → token → issue → onboard → cert →
- * configure. Owns the wizard state and mirrors it into a localStorage draft
+ * configure → agent. Owns the wizard state and mirrors it into a localStorage draft
  * after every completed step so an interrupted flow (browser closed after
  * the issue transaction, DC top-up detour, …) resumes cleanly. Resume always
  * re-derives the true step from /status — chain state wins over the draft.
@@ -222,7 +224,14 @@ export default function OnboardWizard({ onOpenGuide }) {
         />
       )}
       {step === "configure" && (
-        <ConfigureStep gateway={gateway} onFinish={handleFinish} />
+        <ConfigureStep gateway={gateway} onContinue={() => setStep("agent")} />
+      )}
+      {step === "agent" && (
+        <AgentBriefStep
+          gateway={gateway}
+          onBack={() => setStep("configure")}
+          onFinish={handleFinish}
+        />
       )}
     </div>
   );

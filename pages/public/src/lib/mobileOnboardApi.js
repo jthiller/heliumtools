@@ -70,3 +70,13 @@ export function requestUpdate(owner, gateway, location) {
 export function requestCert({ location_data, signature, dry_run }) {
   return post("/cert", { location_data, signature, ...(dry_run ? { dry_run: true } : {}) });
 }
+
+/**
+ * Mint the "Configure with AI" capability links for a Hotspot. The signed
+ * payload doubles as the ownership proof (the worker relays it to the
+ * certificate service, whose acceptance is the check).
+ * @returns {{ briefUrl, certUrl, briefExpiresAt, certExpiresAt, nas_id }}
+ */
+export function createAgentBrief({ location_data, signature, vendor, name }) {
+  return post("/agent-brief", { location_data, signature, vendor, name });
+}

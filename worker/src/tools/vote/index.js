@@ -1,6 +1,6 @@
 import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { checkIpRateLimit } from "../../lib/rateLimit.js";
-import { MAX_REQUESTS_PER_MINUTE, VOTE_SNAPSHOT_CRON } from "./config.js";
+import { MAX_REQUESTS_PER_MINUTE } from "./config.js";
 import { handleProposal } from "./handlers/proposal.js";
 import { handleProposals } from "./handlers/proposals.js";
 import { handleVotes } from "./handlers/votes.js";
@@ -10,7 +10,7 @@ import { handleVoterHistory } from "./handlers/voterHistory.js";
 import { runVoteSnapshots } from "./services/snapshot.js";
 
 // Re-exported so src/index.js scheduled() can drive the cron snapshotter.
-export { runVoteSnapshots, VOTE_SNAPSHOT_CRON };
+export { runVoteSnapshots };
 
 /**
  * Vote (governance proposal) tool — prefix `/vote`.

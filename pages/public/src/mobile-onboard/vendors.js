@@ -2,6 +2,14 @@
  * Vendor guides + AP configuration constants for converted WiFi networks.
  * Sources: docs.helium.com/mobile/wifi-conversion-onboarding and the
  * per-vendor guides it links (docs.helium.com/mobile/helium-plus-<slug>).
+ *
+ * ⚠ MUST STAY IN SYNC with `worker/src/tools/mobile-onboard/services/apConfig.js`,
+ * which renders the same values into the "Configure with AI" agent brief. The
+ * two deployables can't share a module (separate packages/builds), so this is a
+ * deliberate duplicate: if an operator sees one set of realms here and an agent
+ * is handed another, they get contradictory instructions. Change both or
+ * neither. The `slug` is also the wire value POSTed to /agent-brief, so a slug
+ * that exists on only one side makes that vendor unselectable.
  */
 
 const DOCS_BASE = "https://docs.helium.com/mobile";

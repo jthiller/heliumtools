@@ -100,3 +100,26 @@ CREATE TABLE IF NOT EXISTS vote_proposals (
   tags_json TEXT,                 -- ["HIP 149", ...]
   updated_at INTEGER NOT NULL     -- ms timestamp of the upserting snapshot
 );
+
+-- Mobile WiFi Onboarding: short-lived capability artifacts behind the
+-- "Configure with AI" agent brief. Two kinds: `brief` (markdown config
+-- instructions, re-readable, 24h) and `certs` (the RadSec bundle, single-use,
+-- 2h). The id is the capability — 192 random bits, unguessable. OUR logs
+-- truncate it to 8 chars, but it rides in the URL path and this Worker runs
+-- observability.logs with invocation_logs, so Cloudflare's invocation logs
+-- record it in full; do not claim otherwise. Single-use rows are claimed
+-- atomically via DELETE ... RETURNING.
+-- Self-provisions via CREATE TABLE IF NOT EXISTS in services/artifacts.js.
+-- PRIVACY: `certs` payloads contain a RadSec private key; never log payloads.
+CREATE TABLE IF NOT EXISTS mobile_onboard_artifacts (
+  id TEXT PRIMARY KEY,           -- 192-bit base64url capability token
+  kind TEXT NOT NULL,            -- 'brief' | 'certs'
+  hotspot TEXT NOT NULL,         -- helium b58, powers regenerate-invalidation
+  content_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  one_time INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL,   -- unix seconds; enforced in every read
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mobile_onboard_artifacts_expires ON mobile_onboard_artifacts (expires_at);
+CREATE INDEX IF NOT EXISTS idx_mobile_onboard_artifacts_hotspot ON mobile_onboard_artifacts (hotspot);
