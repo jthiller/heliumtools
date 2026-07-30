@@ -370,6 +370,11 @@ ${manageUrl}.
  * The body served when a capability link is missing, expired, or already used.
  * Written for both readers: an agent that hits it should recover by asking the
  * operator for a fresh link rather than failing or guessing other URLs.
+ *
+ * `manageUrl` here is the bare Manage tab, NOT the `&hotspot=<b58>` deep link
+ * the brief carries — a dead artifact has no row left to read the Hotspot from,
+ * and a key we can't verify would be worse than none. The brief's own footer
+ * does carry the deep link, so the body points there first.
  */
 export function renderExpiredNotice({ kind, manageUrl }) {
   const what = kind === "certs" ? "certificate bundle" : "configuration brief";
@@ -382,13 +387,16 @@ export function renderExpiredNotice({ kind, manageUrl }) {
 
 The ${what} you requested is not available. ${why}
 
-**How to continue:** ask the operator to open
+**How to continue:** the operator regenerates these links themselves. If you
+still have the brief, its closing line links straight to the right Hotspot — ask
+them to open that. Otherwise ask them to open
 
     ${manageUrl}
 
-and use **Generate agent link** (or **Regenerate links**, if links are already
-shown), then paste you the new URL. This is routine, not an error. The links are
-deliberately short-lived.
+and pick the Hotspot they are configuring. Either way they then use **Generate
+agent link** (or **Regenerate links**, if links are already shown) and paste you
+the new URL. This is routine, not an error. The links are deliberately
+short-lived.
 
 Do not guess, enumerate, or brute-force other links. They are not predictable
 and attempting it will not work.

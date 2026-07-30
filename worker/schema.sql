@@ -104,8 +104,11 @@ CREATE TABLE IF NOT EXISTS vote_proposals (
 -- Mobile WiFi Onboarding: short-lived capability artifacts behind the
 -- "Configure with AI" agent brief. Two kinds: `brief` (markdown config
 -- instructions, re-readable, 24h) and `certs` (the RadSec bundle, single-use,
--- 2h). The id is the capability — 192 random bits, unguessable, never logged
--- in full. Single-use rows are claimed atomically via DELETE ... RETURNING.
+-- 2h). The id is the capability — 192 random bits, unguessable. OUR logs
+-- truncate it to 8 chars, but it rides in the URL path and this Worker runs
+-- observability.logs with invocation_logs, so Cloudflare's invocation logs
+-- record it in full; do not claim otherwise. Single-use rows are claimed
+-- atomically via DELETE ... RETURNING.
 -- Self-provisions via CREATE TABLE IF NOT EXISTS in services/artifacts.js.
 -- PRIVACY: `certs` payloads contain a RadSec private key; never log payloads.
 CREATE TABLE IF NOT EXISTS mobile_onboard_artifacts (

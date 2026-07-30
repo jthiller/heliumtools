@@ -235,9 +235,12 @@ their access point with them.
   **once**. Both send `Cache-Control: no-store` + `X-Robots-Tag: noindex`.
 - Missing / expired / consumed / wrong-kind all collapse to the **same 410 with
   markdown recovery instructions** telling the agent to have the operator
-  regenerate at `…/mobile-onboard?tab=manage&hotspot=<b58>` (ManageTab
-  auto-opens that Hotspot). An agent must never be able to distinguish those
-  cases, or be left guessing.
+  regenerate. An agent must never be able to distinguish those cases, or be left
+  guessing. The **brief's** footer carries the
+  `…/mobile-onboard?tab=manage&hotspot=<b58>` deep link (ManageTab auto-opens
+  that Hotspot); the **410 body cannot** — a dead artifact leaves no row to read
+  the Hotspot from — so it names the bare Manage tab and tells the agent to
+  prefer the brief's link if it still has it.
 
 **Storage** — `mobile_onboard_artifacts` in D1 (`services/artifacts.js`, self-provisioning
 + mirrored in `worker/schema.sql`). Ids are 192 bits of CSPRNG and are the only
