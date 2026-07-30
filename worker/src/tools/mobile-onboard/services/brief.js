@@ -231,11 +231,14 @@ above. Keep them outside any repository or shared directory, and delete them
 once installed. If the operator would rather handle the files themselves, they
 can download the same three from ${manageUrl} instead.
 
-If the link is expired or already used, it will tell you how to get a fresh one.
-Ask the operator, and treat that as routine rather than an error. **But if it is
-already used and neither you nor the operator used it, stop and tell them: that
-means someone else fetched their private key, and the certificate should be
-reissued rather than reused.**
+If the link is expired, used, or replaced, it will tell you how to get a fresh
+one. Ask the operator, and treat that as routine rather than an error —
+regenerating is the normal fix and it deliberately invalidates the old links.
+
+**Before treating a dead link as a security problem, ask the operator whether
+they regenerated.** If they did, it is routine. If they did not, and neither you
+nor they ever fetched it, then stop and tell them: someone else fetched their
+private key, and the certificate should be reissued rather than reused.
 
 The private key is secret. Do not print it, echo it into logs or transcripts,
 commit it, or send it anywhere other than this operator's own equipment.`}
@@ -380,7 +383,7 @@ export function renderExpiredNotice({ kind, manageUrl }) {
   const what = kind === "certs" ? "certificate bundle" : "configuration brief";
   const why =
     kind === "certs"
-      ? "It was single-use and has already been fetched, or its 2 hour window elapsed."
+      ? "It was single-use and has already been fetched, its 2 hour window elapsed, or it was replaced when newer links were generated."
       : "Its 24 hour window elapsed, or it was replaced by a newer link.";
 
   return `# This link is no longer valid
