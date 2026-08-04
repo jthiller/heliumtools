@@ -96,6 +96,12 @@ brownfield `ManageDetail`. Steps 2–5 stay silent about Helium Plus by design.
    private key). TokenStep also **pre-rolls** a key when the step opens so a
    name is ready immediately (guarded by a ref so a dev StrictMode remount
    doesn't clobber the selection).
+
+   **The token is never shown to the operator.** It is built, held in wizard
+   state, mirrored into the draft, and consumed by the issue transaction
+   entirely in-app — they never have to supply it. The commit screen shows only
+   the Hotspot name and its public b58 address. Don't reintroduce a token
+   textarea/copy/download: it implied a custody duty the operator doesn't have.
 2. **Onboard** (`hotspots add mobile onboard <token> --lat --lon`) — two
    wallet-signed Solana txns: `/issue` (issue_data_only_entity_v0, ECC-verifier
    co-signed) then `/onboard` (onboard_data_only_mobile_hotspot_v0).
