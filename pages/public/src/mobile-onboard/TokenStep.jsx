@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyIcon,
-  ArrowDownTrayIcon,
   ArrowPathIcon,
   MagnifyingGlassIcon,
   StopIcon,
 } from "@heroicons/react/24/outline";
 import CopyButton from "../components/CopyButton.jsx";
-import { downloadTextFile } from "../lib/download.js";
 import { buildTokenFromPrivateKey } from "./gatewayToken.js";
 import { POSITIONS } from "./animalWords.js";
 import KeygenWorker from "./keygenWorker.js?worker";
@@ -157,11 +155,13 @@ export default function TokenStep({ gateway, token, onToken, onContinue }) {
     }
   };
 
-  const handleDownloadToken = () => {
-    downloadTextFile(`${gateway.name.toLowerCase().replace(/ /g, "-")}-token.txt`, token);
-  };
-
-  // Committed: show the saved token to back up before registering.
+  // Committed: confirm which Hotspot was created, then register it.
+  //
+  // The onboarding token is deliberately NOT shown. It is built, held in wizard
+  // state, mirrored into the local draft, and consumed by the registration
+  // transaction entirely inside the app — the operator never has to supply it,
+  // so displaying it (and telling them to save it) only implied a
+  // responsibility that isn't theirs.
   if (committed) {
     return (
       <div className="space-y-4">
@@ -174,30 +174,9 @@ export default function TokenStep({ gateway, token, onToken, onContinue }) {
           </div>
         </div>
 
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="text-xs font-medium text-content-secondary">Onboarding token</label>
-            <div className="flex items-center gap-2">
-              <CopyButton text={token} size="h-3.5 w-3.5" />
-              <button
-                type="button"
-                onClick={handleDownloadToken}
-                title="Download token"
-                className="text-content-tertiary hover:text-content-secondary"
-              >
-                <ArrowDownTrayIcon className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-          <div className="max-h-24 overflow-y-auto break-all rounded-lg bg-surface-inset p-3 font-mono text-[11px] leading-relaxed text-content-secondary">
-            {token}
-          </div>
-          <p className="mt-2 text-xs text-content-tertiary">
-            Save this token before continuing. heliumtools does not store it. It contains no private
-            key, and once the registration transaction confirms you will not need it again. This page
-            also keeps a local draft so you can resume in this browser.
-          </p>
-        </div>
+        <p className="text-xs text-content-tertiary">
+          This page keeps a local draft, so you can close it and resume in this browser.
+        </p>
 
         <button
           onClick={onContinue}
