@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { signAndBroadcast } from "../dc-mint/solanaUtils.js";
@@ -6,7 +6,7 @@ import DcMintModal from "../dc-mint/DcMintModal.jsx";
 import { requestOnboard } from "../lib/mobileOnboardApi.js";
 import { latLngToH3 } from "../lib/h3.js";
 import LocationPicker from "./LocationPicker.jsx";
-import { geocodeAddress, zoomForRank } from "./geocode.js";
+import { geocodeAddress } from "./geocode.js";
 import { dcToUsd } from "./format.js";
 
 const INPUT_CLASS =
@@ -39,31 +39,26 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
   // Address search: null | "searching" | { label } | { error }
   const [searchState, setSearchState] = useState(null);
   const [flyTo, setFlyTo] = useState(null);
-  const flyToken = useRef(0);
   const searching = searchState === "searching";
+  const query = address.trim();
 
   const handleFindOnMap = async () => {
-    const q = (address || "").trim();
-    if (!q || searching) return;
+    if (!query || searching) return;
     setSearchState("searching");
     try {
-      const results = await geocodeAddress(q);
-      if (results.length === 0) {
+      const hit = await geocodeAddress(query);
+      if (!hit) {
         setSearchState({
           error:
             "Couldn't find that address. Try adding a city or postcode, or drag the map to place the pin by hand.",
         });
         return;
       }
-      const top = results[0];
-      onLocationChange({ lat: top.lat.toFixed(6), lng: top.lng.toFixed(6) });
-      setFlyTo({
-        latitude: top.lat,
-        longitude: top.lng,
-        zoom: zoomForRank(top.rank),
-        token: ++flyToken.current,
-      });
-      setSearchState({ label: top.label });
+      onLocationChange({ lat: hit.lat.toFixed(6), lng: hit.lng.toFixed(6) });
+      // A fresh object per search: LocationPicker recenters on identity, so a
+      // repeated search still recenters after the user has dragged away.
+      setFlyTo({ latitude: hit.lat, longitude: hit.lng, zoom: hit.zoom });
+      setSearchState({ label: hit.label });
     } catch {
       setSearchState({
         error: "Address search is unavailable right now. Drag the map to place the pin by hand.",
@@ -141,7 +136,7 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
           <button
             type="button"
             onClick={handleFindOnMap}
-            disabled={searching || !(address || "").trim()}
+            disabled={searching || !query}
             className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium text-content hover:bg-surface-inset disabled:opacity-50"
           >
             {searching ? "Searching…" : "Find on map"}

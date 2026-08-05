@@ -22,8 +22,9 @@ const INPUT_CLASS =
  * the requester's CF-derived geo (shared/geo) without calling onChange, so an
  * untouched picker never counts as a chosen location.
  *
- * `flyTo` (optional): { latitude, longitude, zoom, token } — recenters the
- * viewport when `token` changes. Callers that set the value programmatically
+ * `flyTo` (optional): { latitude, longitude, zoom } — recenters the viewport
+ * whenever a NEW object is passed (identity, not deep equality, so pass a
+ * fresh object per recenter). Callers that set the value programmatically
  * (address geocoding) need this because the map otherwise recenters only on
  * lat/lng input blur; without it the pin value would change while the camera
  * stayed put.
@@ -54,18 +55,17 @@ export default function LocationPicker({ lat, lng, onChange, flyTo }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Programmatic recenter (geocode hits). Keyed on token so repeating the same
-  // search still recenters after the user has dragged away.
+  // Programmatic recenter (geocode hits). Keyed on object identity so
+  // repeating the same search still recenters after the user has dragged away.
   useEffect(() => {
     if (!flyTo) return;
     setViewState((v) => ({
       ...v,
       latitude: flyTo.latitude,
       longitude: flyTo.longitude,
-      zoom: flyTo.zoom ?? 17,
+      zoom: flyTo.zoom,
     }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flyTo?.token]);
+  }, [flyTo]);
 
   const h3Cell = useMemo(() => latLngToH3(lat, lng), [lat, lng]);
 
