@@ -210,6 +210,11 @@ export default function OnboardWizard({ onOpenGuide }) {
           fees={fees}
           location={location}
           onLocationChange={handleLocationChange}
+          // The onboard step collects the street address (it drives the map
+          // pin), and the same certForm field pre-fills the certificate step
+          // so the operator is asked once.
+          address={certForm.address}
+          onAddressChange={(a) => handleCertForm({ address: a, nasId: certForm.nasId })}
           onOnboarded={handleOnboarded}
         />
       )}

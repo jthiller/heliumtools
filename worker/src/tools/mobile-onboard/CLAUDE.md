@@ -363,10 +363,19 @@ value, so it must exist on both sides or the option is unselectable.
   handler (StrictMode double-mount would double-generate in an effect).
 - `IssueStep.jsx` — sign + confirm, then a poll-until-indexed sub-state
   (5s × 24) before auto-advancing; timeout keeps the draft resumable.
-- `OnboardStep.jsx` — `LocationPicker.jsx` (map pin + H3 res-12 overlay,
-  copy-adapted from update-location's UpdatePanel *minus* elevation/gain;
-  seeds its viewport from `shared/geo` without counting as a chosen location)
-  + fee card + `DcMintModal` gate.
+- `OnboardStep.jsx` — **address-first location**: a street-address input on
+  top (`geocode.js`, OpenStreetMap Nominatim called browser-direct; see
+  External Dependencies) whose hit drops the pin and recenters the map via
+  `LocationPicker`'s `flyTo` prop, zoomed by match precision (`zoomForRank` —
+  a city-level hit must not zoom to rooftops). The address lives in the
+  wizard's `certForm.address`, so it **pre-fills the certificate step** and is
+  asked for once; it stays optional here (map-only still works), and a failed
+  geocode falls back to the CF-geo-seeded viewport + manual pin. Then
+  `LocationPicker.jsx` (map pin + H3 res-12 overlay, copy-adapted from
+  update-location's UpdatePanel *minus* elevation/gain; seeds its viewport
+  from `shared/geo` without counting as a chosen location; `flyTo`
+  `{latitude, longitude, zoom, token}` recenters on token change) + fee card
+  + `DcMintModal` gate.
 - `CertStep.jsx` / `CertDownloads.jsx` — cert creation + downloads; "Later"
   skips to AP setup (certs retrievable from Manage).
 - `useSignedHotspotRequest.js` — **the** wallet-signature flow for all three
@@ -465,5 +474,14 @@ value, so it must exist on both sides or the option is unselectable.
   `https://api.prod.ims.nova.xyz/api/wifi/brownfield/inventory` (no CORS; the
   reason /cert exists).
 - **CARTO basemaps** — LocationPicker map tiles.
+- **OpenStreetMap Nominatim** — address → coordinates for the onboard step
+  (`geocode.js`), called **browser-direct on purpose**: Nominatim throttles
+  shared cloud egress IPs (same reason wallet-dashboard avoids CoinGecko), so
+  a worker proxy would concentrate all users behind Cloudflare's; per-user IPs
+  are trivially inside the 1 req/s policy. Policy compliance: lookups fire
+  only on explicit action (button/Enter, never autocomplete-per-keystroke),
+  the browser Referer identifies the app, and the UI carries the
+  "© OpenStreetMap contributors" attribution. Do not add a worker proxy or
+  per-keystroke search without re-reading their usage policy.
 - **docs.helium.com** — vendor guides (linked, not fetched).
 - **helium.plus** — the enterprise-carrier path linked from the intro/banner.

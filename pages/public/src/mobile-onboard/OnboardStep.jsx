@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { signAndBroadcast } from "../dc-mint/solanaUtils.js";
@@ -6,7 +6,11 @@ import DcMintModal from "../dc-mint/DcMintModal.jsx";
 import { requestOnboard } from "../lib/mobileOnboardApi.js";
 import { latLngToH3 } from "../lib/h3.js";
 import LocationPicker from "./LocationPicker.jsx";
+import { geocodeAddress, zoomForRank } from "./geocode.js";
 import { dcToUsd } from "./format.js";
+
+const INPUT_CLASS =
+  "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 /**
  * Step 3: pick the network's location and onboard it to the Mobile network
@@ -14,8 +18,16 @@ import { dcToUsd } from "./format.js";
  * fees from the connected wallet; a DC-short wallet is routed through
  * DcMintModal before signing. One pin covers the whole network — place it on
  * the building the access points serve.
+ *
+ * Address-first: the operator types the street address, a geocode drops the
+ * pin there (fine-tunable by dragging), and the same string rides
+ * certForm.address so the certificate step opens pre-filled. The address is
+ * optional here — the map alone still works (an untouched picker starts on
+ * the CF-geo-seeded viewport), and the failure copy just says to place the
+ * pin by hand rather than claiming where the map is centered, since the user
+ * may have dragged it anywhere before searching.
  */
-export default function OnboardStep({ gateway, fees, location, onLocationChange, onOnboarded }) {
+export default function OnboardStep({ gateway, fees, location, onLocationChange, address, onAddressChange, onOnboarded }) {
   const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
 
@@ -23,6 +35,41 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
   const [error, setError] = useState(null);
   const [dcInfo, setDcInfo] = useState(null);
   const [showDcModal, setShowDcModal] = useState(false);
+
+  // Address search: null | "searching" | { label } | { error }
+  const [searchState, setSearchState] = useState(null);
+  const [flyTo, setFlyTo] = useState(null);
+  const flyToken = useRef(0);
+  const searching = searchState === "searching";
+
+  const handleFindOnMap = async () => {
+    const q = (address || "").trim();
+    if (!q || searching) return;
+    setSearchState("searching");
+    try {
+      const results = await geocodeAddress(q);
+      if (results.length === 0) {
+        setSearchState({
+          error:
+            "Couldn't find that address. Try adding a city or postcode, or drag the map to place the pin by hand.",
+        });
+        return;
+      }
+      const top = results[0];
+      onLocationChange({ lat: top.lat.toFixed(6), lng: top.lng.toFixed(6) });
+      setFlyTo({
+        latitude: top.lat,
+        longitude: top.lng,
+        zoom: zoomForRank(top.rank),
+        token: ++flyToken.current,
+      });
+      setSearchState({ label: top.label });
+    } catch {
+      setSearchState({
+        error: "Address search is unavailable right now. Drag the map to place the pin by hand.",
+      });
+    }
+  };
 
   const h3Cell = useMemo(() => latLngToH3(location.lat, location.lng), [location.lat, location.lng]);
   const wifiFees = fees?.wifiDataOnly;
@@ -62,11 +109,59 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
     <div className="space-y-4">
       <p className="text-sm text-content-secondary">
         Where is <span className="font-medium text-content">{gateway.name}</span>? A converted
-        network gets one pin on the coverage map. Place it on the building your access points
-        serve, dragging the map to position the pin.
+        network gets one pin on the coverage map. Enter the installation's street address to place
+        the pin, then fine-tune it by dragging the map onto the building your access points serve.
       </p>
 
-      <LocationPicker lat={location.lat} lng={location.lng} onChange={onLocationChange} />
+      <div>
+        <label className="text-xs font-medium text-content-secondary" htmlFor="onboard-address">
+          Street address
+        </label>
+        <div className="mt-1 flex gap-2">
+          <input
+            id="onboard-address"
+            type="text"
+            value={address}
+            onChange={(e) => {
+              onAddressChange(e.target.value);
+              // A "Found: …" (or error) line describes the string that was
+              // searched; once the text changes it would misdescribe the new
+              // one, so it clears until the next explicit search.
+              if (searchState && !searching) setSearchState(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleFindOnMap();
+              }
+            }}
+            placeholder="Physical street address of the installation"
+            className={INPUT_CLASS}
+          />
+          <button
+            type="button"
+            onClick={handleFindOnMap}
+            disabled={searching || !(address || "").trim()}
+            className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium text-content hover:bg-surface-inset disabled:opacity-50"
+          >
+            {searching ? "Searching…" : "Find on map"}
+          </button>
+        </div>
+        {searchState?.label && (
+          <p className="mt-1 text-[11px] text-content-tertiary">
+            Found: {searchState.label}. Not quite right? Drag the map to fine-tune the pin.
+          </p>
+        )}
+        {searchState?.error && (
+          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{searchState.error}</p>
+        )}
+        <p className="mt-1 text-[11px] text-content-tertiary">
+          Address search © OpenStreetMap contributors. The address carries into the certificate
+          step, where you can still adjust it.
+        </p>
+      </div>
+
+      <LocationPicker lat={location.lat} lng={location.lng} onChange={onLocationChange} flyTo={flyTo} />
 
       <div className="rounded-lg bg-surface-inset p-3 text-xs space-y-1.5">
         <div className="flex justify-between text-content-secondary">
