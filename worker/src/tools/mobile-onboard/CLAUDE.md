@@ -374,7 +374,8 @@ value, so it must exist on both sides or the option is unselectable.
   `LocationPicker.jsx` (map pin + H3 res-12 overlay, copy-adapted from
   update-location's UpdatePanel *minus* elevation/gain; seeds its viewport
   from `shared/geo` without counting as a chosen location; `flyTo`
-  `{latitude, longitude, zoom, token}` recenters on token change) + fee card
+  `{latitude, longitude, zoom}` recenters on object identity, a fresh object
+  per search) + fee card
   + `DcMintModal` gate.
 - `CertStep.jsx` / `CertDownloads.jsx` — cert creation + downloads; "Later"
   skips to AP setup (certs retrievable from Manage).

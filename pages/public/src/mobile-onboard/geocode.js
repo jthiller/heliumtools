@@ -23,7 +23,7 @@ const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
  * Map Nominatim's place_rank to a viewport zoom that matches the match's
  * precision: a building-level hit deserves a rooftop view, a city-level hit
  * must NOT zoom to rooftops (the pin would land on an arbitrary block and look
- * authoritative). 30=building, 26-29=street/house, 16-25=suburb/city.
+ * authoritative). 28-30=address/building, 26-27=street, 16-25=suburb/city.
  */
 function zoomForRank(rank) {
   if (rank >= 28) return 18;

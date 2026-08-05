@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { signAndBroadcast } from "../dc-mint/solanaUtils.js";
@@ -42,11 +42,22 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
   const searching = searchState === "searching";
   const query = address.trim();
 
+  // The input stays editable during a search, so a resolving request must
+  // check its query is still what the input says before describing it.
+  const addressRef = useRef(address);
+  addressRef.current = address;
+
   const handleFindOnMap = async () => {
     if (!query || searching) return;
     setSearchState("searching");
     try {
       const hit = await geocodeAddress(query);
+      if (addressRef.current.trim() !== query) {
+        // Superseded mid-flight: labeling the new text with the old result
+        // would misdescribe it. Reset and let them search again.
+        setSearchState(null);
+        return;
+      }
       if (!hit) {
         setSearchState({
           error:
