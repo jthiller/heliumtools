@@ -73,9 +73,11 @@ export default function OnboardWizard({ onOpenGuide }) {
     setStep("cert");
   };
 
-  const handleCertForm = (next) => {
-    setCertForm(next);
-    saveDraft({ gateway: gateway.b58, address: next.address, nasId: next.nasId });
+  // Accepts partial patches ({ address } alone is fine) — saveDraft already
+  // merges, so certForm merges the same way.
+  const handleCertForm = (patch) => {
+    setCertForm((prev) => ({ ...prev, ...patch }));
+    saveDraft({ gateway: gateway.b58, ...patch });
   };
 
   const handleCertDone = () => {
@@ -210,6 +212,11 @@ export default function OnboardWizard({ onOpenGuide }) {
           fees={fees}
           location={location}
           onLocationChange={handleLocationChange}
+          // The onboard step collects the street address (it drives the map
+          // pin), and the same certForm field pre-fills the certificate step
+          // so the operator is asked once.
+          address={certForm.address}
+          onAddressChange={(a) => handleCertForm({ address: a })}
           onOnboarded={handleOnboarded}
         />
       )}
