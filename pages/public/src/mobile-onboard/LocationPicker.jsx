@@ -13,6 +13,9 @@ const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/styl
 const INPUT_CLASS =
   "mt-1 w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
+/** True once BOTH coordinates are set — the seed only applies to an empty picker. */
+const hasCoords = (v) => v.lat !== "" && v.lng !== "";
+
 /** The string props as numbers, or null when either is unusable. */
 function parseCoords(lat, lng) {
   const la = parseFloat(lat);
@@ -30,12 +33,17 @@ function parseCoords(lat, lng) {
  * untouched picker never counts as a chosen location.
  *
  * The picker owns programmatic recentering: when the lat/lng props change to
- * a value the picker did not itself produce (an address geocode, a
- * chain-loaded location, a resumed draft), the camera follows. Values the
+ * a value the picker did not itself produce, the camera follows. Values the
  * picker produced — map drags, geolocate, typed input — echo back down as
  * props without moving the camera, so typing a coordinate doesn't jerk the
  * map mid-keystroke (blur applies it, as before). Callers therefore never
  * need remount keys.
+ *
+ * Of the callers today, only OnboardStep's address geocode exercises this
+ * live: ManageDetail's chain-loaded location and OnboardWizard's resumed
+ * draft both land before the picker mounts, so the mount-time initializer
+ * positions those. The point of owning the behavior is that a caller can set
+ * the value whenever it likes without knowing which case it is.
  *
  * `recenterZoom` (optional) is a zoom hint for external recenters, e.g. a
  * geocode's match precision. It must be set in the same commit as the lat/lng
@@ -80,14 +88,14 @@ export default function LocationPicker({ lat, lng, onChange, recenterZoom }) {
 
   // Seed the viewport (not the value) from the requester's rough location.
   useEffect(() => {
-    if (internal.current.lat !== "") return;
+    if (hasCoords(internal.current)) return;
     let cancelled = false;
     fetchGeo().then((geo) => {
       // Re-checked at resolve time: a geocode or chain load may have landed
       // while this was in flight, and the seed must not clobber it. `internal`
       // is a live mirror of the value (every origin records there), so it
       // answers this without a second ref.
-      if (cancelled || !geo || internal.current.lat !== "") return;
+      if (cancelled || !geo || hasCoords(internal.current)) return;
       setViewState((v) => ({ ...v, latitude: geo.latitude, longitude: geo.longitude, zoom: 12 }));
     });
     return () => { cancelled = true; };

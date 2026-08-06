@@ -376,8 +376,9 @@ value, so it must exist on both sides or the option is unselectable.
   counting as a chosen location) + fee card + `DcMintModal` gate.
   **The picker owns programmatic recentering**: values it produced (drag,
   geolocate, typed input) echo back down as props without moving the camera,
-  while any OTHER lat/lng change (geocode, chain load, draft resume)
-  recenters. Callers never need remount keys — this replaced both the `flyTo`
+  while any OTHER lat/lng change recenters. Only the geocode exercises that
+  live today — chain load and draft resume both land before the picker mounts
+  — but callers no longer have to know which case they are. Callers never need remount keys — this replaced both the `flyTo`
   prop and `ManageDetail`'s `key={location_hex}` hack. See the component's
   docblock for the mechanism, the `recenterZoom` timing contract, and the one
   documented gap (a value-identical re-assert is a no-op).
