@@ -36,9 +36,11 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
   const [dcInfo, setDcInfo] = useState(null);
   const [showDcModal, setShowDcModal] = useState(false);
 
-  // Address search: null | "searching" | { label } | { error }
+  // Address search: null | "searching" | { label, zoom } | { error }.
+  // The zoom rides the hit it describes (a city-level match must not land at
+  // rooftop zoom), so it clears with the label when the address is edited
+  // rather than outliving the search it came from.
   const [searchState, setSearchState] = useState(null);
-  const [flyTo, setFlyTo] = useState(null);
   const searching = searchState === "searching";
   const query = address.trim();
 
@@ -65,11 +67,12 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
         });
         return;
       }
+      // The picker recenters itself on any location it didn't produce, so
+      // setting the value is all a geocode hit needs to move the camera. The
+      // zoom hint must land in the same commit, hence both before the await
+      // boundary passes.
+      setSearchState({ label: hit.label, zoom: hit.zoom });
       onLocationChange({ lat: hit.lat.toFixed(6), lng: hit.lng.toFixed(6) });
-      // A fresh object per search: LocationPicker recenters on identity, so a
-      // repeated search still recenters after the user has dragged away.
-      setFlyTo({ latitude: hit.lat, longitude: hit.lng, zoom: hit.zoom });
-      setSearchState({ label: hit.label });
     } catch {
       setSearchState({
         error: "Address search is unavailable right now. Drag the map to place the pin by hand.",
@@ -167,7 +170,12 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
         </p>
       </div>
 
-      <LocationPicker lat={location.lat} lng={location.lng} onChange={onLocationChange} flyTo={flyTo} />
+      <LocationPicker
+        lat={location.lat}
+        lng={location.lng}
+        onChange={onLocationChange}
+        recenterZoom={searchState?.zoom}
+      />
 
       <div className="rounded-lg bg-surface-inset p-3 text-xs space-y-1.5">
         <div className="flex justify-between text-content-secondary">

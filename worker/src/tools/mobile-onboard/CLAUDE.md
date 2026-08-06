@@ -365,18 +365,23 @@ value, so it must exist on both sides or the option is unselectable.
   (5s × 24) before auto-advancing; timeout keeps the draft resumable.
 - `OnboardStep.jsx` — **address-first location**: a street-address input on
   top (`geocode.js`, OpenStreetMap Nominatim called browser-direct; see
-  External Dependencies) whose hit drops the pin and recenters the map via
-  `LocationPicker`'s `flyTo` prop, zoomed by match precision (`zoomForRank` —
-  a city-level hit must not zoom to rooftops). The address lives in the
-  wizard's `certForm.address`, so it **pre-fills the certificate step** and is
-  asked for once; it stays optional here (map-only still works), and a failed
-  geocode falls back to the CF-geo-seeded viewport + manual pin. Then
-  `LocationPicker.jsx` (map pin + H3 res-12 overlay, copy-adapted from
-  update-location's UpdatePanel *minus* elevation/gain; seeds its viewport
-  from `shared/geo` without counting as a chosen location; `flyTo`
-  `{latitude, longitude, zoom}` recenters on object identity, a fresh object
-  per search) + fee card
-  + `DcMintModal` gate.
+  External Dependencies) whose hit sets the pin value, zoomed by match
+  precision via the picker's `recenterZoom` hint (a city-level hit must not
+  zoom to rooftops). The address lives in the wizard's `certForm.address`, so
+  it **pre-fills the certificate step** and is asked for once; it stays
+  optional here (map-only still works), and a failed geocode falls back to
+  the CF-geo-seeded viewport + manual pin. Then `LocationPicker.jsx` (map pin
+  + H3 res-12 overlay, copy-adapted from update-location's UpdatePanel
+  *minus* elevation/gain; seeds its viewport from `shared/geo` without
+  counting as a chosen location) + fee card + `DcMintModal` gate.
+  **The picker owns programmatic recentering**: values it produced (drag,
+  geolocate, typed input) echo back down as props without moving the camera,
+  while any OTHER lat/lng change recenters. Only the geocode exercises that
+  live today — chain load and draft resume both land before the picker mounts
+  — but callers no longer have to know which case they are. Callers never need remount keys — this replaced both the `flyTo`
+  prop and `ManageDetail`'s `key={location_hex}` hack. See the component's
+  docblock for the mechanism, the `recenterZoom` timing contract, and the one
+  documented gap (a value-identical re-assert is a no-op).
 - `CertStep.jsx` / `CertDownloads.jsx` — cert creation + downloads; "Later"
   skips to AP setup (certs retrievable from Manage).
 - `useSignedHotspotRequest.js` — **the** wallet-signature flow for all three
