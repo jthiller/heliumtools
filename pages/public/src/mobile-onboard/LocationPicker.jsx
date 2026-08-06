@@ -13,6 +13,13 @@ const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/styl
 const INPUT_CLASS =
   "mt-1 w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
+/** The string props as numbers, or null when either is unusable. */
+function parseCoords(lat, lng) {
+  const la = parseFloat(lat);
+  const lo = parseFloat(lng);
+  return isNaN(la) || isNaN(lo) ? null : { la, lo };
+}
+
 /**
  * Location-only map picker (drag-to-position pin + H3 res-12 hex overlay +
  * geolocate + lat/lng inputs). Copy-adapted from update-location's
@@ -28,23 +35,32 @@ const INPUT_CLASS =
  * picker produced — map drags, geolocate, typed input — echo back down as
  * props without moving the camera, so typing a coordinate doesn't jerk the
  * map mid-keystroke (blur applies it, as before). Callers therefore never
- * need remount keys or recenter props; `recenterZoom` (optional) is only a
- * zoom hint for external recenters, e.g. a geocode's match precision.
+ * need remount keys.
+ *
+ * `recenterZoom` (optional) is a zoom hint for external recenters, e.g. a
+ * geocode's match precision. It must be set in the same commit as the lat/lng
+ * it describes — the picker reads it only while recentering, so a hint set a
+ * commit late applies to whatever moved the value next.
  *
  * Known tradeoff: an external set whose value is string-identical to the
- * current one is a no-op — after an exact-center zoom, re-searching the same
- * address won't snap the zoom back. Deliberate: a value-identical re-assert
- * has no prop delta to observe, and the only fix is a fresh-object-per-call
- * signal, i.e. the token contract this design replaced.
+ * current one is a no-op. Panning is unaffected (a pan emits a new internal
+ * value, so re-asserting the old one is a real change); the gap is *zoom-only*
+ * divergence — zoom out without panning, re-search the same address, and the
+ * camera keeps your zoom. Deliberate: a value-identical re-assert has no prop
+ * delta to observe, and the only fix is a fresh-object-per-call signal, i.e.
+ * the token contract this design replaced.
+ *
+ * update-location's UpdatePanel deliberately has none of this: it owns its own
+ * lat/lng state rather than receiving it, so no value round-trips through a
+ * parent and provenance is never ambiguous. Don't port this mechanism there.
  */
 export default function LocationPicker({ lat, lng, onChange, recenterZoom }) {
   const isDark = useDarkMode();
   const [viewState, setViewState] = useState(() => {
-    const la = parseFloat(lat);
-    const lo = parseFloat(lng);
-    return isNaN(la) || isNaN(lo)
-      ? { latitude: 37.77, longitude: -122.42, zoom: 15 }
-      : { latitude: la, longitude: lo, zoom: 16 };
+    const c = parseCoords(lat, lng);
+    return c
+      ? { latitude: c.la, longitude: c.lo, zoom: 16 }
+      : { latitude: 37.77, longitude: -122.42, zoom: 15 };
   });
   const [geolocating, setGeolocating] = useState(false);
 
@@ -62,18 +78,16 @@ export default function LocationPicker({ lat, lng, onChange, recenterZoom }) {
     [onChange],
   );
 
-  const hasValue = lat !== "" && lng !== "";
-  const hasValueRef = useRef(hasValue);
-  hasValueRef.current = hasValue;
-
   // Seed the viewport (not the value) from the requester's rough location.
   useEffect(() => {
-    if (hasValue) return;
+    if (internal.current.lat !== "") return;
     let cancelled = false;
     fetchGeo().then((geo) => {
       // Re-checked at resolve time: a geocode or chain load may have landed
-      // while this was in flight, and the seed must not clobber it.
-      if (cancelled || !geo || hasValueRef.current) return;
+      // while this was in flight, and the seed must not clobber it. `internal`
+      // is a live mirror of the value (every origin records there), so it
+      // answers this without a second ref.
+      if (cancelled || !geo || internal.current.lat !== "") return;
       setViewState((v) => ({ ...v, latitude: geo.latitude, longitude: geo.longitude, zoom: 12 }));
     });
     return () => { cancelled = true; };
@@ -85,15 +99,15 @@ export default function LocationPicker({ lat, lng, onChange, recenterZoom }) {
   useEffect(() => {
     if (lat === internal.current.lat && lng === internal.current.lng) return;
     // Adopt before parsing, so a cleared or half-typed external value doesn't
-    // re-trigger on every render.
+    // re-trigger on the next dep change. This also keeps `internal` a total
+    // mirror of the committed value, which the seed effect above relies on.
     internal.current = { lat, lng };
-    const la = parseFloat(lat);
-    const lo = parseFloat(lng);
-    if (isNaN(la) || isNaN(lo)) return;
+    const c = parseCoords(lat, lng);
+    if (!c) return;
     setViewState((v) => ({
       ...v,
-      latitude: la,
-      longitude: lo,
+      latitude: c.la,
+      longitude: c.lo,
       // A precision hint (geocode) wins; otherwise never zoom OUT on a
       // recenter, but pull at least to street level.
       zoom: recenterZoom ?? Math.max(v.zoom, 16),
@@ -116,12 +130,11 @@ export default function LocationPicker({ lat, lng, onChange, recenterZoom }) {
     });
   }, [emit]);
 
+  // Typed coordinates are an internal origin, so the recenter effect ignores
+  // their echo. Blur is what applies them to the camera.
   const handleLatLngBlur = useCallback(() => {
-    const la = parseFloat(lat);
-    const lo = parseFloat(lng);
-    if (!isNaN(la) && !isNaN(lo)) {
-      setViewState((v) => ({ ...v, latitude: la, longitude: lo }));
-    }
+    const c = parseCoords(lat, lng);
+    if (c) setViewState((v) => ({ ...v, latitude: c.la, longitude: c.lo }));
   }, [lat, lng]);
 
   const handleGeolocate = useCallback(() => {

@@ -375,12 +375,12 @@ value, so it must exist on both sides or the option is unselectable.
   *minus* elevation/gain; seeds its viewport from `shared/geo` without
   counting as a chosen location) + fee card + `DcMintModal` gate.
   **The picker owns programmatic recentering**: values it produced (drag,
-  geolocate, typed input) are recorded in a ref before `onChange`, so their
-  echo back down as props doesn't move the camera; any OTHER lat/lng prop
-  change (geocode, chain load, draft resume) recenters — `recenterZoom` hint
-  if given, else `max(current, 16)`. Callers never need remount keys or
-  recenter props; this replaced both the `flyTo` prop and `ManageDetail`'s
-  `key={location_hex}` remount hack.
+  geolocate, typed input) echo back down as props without moving the camera,
+  while any OTHER lat/lng change (geocode, chain load, draft resume)
+  recenters. Callers never need remount keys — this replaced both the `flyTo`
+  prop and `ManageDetail`'s `key={location_hex}` hack. See the component's
+  docblock for the mechanism, the `recenterZoom` timing contract, and the one
+  documented gap (a value-identical re-assert is a no-op).
 - `CertStep.jsx` / `CertDownloads.jsx` — cert creation + downloads; "Later"
   skips to AP setup (certs retrievable from Manage).
 - `useSignedHotspotRequest.js` — **the** wallet-signature flow for all three
