@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cellToBoundary } from "h3-js";
 import MapGL, { Source, Layer } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -22,14 +22,22 @@ const INPUT_CLASS =
  * the requester's CF-derived geo (shared/geo) without calling onChange, so an
  * untouched picker never counts as a chosen location.
  *
- * `flyTo` (optional): { latitude, longitude, zoom } — recenters the viewport
- * whenever a NEW object is passed (identity, not deep equality, so pass a
- * fresh object per recenter). Callers that set the value programmatically
- * (address geocoding) need this because the map otherwise recenters only on
- * lat/lng input blur; without it the pin value would change while the camera
- * stayed put.
+ * The picker owns programmatic recentering: when the lat/lng props change to
+ * a value the picker did not itself produce (an address geocode, a
+ * chain-loaded location, a resumed draft), the camera follows. Values the
+ * picker produced — map drags, geolocate, typed input — echo back down as
+ * props without moving the camera, so typing a coordinate doesn't jerk the
+ * map mid-keystroke (blur applies it, as before). Callers therefore never
+ * need remount keys or recenter props; `recenterZoom` (optional) is only a
+ * zoom hint for external recenters, e.g. a geocode's match precision.
+ *
+ * Known tradeoff: an external set whose value is string-identical to the
+ * current one is a no-op — after an exact-center zoom, re-searching the same
+ * address won't snap the zoom back. Deliberate: a value-identical re-assert
+ * has no prop delta to observe, and the only fix is a fresh-object-per-call
+ * signal, i.e. the token contract this design replaced.
  */
-export default function LocationPicker({ lat, lng, onChange, flyTo }) {
+export default function LocationPicker({ lat, lng, onChange, recenterZoom }) {
   const isDark = useDarkMode();
   const [viewState, setViewState] = useState(() => {
     const la = parseFloat(lat);
@@ -40,14 +48,32 @@ export default function LocationPicker({ lat, lng, onChange, flyTo }) {
   });
   const [geolocating, setGeolocating] = useState(false);
 
+  // The last value this picker itself produced. Every internal origin (map
+  // moveEnd, geolocate, the lat/lng inputs) records here before calling
+  // onChange, so the recenter effect below can tell an external set from the
+  // echo of its own output. Exact string comparison is deliberate: internal
+  // origins record the identical strings the parent hands back.
+  const internal = useRef({ lat, lng });
+  const emit = useCallback(
+    (next) => {
+      internal.current = next;
+      onChange(next);
+    },
+    [onChange],
+  );
+
   const hasValue = lat !== "" && lng !== "";
+  const hasValueRef = useRef(hasValue);
+  hasValueRef.current = hasValue;
 
   // Seed the viewport (not the value) from the requester's rough location.
   useEffect(() => {
     if (hasValue) return;
     let cancelled = false;
     fetchGeo().then((geo) => {
-      if (cancelled || !geo) return;
+      // Re-checked at resolve time: a geocode or chain load may have landed
+      // while this was in flight, and the seed must not clobber it.
+      if (cancelled || !geo || hasValueRef.current) return;
       setViewState((v) => ({ ...v, latitude: geo.latitude, longitude: geo.longitude, zoom: 12 }));
     });
     return () => { cancelled = true; };
@@ -55,17 +81,24 @@ export default function LocationPicker({ lat, lng, onChange, flyTo }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Programmatic recenter (geocode hits). Keyed on object identity so
-  // repeating the same search still recenters after the user has dragged away.
+  // Externally-set values recenter the camera; internal echoes don't.
   useEffect(() => {
-    if (!flyTo) return;
+    if (lat === internal.current.lat && lng === internal.current.lng) return;
+    // Adopt before parsing, so a cleared or half-typed external value doesn't
+    // re-trigger on every render.
+    internal.current = { lat, lng };
+    const la = parseFloat(lat);
+    const lo = parseFloat(lng);
+    if (isNaN(la) || isNaN(lo)) return;
     setViewState((v) => ({
       ...v,
-      latitude: flyTo.latitude,
-      longitude: flyTo.longitude,
-      zoom: flyTo.zoom,
+      latitude: la,
+      longitude: lo,
+      // A precision hint (geocode) wins; otherwise never zoom OUT on a
+      // recenter, but pull at least to street level.
+      zoom: recenterZoom ?? Math.max(v.zoom, 16),
     }));
-  }, [flyTo]);
+  }, [lat, lng, recenterZoom]);
 
   const h3Cell = useMemo(() => latLngToH3(lat, lng), [lat, lng]);
 
@@ -77,11 +110,11 @@ export default function LocationPicker({ lat, lng, onChange, flyTo }) {
 
   const handleMove = useCallback((evt) => setViewState(evt.viewState), []);
   const handleMoveEnd = useCallback((evt) => {
-    onChange({
+    emit({
       lat: evt.viewState.latitude.toFixed(6),
       lng: evt.viewState.longitude.toFixed(6),
     });
-  }, [onChange]);
+  }, [emit]);
 
   const handleLatLngBlur = useCallback(() => {
     const la = parseFloat(lat);
@@ -99,13 +132,13 @@ export default function LocationPicker({ lat, lng, onChange, flyTo }) {
         const la = pos.coords.latitude;
         const lo = pos.coords.longitude;
         setViewState((v) => ({ ...v, latitude: la, longitude: lo, zoom: 17 }));
-        onChange({ lat: la.toFixed(6), lng: lo.toFixed(6) });
+        emit({ lat: la.toFixed(6), lng: lo.toFixed(6) });
         setGeolocating(false);
       },
       () => setGeolocating(false),
       { enableHighAccuracy: true, timeout: 10_000 },
     );
-  }, [onChange]);
+  }, [emit]);
 
   return (
     <div className="space-y-3">
@@ -147,12 +180,12 @@ export default function LocationPicker({ lat, lng, onChange, flyTo }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs font-medium text-content-secondary">Latitude</label>
-          <input type="text" value={lat} onChange={(e) => onChange({ lat: e.target.value, lng })}
+          <input type="text" value={lat} onChange={(e) => emit({ lat: e.target.value, lng })}
             onBlur={handleLatLngBlur} placeholder="e.g. 37.7749" className={INPUT_CLASS} />
         </div>
         <div>
           <label className="text-xs font-medium text-content-secondary">Longitude</label>
-          <input type="text" value={lng} onChange={(e) => onChange({ lat, lng: e.target.value })}
+          <input type="text" value={lng} onChange={(e) => emit({ lat, lng: e.target.value })}
             onBlur={handleLatLngBlur} placeholder="e.g. -122.4194" className={INPUT_CLASS} />
         </div>
       </div>

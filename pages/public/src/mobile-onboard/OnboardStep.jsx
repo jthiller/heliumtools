@@ -38,7 +38,9 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
 
   // Address search: null | "searching" | { label } | { error }
   const [searchState, setSearchState] = useState(null);
-  const [flyTo, setFlyTo] = useState(null);
+  // Zoom hint for the picker's external-recenter: a city-level match must not
+  // land at rooftop zoom. Inert except at the moment the location changes.
+  const [searchZoom, setSearchZoom] = useState(null);
   const searching = searchState === "searching";
   const query = address.trim();
 
@@ -65,10 +67,10 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
         });
         return;
       }
+      // The picker recenters itself on any location it didn't produce, so
+      // setting the value is all a geocode hit needs to move the camera.
+      setSearchZoom(hit.zoom);
       onLocationChange({ lat: hit.lat.toFixed(6), lng: hit.lng.toFixed(6) });
-      // A fresh object per search: LocationPicker recenters on identity, so a
-      // repeated search still recenters after the user has dragged away.
-      setFlyTo({ latitude: hit.lat, longitude: hit.lng, zoom: hit.zoom });
       setSearchState({ label: hit.label });
     } catch {
       setSearchState({
@@ -167,7 +169,12 @@ export default function OnboardStep({ gateway, fees, location, onLocationChange,
         </p>
       </div>
 
-      <LocationPicker lat={location.lat} lng={location.lng} onChange={onLocationChange} flyTo={flyTo} />
+      <LocationPicker
+        lat={location.lat}
+        lng={location.lng}
+        onChange={onLocationChange}
+        recenterZoom={searchZoom}
+      />
 
       <div className="rounded-lg bg-surface-inset p-3 text-xs space-y-1.5">
         <div className="flex justify-between text-content-secondary">
