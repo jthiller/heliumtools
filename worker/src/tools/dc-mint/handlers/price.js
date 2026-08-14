@@ -17,7 +17,12 @@
  * `DcMintTool.jsx` / `DcMintModal.jsx`. Keep the keys stable.
  */
 import { jsonResponse } from "../../../lib/response.js";
-import { DC_PER_USD, dcPerHnt, getSnapshotSwr } from "../../hnt-price/services/price.js";
+import {
+  DC_PER_USD,
+  PUBLIC_PRICE_ERROR,
+  dcPerHnt,
+  getSnapshotSwr,
+} from "../../hnt-price/services/price.js";
 
 /**
  * `hnt_usd` is rendered raw (no `toFixed`) by both `DcMintTool` and
@@ -70,6 +75,9 @@ export async function handlePrice(env, ctx) {
     if (!mapped) throw new Error("snapshot carried no usable HNT price");
     return jsonResponse(mapped);
   } catch (err) {
-    return jsonResponse({ error: `Failed to fetch HNT price: ${err.message}` }, 500);
+    // Same redaction policy as /hnt-price: upstream failure messages can name
+    // RPC hosts and client internals, so the detail stays in the logs.
+    console.error("dc-mint /price failed", err?.message);
+    return jsonResponse({ error: PUBLIC_PRICE_ERROR }, 500);
   }
 }

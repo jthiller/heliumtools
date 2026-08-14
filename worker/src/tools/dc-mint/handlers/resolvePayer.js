@@ -2,7 +2,7 @@
  * Resolve a payer key to its escrow accounts on both IoT and Mobile subnets,
  * DC balances, and well-known OUI name.
  */
-import { Connection } from "@solana/web3.js";
+import { rpcConnection } from "../../../lib/helium-solana.js";
 import { jsonResponse } from "../../../lib/response.js";
 import { delegatedDcPda, escrowPda } from "../lib/solana.js";
 import { WELL_KNOWN_OUIS_URL } from "../../oui-notifier/config.js";
@@ -53,7 +53,7 @@ export async function handleResolvePayer(payerKey, env) {
   }
 
   try {
-    const connection = new Connection(env.SOLANA_RPC_URL);
+    const connection = rpcConnection(env.SOLANA_RPC_URL);
 
     // Check both subnets in parallel
     const [iotResult, mobileResult, wellKnown] = await Promise.all([

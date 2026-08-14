@@ -42,8 +42,8 @@
 //   - Thereafter the DO sends the snapshot JSON only when the price actually
 //     CHANGED (edge-triggered on `spot.usd` + `oracle.publish_time`). A quiet
 //     socket means a stable price, not a broken stream.
-//   - The DO sends no pings and consumes no client messages today; the message
-//     hook is kept so control frames can ride the same socket later.
+//   - The DO sends no pings and assigns no meaning to client messages today; an
+//     inbound frame only re-ensures the poll alarm (see webSocketMessage).
 
 import { buildSnapshot, getStoredSnapshot } from "./services/price.js";
 
@@ -134,21 +134,25 @@ export class HntPriceHub {
   // ---------------------------------------------------------------------------
   // WebSocket lifecycle (Hibernation API)
   //
-  // A close or an error is a roster change, and (besides `alarm()` and an
-  // inbound fetch) the only signal that wakes the DO from hibernation — so each
-  // one re-points the alarm at whatever the roster now is. Each returns its
-  // arming call so the caller's await is real: these entry points are async, and
-  // a floating storage write can be cut off when the DO goes back to sleep.
+  // A close or an error is a roster change; together with `alarm()`, an inbound
+  // fetch, and an inbound frame these are the signals that wake the DO from
+  // hibernation — so each re-points the alarm at whatever the roster now is.
+  // Each returns its arming call so the caller's await is real: these entry
+  // points are async, and a floating storage write can be cut off when the DO
+  // goes back to sleep.
   // ---------------------------------------------------------------------------
 
-  // Deliberately a no-op. The wire protocol is broadcast-only — clients send
-  // nothing — and an inbound frame changes no roster, so there is nothing to
-  // re-schedule: whenever a subscriber exists the heartbeat is already armed
-  // (connect, close, error and alarm all ensure it, and the storage alarm is the
-  // one thing that survives hibernation). Arming per frame would only convert
-  // junk frames into billed storage reads. The hook stays so control frames
-  // (e.g. a cadence request) can be added later without changing the wire.
-  webSocketMessage(_ws, _message) {}
+  // The wire protocol is broadcast-only — clients send nothing — so an inbound
+  // frame carries no meaning. It still re-ensures the alarm as a self-heal
+  // backstop: if a storage failure ever exhausted the alarm retries, the roster
+  // would be live with no alarm and no other wake signal until a connect or
+  // close, and the protocol's "silence means a stable price" makes stranded
+  // clients unable to tell. ensureScheduled is ensure-style (one read, write
+  // only when nothing suitable is pending), so a junk frame costs at most one
+  // storage read.
+  async webSocketMessage(_ws, _message) {
+    await this.ensureScheduled();
+  }
 
   async webSocketClose(_ws, _code, _reason, _wasClean) {
     // `getWebSockets()` already excludes the closing socket by the time this

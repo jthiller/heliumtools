@@ -7,6 +7,9 @@
 
 const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
+// One ceiling for both consumers; a hung Jupiter must not hold a request open.
+const TIMEOUT_MS = 10_000;
+
 /**
  * USD prices for a set of mints, in one request.
  *
@@ -17,12 +20,11 @@ const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v3";
  * and carries on.
  *
  * @param {string[]} mints
- * @param {{timeoutMs?: number}} [options]
  * @returns {Promise<Record<string, number|null>>}
  */
-export async function fetchJupiterUsdPrices(mints, { timeoutMs = 10_000 } = {}) {
+export async function fetchJupiterUsdPrices(mints) {
   const res = await fetch(`${JUPITER_PRICE_URL}?ids=${mints.join(",")}`, {
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Jupiter price API returned ${res.status}`);

@@ -325,6 +325,11 @@ export async function getSnapshotSwr(env, ctx) {
     return stored;
   }
 
-  // Cold start — nothing stored to serve, so build it now and pay for it once.
-  return refreshSnapshot(env);
+  // Cold start — nothing stored to serve, so build it now. Deduped through the
+  // same in-flight guard as the stale path: a cold-start request burst awaits
+  // one shared build per isolate instead of paying one chain read each.
+  inflightRefresh ??= refreshSnapshot(env).finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
 }

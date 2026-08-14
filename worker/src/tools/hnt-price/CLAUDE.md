@@ -175,11 +175,12 @@ streaming subscribers cost one poll rather than N.
   safe: `alarm()` decides what to do from the live subscriber count when it
   fires. Both arming methods return their `setAlarm` promise, so the callers'
   awaits are real (a floating storage write can be cut off at hibernation).
-- **`webSocketMessage` is a documented no-op.** The protocol is broadcast-only,
-  clients send nothing, and an inbound frame changes no roster — the heartbeat
-  is already armed whenever a subscriber exists. Arming per frame would only
-  turn junk frames into billed storage reads. The hook stays for future control
-  frames.
+- **`webSocketMessage` only re-ensures the alarm.** The protocol is
+  broadcast-only — clients send nothing, an inbound frame carries no meaning —
+  but the hook keeps `ensureScheduled()` as a self-heal backstop: if a storage
+  failure ever exhausted the alarm retries, the roster would be live with no
+  alarm and no other wake signal until a connect or close. Ensure-style arming
+  means a junk frame costs at most one storage read.
 - **Teardown**: `armTeardown()` sets a short `IDLE_TEARDOWN_MS` (2s) alarm when
   the last socket goes — unconditionally, since pulling the alarm earlier is
   always safe. A reconnect within the grace doesn't cancel it; the alarm fires,
