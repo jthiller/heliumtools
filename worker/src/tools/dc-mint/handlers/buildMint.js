@@ -5,7 +5,7 @@
 import { PublicKey, Connection } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
 import { HNT_DECIMALS } from "../../dc-purchase/lib/constants.js";
-import { buildMintInstruction, buildUnsignedTx } from "../lib/solana.js";
+import { buildMintInstruction, buildUnsignedTx, resolveHntPriceOracle } from "../lib/solana.js";
 
 export async function handleBuildMint(request, env) {
   let body;
@@ -36,7 +36,8 @@ export async function handleBuildMint(request, env) {
 
   try {
     const connection = new Connection(env.SOLANA_RPC_URL);
-    const mintIx = buildMintInstruction(ownerPubkey, { hnt_amount, dc_amount }, recipientPubkey, HNT_DECIMALS);
+    const hntPriceOracle = await resolveHntPriceOracle(connection);
+    const mintIx = buildMintInstruction(ownerPubkey, { hnt_amount, dc_amount }, recipientPubkey, HNT_DECIMALS, hntPriceOracle);
     const vtx = await buildUnsignedTx(connection, ownerPubkey, [mintIx]);
 
     return jsonResponse({

@@ -128,8 +128,63 @@ export const DATA_ONLY_ESCROW_KEY = findPDA([Buffer.from("data_only_escrow"), DA
 export const ENTITY_CREATOR_KEY = findPDA([Buffer.from("entity_creator"), DAO_KEY.toBuffer()], ENTITY_MANAGER);
 export const REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_entity_config"), IOT_SUB_DAO_KEY.toBuffer(), Buffer.from("IOT")], ENTITY_MANAGER);
 export const MOBILE_REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_entity_config"), MOBILE_SUB_DAO_KEY.toBuffer(), Buffer.from("MOBILE")], ENTITY_MANAGER);
-export const DC_KEY = findPDA([Buffer.from("dc"), DC_MINT.toBuffer()], DATA_CREDITS);
+export const DC_KEY = findPDA([Buffer.from("dc"), DC_MINT.toBuffer()], DATA_CREDITS); // DataCreditsV0 singleton
 export const BUBBLEGUM_SIGNER_KEY = findPDA([Buffer.from("collection_cpi")], BUBBLEGUM);
+
+// ---------------------------------------------------------------------------
+// DataCreditsV0 — HNT price oracle resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the HNT price oracle account that `mint_data_credits_v0` expects.
+ *
+ * Read live from the DataCreditsV0 singleton (`DC_KEY`, seeds ["dc", DC_MINT]
+ * under the Data Credits program), whose layout is:
+ *   offset 0   — Anchor discriminator (8)
+ *   offset 8   — dc_mint (32)
+ *   offset 40  — hnt_mint (32)
+ *   offset 72  — authority (32)
+ *   offset 104 — hnt_price_oracle (32)
+ *   offset 136 — bump (1) + account_payer (32) + bump (1)
+ *
+ * The program pins the oracle with `has_one = hnt_price_oracle` (data-credits
+ * 0.2.7+), so whatever is stored at offset 104 is by definition the only account
+ * the chain accepts — including across oracle rotations such as the legacy → pro
+ * Pyth receiver migration (helium-program-library #1207).
+ *
+ * Deliberately no cache and no fallback constant: a stale or guessed oracle
+ * builds transactions the program rejects, so a failed read must fail the build
+ * loudly instead. Read at "confirmed" per call so a rotation is picked up within
+ * seconds without changing callers' Connection defaults.
+ *
+ * The single implementation for all three consumers — dc-mint (builds the
+ * unsigned mint/delegate txns), dc-purchase (custodial treasury mint), and
+ * hnt-price (decodes the resolved feed into the price snapshot).
+ *
+ * @param {import("@solana/web3.js").Connection} connection
+ * @returns {Promise<PublicKey>} the HNT price oracle account
+ */
+export async function resolveHntPriceOracle(connection) {
+  const account = await connection.getAccountInfo(DC_KEY, "confirmed");
+  if (!account) {
+    throw new Error(`DataCreditsV0 account ${DC_KEY.toBase58()} not found on chain`);
+  }
+  if (account.data.length < 136) {
+    throw new Error(`DataCreditsV0 account too small: ${account.data.length} bytes, expected at least 136`);
+  }
+  // Layout self-check — if the mints aren't where we expect, the account layout
+  // changed and offset 104 can no longer be trusted to hold the oracle.
+  const dcMint = new PublicKey(account.data.subarray(8, 40));
+  const hntMint = new PublicKey(account.data.subarray(40, 72));
+  if (!dcMint.equals(DC_MINT) || !hntMint.equals(HNT_MINT)) {
+    throw new Error("DataCreditsV0 layout mismatch: dc_mint/hnt_mint not at their expected offsets");
+  }
+  const oracle = new PublicKey(account.data.subarray(104, 136));
+  if (oracle.equals(PublicKey.default)) {
+    throw new Error("DataCreditsV0 hnt_price_oracle is unset");
+  }
+  return oracle;
+}
 
 // ---------------------------------------------------------------------------
 // Dynamic PDAs

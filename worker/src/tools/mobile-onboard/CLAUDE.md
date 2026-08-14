@@ -192,6 +192,20 @@ helium-wallet-rs source:
   `parseMobileConfigFees()` (walks the MobileConfigV2 enum: variant u8 = 3,
   vec of 89-byte DeviceFeesV1 entries).
 
+**Watch note — `MOBILE_PRICE_KEY` and the Pyth migration.** `MOBILE_PRICE_KEY`
+(`worker/src/lib/helium-solana.js`, `DQ4C1tzvu28cwo1roN1Wm6TW35sfJEjLh517k3ZeWevx`)
+is a PriceUpdateV2 account under the **legacy** Pyth receiver, and it is consumed
+by **helium-entity-manager** — a different program from data-credits, untouched by
+the receiver migration in helium-program-library #1207. Do **not** change it as
+part of Pyth migrations. If entity-manager later gets an equivalent receiver
+migration upstream, apply the same runtime-resolution treatment the data-credits
+callers use (`resolveHntPriceOracle` in `worker/src/lib/helium-solana.js` — read
+the pinned oracle account from chain instead of hardcoding it), rather than swapping
+in a new hardcoded key. **Residual risk:** if the legacy crank feeding that
+account stops after 2026-08-18 before entity-manager migrates, mobile-onboard's
+onboard instruction could fail on the `dnt_price` account, and there is no
+heliumtools-side fix — the change would have to land in helium-entity-manager.
+
 **Verification that was actually run** (July 2026): `/issue` with a real
 CLI-generated token → the live ECC verifier co-signed it and the returned txn
 **simulated clean** (err null). `/update` against a real converted network
