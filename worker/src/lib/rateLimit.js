@@ -1,3 +1,4 @@
+import { kvGetJson, kvPutJson } from "./kv.js";
 import { jsonResponse } from "./response.js";
 
 /**
@@ -18,19 +19,16 @@ function getClientIp(request) {
  * Returns `{ n, ts }` or null when there is nothing usable. Legacy values are a
  * plain counter string (the pre-window format) — those parse to a non-object and
  * are treated as "no window", so a deploy over warm keys starts everyone fresh
- * instead of throwing. KV read failures fail open the same way.
+ * instead of throwing. KV read failures fail open the same way (`kvGetJson`
+ * already answers null on them).
  */
 async function readWindow(env, key) {
-  try {
-    const raw = await env.KV.get(key, "json");
-    if (!raw || typeof raw !== "object") return null;
-    const n = Number(raw.n);
-    const ts = Number(raw.ts);
-    if (!Number.isFinite(n) || !Number.isFinite(ts)) return null;
-    return { n, ts };
-  } catch {
-    return null;
-  }
+  const raw = await kvGetJson(env, key);
+  if (!raw || typeof raw !== "object") return null;
+  const n = Number(raw.n);
+  const ts = Number(raw.ts);
+  if (!Number.isFinite(n) || !Number.isFinite(ts)) return null;
+  return { n, ts };
 }
 
 /**
@@ -76,19 +74,15 @@ export async function checkIpRateLimit(
     );
   }
 
-  try {
-    await env.KV.put(key, JSON.stringify(next), {
-      // Cloudflare KV enforces a 60-second minimum expirationTtl, so short
-      // windows have to floor at 60. Doubling the window gives the anchor room
-      // to expire the window on its own terms (the record is what closes a
-      // window now; the TTL is only garbage collection for idle IPs).
-      expirationTtl: Math.max(60, windowSeconds * 2),
-    });
-  } catch {
-    // Fail open. A rate-limit accounting failure (KV's 1-write/sec/key ceiling,
-    // a transient error) must never turn a good request into a 500 — same
-    // best-effort posture as lib/kv.js.
-  }
+  // `kvPutJson` swallows write failures, which is the posture we want: a
+  // rate-limit accounting failure (KV's 1-write/sec/key ceiling, a transient
+  // error) must never turn a good request into a 500.
+  //
+  // Cloudflare KV enforces a 60-second minimum expirationTtl, so short windows
+  // have to floor at 60. Doubling the window gives the anchor room to expire the
+  // window on its own terms (the record is what closes a window now; the TTL is
+  // only garbage collection for idle IPs).
+  await kvPutJson(env, key, next, Math.max(60, windowSeconds * 2));
 
   return null;
 }

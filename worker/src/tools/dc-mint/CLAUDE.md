@@ -199,7 +199,10 @@ prefix router in `worker/src/index.js`.
 ## Environment / Secrets
 
 - `SOLANA_RPC_URL` — Helius staked endpoint, used to fetch blockhash and account
-  data when building/resolving (never log or expose).
+  data when building/resolving (never log or expose). `/build-mint` and
+  `/build-delegate` construct their `Connection` with the shared `rpcConnection()`
+  (`worker/src/lib/helium-solana.js`), so the oracle resolve and the blockhash
+  fetch are both capped at 10s and read at "confirmed".
 - `KV` binding — used by `/resolve-payer` to cache the well-known OUI list
   (key `dc-mint-well-known-ouis`, 1h TTL), and read by `/price` for the
   `hntprice:snap` snapshot key **owned by hnt-price** (that tool writes it; this

@@ -17,11 +17,7 @@
  */
 import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../../lib/rateLimit.js";
-import { buildSnapshot, PriceUnavailableError } from "../services/price.js";
-
-// Constant public body — upstream messages can carry RPC endpoint detail, and
-// this is a keyless public API. Detail stays in the log. See README.md.
-const PUBLIC_ERROR = "HNT price temporarily unavailable";
+import { buildSnapshot, PriceUnavailableError, PUBLIC_PRICE_ERROR } from "../services/price.js";
 
 export async function handleInstant(request, env) {
   const limited = await checkIpRateLimit(env, request, {
@@ -37,6 +33,6 @@ export async function handleInstant(request, env) {
     // Both upstreams down is a 502 (they're broken); anything else is ours.
     const status = err instanceof PriceUnavailableError ? 502 : 500;
     console.error("hnt-price /instant failed", err?.message);
-    return jsonResponse({ error: PUBLIC_ERROR }, status);
+    return jsonResponse({ error: PUBLIC_PRICE_ERROR }, status);
   }
 }

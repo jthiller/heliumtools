@@ -6,7 +6,7 @@
  * mobile-onboard (and any future tool) can reuse the same constants,
  * PDA derivations, instruction builders, Borsh encoders, and DAS helpers.
  */
-import { PublicKey, TransactionInstruction, SystemProgram } from "@solana/web3.js";
+import { Connection, PublicKey, TransactionInstruction, SystemProgram } from "@solana/web3.js";
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
 
@@ -130,6 +130,32 @@ export const REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_ent
 export const MOBILE_REWARDABLE_ENTITY_CONFIG_KEY = findPDA([Buffer.from("rewardable_entity_config"), MOBILE_SUB_DAO_KEY.toBuffer(), Buffer.from("MOBILE")], ENTITY_MANAGER);
 export const DC_KEY = findPDA([Buffer.from("dc"), DC_MINT.toBuffer()], DATA_CREDITS); // DataCreditsV0 singleton
 export const BUBBLEGUM_SIGNER_KEY = findPDA([Buffer.from("collection_cpi")], BUBBLEGUM);
+
+// ---------------------------------------------------------------------------
+// RPC connection
+// ---------------------------------------------------------------------------
+
+/** Ceiling on any single RPC round trip made through `rpcConnection`. */
+const RPC_TIMEOUT_MS = 10_000;
+
+/**
+ * A `Connection` whose every request has a timeout.
+ *
+ * web3.js applies no timeout of its own, so a hung RPC would hold the caller's
+ * request open until the platform kills the isolate — with nothing logged and no
+ * chance to degrade gracefully. `fetch` is a supported ConnectionConfig override,
+ * so wrapping it once here gives every RPC POST the same ceiling. Missing the
+ * deadline surfaces as a normal rejection from whatever call was in flight.
+ *
+ * @param {string} url
+ * @returns {import("@solana/web3.js").Connection}
+ */
+export function rpcConnection(url) {
+  return new Connection(url, {
+    commitment: "confirmed",
+    fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) }),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // DataCreditsV0 — HNT price oracle resolution

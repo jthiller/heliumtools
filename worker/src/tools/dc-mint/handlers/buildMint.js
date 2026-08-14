@@ -2,8 +2,9 @@
  * Build an unsigned mint_data_credits_v0 transaction.
  * The user's browser wallet signs and submits it.
  */
-import { PublicKey, Connection } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
+import { rpcConnection } from "../../../lib/helium-solana.js";
 import { HNT_DECIMALS } from "../../dc-purchase/lib/constants.js";
 import { buildMintInstruction, buildUnsignedTx, resolveHntPriceOracle } from "../lib/solana.js";
 
@@ -35,7 +36,9 @@ export async function handleBuildMint(request, env) {
   }
 
   try {
-    const connection = new Connection(env.SOLANA_RPC_URL);
+    // Shared factory: caps the oracle resolve and the blockhash fetch at 10s so
+    // a hung RPC fails the build instead of holding the request open.
+    const connection = rpcConnection(env.SOLANA_RPC_URL);
     const hntPriceOracle = await resolveHntPriceOracle(connection);
     const mintIx = buildMintInstruction(ownerPubkey, { hnt_amount, dc_amount }, recipientPubkey, HNT_DECIMALS, hntPriceOracle);
     const vtx = await buildUnsignedTx(connection, ownerPubkey, [mintIx]);

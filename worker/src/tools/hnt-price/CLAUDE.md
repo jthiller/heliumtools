@@ -52,10 +52,11 @@ for the cron.
   live on every call, and write-through-freshens the shared snapshot. 502 when
   both sources fail (`PriceUnavailableError`), 500 otherwise (canned message).
   15 req/min/IP (`rl:hntprice-instant`).
-- `GET /ws` — WebSocket upgrade, forwarded to the `HntPriceHub` Durable Object's
-  `/ws` path (`idFromName("hub")`, `new Request(target, request)` so the
-  `Upgrade`/`Sec-WebSocket-Key` headers survive the URL rewrite). Guarded on the
-  binding existing (500 if missing).
+- `GET /ws` — WebSocket upgrade, forwarded **as-is** to the `HntPriceHub`
+  Durable Object (`idFromName("hub")`). No rewrite needed: the top-level router
+  already rebased the request onto `/ws` — the path the DO matches — with the
+  `Upgrade`/`Sec-WebSocket-Key` headers carried over. Guarded on the binding
+  existing (500 if missing).
 
 `OPTIONS` short-circuits 204 with `corsHeaders`; anything unmatched is a 404
 `jsonResponse`. Note the top-level router only matches `prefix + "/"`, so a bare
@@ -67,31 +68,47 @@ The README tells consumers to always include a path segment.
   from the shared `worker/src/lib/helium-solana.js`) →
   `getAccountInfo(oracle, "confirmed")` → decode
   `PriceUpdateV2` → `{ usd, conf_usd, mint_price_usd, publish_time, account }`.
-- `fetchSpotPrice()` — Jupiter `lite-api.jup.ag/price/v3?ids=<HNT mint>`,
-  `AbortSignal.timeout(10s)`, response keyed by mint with `usdPrice`. Same
-  endpoint/shape wallet-dashboard's `services/prices.js` uses. CoinGecko is
-  intentionally avoided (blocks Worker egress IPs).
+- `fetchSpotPrice()` — a thin wrapper over `fetchJupiterUsdPrices([HNT mint])`
+  from the shared `worker/src/lib/jupiter.js` (Jupiter Price v3,
+  `AbortSignal.timeout(10s)`, response keyed by mint with `usdPrice`). That lib
+  is the single Jupiter client, shared with wallet-dashboard's
+  `services/prices.js`; the difference is only posture — a missing quote is a
+  failed source here, a null row there. CoinGecko is intentionally avoided
+  (blocks Worker egress IPs).
 - `buildSnapshot(env)` — the actual work: fetches both sources with
   `Promise.allSettled` (each with a 10s `AbortSignal.timeout`, including the
-  chain reads via a Connection `fetch` override), assembles the payload,
+  chain reads via `rpcConnection`'s `fetch` override), assembles the payload,
   `kvPutJson`s it, returns it. Always live; no lock. Used by `/instant` and the
   hub's alarm poll (the singleton DO serializes its own polls, so a lock there
   would only add KV writes).
 - `refreshSnapshot(env)` — `buildSnapshot` behind the best-effort KV
-  single-flight lock, for callers that can race each other (the SWR
+  single-flight lock (`withKvLock` from `worker/src/lib/kv.js`, key
+  `hntprice:lock`, 60s), for callers that can race each other (the SWR
   `waitUntil` refreshes and the cron). **Never resolves undefined** (see the
   lock note below) — on contention it returns the stored snapshot.
-- `getStoredSnapshot(env)` / `isFresh(snapshot)` — the read side.
+- `getStoredSnapshot(env)` — the read side. (`isFresh` and `SNAPSHOT_KEY` are
+  module-private; everything outside this file goes through `getStoredSnapshot`
+  or `getSnapshotSwr`.)
 - `getSnapshotSwr(env, ctx)` — the stale-while-revalidate read policy, defined
   once here; `/current` and dc-mint's `/price` are both thin wrappers over it.
-- Exports `SNAPSHOT_KEY`, `DC_PER_USD` (100,000), `PriceUnavailableError`,
-  `buildSnapshot`, `refreshSnapshot`, `getStoredSnapshot`, `isFresh`, and
-  `getSnapshotSwr`. (`SNAPSHOT_STALE_MS` and the two fetchers are deliberately
-  module-private.)
+  Its background refresh is deduped **per isolate** by a module-level
+  `inflightRefresh` promise, so a request burst hitting the staleness edge
+  schedules one refresh instead of one per request (the KV lock only dedupes
+  *between* isolates, and charges KV ops to do it).
+- `dcPerHnt(usd)` — `Math.round(usd * DC_PER_USD)`, the one derivation of that
+  figure. Used for the snapshot's `dc_per_hnt` and by dc-mint's spot fallback.
+- `PUBLIC_PRICE_ERROR` — the canned public error body, imported by both
+  handlers, documented verbatim in `README.md`.
+- Exports `DC_PER_USD` (100,000), `PriceUnavailableError`, `PUBLIC_PRICE_ERROR`,
+  `dcPerHnt`, `buildSnapshot`, `refreshSnapshot`, `getStoredSnapshot`, and
+  `getSnapshotSwr`. (`SNAPSHOT_KEY`, `SNAPSHOT_STALE_MS`, `isFresh` and the two
+  fetchers are deliberately module-private.)
 
-The `Connection` is constructed inside `services/price.js` from
-`env.SOLANA_RPC_URL`, wrapped so a missing/malformed URL rejects the oracle read
-only and degrades to a spot-only snapshot rather than killing the refresh.
+The `Connection` comes from `rpcConnection(env.SOLANA_RPC_URL)` in the shared
+`worker/src/lib/helium-solana.js` — a 10s `AbortSignal.timeout` on every RPC
+round trip, at "confirmed". `oracleRead` is `async`, so a missing/malformed URL
+rejects the oracle read only and degrades to a spot-only snapshot rather than
+killing the refresh.
 
 ### `PriceUpdateV2` layout (little-endian throughout)
 
@@ -139,7 +156,7 @@ streaming subscribers cost one poll rather than N.
 - **Connect**: 426 unless `Upgrade: websocket`; 503 before upgrading once
   `countSubscribers() >= MAX_SUBSCRIBERS` (500). Then `state.acceptWebSocket`,
   `armHeartbeat()`, and an immediate snapshot frame from `this.lastBroadcast`
-  (memory) falling back to `kvGetJson(SNAPSHOT_KEY)` — wrapped in try/catch, a
+  (memory) falling back to `getStoredSnapshot(env)` — wrapped in try/catch, a
   failed replay just means the client waits for the next change.
 - **Alarm (`ALARM_HEARTBEAT_MS` = 15s)**: with subscribers, `buildSnapshot`
   (lock-free — the singleton DO serializes its own polls) + `broadcastIfChanged`,
@@ -147,12 +164,22 @@ streaming subscribers cost one poll rather than N.
   none, clear `lastBroadcast` and do **not** reschedule so the DO hibernates
   cleanly. A refresh failure is logged and nothing is sent — clients keep their
   last price.
-- **Alarm arming is ensure-style.** A DO has ONE alarm and `setAlarm` REPLACES
-  it, so `armHeartbeat()` first checks `storage.getAlarm()` and only sets when
-  nothing is pending or the pending alarm is later. An unconditional set from
-  every wake path would let steady client churn postpone the poll forever.
-  Keeping an EARLIER pending alarm (e.g. a teardown) is always safe: `alarm()`
-  decides what to do from the live subscriber count when it fires.
+- **Alarm arming is ensure-style, through one chokepoint.** `ensureScheduled()`
+  is the only place the heartbeat-vs-teardown decision is made
+  (`countSubscribers() > 0 ? armHeartbeat() : armTeardown()`); `webSocketClose`,
+  `webSocketError` and the tail of `alarm()` all call it. A DO has ONE alarm and
+  `setAlarm` REPLACES it, so `armHeartbeat()` first checks `storage.getAlarm()`
+  and only sets when nothing is pending or the pending alarm is later. An
+  unconditional set from every wake path would let steady client churn postpone
+  the poll forever. Keeping an EARLIER pending alarm (e.g. a teardown) is always
+  safe: `alarm()` decides what to do from the live subscriber count when it
+  fires. Both arming methods return their `setAlarm` promise, so the callers'
+  awaits are real (a floating storage write can be cut off at hibernation).
+- **`webSocketMessage` is a documented no-op.** The protocol is broadcast-only,
+  clients send nothing, and an inbound frame changes no roster — the heartbeat
+  is already armed whenever a subscriber exists. Arming per frame would only
+  turn junk frames into billed storage reads. The hook stays for future control
+  frames.
 - **Teardown**: `armTeardown()` sets a short `IDLE_TEARDOWN_MS` (2s) alarm when
   the last socket goes — unconditionally, since pulling the alarm earlier is
   always safe. A reconnect within the grace doesn't cancel it; the alarm fires,
@@ -165,8 +192,8 @@ streaming subscribers cost one poll rather than N.
 - **Hibernation**: sockets use the Hibernation API, so the DO may be evicted
   between alarms. `this.lastBroadcast` is wiped on wake (worst case: one
   duplicate frame). Only `storage.setAlarm` survives, never `setTimeout`. Every
-  wake path (`webSocketMessage`/`Close`/`Error`, `alarm`, inbound fetch) re-arms
-  the alarm while subscribers remain.
+  wake path that changes the roster (`webSocketClose`/`Error`, `alarm`, an
+  inbound fetch) re-arms the alarm while subscribers remain.
 - **Subscriber accounting** is `state.getWebSockets().length` — nothing persisted.
 
 ### Cron
@@ -186,7 +213,8 @@ and warm well inside its safety TTL.
 | `rl:hntprice:<ip>` | `/current` rate-limit window record `{n, ts}` | 120s (2× the 60s window; the window itself is anchored by `ts`) |
 | `rl:hntprice-instant:<ip>` | `/instant` rate-limit window record `{n, ts}` | 120s |
 
-The lock is best-effort (KV has no atomic put-if-absent) and **fails open** — a
+The lock is `withKvLock` from the shared `worker/src/lib/kv.js`: best-effort (KV
+has no atomic put-if-absent), released in a `finally`, and **fails open** — a
 KV error allows the refresh rather than blocking it. When the lock IS held,
 `refreshSnapshot` serves the stored snapshot instead of duplicating the chain
 read, and only if there is nothing stored does it do the work anyway. That is why
@@ -195,11 +223,13 @@ whose callers can tolerate a skipped refresh).
 
 ## Cross-tool relationships
 
-- **shared lib** — `resolveHntPriceOracle` is imported from
-  `worker/src/lib/helium-solana.js`. That resolver reads the oracle pubkey from
-  the DataCreditsV0 singleton (byte offset 104), which is the only correct way to
-  find the feed. **Do not duplicate it here** — the shared lib is the single
-  implementation, shared with dc-mint and dc-purchase.
+- **shared libs** — `worker/src/lib/helium-solana.js` supplies
+  `resolveHntPriceOracle` (reads the oracle pubkey from the DataCreditsV0
+  singleton, byte offset 104 — the only correct way to find the feed),
+  `rpcConnection` (the timeout-guarded `Connection` factory, also used by
+  dc-mint's build handlers), and the `HNT_MINT` `PublicKey` this tool prices.
+  **Do not duplicate any of them here.** `worker/src/lib/jupiter.js` is the
+  Jupiter client, and `worker/src/lib/kv.js` the KV helpers plus `withKvLock`.
 - **dc-mint** — the coupling is **one-way**: dc-mint's `GET /price` is a thin
   wrapper over this tool's `getSnapshotSwr(env, ctx)`, mapping the snapshot onto
   its own long-standing
@@ -208,10 +238,13 @@ whose callers can tolerate a skipped refresh).
   Nothing here imports from dc-mint. This tool is therefore the single price
   source for the repo, and a change to the snapshot payload breaks dc-mint's
   simulator as well as external consumers.
-- **dc-purchase** — `HNT_MINT` comes from `dc-purchase/lib/constants.js`, the
-  repo's source of truth for Helium mints.
-- **wallet-dashboard** — `services/prices.js` there uses the same Jupiter v3
-  endpoint and response shape. If Jupiter's contract changes, both need updating.
+- **dc-purchase** — nothing is imported from it. `HNT_MINT` comes from the
+  shared `worker/src/lib/helium-solana.js` as a `PublicKey` (`.toBase58()` where
+  a string is needed); dc-purchase's `lib/constants.js` holds a separate string
+  copy that other tools use, but it is not this tool's source.
+- **wallet-dashboard** — `services/prices.js` there calls the same
+  `worker/src/lib/jupiter.js` client, so a Jupiter contract change is a one-file
+  fix rather than two drifting copies.
 - **multi-gateway** — `hub.js` here is modelled on `MultiGatewayHub`. They are
   independent DOs with different jobs; keep the lifecycle patterns in sync when
   you learn something about hibernation from either one.

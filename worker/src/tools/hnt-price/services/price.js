@@ -25,13 +25,12 @@
 //   refreshSnapshot(env) — buildSnapshot behind a best-effort KV lock, for the
 //                          uncoordinated racers (SWR background refreshes, cron).
 
-import { Connection } from "@solana/web3.js";
-import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
-import { resolveHntPriceOracle } from "../../../lib/helium-solana.js";
-import { HNT_MINT } from "../../dc-purchase/lib/constants.js";
+import { kvGetJson, kvPutJson, withKvLock } from "../../../lib/kv.js";
+import { HNT_MINT, resolveHntPriceOracle, rpcConnection } from "../../../lib/helium-solana.js";
+import { fetchJupiterUsdPrices } from "../../../lib/jupiter.js";
 
-/** KV key holding the latest assembled snapshot. Read by handlers, the hub, and dc-mint. */
-export const SNAPSHOT_KEY = "hntprice:snap";
+/** KV key holding the latest assembled snapshot — the thing every surface serves. */
+const SNAPSHOT_KEY = "hntprice:snap";
 
 /** A snapshot older than this is considered stale and triggers a refresh. */
 const SNAPSHOT_STALE_MS = 30_000;
@@ -39,22 +38,17 @@ const SNAPSHOT_STALE_MS = 30_000;
 /** DC is pegged: 100,000 DC = $1. */
 export const DC_PER_USD = 100_000;
 
-// Single-flight lock. 60s is KV's *minimum* `expirationTtl` — anything lower is
-// rejected outright, and since `acquireLock` fails open that rejection would
-// silently make the lock inert forever. The lock is also released in a `finally`
-// on both the happy and unhappy paths, so the TTL only matters when the isolate
-// dies mid-refresh, and then it self-clears within the minute.
+// Single-flight lock for `refreshSnapshot`, held for 60s — KV's *minimum*
+// `expirationTtl`. `withKvLock` releases it in a `finally` on both the happy and
+// unhappy paths, so the TTL only matters when the isolate dies mid-refresh, and
+// then it self-clears within the minute.
 const LOCK_KEY = "hntprice:lock";
-const LOCK_TTL_SECONDS = 60;
 
 // Safety net only. The snapshot is refreshed every 15 min by cron (and every
 // 15s while anyone is streaming), so a live entry is never near this age. The
 // TTL exists so a snapshot from a dead deploy eventually disappears rather than
 // being served forever.
 const SNAPSHOT_TTL_SECONDS = 4 * 60 * 60;
-
-const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v3";
-const UPSTREAM_TIMEOUT_MS = 10_000;
 
 /**
  * Both price sources failed. Distinguished from a programming error so handlers
@@ -65,6 +59,19 @@ export class PriceUnavailableError extends Error {
     super(message);
     this.name = "PriceUnavailableError";
   }
+}
+
+/**
+ * What a failing price surface says on the wire. Upstream failure messages can
+ * name RPC hosts and client internals and this is a keyless public API, so the
+ * detail goes to the log and the caller gets this constant. Shared by both
+ * handlers, and documented verbatim in README.md.
+ */
+export const PUBLIC_PRICE_ERROR = "HNT price temporarily unavailable";
+
+/** DC yielded per HNT burned at a given USD price. */
+export function dcPerHnt(usd) {
+  return Math.round(usd * DC_PER_USD);
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +101,7 @@ const PRICE_MESSAGE_LENGTH = 84;
 /**
  * Read and decode the HNT price oracle the DC mint program is pinned to.
  *
- * @param {Connection} connection
+ * @param {import("@solana/web3.js").Connection} connection
  * @returns {Promise<{usd:number, conf_usd:number, mint_price_usd:number, publish_time:number, account:string}>}
  */
 async function fetchOraclePrice(connection) {
@@ -171,22 +178,16 @@ async function fetchOraclePrice(connection) {
 // ---------------------------------------------------------------------------
 
 /**
- * Fresh aggregated market price for HNT. Mirrors the endpoint and response
- * shape wallet-dashboard's `services/prices.js` already relies on. CoinGecko is
- * intentionally avoided — it blocks Cloudflare Worker egress IPs.
+ * Fresh aggregated market price for HNT, through the shared Jupiter client
+ * (`worker/src/lib/jupiter.js`, also used by wallet-dashboard). A missing quote
+ * is a failed source here — the caller settles it into a `spot: null` snapshot.
  *
  * @returns {Promise<{usd:number, source:string, updated_at:number}>}
  */
 async function fetchSpotPrice() {
-  const res = await fetch(`${JUPITER_PRICE_URL}?ids=${HNT_MINT}`, {
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Jupiter price API returned ${res.status}`);
-  }
-  const data = await res.json();
-  const usd = data?.[HNT_MINT]?.usdPrice;
-  if (typeof usd !== "number" || !(usd > 0)) {
+  const mint = HNT_MINT.toBase58();
+  const usd = (await fetchJupiterUsdPrices([mint]))[mint];
+  if (usd == null) {
     throw new Error("Jupiter price API returned no usable HNT price");
   }
   return { usd, source: "jupiter", updated_at: Math.floor(Date.now() / 1000) };
@@ -196,54 +197,14 @@ async function fetchSpotPrice() {
 // Snapshot
 // ---------------------------------------------------------------------------
 
-// Best-effort single-flight lock. KV has no atomic put-if-absent, so a rare
-// race just means two refreshes — harmless. If KV is unavailable we allow the
-// refresh rather than block it.
-async function acquireLock(env) {
-  if (!env.KV) return true;
-  try {
-    if (await env.KV.get(LOCK_KEY)) return false;
-    await env.KV.put(LOCK_KEY, "1", { expirationTtl: LOCK_TTL_SECONDS });
-    return true;
-  } catch {
-    return true;
-  }
-}
-
-async function releaseLock(env) {
-  if (!env.KV) return;
-  try {
-    await env.KV.delete(LOCK_KEY);
-  } catch {
-    /* lock self-expires via TTL */
-  }
-}
-
-// web3.js applies no timeout of its own, so a hung RPC would hold the snapshot
-// build (and, on /instant, the caller's request) open until the platform kills
-// the isolate — with nothing logged and no spot-only fallback. `fetch` is a
-// supported ConnectionConfig override, so every RPC POST this Connection makes
-// (resolveHntPriceOracle's DataCreditsV0 read and the feed getAccountInfo) gets
-// the same ceiling the Jupiter fetch has. Missing the deadline rejects the
-// oracle half, which degrades to a spot-only snapshot.
-function rpcConnection(url) {
-  return new Connection(url, {
-    commitment: "confirmed",
-    fetch: (input, init) =>
-      fetch(input, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) }),
-  });
-}
-
-// Construct the oracle read lazily and never let a config/URL problem throw
-// synchronously out of the Promise.allSettled below — a missing RPC URL should
-// degrade to a spot-only snapshot, not kill the whole refresh.
-function oracleRead(env) {
-  try {
-    if (!env.SOLANA_RPC_URL) throw new Error("SOLANA_RPC_URL is not configured");
-    return fetchOraclePrice(rpcConnection(env.SOLANA_RPC_URL));
-  } catch (err) {
-    return Promise.reject(err);
-  }
+// `async` so a config/URL problem becomes a rejection rather than a synchronous
+// throw out of the Promise.allSettled below — a missing RPC URL should degrade
+// to a spot-only snapshot, not kill the whole refresh. `rpcConnection` (shared
+// lib) caps every RPC round trip at 10s, so a hung endpoint rejects the oracle
+// half instead of holding the build open.
+async function oracleRead(env) {
+  if (!env.SOLANA_RPC_URL) throw new Error("SOLANA_RPC_URL is not configured");
+  return fetchOraclePrice(rpcConnection(env.SOLANA_RPC_URL));
 }
 
 /**
@@ -281,7 +242,7 @@ export async function buildSnapshot(env) {
     spot,
     oracle,
     // DC yielded per HNT burned, at the conservative price the program uses.
-    dc_per_hnt: oracle ? Math.round(oracle.mint_price_usd * DC_PER_USD) : null,
+    dc_per_hnt: oracle ? dcPerHnt(oracle.mint_price_usd) : null,
     dc_per_usd: DC_PER_USD,
     snapshot_at: Date.now(),
   };
@@ -306,17 +267,9 @@ export async function buildSnapshot(env) {
  * Throws `PriceUnavailableError` only when BOTH sources failed.
  */
 export async function refreshSnapshot(env) {
-  const gotLock = await acquireLock(env);
-  if (!gotLock) {
-    const stored = await kvGetJson(env, SNAPSHOT_KEY);
-    if (stored) return stored;
-    return buildSnapshot(env);
-  }
-  try {
-    return await buildSnapshot(env);
-  } finally {
-    await releaseLock(env);
-  }
+  const { contended, result } = await withKvLock(env, LOCK_KEY, 60, () => buildSnapshot(env));
+  if (!contended) return result;
+  return (await getStoredSnapshot(env)) ?? buildSnapshot(env);
 }
 
 /** Read the stored snapshot without touching the chain. `null` when cold. */
@@ -325,9 +278,17 @@ export function getStoredSnapshot(env) {
 }
 
 /** True when a stored snapshot is young enough to serve without refreshing. */
-export function isFresh(snapshot) {
+function isFresh(snapshot) {
   return Boolean(snapshot) && Date.now() - snapshot.snapshot_at < SNAPSHOT_STALE_MS;
 }
+
+// Per-isolate dedupe for the stale-path background refresh. The KV lock already
+// stops isolates from duplicating each other's chain read, but within one
+// isolate a request burst arriving the moment the snapshot goes stale would
+// still schedule one `refreshSnapshot` per request — each paying for the lock's
+// KV round trips just to be told it lost. One shared promise collapses the burst
+// into a single refresh, cleared as soon as it settles.
+let inflightRefresh = null;
 
 /**
  * Stale-while-revalidate read — the policy every cheap GET surface wants, in one
@@ -352,8 +313,11 @@ export async function getSnapshotSwr(env, ctx) {
 
   if (stored) {
     if (!isFresh(stored) && ctx) {
+      inflightRefresh ??= refreshSnapshot(env).finally(() => {
+        inflightRefresh = null;
+      });
       ctx.waitUntil(
-        refreshSnapshot(env).catch((err) =>
+        inflightRefresh.catch((err) =>
           console.error("hnt-price background refresh failed", err?.message),
         ),
       );

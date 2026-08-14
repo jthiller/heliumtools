@@ -226,8 +226,8 @@ Errors are JSON with an `error` string.
 |---|---|---|
 | 429 | Over the per-IP rate limit | `{ "error": "Too many requests. Please try again later.", "rateLimited": true, "retryAfterSeconds": 60 }` |
 | 404 | Unknown path under `/hnt-price/` | `{ "error": "Not found" }` |
-| 500 | `/current` had nothing cached and could not build a snapshot | `{ "error": "HNT price unavailable: …" }` |
-| 502 | `/instant` could reach neither the chain nor the market source | `{ "error": "HNT price unavailable: …" }` |
+| 500 | `/current` had nothing cached and could not build a snapshot | `{"error": "HNT price temporarily unavailable"}` |
+| 502 | `/instant` could reach neither the chain nor the market source | `{"error": "HNT price temporarily unavailable"}` |
 | 503 | `/ws` is at its 500-subscriber ceiling | plain text |
 
 On a 429, back off for `retryAfterSeconds` before retrying. The limit is a

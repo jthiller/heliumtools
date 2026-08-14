@@ -17,7 +17,7 @@
  * `DcMintTool.jsx` / `DcMintModal.jsx`. Keep the keys stable.
  */
 import { jsonResponse } from "../../../lib/response.js";
-import { DC_PER_USD, getSnapshotSwr } from "../../hnt-price/services/price.js";
+import { DC_PER_USD, dcPerHnt, getSnapshotSwr } from "../../hnt-price/services/price.js";
 
 /**
  * `hnt_usd` is rendered raw (no `toFixed`) by both `DcMintTool` and
@@ -37,11 +37,11 @@ function toCents(usd) {
  * `spot` is only a fallback for a snapshot whose oracle read failed (either
  * half may be null — see hnt-price's CLAUDE.md).
  *
+ * @param snapshot a payload from `getSnapshotSwr`, which returns one or throws.
  * @returns the mapped payload, or `null` when neither half carries a price.
  */
 function mapSnapshot(snapshot) {
-  const oracle = snapshot?.oracle ?? null;
-  const spot = snapshot?.spot ?? null;
+  const { oracle, spot, dc_per_hnt } = snapshot;
   // `mint_price_usd` (ema − 2×conf), not the headline `oracle.usd` EMA: it is
   // the price `mint_data_credits_v0` charges, and the basis the snapshot's
   // `dc_per_hnt` is already computed on. Reporting the EMA here instead would
@@ -58,7 +58,7 @@ function mapSnapshot(snapshot) {
     confidence: oracle ? oracle.conf_usd : null,
     // Snapshot `dc_per_hnt` is derived from the conservative mint price and is
     // null exactly when `oracle` is, hence the spot-derived fallback.
-    dc_per_hnt: snapshot.dc_per_hnt ?? Math.round(usd * DC_PER_USD),
+    dc_per_hnt: dc_per_hnt ?? dcPerHnt(usd),
     dc_per_usd: DC_PER_USD,
     timestamp: (oracle ? oracle.publish_time : spot?.updated_at) ?? null,
   };

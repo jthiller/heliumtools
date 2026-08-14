@@ -28,11 +28,11 @@
 //       replay primed first (the replay repopulates it from KV).
 //     - JS `setTimeout` handles are dropped — only `state.storage.setAlarm`
 //       survives, which is why the poll cadence is an alarm and not a timer.
-//   The hibernation entry points (`webSocketMessage`/`webSocketClose`/
-//   `webSocketError`) each ENSURE the alarm is armed while subscribers remain
-//   (see armHeartbeat — a DO has one alarm and setAlarm replaces it, so
-//   "ensure", never "reset"), so any client signal kicks a wedged DO back into
-//   polling without client churn being able to postpone the poll.
+//   The hibernation entry points that signal a roster change (`webSocketClose`/
+//   `webSocketError`) each ENSURE the alarm matches the live subscriber count
+//   (see ensureScheduled/armHeartbeat — a DO has one alarm and setAlarm replaces
+//   it, so "ensure", never "reset"), so a departing client can neither strand a
+//   live roster unpolled nor, through churn, postpone the poll.
 //
 // Wire protocol (client ↔ DO):
 //   - Client connects via WebSocket to /hnt-price/ws.
@@ -45,8 +45,7 @@
 //   - The DO sends no pings and consumes no client messages today; the message
 //     hook is kept so control frames can ride the same socket later.
 
-import { buildSnapshot, SNAPSHOT_KEY } from "./services/price.js";
-import { kvGetJson } from "../../lib/kv.js";
+import { buildSnapshot, getStoredSnapshot } from "./services/price.js";
 
 // Poll/broadcast cadence while subscribers exist. Matches the perceived
 // "pseudo-realtime" promise without out-running the ~5-minute oracle crank or
@@ -99,8 +98,8 @@ export class HntPriceHub {
     const [client, server] = Object.values(pair);
 
     // Hibernation API — Cloudflare may evict the DO between alarms but the
-    // websockets stay attached. Every hibernation handler ensures the alarm is
-    // armed (see webSocketMessage/Close/Error and alarm()).
+    // websockets stay attached. Every hibernation handler ensures the alarm
+    // matches the live roster (see webSocketClose/Error and alarm()).
     this.state.acceptWebSocket(server);
     await this.armHeartbeat();
 
@@ -110,7 +109,7 @@ export class HntPriceHub {
     // cold start).
     let json = this.lastBroadcast ? this.lastBroadcast.json : null;
     if (!json) {
-      const stored = await kvGetJson(this.env, SNAPSHOT_KEY);
+      const stored = await getStoredSnapshot(this.env);
       if (stored) {
         json = JSON.stringify(stored);
         // Seed the change-detection cache with the same { key, json } shape the
@@ -135,38 +134,32 @@ export class HntPriceHub {
   // ---------------------------------------------------------------------------
   // WebSocket lifecycle (Hibernation API)
   //
-  // These are the only signals (besides `alarm()` and an inbound fetch) that
-  // wake the DO from hibernation, so each one ensures the poll is armed while
-  // subscribers remain and schedules teardown once they're gone. Each awaits its
-  // arming call — these entry points are async, and a floating storage write can
-  // be cut off when the DO goes back to sleep.
+  // A close or an error is a roster change, and (besides `alarm()` and an
+  // inbound fetch) the only signal that wakes the DO from hibernation — so each
+  // one re-points the alarm at whatever the roster now is. Each returns its
+  // arming call so the caller's await is real: these entry points are async, and
+  // a floating storage write can be cut off when the DO goes back to sleep.
   // ---------------------------------------------------------------------------
 
-  // Inbound messages from clients are unused today; keep the hook so control
-  // frames (e.g. a cadence request) can be added without changing the wire.
-  async webSocketMessage(_ws, _message) {
-    if (this.countSubscribers() > 0) {
-      await this.armHeartbeat();
-    }
-  }
+  // Deliberately a no-op. The wire protocol is broadcast-only — clients send
+  // nothing — and an inbound frame changes no roster, so there is nothing to
+  // re-schedule: whenever a subscriber exists the heartbeat is already armed
+  // (connect, close, error and alarm all ensure it, and the storage alarm is the
+  // one thing that survives hibernation). Arming per frame would only convert
+  // junk frames into billed storage reads. The hook stays so control frames
+  // (e.g. a cadence request) can be added later without changing the wire.
+  webSocketMessage(_ws, _message) {}
 
   async webSocketClose(_ws, _code, _reason, _wasClean) {
     // `getWebSockets()` already excludes the closing socket by the time this
-    // fires. If others remain, keep polling; otherwise schedule teardown after
-    // a short grace window so a quick reconnect doesn't churn.
-    if (this.countSubscribers() > 0) {
-      await this.armHeartbeat();
-    } else {
-      await this.armTeardown();
-    }
+    // fires, so ensureScheduled sees the post-close roster: if others remain,
+    // keep polling; otherwise schedule teardown after a short grace window so a
+    // quick reconnect doesn't churn.
+    return this.ensureScheduled();
   }
 
   async webSocketError(_ws, _err) {
-    if (this.countSubscribers() > 0) {
-      await this.armHeartbeat();
-    } else {
-      await this.armTeardown();
-    }
+    return this.ensureScheduled();
   }
 
   // The alarm is the only timer that survives hibernation. It serves two jobs:
@@ -195,11 +188,7 @@ export class HntPriceHub {
     }
 
     // Re-check: a client may have left while the refresh was in flight.
-    if (this.countSubscribers() > 0) {
-      await this.armHeartbeat();
-    } else {
-      this.armTeardown();
-    }
+    await this.ensureScheduled();
   }
 
   // ---------------------------------------------------------------------------
@@ -210,17 +199,24 @@ export class HntPriceHub {
     return this.state.getWebSockets().length;
   }
 
+  // Point the alarm at whatever the live roster is: heartbeat while anyone is
+  // listening, teardown once the last client is gone. The single place that
+  // decision is made, so close/error/alarm can't drift apart.
+  async ensureScheduled() {
+    return this.countSubscribers() > 0 ? this.armHeartbeat() : this.armTeardown();
+  }
+
   // Ensure a heartbeat poll is scheduled. A DO has ONE alarm and setAlarm()
   // REPLACES it, so an unconditional set from every wake path (connect, close,
-  // message, error) would let steady client churn postpone the poll forever.
-  // Only arm when nothing is pending or the pending alarm is later than our
-  // target — keeping an earlier alarm (e.g. a pending teardown) is always
-  // safe, because alarm() re-checks the live subscriber count when it fires.
+  // error) would let steady client churn postpone the poll forever. Only arm
+  // when nothing is pending or the pending alarm is later than our target —
+  // keeping an earlier alarm (e.g. a pending teardown) is always safe, because
+  // alarm() re-checks the live subscriber count when it fires.
   async armHeartbeat() {
     const target = Date.now() + ALARM_HEARTBEAT_MS;
     const pending = await this.state.storage.getAlarm();
     if (pending === null || pending > target) {
-      this.state.storage.setAlarm(target);
+      return this.state.storage.setAlarm(target);
     }
   }
 
@@ -229,7 +225,7 @@ export class HntPriceHub {
   // decides by live subscriber count), and teardown only runs when the last
   // client just left, so there is no churn path through here.
   armTeardown() {
-    this.state.storage.setAlarm(Date.now() + IDLE_TEARDOWN_MS);
+    return this.state.storage.setAlarm(Date.now() + IDLE_TEARDOWN_MS);
   }
 
   // ---------------------------------------------------------------------------

@@ -37,8 +37,8 @@ export const BALANCE_TOKENS = {
 
 // ── External services ────────────────────────────────────────────────────────
 export const ENTITY_API_BASE = "https://entities.nft.helium.io";
-export const JUPITER_PRICE_BASE = "https://lite-api.jup.ag";
 export const HELIUS_ENHANCED_BASE = "https://api.helius.xyz";
+// The Jupiter Price API host lives in the shared client (`worker/src/lib/jupiter.js`).
 
 // Classify IoT device type by onboarding fee: data-only Hotspots pay ~50,000 DC,
 // full IoT Hotspots pay ~1,000,000 DC. The threshold sits between the two so a

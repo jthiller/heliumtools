@@ -1,4 +1,5 @@
-import { BALANCE_TOKENS, JUPITER_PRICE_BASE, CACHE_TTL } from "../config.js";
+import { BALANCE_TOKENS, CACHE_TTL } from "../config.js";
+import { fetchJupiterUsdPrices } from "../../../lib/jupiter.js";
 import { kvGetJson, kvPutJson } from "../utils.js";
 
 const PRICES_CACHE_KEY = "wd:prices";
@@ -6,8 +7,9 @@ const PRICES_CACHE_KEY = "wd:prices";
 /**
  * Fetch USD prices for the balance tokens.
  *   - Jupiter Price API v3 (by mint) for every priced token — HNT, MOBILE, IOT
- *     and SOL (as wrapped SOL) in one request. CoinGecko is intentionally
- *     avoided — it blocks Cloudflare Worker egress IPs.
+ *     and SOL (as wrapped SOL) in one request, via the shared client in
+ *     `worker/src/lib/jupiter.js` (hnt-price reads the same endpoint through it).
+ *     CoinGecko is intentionally avoided — it blocks Worker egress IPs.
  *   - DC has a fixed value (100,000 DC = $1)
  * Pyth Hermes was the primary source for HNT / MOBILE / SOL until 2026-08, when
  * unauthenticated Hermes access was retired (Pyth pro migration). These are
@@ -24,16 +26,10 @@ export async function fetchPrices(env) {
   // ── Jupiter Price API v3 (by mint) — HNT, MOBILE, IOT, SOL ──
   const priced = Object.entries(BALANCE_TOKENS).filter(([, t]) => t.priceMint);
   try {
-    const ids = [...new Set(priced.map(([, t]) => t.priceMint))].join(",");
-    const res = await fetch(`${JUPITER_PRICE_BASE}/price/v3?ids=${ids}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      for (const [key, t] of priced) {
-        const value = data?.[t.priceMint]?.usdPrice;
-        if (typeof value === "number" && value > 0) usd[key] = value;
-      }
+    const mints = [...new Set(priced.map(([, t]) => t.priceMint))];
+    const quoted = await fetchJupiterUsdPrices(mints);
+    for (const [key, t] of priced) {
+      if (quoted[t.priceMint] != null) usd[key] = quoted[t.priceMint];
     }
   } catch {
     // leave missing prices as null

@@ -35,13 +35,10 @@ export async function handleHntPriceRequest(request, env, ctx) {
     }
     const id = env.HNT_PRICE_HUB.idFromName("hub");
     const stub = env.HNT_PRICE_HUB.get(id);
-    // Forward to the DO's /ws path with the original Upgrade headers intact.
-    // Construct a fresh Request so the URL is rewritten while headers
-    // (including `Upgrade: websocket` and `Sec-WebSocket-Key`) carry over.
-    const target = new URL(request.url);
-    target.pathname = "/ws";
-    const forwarded = new Request(target.toString(), request);
-    return stub.fetch(forwarded);
+    // Forwarded as-is: the top-level router already rebased this request onto
+    // `/ws` (the path the DO matches) with the `Upgrade`/`Sec-WebSocket-Key`
+    // headers carried over.
+    return stub.fetch(request);
   }
 
   return jsonResponse({ error: "Not found" }, 404);
