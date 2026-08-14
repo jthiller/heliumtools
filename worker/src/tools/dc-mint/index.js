@@ -4,7 +4,7 @@ import { handleBuildDelegate } from "./handlers/buildDelegate.js";
 import { handlePrice } from "./handlers/price.js";
 import { handleResolvePayer } from "./handlers/resolvePayer.js";
 
-export async function handleDcMintRequest(request, env) {
+export async function handleDcMintRequest(request, env, ctx) {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
@@ -21,7 +21,7 @@ export async function handleDcMintRequest(request, env) {
   }
 
   if (pathname === "/price" && request.method === "GET") {
-    return handlePrice();
+    return handlePrice(env, ctx);
   }
 
   const payerMatch = pathname.match(/^\/resolve-payer\/(.+)$/);

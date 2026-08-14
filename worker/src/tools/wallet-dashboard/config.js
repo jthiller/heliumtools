@@ -10,30 +10,33 @@ export const IOT_MINT = "iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns";
 export const MOBILE_MINT = "mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6";
 export const DC_MINT = "dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm";
 
-// Data Credits have a fixed dollar value: 100,000 DC = $1 (see dc-mint price handler).
+// Data Credits have a fixed dollar value: 100,000 DC = $1. The canonical copy of
+// this peg lives in `worker/src/tools/hnt-price/services/price.js` (dc-mint
+// imports it from there); this local copy keeps wallet-dashboard's config
+// self-contained.
 export const DC_PER_USD = 100_000;
 
-// Wrapped SOL mint — used to price native SOL via the Jupiter fallback.
+// Wrapped SOL mint — used to price native SOL through Jupiter.
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 
 /**
  * Balance tokens. SOL is the native balance (fetched via getBalance), the rest
- * are SPL token accounts. `pyth` is a Hermes price-feed id (primary source);
- * `priceMint` is the mint used for the Jupiter price fallback. DC has a fixed
- * USD value so it needs no oracle. (CoinGecko is avoided — it blocks Worker
- * egress IPs; Jupiter is Solana-native and reliable.)
+ * are SPL token accounts. `priceMint` is the mint the Jupiter Price API v3 is
+ * queried by — Jupiter is the only price source (Pyth Hermes was dropped when
+ * unauthenticated access was retired). DC has a fixed USD value so it needs no
+ * oracle. (CoinGecko is avoided — it blocks Worker egress IPs; Jupiter is
+ * Solana-native and reliable.)
  */
 export const BALANCE_TOKENS = {
-  hnt: { mint: HNT_MINT, decimals: 8, label: "HNT", pyth: "649fdd7ec08e8e2a20f425729854e90293dcbe2376abc47197a14da6ff339756", priceMint: HNT_MINT },
-  mobile: { mint: MOBILE_MINT, decimals: 6, label: "MOBILE", pyth: "ff4c53361e36a9b837433c87d290c229e1f01aec5ef98d9f3f70953a20a629ce", priceMint: MOBILE_MINT },
-  iot: { mint: IOT_MINT, decimals: 6, label: "IOT", pyth: null, priceMint: IOT_MINT },
-  sol: { mint: null, decimals: 9, label: "SOL", native: true, pyth: "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d", priceMint: WRAPPED_SOL_MINT },
+  hnt: { mint: HNT_MINT, decimals: 8, label: "HNT", priceMint: HNT_MINT },
+  mobile: { mint: MOBILE_MINT, decimals: 6, label: "MOBILE", priceMint: MOBILE_MINT },
+  iot: { mint: IOT_MINT, decimals: 6, label: "IOT", priceMint: IOT_MINT },
+  sol: { mint: null, decimals: 9, label: "SOL", native: true, priceMint: WRAPPED_SOL_MINT },
   dc: { mint: DC_MINT, decimals: 0, label: "DC", fixedUsdPerUnit: 1 / DC_PER_USD },
 };
 
 // ── External services ────────────────────────────────────────────────────────
 export const ENTITY_API_BASE = "https://entities.nft.helium.io";
-export const PYTH_HERMES_BASE = "https://hermes.pyth.network";
 export const JUPITER_PRICE_BASE = "https://lite-api.jup.ag";
 export const HELIUS_ENHANCED_BASE = "https://api.helius.xyz";
 
