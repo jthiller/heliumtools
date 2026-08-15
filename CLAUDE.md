@@ -18,13 +18,14 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - **Boxes use shadow, not borders.** Raised content cards/panels/modals/popovers are defined by the layered `shadow-soft` utility (and `shadow-soft-lg` for hover/floating elevation), not a `border border-border`. The shadow is a dark-mode-aware CSS variable (`--shadow-card` / `--shadow-card-lg` in `index.css`). Borders still belong on non-box elements: inputs, buttons, pills/tags, internal dividers (`border-b`, `divide-*`), and recessed `bg-surface-inset` panels.
 
 ### Worker (`worker/`)
-- Cloudflare Worker with D1 binding (`DB`), KV binding (`KV`), and a `MultiGatewayHub` Durable Object binding (`MULTI_GATEWAY_HUB`, used by Multi-Gateway). No R2 binding — IoT-onboard recovery firmware images live in a public R2 bucket referenced by a hard-coded `*.r2.dev` URL in the frontend
+- Cloudflare Worker with D1 binding (`DB`), KV binding (`KV`), and two Durable Object bindings: `MULTI_GATEWAY_HUB` (`MultiGatewayHub`, used by Multi-Gateway) and `HNT_PRICE_HUB` (`HntPriceHub`, used by HNT Price). No R2 binding — IoT-onboard recovery firmware images live in a public R2 bucket referenced by a hard-coded `*.r2.dev` URL in the frontend
 - Entry point: `src/index.js` (HTTP routes + `scheduled()` handler)
 - Tools organized under `src/tools/` (e.g., `src/tools/oui-notifier/`)
 - Schema: `worker/schema.sql` (D1 tables include `mobile_onboard_artifacts` — short-lived capability blobs for mobile-onboard's "Configure with AI" brief; see that tool's doc)
-- Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders) — used by `multi-gateway`
+- Shared Helium × Solana library: `src/lib/helium-solana.js` (program IDs, PDAs, instruction builders, plus `rpcConnection()` — the timeout-guarded `Connection` factory) — used by `multi-gateway`, and by `dc-mint` / `dc-purchase` / `hnt-price` for `resolveHntPriceOracle()` (the one implementation of the DataCreditsV0 oracle read)
+- Other shared libs in `src/lib/`: `jupiter.js` (Jupiter Price v3 client — the only token-USD source, shared by `hnt-price` and `wallet-dashboard`), `kv.js` (best-effort KV JSON helpers + `withKvLock`), `rateLimit.js`, `response.js`, `solanaRpc.js`
 - Cross-tool utility endpoints live under `src/tools/shared/` (prefix `/shared`), e.g. `/shared/geo` for CF-derived requester location. Frontend clients for these live in `pages/public/src/lib/sharedApi.js`.
-- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron` against the `FAST_CRON` constant it owns: the 15-min tick drives the Vote snapshot/history poll and the mobile-onboard agent-artifact purge; the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees, Mobile fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
+- Cron: a **6-hourly** trigger (`0 0,6,12,18 * * *`) plus a **15-min** trigger (`*/15 * * * *`). `scheduled()` in `src/index.js` branches on `event.cron` against the `FAST_CRON` constant it owns: the 15-min tick drives the Vote snapshot/history poll, the mobile-onboard agent-artifact purge, and the hnt-price snapshot refresh (the backstop keeping `/hnt-price/current` warm when nobody is on its WebSocket); the 6-hourly tick runs the heavier tasks — OUI notifier, DC purchase, IoT fees, Mobile fees at `hour % 6 === 0` (00/06/12/18 UTC), the multi-gateway OUI cache at `hour === 0`.
 
 ### When to put something in `shared/` vs a specific tool
 Default to the tool's own directory. Hoist to `shared/` only when:
@@ -65,6 +66,7 @@ in this root file are a higher-level overview.
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
+| HNT Price | `worker/src/tools/hnt-price/CLAUDE.md` | **Worker-only, no frontend** — public HNT price API for other teams (replaces unauthenticated Pyth Hermes): KV snapshot (`/current`), live chain read (`/instant`), WebSocket stream from the `HntPriceHub` DO (`/ws`). `README.md` next to it is the external API reference |
 | Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind pages** — live vote activity, outcomes + trend chart (`/vote`, election-aware), plus a current/past-votes index (`/votes`). Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC); resolved votes freeze and rebuild their roster from D1 |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
@@ -130,6 +132,8 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 - All Helium program IDs, token mints, and static PDAs (computed once at module load)
 - `buildIssueInstruction()` — used by `multi-gateway` and `mobile-onboard`; `buildOnboardInstruction()` — `multi-gateway` only (`mobile-onboard` has its own `buildOnboardMobileInstruction`/`buildUpdateMobileInfoInstruction`); `iot-onboard` delegates to the Helium onboarding server
 - DAS helpers: `fetchAsset()`, `fetchAssetProof()`, `getCanopyDepth()`
+- `rpcConnection(url)` — the timeout-guarded `Connection` factory (10s `AbortSignal.timeout` on every RPC round trip via a `fetch` override, commitment "confirmed"). web3.js has no timeout of its own, so a hung RPC would otherwise hold the request open until the isolate is killed. Used by `hnt-price` and `dc-mint`'s build handlers
+- `resolveHntPriceOracle(connection)` — reads the governance-rotated HNT price oracle out of the DataCreditsV0 singleton (`DC_KEY`, byte offset 104), the only account `mint_data_credits_v0` accepts. One implementation for three consumers: `dc-mint` (re-exports it from its own `lib/solana.js`), `dc-purchase`, and `hnt-price`. No cache, no fallback constant — never hardcode a feed account
 - Anchor discriminators, Borsh Option encoding
 
 ## L1 Migration
@@ -169,7 +173,7 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 Read-only, full-screen bento overview of any wallet (`/wallet-dashboard/:address`, with `?wallet=` accepted and redirected to the canonical path). No wallet connect. It's a thin **aggregation layer** that reuses other tools' primitives rather than re-implementing on-chain logic.
 
 - **Worker** (`worker/src/tools/wallet-dashboard/`, prefix `/wallet-dashboard`): `GET /summary` (balances + USD prices + fleet stats, KV-cached ~60s), `GET /fleet` (full per-Hotspot list, KV-cached ~120s, shared with /summary), `GET /transactions` (categorized via Helius enhanced API, `getSignaturesForAddress` fallback), `POST /rewards` (batched ≤50 pending+lifetime rewards; reuses the claimer's `getBulkPendingRewards` but KV-caches per-batch ~15min and is cache-first — rewards distribute ~daily). The client also calls `/ve-hnt/positions` directly. The dashboard does NOT use the shared `/hotspot-claimer/wallet/rewards` (that must stay live/uncached for claims).
-- **Prices** (`services/prices.js`): Pyth Hermes multi-feed (HNT/MOBILE/SOL) + **Jupiter Price API v3** by mint for IOT (no Pyth feed) + DC fixed (100,000 DC = $1). **CoinGecko is intentionally avoided — it blocks Worker egress IPs.**
+- **Prices** (`services/prices.js`): **Jupiter Price API v3** by mint for HNT/MOBILE/SOL/IOT + DC fixed (100,000 DC = $1). **CoinGecko is intentionally avoided — it blocks Worker egress IPs.**
 - **Activity is rewards-derived, never `is_active`** (the Entity API field is always false — see memory). A Hotspot with zero lifetime rewards is "idle". Lifetime/claimed come from the additive fields in `hotspot-claimer/services/oracle.js` `computeTokenResult`.
 - **IoT connectivity (Active/Inactive)** comes from `https://api-iot.heliumtools.org/v1/gateways/{address}` (helium-iot-service), fetched **directly from the browser** (`useFleetIotStatus.js` + `lib/iotStatusApi.js`) — keyless, CORS-open, edge-cached upstream; no worker proxy. Per-day granularity anchored to the feed's `dataThrough` (not "online right now"); created-after-`dataThrough` Hotspots render "Setting up".
 - IoT data-only vs full is inferred from the onboarding fee (`< IOT_DATA_ONLY_FEE_MAX`, 500,000 DC, ⇒ data-only — sits between the ~50k data-only and ~1M full fees). Coordinates are decoded client-side from each row's H3 `location` (the Entity API lat/long is sparsely populated).

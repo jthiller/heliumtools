@@ -1,8 +1,12 @@
 /**
  * Helium Data Credits program interactions.
  * Handles minting DC from HNT and delegating DC to OUI escrow accounts.
- * 
- * Uses the Pyth Push Oracle HNT price feed which is continuously updated.
+ *
+ * The HNT price oracle account is read from the DataCreditsV0 account at run
+ * time (the program enforces has_one), so no price post is needed and oracle
+ * rotations need no code change here. That read is the shared
+ * `resolveHntPriceOracle` in `worker/src/lib/helium-solana.js` — one
+ * implementation for this tool, dc-mint, and hnt-price.
  */
 
 import {
@@ -26,15 +30,12 @@ import {
     getTokenBalance,
     getAssociatedTokenAddress,
 } from './solana.js';
+import { resolveHntPriceOracle } from '../../../lib/helium-solana.js';
 
 // Token Program IDs
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const CIRCUIT_BREAKER_PROGRAM_ID = new PublicKey('circAbx64bbsscPbQzZAUvuXpHqrCe6fLMzc2uKXz9g');
-
-// Pyth Push Oracle HNT/USD price feed account (continuously updated by Pyth)
-// From: https://github.com/helium/helium-program-library/blob/master/packages/spl-utils/src/constants.ts
-const HNT_PYTH_PRICE_FEED = new PublicKey('4DdmDswskDxXGpwHrXUfn2CNUm9rt21ac79GHNTN3J33');
 
 /**
  * Convert a string to Uint8Array.
@@ -147,10 +148,12 @@ function getEscrowAccountPda(delegatedDataCredits) {
 
 /**
  * Mint Data Credits by burning HNT.
- * 
- * Uses the Pyth Push Oracle HNT/USD price feed which is continuously
- * updated by Pyth, so no need to post price updates ourselves.
- * 
+ *
+ * The HNT price oracle account is resolved from the DataCreditsV0 account at
+ * run time by the shared `resolveHntPriceOracle` (the program enforces
+ * has_one), so no price post is needed and oracle rotations need no code
+ * change.
+ *
  * @param {object} env - Environment bindings
  * @param {bigint} hntAmount - Amount of HNT to burn (in smallest units)
  * @returns {Promise<{ signature: string, dcMinted: bigint }>} Mint result
@@ -163,6 +166,7 @@ export async function mintDataCredits(env, hntAmount) {
     const dcMint = new PublicKey(DC_MINT);
     const dataCredits = getDataCreditsPda(dcMint);
     const circuitBreaker = getCircuitBreakerPda(dcMint);
+    const hntPriceOracle = await resolveHntPriceOracle(connection);
 
     // Get treasury token accounts
     const hntAta = await getAssociatedTokenAddress(keypair.publicKey, hntMint);
@@ -172,7 +176,7 @@ export async function mintDataCredits(env, hntAmount) {
     const initialDcBalance = await getTokenBalance(connection, dcAta);
 
     console.log(`Minting DC from ${Number(hntAmount) / Math.pow(10, HNT_DECIMALS)} HNT`);
-    console.log(`Using Pyth Push Oracle price feed: ${HNT_PYTH_PRICE_FEED.toBase58()}`);
+    console.log(`Using HNT price oracle from DataCreditsV0: ${hntPriceOracle.toBase58()}`);
 
     // Build mint_data_credits_v0 instruction
     // Discriminator: SHA256("global:mint_data_credits_v0")[0..8]
@@ -191,7 +195,7 @@ export async function mintDataCredits(env, hntAmount) {
         programId: new PublicKey(DATA_CREDITS_PROGRAM_ID),
         keys: [
             { pubkey: dataCredits, isSigner: false, isWritable: false },
-            { pubkey: HNT_PYTH_PRICE_FEED, isSigner: false, isWritable: false }, // Pyth push oracle price feed
+            { pubkey: hntPriceOracle, isSigner: false, isWritable: false }, // HNT price oracle (has_one on DataCreditsV0)
             { pubkey: hntAta, isSigner: false, isWritable: true },
             { pubkey: dcAta, isSigner: false, isWritable: true },
             { pubkey: keypair.publicKey, isSigner: false, isWritable: false },

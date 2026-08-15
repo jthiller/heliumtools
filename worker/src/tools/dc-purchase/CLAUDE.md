@@ -61,9 +61,13 @@ CORS is open to all origins — this is a public API.
   and `delegate_data_credits_v0` (DC → OUI escrow) instructions for the Helium
   Data Credits program. No Anchor dependency — Anchor discriminators are hardcoded
   bytes and all PDAs (`DataCreditsV0`, circuit breaker, DAO, IOT SubDAO,
-  `DelegatedDataCreditsV0`, escrow) are derived locally. Mint reads the Pyth Push
-  Oracle HNT/USD feed (`4DdmDswskDxXGpwHrXUfn2CNUm9rt21ac79GHNTN3J33`, hardcoded
-  here as `HNT_PYTH_PRICE_FEED`) so no price post is needed. Delegation uses the
+  `DelegatedDataCreditsV0`, escrow) are derived locally. The mint passes the HNT
+  price oracle read at run time from the DataCreditsV0 account (byte offset 104;
+  the program enforces `has_one`), so no price post is needed and oracle rotations
+  (helium-program-library #1207 legacy→pro receiver) need no code change. That
+  read is **not** local — it imports `resolveHntPriceOracle` from the shared
+  `worker/src/lib/helium-solana.js`, the single implementation also used by
+  dc-mint and hnt-price. Delegation uses the
   OUI's `payer` as the `router_key`. The mint verifies a positive DC balance delta
   (throws if none was minted); the delegate reads and records the post-tx escrow
   balance but does not assert a delta.
@@ -84,8 +88,9 @@ CORS is open to all origins — this is a public API.
   the exact request (`METHOD host+path`, e.g.
   `POST api.developer.coinbase.com/onramp/v1/token`).
 - `lib/constants.js` — Helium program IDs, token mints, decimals, and the Jupiter
-  API base. (The active Pyth HNT/USD feed is hardcoded in `services/dataCredits.js`,
-  not here; the frontend hardcodes its Solscan URLs.)
+  API base. (The HNT price oracle is not a constant anywhere — it is resolved at
+  run time by the shared `resolveHntPriceOracle`, called from
+  `services/dataCredits.js`; the frontend hardcodes its Solscan URLs.)
 
 ### Frontend
 - `pages/public/src/dc-purchase/DcPurchaseTool.jsx` — Single-file purchase form.
@@ -140,9 +145,13 @@ program). The difference is who signs and who pays:
   that return *unsigned* transactions for the user's own wallet to sign (the user
   already holds HNT). It does not touch fiat, Coinbase, or Jupiter.
 
-The two share no code — each has its own `lib/solana.js` and its own copy of the
-DC instruction builders. If you refactor the DC mint/delegate instruction
-encoding, both must be updated.
+The two share almost no code — each has its own `lib/solana.js` and its own copy
+of the `mint_data_credits_v0` / `delegate_data_credits_v0` instruction builders.
+If you refactor the DC mint/delegate instruction encoding, both must be updated.
+The one deliberate exception is the HNT price oracle resolver, which both (and
+hnt-price) import from `worker/src/lib/helium-solana.js` — it reads chain state
+rather than encoding an instruction, and three divergent copies of an offset-104
+parse was exactly the bug this hoist removed.
 
 ## Related tools
 - **OUI Notifier** (`worker/src/tools/oui-notifier/CLAUDE.md`) — dc-purchase
@@ -167,8 +176,11 @@ encoding, both must be updated.
 `dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm`, USDC
 `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`, IOT
 `iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns`.
-**Pyth HNT/USD push-oracle feed:** `4DdmDswskDxXGpwHrXUfn2CNUm9rt21ac79GHNTN3J33`
-(the mint instruction reads this; no client price post).
+**HNT price oracle:** not hardcoded — read at run time from the DataCreditsV0
+account (`D1LbvrJQ9K2WbGPMbM3Fnrf5PSsDH1TDpjqJdHuvs81n`, offset 104), which is the
+pubkey the program's `has_one` accepts. Historically the legacy Pyth push feed
+`4DdmDswskDxXGpwHrXUfn2CNUm9rt21ac79GHNTN3J33`; the pro feed
+`He5mhwVQQNvjFxqjEjFDb7enJWFwFJ7Rq7zknqBz89A5` after the #1207 cutover.
 
 PDAs (derived in `services/dataCredits.js`, all under Data Credits program unless
 noted): `DataCreditsV0 = ["dc", DC_MINT]`; circuit breaker =
@@ -206,7 +218,8 @@ Never log or expose any of these values.
   webhooks documented at https://docs.cdp.coinbase.com/onramp/docs/webhooks/.
 - **Jupiter** — Authenticated Swap API v1, https://api.jup.ag/swap/v1 (quote +
   swap).
-- **Pyth** — HNT/USD push oracle on Solana (read on-chain by the mint instruction).
+- **Pyth** — HNT/USD oracle on Solana. Which oracle account is resolved from the
+  DataCreditsV0 account at run time; the mint instruction reads it on-chain.
 - **Solscan** — explorer links in the UI (`https://solscan.io`).
 
 ## Gotchas

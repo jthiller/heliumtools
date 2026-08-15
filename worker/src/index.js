@@ -20,6 +20,11 @@ import {
 } from "./tools/mobile-onboard/index.js";
 import { handleUpdateLocationRequest } from "./tools/update-location/index.js";
 import { handleVeHntRequest } from "./tools/ve-hnt/index.js";
+import {
+  handleHntPriceRequest,
+  refreshSnapshot as refreshHntPriceSnapshot,
+} from "./tools/hnt-price/index.js";
+import { HntPriceHub } from "./tools/hnt-price/hub.js";
 import { handleVoteRequest, runVoteSnapshots } from "./tools/vote/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
@@ -42,6 +47,7 @@ const routes = [
   { prefix: "/mobile-onboard", handler: handleMobileOnboardRequest },
   { prefix: "/update-location", handler: handleUpdateLocationRequest },
   { prefix: "/ve-hnt", handler: handleVeHntRequest },
+  { prefix: "/hnt-price", handler: handleHntPriceRequest },
   { prefix: "/vote", handler: handleVoteRequest },
   { prefix: "/wallet-dashboard", handler: handleWalletDashboardRequest },
   { prefix: "/shared", handler: handleSharedRequest },
@@ -87,6 +93,10 @@ export default {
       // them on the fast tick: on the 6-hourly cron a spent 2h link could sit
       // in D1 for ~8h, well past the window disclosed to the operator.
       run("mobile-onboard-artifact-purge", purgeExpiredArtifacts(env));
+      // Keep the HNT price snapshot warm for /hnt-price/current consumers. The
+      // WebSocket hub refreshes it every 15s while anyone is streaming; this is
+      // the backstop for the (common) case where nobody is.
+      run("hnt-price-snapshot", refreshHntPriceSnapshot(env));
       return;
     }
     // Everything else runs on the 6-hourly tick ("0 0,6,12,18 * * *"). minute is
@@ -109,3 +119,4 @@ export default {
 // Re-export Durable Object classes so the runtime can instantiate them.
 // Bound in wrangler.jsonc via durable_objects.bindings.
 export { MultiGatewayHub };
+export { HntPriceHub };

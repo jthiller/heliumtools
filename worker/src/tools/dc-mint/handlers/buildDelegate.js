@@ -3,12 +3,13 @@
  * Supports OUI number or direct payer key. When hnt_amount is provided,
  * combines mint + delegate in a single atomic transaction.
  */
-import { PublicKey, Connection } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { jsonResponse } from "../../../lib/response.js";
+import { rpcConnection } from "../../../lib/helium-solana.js";
 import { HNT_DECIMALS } from "../../dc-purchase/lib/constants.js";
 import { getOuiByNumber } from "../../oui-notifier/services/ouis.js";
 import {
-  buildMintInstruction, buildDelegateInstruction, buildUnsignedTx,
+  buildMintInstruction, buildDelegateInstruction, buildUnsignedTx, resolveHntPriceOracle,
 } from "../lib/solana.js";
 
 export async function handleBuildDelegate(request, env) {
@@ -60,16 +61,21 @@ export async function handleBuildDelegate(request, env) {
       routerKey = payer_key;
     }
 
-    const connection = new Connection(env.SOLANA_RPC_URL);
+    // Shared factory: caps the oracle resolve and the blockhash fetch at 10s so
+    // a hung RPC fails the build instead of holding the request open.
+    const connection = rpcConnection(env.SOLANA_RPC_URL);
+    // Only the optional prepended mint instruction needs the oracle — a pure
+    // delegate shouldn't pay for the extra account read.
+    const hntPriceOracle = hnt_amount || mint_dc ? await resolveHntPriceOracle(connection) : null;
     const instructions = [];
 
     // Combined mint+delegate: mint DC first, then delegate
     if (hnt_amount) {
       // User specified HNT to burn — on-chain oracle determines DC yield
-      instructions.push(buildMintInstruction(ownerPubkey, { hnt_amount }, ownerPubkey, HNT_DECIMALS));
+      instructions.push(buildMintInstruction(ownerPubkey, { hnt_amount }, ownerPubkey, HNT_DECIMALS, hntPriceOracle));
     } else if (mint_dc) {
       // User specified exact DC target — on-chain oracle determines HNT to burn
-      instructions.push(buildMintInstruction(ownerPubkey, { dc_amount: amount }, ownerPubkey, HNT_DECIMALS));
+      instructions.push(buildMintInstruction(ownerPubkey, { dc_amount: amount }, ownerPubkey, HNT_DECIMALS, hntPriceOracle));
     }
 
     const { instruction: delegateIx, escrow } = await buildDelegateInstruction(

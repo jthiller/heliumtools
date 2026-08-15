@@ -22,7 +22,6 @@ export const SUB_DAOS_PROGRAM = new PublicKey(HELIUM_SUB_DAOS_PROGRAM_ID);
 export const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 export const CIRCUIT_BREAKER_PROGRAM = new PublicKey("circAbx64bbsscPbQzZAUvuXpHqrCe6fLMzc2uKXz9g");
-export const HNT_PYTH_PRICE_FEED = new PublicKey("4DdmDswskDxXGpwHrXUfn2CNUm9rt21ac79GHNTN3J33");
 
 export const HNT_MINT_KEY = new PublicKey(HNT_MINT);
 export const DC_MINT_KEY = new PublicKey(DC_MINT);
@@ -117,6 +116,11 @@ export async function buildUnsignedTx(connection, payerKey, instructions) {
   return new VersionedTransaction(message);
 }
 
+// The HNT price oracle resolver's implementation lives in the shared lib
+// (`worker/src/lib/helium-solana.js`); it is re-exported here so this tool's
+// handlers keep importing it from `../lib/solana.js`.
+export { resolveHntPriceOracle } from "../../../lib/helium-solana.js";
+
 // ---- Instruction builders ----
 
 const MINT_DISCRIMINATOR = new Uint8Array([0x4e, 0x6d, 0xa9, 0x84, 0x90, 0x5e, 0xdd, 0x39]);
@@ -128,8 +132,9 @@ const DELEGATE_DISCRIMINATOR = new Uint8Array([0x9a, 0x38, 0xe2, 0x80, 0xa2, 0x7
  * @param {{ hnt_amount?: number, dc_amount?: number }} amounts — exactly one required
  * @param {PublicKey} [recipient] — DC recipient (defaults to owner)
  * @param {number} hntDecimals — HNT_DECIMALS (8)
+ * @param {PublicKey} hntPriceOracle — from `resolveHntPriceOracle` (has_one-enforced by the program)
  */
-export function buildMintInstruction(owner, amounts, recipient, hntDecimals) {
+export function buildMintInstruction(owner, amounts, recipient, hntDecimals, hntPriceOracle) {
   const rcpt = recipient || owner;
 
   const parts = [];
@@ -158,7 +163,7 @@ export function buildMintInstruction(owner, amounts, recipient, hntDecimals) {
     programId: DATA_CREDITS_PROGRAM,
     keys: [
       { pubkey: DATA_CREDITS_PDA, isSigner: false, isWritable: false },
-      { pubkey: HNT_PYTH_PRICE_FEED, isSigner: false, isWritable: false },
+      { pubkey: hntPriceOracle, isSigner: false, isWritable: false },
       { pubkey: ataAddress(owner, HNT_MINT_KEY), isSigner: false, isWritable: true },
       { pubkey: ataAddress(rcpt, DC_MINT_KEY), isSigner: false, isWritable: true },
       { pubkey: rcpt, isSigner: false, isWritable: false },

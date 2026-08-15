@@ -51,9 +51,17 @@ re-implementing on-chain logic.
   spam/airdrop wallet's thousands of token accounts bloat the response) + `getBalance`
   (native SOL). An ATA's existence doubles as the `ataEstablished` flag; a missing
   ATA reports a 0 balance.
-- `services/prices.js` — Pyth Hermes multi-feed (HNT/MOBILE/SOL) + Jupiter Price
-  API v3 (by mint) fallback for IOT (no Pyth feed) + DC fixed (100,000 DC = $1).
-  CoinGecko is intentionally avoided (blocks Worker egress IPs). KV-cached ~60s.
+- `services/prices.js` — every token price comes from the Jupiter Price API v3
+  by mint, through the shared client `worker/src/lib/jupiter.js`
+  (`fetchJupiterUsdPrices`, keyless `lite-api.jup.ag` endpoint, one request for
+  HNT/MOBILE/IOT/SOL; SOL is priced as wrapped SOL — hnt-price uses the same
+  client) + DC fixed (100,000 DC = $1). The lib throws only on network/HTTP
+  failure; this service stays best-effort and nulls out whatever is missing.
+  Pyth Hermes was the
+  primary source for HNT/MOBILE/SOL until 2026-08, dropped when unauthenticated
+  Hermes access was retired (Pyth pro migration) — these are display-only prices,
+  so Jupiter alone suffices. CoinGecko is intentionally avoided (blocks Worker
+  egress IPs). KV-cached ~60s.
 - `services/transactions.js` — Helius enhanced-transactions REST API (api-key
   parsed from `SOLANA_RPC_URL`), falling back to `getSignaturesForAddress`.
 

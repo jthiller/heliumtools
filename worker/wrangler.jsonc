@@ -27,24 +27,33 @@
             "id": "aea1fbf2cf5e4d64970043dc302dcc03"
         }
     ],
-    // Durable Object: MultiGatewayHub fans out one upstream-per-region SSE
-    // subscription to many browser clients over WebSocket. See
-    // worker/src/tools/multi-gateway/hub.js. The class is exported from
-    // src/index.js. The DO holds no storage today — we still use
-    // new_sqlite_classes (the modern default, available on the Free plan)
-    // so storage is available later without another migration. Note:
+    // Durable Objects:
+    //   MultiGatewayHub fans out one upstream-per-region SSE subscription to
+    //     many browser clients over WebSocket. See
+    //     worker/src/tools/multi-gateway/hub.js.
+    //   HntPriceHub polls the HNT price (chain oracle + Jupiter) once per
+    //     interval and fans the snapshot out to every WebSocket subscriber. See
+    //     worker/src/tools/hnt-price/hub.js.
+    // Both classes are exported from src/index.js. Neither holds storage today —
+    // we still use new_sqlite_classes (the modern default, available on the Free
+    // plan) so storage is available later without another migration. Note:
     // `new_classes` (legacy KV-backed storage) requires Workers Paid; the
     // SQLite backend is what's available on every plan.
     //
-    // The DO binding/migration is also declared in env.production below;
-    // wrangler envs don't inherit top-level keys, so any env that needs the
+    // The DO bindings/migrations are also declared in env.production below;
+    // wrangler envs don't inherit top-level keys, so any env that needs a
     // DO must declare it independently. Local `wrangler dev` uses this
-    // top-level config.
+    // top-level config. Migrations are cumulative — keep the full list in both
+    // places, in the same order, and only ever append.
     "durable_objects": {
         "bindings": [
             {
                 "name": "MULTI_GATEWAY_HUB",
                 "class_name": "MultiGatewayHub"
+            },
+            {
+                "name": "HNT_PRICE_HUB",
+                "class_name": "HntPriceHub"
             }
         ]
     },
@@ -52,6 +61,10 @@
         {
             "tag": "v1-multi-gateway-hub",
             "new_sqlite_classes": ["MultiGatewayHub"]
+        },
+        {
+            "tag": "v2-hnt-price-hub",
+            "new_sqlite_classes": ["HntPriceHub"]
         }
     ],
     // Production Environment
@@ -86,6 +99,10 @@
                     {
                         "name": "MULTI_GATEWAY_HUB",
                         "class_name": "MultiGatewayHub"
+                    },
+                    {
+                        "name": "HNT_PRICE_HUB",
+                        "class_name": "HntPriceHub"
                     }
                 ]
             },
@@ -93,6 +110,10 @@
                 {
                     "tag": "v1-multi-gateway-hub",
                     "new_sqlite_classes": ["MultiGatewayHub"]
+                },
+                {
+                    "tag": "v2-hnt-price-hub",
+                    "new_sqlite_classes": ["HntPriceHub"]
                 }
             ],
             "name": "heliumtools"
@@ -106,8 +127,10 @@
             "0 0,6,12,18 * * *", // UTC at 00/06/12/18
             // Fast tick. Branched on in scheduled() against FAST_CRON: the Vote
             // snapshot/history poll (so viewers read cached data and never hit
-            // the RPC) and the mobile-onboard agent-artifact purge. The 6-hourly
-            // tasks do NOT run on this tick.
+            // the RPC), the mobile-onboard agent-artifact purge, and the
+            // hnt-price snapshot refresh (the backstop that keeps
+            // /hnt-price/current warm when nobody is on the WebSocket). The
+            // 6-hourly tasks do NOT run on this tick.
             "*/15 * * * *"
         ]
     },

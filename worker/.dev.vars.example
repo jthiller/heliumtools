@@ -35,8 +35,11 @@ DC_PURCHASE_MAX_USD="100"
 # Optional — redirect target after an onramp order completes.
 #COINBASE_ONRAMP_REDIRECT_BASE_URL="https://heliumtools.org/dc-purchase/order"
 
-# --- Token prices (Jupiter) ---
-# Jupiter Price API key (used for IOT and other mints without a Pyth feed).
+# --- Jupiter (DC Purchase swaps) ---
+# Jupiter Authenticated Swap API v1 key, sent as `x-api-key` by
+# worker/src/tools/dc-purchase/services/jupiter.js (quote + swap). NOT used for
+# display prices: the Wallet Dashboard reads the keyless Jupiter Price API v3
+# (lite-api.jup.ag) instead.
 JUPITER_API_KEY="REPLACE_ME"
 
 # --- Treasury wallet (receives USDC, executes swaps) ---
