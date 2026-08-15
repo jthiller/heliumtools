@@ -25,7 +25,7 @@ export async function handleHntPriceRequest(request, env, ctx) {
   }
 
   // /ws and /sse — the two streaming surfaces, both served by the same
-  // HntPriceHub Durable Object instance and sharing one subscriber ceiling.
+  // HntPriceHub Durable Object instance.
   //
   // Why: one DO instance polls the chain + Jupiter once per interval and fans
   // the result out to every subscriber, instead of each streaming client

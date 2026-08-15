@@ -161,42 +161,62 @@ instance and the same poll: WebSocket (`/ws`) and SSE (`/sse`).
 - **WS connect** (`handleWebSocket`): 426 unless `Upgrade: websocket`; 503 before
   upgrading once `countSubscribers() >= MAX_SUBSCRIBERS` (500). Then
   `state.acceptWebSocket`, `armHeartbeat()`, and an immediate snapshot frame from
-  `replaySnapshotJson()` — wrapped in try/catch, a failed replay just means the
-  client waits for the next change.
+  `replaySnapshotJson()` — the `server.send` is wrapped in try/catch, so a
+  failed send just means the client waits for the next change.
+- **The 503 refusal lives in one place.** `refuseOverCeiling()` builds it for
+  both connect paths, always with `corsHeaders` — required on `/sse` (an ordinary
+  cross-origin fetch, which would otherwise surface as an opaque CORS failure)
+  and inert on a WebSocket handshake, so the two refusals are byte-identical.
 - **SSE connect** (`handleSse`): the same 503 ceiling over the same combined
-  count, then a `TransformStream` whose writer joins `this.sseWriters` and whose
-  readable becomes the response body. Registers an `abort` listener on
-  `request.signal` (optional-chained, and a failing write is the backstop),
-  `armHeartbeat()`, then one opening chunk of `retry: 3000` plus the
-  `replaySnapshotJson()` payload. Response headers: `text/event-stream`,
-  `Cache-Control: no-store`, `corsHeaders`.
+  count, then `replaySnapshotJson()` (memory/KV, nothing registered yet — a
+  throw or a client abort here propagates with nothing to clean up), then
+  register-then-arm in the WS path's order: create the `TransformStream`, add
+  the writer to `this.sseWriters`, and `await ensureScheduled()`. Because the
+  writer is already a term in `countSubscribers()` when the arming storage ops
+  run (and the input gate serializes around them), a pending teardown alarm can
+  never observe an empty roster and strip the poll from a live client — no
+  special-case guard needed. Then the `abort` listener goes on `request.signal`
+  (optional-chained), followed by an already-aborted check (a signal that fired
+  during the awaits never calls a listener added afterwards; a failing write is
+  the backstop for aborts that arrive with no signal at all), and one opening
+  chunk of `retry: 3000` plus the replay payload.
+  Response headers: `text/event-stream`, `Cache-Control: no-store`, `corsHeaders`.
+- **The ceiling is soft**, by however many connects are in flight across those
+  awaits. It is a fan-out comfort limit, not an invariant.
 - **`replaySnapshotJson()`** is the single connect-time replay, shared by both
   transports so a client cannot tell from its first frame which one it picked:
   `this.lastBroadcast` (memory) first, `getStoredSnapshot(env)` second, and on
   the KV path it seeds `this.lastBroadcast` with the same `{ key, json }` shape
-  the broadcast path stores.
+  the broadcast path stores — but only when still unset after the KV await: an
+  alarm tick can broadcast mid-read, and its newer frame must win or the change
+  key would move backwards and re-send an unchanged price.
 - **Alarm (`ALARM_HEARTBEAT_MS` = 15s)**: with subscribers, `buildSnapshot`
   (lock-free — the singleton DO serializes its own polls) + `broadcastIfChanged`,
-  then the SSE keepalive, then re-arm (re-checking the count, since a client can
-  leave mid-refresh); with none, clear `lastBroadcast`, sweep the SSE registry,
-  and do **not** reschedule so the DO hibernates cleanly. A refresh failure is
-  logged and nothing is broadcast — clients keep their last price — but the
-  keepalive still goes out, since a failed poll is exactly when an SSE client
-  most needs to know the stream is alive. The teardown sweep (`closeAllSse`) is
-  provably a no-op, because `countSubscribers()` reaches zero only when the SSE
-  registry is already empty; it stands as a structural guarantee that the one
-  branch where the DO declares itself idle cannot leave a response stream open.
+  then the SSE keepalive **only if that broadcast sent nothing**, then re-arm
+  (re-checking the count, since a client can leave mid-refresh); with none, clear
+  `lastBroadcast` and do **not** reschedule so the DO hibernates cleanly.
+  `broadcastIfChanged` returns whether it put a frame on the wire, which is what
+  gates the ping: a data frame already proves the stream is alive, so the comment
+  covers exactly the quiet ticks. A refresh failure is logged and nothing is
+  broadcast — clients keep their last price — but the `sent` flag stays false, so
+  a failed poll still pings, which is when an SSE client most needs to know the
+  stream is alive. The teardown branch has no SSE registry to sweep: SSE writers
+  are a term in `countSubscribers()`, so a total of zero structurally means the
+  registry is already empty.
 - **Alarm arming is ensure-style, through one chokepoint.** `ensureScheduled()`
   is the only place the heartbeat-vs-teardown decision is made
   (`countSubscribers() > 0 ? armHeartbeat() : armTeardown()`); `webSocketClose`,
-  `webSocketError` and the tail of `alarm()` all call it. A DO has ONE alarm and
+  `webSocketError`, `webSocketMessage`, the tail of `alarm()`, `releaseSse()`,
+  and the SSE connect path all call it. A DO has ONE alarm and
   `setAlarm` REPLACES it, so `armHeartbeat()` first checks `storage.getAlarm()`
   and only sets when nothing is pending or the pending alarm is later. An
   unconditional set from every wake path would let steady client churn postpone
   the poll forever. Keeping an EARLIER pending alarm (e.g. a teardown) is always
   safe: `alarm()` decides what to do from the live subscriber count when it
-  fires. Both arming methods return their `setAlarm` promise, so the callers'
-  awaits are real (a floating storage write can be cut off at hibernation).
+  fires. Both arming methods return their `setAlarm` promise so callers can await
+  it — for error observability, not lifetime: per Cloudflare's docs, pending
+  storage I/O keeps a DO active by itself, and `state.waitUntil` is a no-op in
+  Durable Objects.
 - **`webSocketMessage` only re-ensures the alarm.** The protocol is
   broadcast-only — clients send nothing, an inbound frame carries no meaning —
   but the hook keeps `ensureScheduled()` as a self-heal backstop: if a storage
@@ -212,25 +232,38 @@ instance and the same poll: WebSocket (`/ws`) and SSE (`/sse`).
   the key — including it would turn the stream into an unconditional 15s ping.
 - **Fan-out**: `broadcast()` sends the JSON to every socket (per-socket
   `try/catch` that swallows errors — Cloudflare fires `webSocketClose` for a dead
-  socket) and then the same JSON, wrapped as `data: <json>\n\n`, to every SSE
-  writer. SSE writes are **fired, not awaited**: awaiting inside `alarm()` would
-  let one subscriber that stopped reading apply backpressure and stall the poll
-  for everyone, and a writer queues chunks in order regardless. Losing the
-  promise is safe here specifically because an open response stream pins the DO
-  in memory, so the isolate is resident to finish the write. A rejected write is
-  how a departed client usually announces itself, and it routes into
-  `releaseSse()`, the same path the abort listener uses.
+  socket) and then, **only when `sseWriters` is non-empty**, encodes the same
+  JSON as `data: <json>\n\n` once and hands that chunk to `sendSse()`. In the
+  WS-only steady state the framed copy is never built. `sendSse(chunk)` takes an
+  already-encoded chunk (the ping is encoded once at module scope as
+  `SSE_PING_CHUNK`) and loops the registry; an empty loop is its own no-op, so it
+  carries no guard of its own. SSE writes are **fired, not awaited**: awaiting
+  inside `alarm()` would let one subscriber that stopped reading apply
+  backpressure and stall the poll for everyone, and a writer queues chunks in
+  order regardless. Losing the promise is safe here specifically because an open
+  response stream pins the DO in memory, so the isolate is resident to finish the
+  write. A rejected write is how a departed client usually announces itself, and
+  it routes into `releaseSse()`, the same path the abort listener uses.
+- **Writers never throw synchronously.** Per the Streams spec, `write()` and
+  `close()` on a closed, errored, or released writer return a **rejected
+  promise** — they do not throw. So `writeSse` is just
+  `writer.write(chunk).catch(() => this.releaseSse(writer))` and `releaseSse`
+  closes with a bare `.catch(() => {})`. Don't reintroduce a sync `try/catch`
+  around either; it can only ever be dead code.
 - **`releaseSse(writer)`** is the one SSE removal path: delete from the registry
   (idempotent, so abort and write-failure can both fire), close the writer with
-  both its sync throw and its async rejection swallowed, then `ensureScheduled()`
-  so an SSE departure lands on the same heartbeat-or-teardown decision a
-  `webSocketClose` does.
-- **Keepalive is SSE-only.** Every alarm tick writes a `: ping\n\n` comment frame
-  to the SSE registry and nothing to the sockets. WS silence is documented as
-  healthy and the runtime keeps the connection live underneath; an SSE stream is
+  its rejection swallowed, then `ensureScheduled()` so an SSE departure lands on
+  the same heartbeat-or-teardown decision a `webSocketClose` does.
+- **Keepalive is SSE-only, and only on quiet ticks.** A tick that broadcast a
+  data frame has already proven the stream is alive; every other tick — a
+  no-change poll or a failed one — writes a `: ping\n\n` comment frame to the SSE
+  registry. Nothing is ever written to the sockets: WS silence is documented as
+  healthy and the runtime keeps the connection live underneath. An SSE stream is
   an ordinary HTTP response that proxies and mobile networks cull when it goes
-  quiet, and `EventSource` has no ping of its own to notice. The comment is
-  discarded by every client and rides an alarm already running, so it is free.
+  quiet, and `EventSource` has no ping of its own to notice. The net contract is
+  that an SSE client sees at least one frame per tick, of one kind or the other.
+  The comment is discarded by every client and rides an alarm already running, so
+  it is free.
 - **Hibernation**: sockets use the Hibernation API, so the DO may be evicted
   between alarms. `this.lastBroadcast` is wiped on wake (worst case: one
   duplicate frame). Only `storage.setAlarm` survives, never `setTimeout`. Every
@@ -241,17 +274,21 @@ instance and the same poll: WebSocket (`/ws`) and SSE (`/sse`).
   any SSE client is connected, and `this.sseWriters` — unlike the websocket
   roster, which the runtime owns — is plain memory that dies with the isolate.
   Survivable rather than correct-by-construction: `EventSource` reconnects on its
-  own and re-registers. The billing arithmetic, run against the account's real
-  2026-08 billing-period usage: one 128 MB DO pinned 24/7 is ≈ **329k GB-s/month**
-  against the plan's 400k included, on top of a measured ≈ 250k GB-s baseline
-  (multi-gateway viewing), so the worst realistic overage is ≈ **$2.24/mo**. Accepted deliberately at that number. If
+  own and re-registers. The billing arithmetic — the one place these figures
+  live — run against the account's real 2026-08 billing-period usage: one 128 MB
+  DO pinned 24/7 is ≈ **329k GB-s/month** against the plan's 400k included, on
+  top of a measured ≈ 250k GB-s baseline (multi-gateway viewing), so the worst
+  realistic overage is ≈ **$2.24/mo**. Accepted deliberately at that number. If
   the duration pool ever tightens, this is the line item to look at first.
 - **Subscriber accounting** is `state.getWebSockets().length + sseWriters.size` —
-  nothing persisted. The combined figure is what every call site wants: the two
-  connect ceilings (a subscriber costs the same fan-out either way), the alarm's
+  nothing persisted, and `countSubscribers()` is where that rationale is written
+  down. The combined figure is what every call site wants: the shared connect
+  ceiling (a subscriber costs the same fan-out either way), the alarm's
   heartbeat-vs-teardown branch (an SSE-only audience must keep the poll running),
   and every roster check on close/error/release (the last client to leave is the
-  last one of **either** kind).
+  last one of **either** kind). Because SSE writers are a term in the sum, a zero
+  total *means* an empty SSE registry — the invariant the teardown branch rests
+  on.
 
 ### Cron
 
@@ -320,17 +357,17 @@ whose callers can tolerate a skipped refresh).
 - **WS clients get no pings and no heartbeat frames.** The stream is
   edge-triggered on price change, so silence is normal. Clients must reconnect on
   close (and optionally on prolonged silence); the README's example shows the
-  backoff. **SSE is the opposite** — a comment frame every tick, so a quiet
-  `/sse` stream past ~15s really is broken. Don't "unify" the two by adding pings
-  to WS (it would waste a frame per socket per tick on a transport the runtime
-  already keeps alive) or by dropping them from SSE (idle HTTP responses get
-  culled and `EventSource` cannot tell).
+  backoff. **SSE is the opposite** — something every tick, a data frame or a
+  `: ping` comment, so a quiet `/sse` stream past ~15s really is broken. Don't
+  "unify" the two by adding pings to WS (it would waste a frame per socket per
+  tick on a transport the runtime already keeps alive) or by dropping them from
+  SSE (idle HTTP responses get culled and `EventSource` cannot tell).
 - **An SSE audience, not a WS one, is what pins the DO.** Websockets hibernate;
   an open SSE response stream does not, so a single connected `/sse` client keeps
-  one 128 MB instance resident indefinitely. Sized and accepted (see the DO
-  section: worst realistic overage ≈ $2.24/mo), but it is a step change in the
-  cost shape, not a rounding error — and the same duration pool is shared with
-  `MultiGatewayHub`, so watch it if multi-gateway viewing grows.
+  one instance resident indefinitely. Sized and accepted — the DO section above
+  carries the billing arithmetic — but it is a step change in the cost shape, not
+  a rounding error, and the same duration pool is shared with `MultiGatewayHub`,
+  so watch it if multi-gateway viewing grows.
 - **`wrangler.jsonc` DO config must exist in BOTH the top-level block and
   `env.production`.** Wrangler envs do not inherit top-level keys, and migrations
   are cumulative — keep the full ordered list in both places and only append.

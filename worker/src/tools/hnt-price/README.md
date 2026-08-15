@@ -169,9 +169,12 @@ What arrives on the stream:
 
 - One snapshot immediately on connect, so you have a price without waiting.
 - A new snapshot **only when the price changes**, checked about every 15 seconds.
-- A comment line (`: ping`) roughly every 15 seconds. `EventSource` discards
-  comments, so you never see it in your handler. It is there to keep proxies and
-  mobile networks from culling a stream that has gone quiet.
+- A comment line (`: ping`) on any 15-second check that produced no snapshot.
+  `EventSource` discards comments, so you never see it in your handler. Between
+  the two, something reaches you roughly every 15 seconds for as long as you are
+  connected. That is what keeps proxies and mobile networks from culling a stream
+  that has gone quiet. A gap much longer than that means the stream is broken,
+  not that the price is stable.
 - A `retry: 3000` hint on connect. Reconnection is native to `EventSource`, and
   that hint just tells it how long to wait. You write none of it yourself.
 

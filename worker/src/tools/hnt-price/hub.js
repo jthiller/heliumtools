@@ -37,13 +37,9 @@
 //   it, so "ensure", never "reset"), so a departing client can neither strand a
 //   live roster unpolled nor, through churn, postpone the poll.
 //
-//   SSE is the exception: an open response stream pins this DO in memory, so the
-//   instance CANNOT hibernate while any SSE client is connected, and
-//   `this.sseWriters` is ordinary memory that dies with the isolate rather than
-//   state the runtime hands back. That is survivable rather than
-//   correct-by-construction — EventSource reconnects on its own and
-//   re-registers. The cost of the pin is a deliberate trade; CLAUDE.md carries
-//   the billing arithmetic behind it.
+//   SSE connections are the exception: an open response stream pins the DO
+//   awake, and its registry does not survive eviction. See the `this.sseWriters`
+//   note in the constructor for the mechanism and its cost.
 //
 // Wire protocol (client ↔ DO):
 //   Both transports carry the same stream of snapshots. Both replay the freshest
@@ -63,12 +59,13 @@
 //     - `data: <json>\n\n` per change, the same payload.
 //     - Opens with a `retry: 3000` hint, so a reconnecting EventSource waits a
 //       known interval instead of a browser-specific default.
-//     - Plus a `: ping\n\n` comment frame on EVERY alarm tick. An SSE stream is
-//       an ordinary HTTP response: idle ones get culled by proxies and mobile
-//       networks, and EventSource has no ping of its own to notice. The comment
-//       is ignored by every client and rides an alarm already running, so the
-//       keepalive costs nothing. Unlike on WS, silence much past a tick on SSE
-//       does mean something is wrong.
+//     - Plus a `: ping\n\n` comment frame on any tick that carried no data. An
+//       SSE stream is an ordinary HTTP response: idle ones get culled by proxies
+//       and mobile networks, and EventSource has no ping of its own to notice. A
+//       data frame already proves the stream is alive, so the comment covers
+//       exactly the quiet ticks — a failed poll among them. Either way a client
+//       sees something every tick, so unlike on WS, silence much past a tick on
+//       SSE does mean something is wrong.
 
 import { corsHeaders } from "../../lib/response.js";
 import { buildSnapshot, getStoredSnapshot } from "./services/price.js";
@@ -95,8 +92,10 @@ const MAX_SUBSCRIBERS = 500;
 // every EventSource implementation, which is what makes it usable as a
 // keepalive.
 const SSE_RETRY_HINT = "retry: 3000\n\n";
-const SSE_PING = ": ping\n\n";
 const SSE_ENCODER = new TextEncoder();
+// The keepalive never varies, so encode it once at module load rather than per
+// tick.
+const SSE_PING_CHUNK = SSE_ENCODER.encode(": ping\n\n");
 
 // One `data:` line per frame. Safe because the payload is JSON.stringify output,
 // which never contains a raw newline — the character that would otherwise need
@@ -143,11 +142,8 @@ export class HntPriceHub {
     if (upgrade !== "websocket") {
       return new Response("Expected websocket upgrade", { status: 426 });
     }
-    // Check the ceiling BEFORE upgrading — a 503 the client can read beats an
-    // accepted socket that then behaves badly for everyone on the instance.
-    if (this.countSubscribers() >= MAX_SUBSCRIBERS) {
-      return new Response("Too many subscribers", { status: 503 });
-    }
+    // Before upgrading: a 503 the client can read beats an accepted socket.
+    if (this.countSubscribers() >= MAX_SUBSCRIBERS) return this.refuseOverCeiling();
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -173,46 +169,40 @@ export class HntPriceHub {
   // Server-Sent Events: the same stream for clients that would rather write one
   // line of EventSource than a WebSocket with its own reconnect loop.
   async handleSse(request) {
-    // The SAME ceiling as /ws, over the combined roster — a subscriber costs the
-    // instance the same fan-out work whichever transport carried it.
-    if (this.countSubscribers() >= MAX_SUBSCRIBERS) {
-      // Plain text, same as the /ws refusal — but with CORS headers, because
-      // unlike a WebSocket upgrade this is an ordinary cross-origin fetch and a
-      // browser would otherwise report an opaque CORS failure instead of the
-      // 503 that explains itself.
-      return new Response("Too many subscribers", { status: 503, headers: corsHeaders });
-    }
+    // Soft by however many connects are in flight across the awaits below — a
+    // fan-out comfort limit, not an invariant.
+    if (this.countSubscribers() >= MAX_SUBSCRIBERS) return this.refuseOverCeiling();
+
+    // The replay await runs with nothing registered, so a throw or a client
+    // abort here simply propagates with nothing to clean up.
+    const json = await this.replaySnapshotJson();
 
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     this.sseWriters.add(writer);
 
+    // Register first, THEN arm — the same order the WS path uses (accept, then
+    // arm). Because the writer is already a term in countSubscribers() when the
+    // arming storage ops run (and the input gate serializes around them), a
+    // pending teardown alarm can never observe an empty roster and strip the
+    // poll out from under a live client.
+    await this.ensureScheduled();
+
     // A client going away is the only way an SSE stream ends, and the runtime
     // aborts the request signal when it does. A failing write is the backstop
-    // for the cases where that signal never arrives — the alarm's keepalive
-    // guarantees a write attempt at least once a tick, so a departed client is
-    // reaped within one interval either way.
+    // for the cases where that signal never arrives — the alarm writes to a
+    // quiet stream at least once a tick, so a departed client is reaped within
+    // one interval either way.
     request.signal?.addEventListener("abort", () => this.releaseSse(writer));
+    // A signal that fired during the awaits above never calls a listener added
+    // after the fact — release immediately instead of waiting a tick.
+    if (request.signal?.aborted) this.releaseSse(writer);
 
-    // The writer is already in the roster, so a throw from either await below
-    // (armHeartbeat does real storage ops) would otherwise strand it as a
-    // phantom subscriber — never written to, never reaped by a failing write,
-    // holding a ceiling slot and keeping the poll alive until eviction. Release
-    // it on the way out instead.
-    try {
-      await this.armHeartbeat();
-
-      // Reconnect hint first, then the freshest snapshot we have, so the client
-      // has a price immediately rather than after a full poll interval. One
-      // write: both are opening boilerplate and there is nothing to gain from
-      // two chunks.
-      const json = await this.replaySnapshotJson();
-      const opening = json ? SSE_RETRY_HINT + sseData(json) : SSE_RETRY_HINT;
-      this.writeSse(writer, SSE_ENCODER.encode(opening));
-    } catch (err) {
-      this.releaseSse(writer);
-      throw err;
-    }
+    // Reconnect hint first, then the freshest snapshot we have, so the client
+    // has a price immediately rather than after a full poll interval. One write:
+    // both are opening boilerplate and there is nothing to gain from two chunks.
+    const opening = json ? SSE_RETRY_HINT + sseData(json) : SSE_RETRY_HINT;
+    this.writeSse(writer, SSE_ENCODER.encode(opening));
 
     return new Response(readable, {
       headers: {
@@ -223,6 +213,15 @@ export class HntPriceHub {
         ...corsHeaders,
       },
     });
+  }
+
+  // The one over-ceiling refusal, shared by both connect paths so they are
+  // byte-identical. It carries `corsHeaders` unconditionally: /sse is an
+  // ordinary cross-origin fetch, and without them a browser reports an opaque
+  // CORS failure instead of the 503 that explains itself. On a WebSocket
+  // handshake the same headers are simply inert.
+  refuseOverCeiling() {
+    return new Response("Too many subscribers", { status: 503, headers: corsHeaders });
   }
 
   // The freshest snapshot JSON available without polling: memory first (the
@@ -236,6 +235,11 @@ export class HntPriceHub {
     if (this.lastBroadcast) return this.lastBroadcast.json;
 
     const stored = await getStoredSnapshot(this.env);
+    // An alarm tick can broadcast (and seed lastBroadcast) while the KV read is
+    // in flight; its frame is newer than what we just read, so it wins — both
+    // as this client's first frame and as the change key, which must never move
+    // backwards or the next tick re-sends an unchanged price to everyone.
+    if (this.lastBroadcast) return this.lastBroadcast.json;
     if (!stored) return null;
 
     const json = JSON.stringify(stored);
@@ -254,9 +258,10 @@ export class HntPriceHub {
   // A close or an error is a roster change; together with `alarm()`, an inbound
   // fetch, and an inbound frame these are the signals that wake the DO from
   // hibernation — so each re-points the alarm at whatever the roster now is.
-  // Each returns its arming call so the caller's await is real: these entry
-  // points are async, and a floating storage write can be cut off when the DO
-  // goes back to sleep.
+  // Each returns its arming call and the async entry points await it — not for
+  // lifetime (pending storage I/O keeps a DO active on its own; state.waitUntil
+  // is documented as a no-op here), but so a storage failure surfaces at the
+  // call site that can act on it instead of vanishing into a floating promise.
   // ---------------------------------------------------------------------------
 
   // The wire protocol is broadcast-only — clients send nothing — so an inbound
@@ -291,33 +296,31 @@ export class HntPriceHub {
   async alarm() {
     if (this.countSubscribers() === 0) {
       this.lastBroadcast = null;
-      // Provably a no-op: countSubscribers() reaches zero only when the SSE
-      // registry is already empty. It stands as a structural guarantee, because
-      // this branch is the one place the DO declares itself idle and an open
-      // response stream is precisely what would silently keep it awake.
-      this.closeAllSse();
       // No reschedule — the DO can hibernate cleanly until the next client
       // fetch lands.
       return;
     }
 
+    let sent = false;
     try {
       // buildSnapshot, not refreshSnapshot: this singleton DO already
       // serializes its own polls, so the KV single-flight lock would only add
       // three KV writes per tick for nothing.
       const payload = await buildSnapshot(this.env);
-      this.broadcastIfChanged(payload);
+      sent = this.broadcastIfChanged(payload);
     } catch (err) {
       // Both price sources were down. Say nothing on the wire (clients keep
-      // their last price and their own staleness check) and try again next tick.
+      // their last price and their own staleness check) and try again next
+      // tick. `sent` stays false, so the keepalive below still fires — a failed
+      // poll is exactly when a client most needs to know the stream is there.
       console.error("hnt-price hub: snapshot refresh failed", err?.message);
     }
 
-    // Keepalive, SSE only — deliberately after the try/catch, because a failed
-    // poll is exactly when a client most needs to know the stream is still
-    // there. WS clients need nothing equivalent: the runtime keeps the socket
-    // alive and the protocol documents silence as healthy.
-    this.sendSse(SSE_PING);
+    // Keepalive, SSE only, and only on a tick that put nothing on the wire — a
+    // data frame is its own proof of liveness. WS clients need nothing
+    // equivalent: the runtime keeps the socket alive and the protocol documents
+    // silence as healthy.
+    if (!sent) this.sendSse(SSE_PING_CHUNK);
 
     // Re-check: a client may have left while the refresh was in flight.
     await this.ensureScheduled();
@@ -328,10 +331,15 @@ export class HntPriceHub {
   // ---------------------------------------------------------------------------
 
   // One roster across both transports. Every consumer wants the combined figure:
-  // the connect ceilings (a subscriber costs the same fan-out either way), the
-  // alarm's heartbeat-vs-teardown branch (an SSE-only audience must keep the
+  // the connect ceiling (the SAME ceiling for /ws and /sse, because a subscriber
+  // costs the instance the same fan-out work whichever transport carried it),
+  // the alarm's heartbeat-vs-teardown branch (an SSE-only audience must keep the
   // poll running), and the roster checks on close/error/release (the last client
   // to leave is the last one of EITHER kind).
+  //
+  // SSE writers being a term in the sum is also a structural guarantee: a total
+  // of zero means the SSE registry is empty, so the alarm's teardown branch has
+  // no response stream left to close.
   countSubscribers() {
     return this.state.getWebSockets().length + this.sseWriters.size;
   }
@@ -377,13 +385,14 @@ export class HntPriceHub {
         // The socket is dead; Cloudflare will fire webSocketClose for it.
       }
     }
-    this.sendSse(sseData(payloadString));
+    // Frame for SSE only when someone is actually on that transport — in the
+    // WS-only steady state the framed copy is never built.
+    if (this.sseWriters.size > 0) this.sendSse(SSE_ENCODER.encode(sseData(payloadString)));
   }
 
-  // Fan one already-framed SSE chunk out to every SSE client.
-  sendSse(frame) {
-    if (this.sseWriters.size === 0) return;
-    const chunk = SSE_ENCODER.encode(frame);
+  // Fan one already-encoded SSE chunk out to every SSE client. A loop over an
+  // empty registry is already a no-op, so there is nothing to guard.
+  sendSse(chunk) {
     for (const writer of this.sseWriters) this.writeSse(writer, chunk);
   }
 
@@ -392,22 +401,13 @@ export class HntPriceHub {
   // Fired, not awaited. Awaiting inside `alarm()` would let a single subscriber
   // that has stopped reading apply backpressure and hold the poll up for
   // everyone, and nothing is gained by waiting: a writer queues its chunks in
-  // order regardless. Losing the promise is not the hazard it would be on a
-  // hibernatable path either — an open response stream pins this DO in memory,
-  // so for as long as there is an SSE client to write to, the isolate is
-  // resident to finish the write.
+  // order regardless.
   //
   // A rejection is how a departed client usually announces itself (cancelling
   // the response errors the stream), so a failure routes into the same release
   // path the abort listener uses.
   writeSse(writer, chunk) {
-    try {
-      writer.write(chunk).catch(() => this.releaseSse(writer));
-    } catch {
-      // A released writer rejects synchronously rather than returning a
-      // promise; same conclusion, same release path.
-      this.releaseSse(writer);
-    }
+    writer.write(chunk).catch(() => this.releaseSse(writer));
   }
 
   // Detach one SSE client: drop it from the roster, close its stream, and run
@@ -416,33 +416,28 @@ export class HntPriceHub {
   // same client, and only the first does any work.
   releaseSse(writer) {
     if (!this.sseWriters.delete(writer)) return;
-    try {
-      // A writer whose stream already errored (the usual way an SSE client
-      // leaves) rejects on close. There is nothing to do about it and an
-      // unhandled rejection is just noise in the DO's logs.
-      writer.close().catch(() => {});
-    } catch {
-      // Already closed — close() on a released writer throws synchronously.
-    }
+    // A writer whose stream already errored (the usual way an SSE client leaves)
+    // rejects on close. There is nothing to do about it and an unhandled
+    // rejection is just noise in the DO's logs.
+    writer.close().catch(() => {});
     this.ensureScheduled().catch((err) =>
       console.error("hnt-price hub: re-arm after sse release failed", err?.message),
     );
   }
 
-  // Release every SSE client at once. Only the alarm's teardown branch calls it.
-  closeAllSse() {
-    for (const writer of [...this.sseWriters]) this.releaseSse(writer);
-  }
-
   // Edge-triggered: only send when the price actually moved. `snapshot_at`
   // changes on every poll and is deliberately NOT part of the change key —
   // keying on it would turn this into an unconditional 15s ping.
+  //
+  // Returns whether a frame went out, which is what tells `alarm()` whether the
+  // tick still owes the SSE clients a keepalive.
   broadcastIfChanged(payload) {
     const key = changeKey(payload);
-    if (this.lastBroadcast && this.lastBroadcast.key === key) return;
+    if (this.lastBroadcast && this.lastBroadcast.key === key) return false;
     const json = JSON.stringify(payload);
     this.lastBroadcast = { key, json };
     this.broadcast(json);
+    return true;
   }
 }
 
