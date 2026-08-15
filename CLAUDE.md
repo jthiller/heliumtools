@@ -66,7 +66,7 @@ in this root file are a higher-level overview.
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
-| HNT Price | `worker/src/tools/hnt-price/CLAUDE.md` | **Worker-only, no frontend** — public HNT price API for other teams (replaces unauthenticated Pyth Hermes): KV snapshot (`/current`), live chain read (`/instant`), WebSocket stream from the `HntPriceHub` DO (`/ws`). `README.md` next to it is the external API reference |
+| HNT Price | `worker/src/tools/hnt-price/CLAUDE.md` | **Worker-only, no frontend** — public HNT price API for other teams (replaces unauthenticated Pyth Hermes): KV snapshot (`/current`), live chain read (`/instant`), and WebSocket (`/ws`) and SSE (`/sse`) streams from the `HntPriceHub` DO. `README.md` next to it is the external API reference |
 | Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind pages** — live vote activity, outcomes + trend chart (`/vote`, election-aware), plus a current/past-votes index (`/votes`). Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC); resolved votes freeze and rebuild their roster from D1 |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |

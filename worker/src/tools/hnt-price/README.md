@@ -1,6 +1,7 @@
 # HNT Price API
 
-A small, free, keyless HTTP and WebSocket API for the current price of HNT.
+A small, free, keyless API for the current price of HNT, over plain HTTP, a
+WebSocket, or Server-Sent Events.
 
 ## Overview
 
@@ -18,7 +19,7 @@ It exists because Pyth's unauthenticated Hermes endpoint
 was reading HNT prices from Hermes without an API key needs a new source. This
 API is that source: it reads the price oracle account directly from the Solana
 chain, adds a market quote from Jupiter, caches the result, and hands it out over
-plain HTTP or a WebSocket stream.
+a plain HTTP request or a live stream.
 
 No API key, no registration, no CORS restrictions.
 
@@ -30,7 +31,7 @@ https://api.heliumtools.org/hnt-price
 
 Every endpoint needs a trailing path segment. `https://api.heliumtools.org/hnt-price`
 on its own does not route and returns a bare 404, so always request one of
-`/current`, `/instant`, or `/ws`.
+`/current`, `/instant`, `/ws`, or `/sse`.
 
 ## Endpoints
 
@@ -50,8 +51,8 @@ curl "https://api.heliumtools.org/hnt-price/current"
 
 A stale snapshot is served immediately while the refresh runs behind it, so it
 is the caller *after* you who gets the fresh one. Under steady traffic (or with
-anyone on `/ws`, which refreshes the shared cache every 15 seconds) responses
-stay within roughly 30 seconds of live. After a quiet stretch, though, the
+anyone on `/ws` or `/sse`, which refresh the shared cache every 15 seconds)
+responses stay within roughly 30 seconds of live. After a quiet stretch, though, the
 first response can be older — the floor is a background cron that rebuilds the
 snapshot every 15 minutes, so that is the worst-case age. `snapshot_at` tells
 you exactly how old what you received is; check it if freshness matters, or use
@@ -144,8 +145,42 @@ function connect() {
 connect();
 ```
 
-The stream caps out at 500 concurrent subscribers. Past that, the upgrade is
-refused with a 503 and you should fall back to polling `/current`.
+The stream caps out at 500 concurrent subscribers, a ceiling it shares with
+`/sse`. Past that, the upgrade is refused with a 503 and you should fall back to
+polling `/current`.
+
+### `GET /sse`
+
+The same stream over Server-Sent Events. This is the shortest integration on
+offer: `EventSource` is built into every browser, and it reconnects on its own.
+
+```js
+new EventSource("https://api.heliumtools.org/hnt-price/sse").onmessage = (e) => {
+  const snapshot = JSON.parse(e.data);
+  console.log("HNT", snapshot.spot?.usd, "dc/hnt", snapshot.dc_per_hnt);
+};
+```
+
+Every message is a complete snapshot payload as JSON, identical in shape to the
+`/current` response. There are no named event types, so `onmessage` receives all
+of them.
+
+What arrives on the stream:
+
+- One snapshot immediately on connect, so you have a price without waiting.
+- A new snapshot **only when the price changes**, checked about every 15 seconds.
+- A comment line (`: ping`) on any 15-second check that produced no snapshot.
+  `EventSource` discards comments, so you never see it in your handler. Between
+  the two, something reaches you roughly every 15 seconds for as long as you are
+  connected. That is what keeps proxies and mobile networks from culling a stream
+  that has gone quiet. A gap much longer than that means the stream is broken,
+  not that the price is stable.
+- A `retry: 3000` hint on connect. Reconnection is native to `EventSource`, and
+  that hint just tells it how long to wait. You write none of it yourself.
+
+The 500-subscriber ceiling is **shared with `/ws`**. Both surfaces are fed by the
+same instance and counted together. Past the ceiling the request is refused with
+a 503, and you should fall back to polling `/current`.
 
 ## Payload schema
 
@@ -232,7 +267,7 @@ Errors are JSON with an `error` string.
 | 404 | Unknown path under `/hnt-price/` | `{ "error": "Not found" }` |
 | 500 | `/current` had nothing cached and could not build a snapshot | `{"error": "HNT price temporarily unavailable"}` |
 | 502 | `/instant` could reach neither the chain nor the market source | `{"error": "HNT price temporarily unavailable"}` |
-| 503 | `/ws` is at its 500-subscriber ceiling | plain text |
+| 503 | `/ws` and `/sse` are at their shared 500-subscriber ceiling | plain text |
 
 On a 429, back off for `retryAfterSeconds` before retrying. The limit is a
 fixed-window counter per IP per endpoint, so `/current` and `/instant` have
@@ -248,6 +283,11 @@ separate budgets.
 - Timestamp units are mixed on purpose to match their sources: `spot.updated_at`
   and `oracle.publish_time` are Unix **seconds**, `snapshot_at` is Unix
   **milliseconds**.
-- Prefer `/current` for anything that polls, `/ws` for anything live, and
+- Prefer `/current` for anything that polls, a stream for anything live, and
   `/instant` only where you genuinely need a fresh read. The rate limits reflect
   the relative cost of each.
+- Between the two streams, `/sse` is the lowest-effort integration. It is one
+  line, and reconnection is handled for you. `/ws` is the leaner of the two on
+  our side, and it is the better pick if you already have a WebSocket client or
+  want to control reconnect behavior yourself. Both carry the identical payload
+  on the identical schedule, so the choice is purely about your side.
