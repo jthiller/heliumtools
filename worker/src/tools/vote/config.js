@@ -60,8 +60,10 @@ export const RESOLVED_SNAPSHOT_TTL = 30 * 24 * 60 * 60;
 // single-flight background refresh. Comfortably above the 15-min cron cadence
 // so steady-state viewers never refresh.
 export const SNAPSHOT_STALE_MS = 20 * 60 * 1000;
-// Short TTL on the single-flight refresh lock (prevents RPC stampedes).
-export const REFRESH_LOCK_TTL = 30;
+// TTL on the single-flight refresh lock (prevents RPC stampedes). The lock
+// self-expires; 60 is the minimum expirationTtl Cloudflare KV accepts — a
+// smaller value makes the put throw and acquireLock fail open (no lock at all).
+export const REFRESH_LOCK_TTL = 60;
 
 // The off-chain proposal body (uri) changes rarely; cache it much longer.
 export const CONTENT_CACHE_TTL = 6 * 60 * 60;
