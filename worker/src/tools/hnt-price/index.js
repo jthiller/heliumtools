@@ -24,20 +24,21 @@ export async function handleHntPriceRequest(request, env, ctx) {
     return handleInstant(request, env);
   }
 
-  // /ws — WebSocket price stream via the HntPriceHub Durable Object.
+  // /ws and /sse — the two streaming surfaces, both served by the same
+  // HntPriceHub Durable Object instance and sharing one subscriber ceiling.
   //
   // Why: one DO instance polls the chain + Jupiter once per interval and fans
   // the result out to every subscriber, instead of each streaming client
   // costing its own RPC read. See worker/src/tools/hnt-price/hub.js.
-  if (pathname === "/ws" && request.method === "GET") {
+  if ((pathname === "/ws" || pathname === "/sse") && request.method === "GET") {
     if (!env.HNT_PRICE_HUB) {
       return jsonResponse({ error: "Hub binding missing" }, 500);
     }
     const id = env.HNT_PRICE_HUB.idFromName("hub");
     const stub = env.HNT_PRICE_HUB.get(id);
     // Forwarded as-is: the top-level router already rebased this request onto
-    // `/ws` (the path the DO matches) with the `Upgrade`/`Sec-WebSocket-Key`
-    // headers carried over.
+    // `/ws` or `/sse` (the paths the DO matches), carrying over the
+    // `Upgrade`/`Sec-WebSocket-Key` headers where they apply.
     return stub.fetch(request);
   }
 

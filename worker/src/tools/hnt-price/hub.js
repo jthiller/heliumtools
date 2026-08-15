@@ -1,5 +1,5 @@
 // HntPriceHub — Durable Object that polls the HNT price once and fans the
-// result out to every connected WebSocket client.
+// result out to every connected client, over WebSocket or Server-Sent Events.
 //
 // Why this exists:
 //   Each price poll is a chain read (DataCreditsV0 → the Pyth feed account) plus
@@ -9,8 +9,11 @@
 //
 // Single-instance contract:
 //   The DO is addressed with a fixed name ("hub") so all clients land on the
-//   same instance. Subscriber state is not persisted; the runtime tracks
-//   attached websockets via the Hibernation API (`state.getWebSockets()`).
+//   same instance. Subscriber state is not persisted: the runtime tracks
+//   attached websockets via the Hibernation API (`state.getWebSockets()`), and
+//   SSE clients live in an in-memory Set (`this.sseWriters`). `countSubscribers`
+//   is the sum, and every ceiling and lifecycle decision reads it, so the two
+//   transports share one roster.
 //
 // No upstream pump:
 //   Unlike multi-gateway's hub there is nothing to hold open — the poll is
@@ -34,17 +37,40 @@
 //   it, so "ensure", never "reset"), so a departing client can neither strand a
 //   live roster unpolled nor, through churn, postpone the poll.
 //
+//   SSE is the exception: an open response stream pins this DO in memory, so the
+//   instance CANNOT hibernate while any SSE client is connected, and
+//   `this.sseWriters` is ordinary memory that dies with the isolate rather than
+//   state the runtime hands back. That is survivable rather than
+//   correct-by-construction — EventSource reconnects on its own and
+//   re-registers. The cost of the pin is a deliberate trade; CLAUDE.md carries
+//   the billing arithmetic behind it.
+//
 // Wire protocol (client ↔ DO):
-//   - Client connects via WebSocket to /hnt-price/ws.
-//   - On connect the DO immediately sends the freshest snapshot it has (from
-//     memory, else from KV) as one text frame, so a client never waits a full
-//     poll interval for its first price.
-//   - Thereafter the DO sends the snapshot JSON only when the price actually
-//     CHANGED (edge-triggered on `spot.usd` + `oracle.publish_time`). A quiet
-//     socket means a stable price, not a broken stream.
-//   - The DO sends no pings and assigns no meaning to client messages today; an
-//     inbound frame only re-ensures the poll alarm (see webSocketMessage).
+//   Both transports carry the same stream of snapshots. Both replay the freshest
+//   snapshot the DO has (memory, else KV) the moment a client attaches, so
+//   nobody waits a full poll interval for a first price, and both then carry the
+//   snapshot JSON only when the price actually CHANGED (edge-triggered on
+//   `spot.usd` + `oracle.publish_time`). What differs is the liveness story.
+//
+//   WebSocket (/hnt-price/ws):
+//     - One text frame per change, and nothing else on the wire: no pings, no
+//       envelopes, no message ids. A quiet socket means a stable price, not a
+//       broken stream — the runtime keeps the connection live underneath it.
+//     - Client messages carry no meaning; an inbound frame only re-ensures the
+//       poll alarm (see webSocketMessage).
+//
+//   SSE (/hnt-price/sse):
+//     - `data: <json>\n\n` per change, the same payload.
+//     - Opens with a `retry: 3000` hint, so a reconnecting EventSource waits a
+//       known interval instead of a browser-specific default.
+//     - Plus a `: ping\n\n` comment frame on EVERY alarm tick. An SSE stream is
+//       an ordinary HTTP response: idle ones get culled by proxies and mobile
+//       networks, and EventSource has no ping of its own to notice. The comment
+//       is ignored by every client and rides an alarm already running, so the
+//       keepalive costs nothing. Unlike on WS, silence much past a tick on SSE
+//       does mean something is wrong.
 
+import { corsHeaders } from "../../lib/response.js";
 import { buildSnapshot, getStoredSnapshot } from "./services/price.js";
 
 // Poll/broadcast cadence while subscribers exist. Matches the perceived
@@ -57,10 +83,27 @@ const ALARM_HEARTBEAT_MS = 15_000;
 // reason to keep spending RPC reads with nobody listening.
 const IDLE_TEARDOWN_MS = 2_000;
 
-// Ceiling on concurrent subscribers for one DO instance. A single instance fans
-// out serially, so an unbounded roster would make each broadcast slower for
-// everyone. Past this we refuse the upgrade instead of degrading the stream.
+// Ceiling on concurrent subscribers for one DO instance, counted across BOTH
+// transports. A single instance fans out serially, so an unbounded roster would
+// make each broadcast slower for everyone. Past this we refuse the connection
+// instead of degrading the stream.
 const MAX_SUBSCRIBERS = 500;
+
+// SSE framing. A `retry:` field tells EventSource how long to wait before
+// reconnecting; browsers default to roughly this anyway, but the default is not
+// specified, so state it. A line opening with ":" is a comment — ignored by
+// every EventSource implementation, which is what makes it usable as a
+// keepalive.
+const SSE_RETRY_HINT = "retry: 3000\n\n";
+const SSE_PING = ": ping\n\n";
+const SSE_ENCODER = new TextEncoder();
+
+// One `data:` line per frame. Safe because the payload is JSON.stringify output,
+// which never contains a raw newline — the character that would otherwise need
+// the multi-line `data:` form.
+function sseData(json) {
+  return `data: ${json}\n\n`;
+}
 
 export class HntPriceHub {
   constructor(state, env) {
@@ -69,6 +112,15 @@ export class HntPriceHub {
     // { key, json } of the last frame we sent. In-memory only — re-initialised
     // to null on wake, which is harmless (worst case one duplicate frame).
     this.lastBroadcast = null;
+    // Open SSE response streams, keyed by their writer. NOT hibernatable: an
+    // open response stream pins the DO in memory, so unlike the websocket roster
+    // (which the runtime owns and hands back through `state.getWebSockets()`)
+    // this registry is plain memory and dies with the isolate. EventSource
+    // reconnects by itself and re-registers, so an eviction costs a client one
+    // reconnect. The flip side is the accepted cost profile: one pinned DO for
+    // as long as any SSE client is connected — decided against real billing
+    // data, see CLAUDE.md.
+    this.sseWriters = new Set();
   }
 
   // ---------------------------------------------------------------------------
@@ -79,6 +131,9 @@ export class HntPriceHub {
     const url = new URL(request.url);
     if (url.pathname === "/ws") {
       return this.handleWebSocket(request);
+    }
+    if (url.pathname === "/sse") {
+      return this.handleSse(request);
     }
     return new Response("Not found", { status: 404 });
   }
@@ -103,23 +158,7 @@ export class HntPriceHub {
     this.state.acceptWebSocket(server);
     await this.armHeartbeat();
 
-    // Replay the freshest snapshot to this fresh client so it has a price
-    // immediately rather than after a full poll interval. Memory first (the
-    // common case), KV second (post-hibernation, or the first client after a
-    // cold start).
-    let json = this.lastBroadcast ? this.lastBroadcast.json : null;
-    if (!json) {
-      const stored = await getStoredSnapshot(this.env);
-      if (stored) {
-        json = JSON.stringify(stored);
-        // Seed the change-detection cache with the same { key, json } shape the
-        // broadcast path stores. Two payoffs: a post-hibernation connect burst
-        // costs one KV read total rather than one per client, and the next alarm
-        // has a real key to compare against, so an unchanged price does not
-        // produce a redundant broadcast to everyone.
-        this.lastBroadcast = { key: changeKey(stored), json };
-      }
-    }
+    const json = await this.replaySnapshotJson();
     if (json) {
       try {
         server.send(json);
@@ -129,6 +168,84 @@ export class HntPriceHub {
     }
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // Server-Sent Events: the same stream for clients that would rather write one
+  // line of EventSource than a WebSocket with its own reconnect loop.
+  async handleSse(request) {
+    // The SAME ceiling as /ws, over the combined roster — a subscriber costs the
+    // instance the same fan-out work whichever transport carried it.
+    if (this.countSubscribers() >= MAX_SUBSCRIBERS) {
+      // Plain text, same as the /ws refusal — but with CORS headers, because
+      // unlike a WebSocket upgrade this is an ordinary cross-origin fetch and a
+      // browser would otherwise report an opaque CORS failure instead of the
+      // 503 that explains itself.
+      return new Response("Too many subscribers", { status: 503, headers: corsHeaders });
+    }
+
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    this.sseWriters.add(writer);
+
+    // A client going away is the only way an SSE stream ends, and the runtime
+    // aborts the request signal when it does. A failing write is the backstop
+    // for the cases where that signal never arrives — the alarm's keepalive
+    // guarantees a write attempt at least once a tick, so a departed client is
+    // reaped within one interval either way.
+    request.signal?.addEventListener("abort", () => this.releaseSse(writer));
+
+    // The writer is already in the roster, so a throw from either await below
+    // (armHeartbeat does real storage ops) would otherwise strand it as a
+    // phantom subscriber — never written to, never reaped by a failing write,
+    // holding a ceiling slot and keeping the poll alive until eviction. Release
+    // it on the way out instead.
+    try {
+      await this.armHeartbeat();
+
+      // Reconnect hint first, then the freshest snapshot we have, so the client
+      // has a price immediately rather than after a full poll interval. One
+      // write: both are opening boilerplate and there is nothing to gain from
+      // two chunks.
+      const json = await this.replaySnapshotJson();
+      const opening = json ? SSE_RETRY_HINT + sseData(json) : SSE_RETRY_HINT;
+      this.writeSse(writer, SSE_ENCODER.encode(opening));
+    } catch (err) {
+      this.releaseSse(writer);
+      throw err;
+    }
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        // The stream is live by definition; nothing in it may be replayed from
+        // any cache between us and the client.
+        "Cache-Control": "no-store",
+        ...corsHeaders,
+      },
+    });
+  }
+
+  // The freshest snapshot JSON available without polling: memory first (the
+  // common case), KV second (post-hibernation, or the first client after a cold
+  // start), null when the cache is cold — then the client simply waits for the
+  // next change.
+  //
+  // Shared by both connect paths so /ws and /sse replay identically; a client
+  // must not be able to tell which transport it chose from the first frame.
+  async replaySnapshotJson() {
+    if (this.lastBroadcast) return this.lastBroadcast.json;
+
+    const stored = await getStoredSnapshot(this.env);
+    if (!stored) return null;
+
+    const json = JSON.stringify(stored);
+    // Seed the change-detection cache with the same { key, json } shape the
+    // broadcast path stores. Two payoffs: a post-hibernation connect burst costs
+    // one KV read total rather than one per client, and the next alarm has a
+    // real key to compare against, so an unchanged price does not produce a
+    // redundant broadcast to everyone.
+    this.lastBroadcast = { key: changeKey(stored), json };
+    return json;
   }
 
   // ---------------------------------------------------------------------------
@@ -167,13 +284,18 @@ export class HntPriceHub {
   }
 
   // The alarm is the only timer that survives hibernation. It serves two jobs:
-  //   1. Heartbeat — while subscribers remain, refresh the snapshot and
-  //      broadcast it if the price changed, then re-arm.
+  //   1. Heartbeat — while subscribers remain, refresh the snapshot, broadcast
+  //      it if the price changed, keep the SSE streams alive, then re-arm.
   //   2. Teardown — if no subscribers remain, stop polling and drop the cached
   //      frame so the next client's replay comes from KV.
   async alarm() {
     if (this.countSubscribers() === 0) {
       this.lastBroadcast = null;
+      // Provably a no-op: countSubscribers() reaches zero only when the SSE
+      // registry is already empty. It stands as a structural guarantee, because
+      // this branch is the one place the DO declares itself idle and an open
+      // response stream is precisely what would silently keep it awake.
+      this.closeAllSse();
       // No reschedule — the DO can hibernate cleanly until the next client
       // fetch lands.
       return;
@@ -191,6 +313,12 @@ export class HntPriceHub {
       console.error("hnt-price hub: snapshot refresh failed", err?.message);
     }
 
+    // Keepalive, SSE only — deliberately after the try/catch, because a failed
+    // poll is exactly when a client most needs to know the stream is still
+    // there. WS clients need nothing equivalent: the runtime keeps the socket
+    // alive and the protocol documents silence as healthy.
+    this.sendSse(SSE_PING);
+
     // Re-check: a client may have left while the refresh was in flight.
     await this.ensureScheduled();
   }
@@ -199,13 +327,18 @@ export class HntPriceHub {
   // Subscriber accounting
   // ---------------------------------------------------------------------------
 
+  // One roster across both transports. Every consumer wants the combined figure:
+  // the connect ceilings (a subscriber costs the same fan-out either way), the
+  // alarm's heartbeat-vs-teardown branch (an SSE-only audience must keep the
+  // poll running), and the roster checks on close/error/release (the last client
+  // to leave is the last one of EITHER kind).
   countSubscribers() {
-    return this.state.getWebSockets().length;
+    return this.state.getWebSockets().length + this.sseWriters.size;
   }
 
   // Point the alarm at whatever the live roster is: heartbeat while anyone is
   // listening, teardown once the last client is gone. The single place that
-  // decision is made, so close/error/alarm can't drift apart.
+  // decision is made, so close/error/release/alarm can't drift apart.
   async ensureScheduled() {
     return this.countSubscribers() > 0 ? this.armHeartbeat() : this.armTeardown();
   }
@@ -237,15 +370,68 @@ export class HntPriceHub {
   // ---------------------------------------------------------------------------
 
   broadcast(payloadString) {
-    const sockets = this.state.getWebSockets();
-    if (sockets.length === 0) return;
-    for (const ws of sockets) {
+    for (const ws of this.state.getWebSockets()) {
       try {
         ws.send(payloadString);
       } catch {
         // The socket is dead; Cloudflare will fire webSocketClose for it.
       }
     }
+    this.sendSse(sseData(payloadString));
+  }
+
+  // Fan one already-framed SSE chunk out to every SSE client.
+  sendSse(frame) {
+    if (this.sseWriters.size === 0) return;
+    const chunk = SSE_ENCODER.encode(frame);
+    for (const writer of this.sseWriters) this.writeSse(writer, chunk);
+  }
+
+  // Push one encoded chunk to a single SSE client.
+  //
+  // Fired, not awaited. Awaiting inside `alarm()` would let a single subscriber
+  // that has stopped reading apply backpressure and hold the poll up for
+  // everyone, and nothing is gained by waiting: a writer queues its chunks in
+  // order regardless. Losing the promise is not the hazard it would be on a
+  // hibernatable path either — an open response stream pins this DO in memory,
+  // so for as long as there is an SSE client to write to, the isolate is
+  // resident to finish the write.
+  //
+  // A rejection is how a departed client usually announces itself (cancelling
+  // the response errors the stream), so a failure routes into the same release
+  // path the abort listener uses.
+  writeSse(writer, chunk) {
+    try {
+      writer.write(chunk).catch(() => this.releaseSse(writer));
+    } catch {
+      // A released writer rejects synchronously rather than returning a
+      // promise; same conclusion, same release path.
+      this.releaseSse(writer);
+    }
+  }
+
+  // Detach one SSE client: drop it from the roster, close its stream, and run
+  // the same heartbeat-or-teardown decision every other roster change runs.
+  // Idempotent — the abort listener and a failed write can both fire for the
+  // same client, and only the first does any work.
+  releaseSse(writer) {
+    if (!this.sseWriters.delete(writer)) return;
+    try {
+      // A writer whose stream already errored (the usual way an SSE client
+      // leaves) rejects on close. There is nothing to do about it and an
+      // unhandled rejection is just noise in the DO's logs.
+      writer.close().catch(() => {});
+    } catch {
+      // Already closed — close() on a released writer throws synchronously.
+    }
+    this.ensureScheduled().catch((err) =>
+      console.error("hnt-price hub: re-arm after sse release failed", err?.message),
+    );
+  }
+
+  // Release every SSE client at once. Only the alarm's teardown branch calls it.
+  closeAllSse() {
+    for (const writer of [...this.sseWriters]) this.releaseSse(writer);
   }
 
   // Edge-triggered: only send when the price actually moved. `snapshot_at`
