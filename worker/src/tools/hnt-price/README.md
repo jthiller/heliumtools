@@ -36,7 +36,8 @@ on its own does not route and returns a bare 404, so always request one of
 
 ### `GET /current`
 
-The cheap, everyday endpoint. Serves a cached snapshot, at most 30 seconds old.
+The cheap, everyday endpoint. Returns the most recently cached snapshot and
+triggers a background refresh when that snapshot is older than 30 seconds.
 In steady state it never reads the chain on your behalf, so it is fast and safe
 to poll. The one exception is a cold start (nothing cached yet), where the first
 request builds the snapshot live and takes a couple of seconds.
@@ -47,11 +48,14 @@ Rate limit: **60 requests per minute per IP**.
 curl "https://api.heliumtools.org/hnt-price/current"
 ```
 
-If the cached snapshot happens to be older than 30 seconds, you still get it
-immediately and a refresh runs in the background, so the next caller gets the
-fresh one. This means a `/current` response can be a few seconds past its
-nominal 30-second window during quiet periods. Check `snapshot_at` if that
-matters to you.
+A stale snapshot is served immediately while the refresh runs behind it, so it
+is the caller *after* you who gets the fresh one. Under steady traffic (or with
+anyone on `/ws`, which refreshes the shared cache every 15 seconds) responses
+stay within roughly 30 seconds of live. After a quiet stretch, though, the
+first response can be older — the floor is a background cron that rebuilds the
+snapshot every 15 minutes, so that is the worst-case age. `snapshot_at` tells
+you exactly how old what you received is; check it if freshness matters, or use
+`/instant`.
 
 Polling `/current` once every 15 to 30 seconds is the intended usage pattern for
 a dashboard or a docs page. If you want lower latency than that, use `/ws`.
