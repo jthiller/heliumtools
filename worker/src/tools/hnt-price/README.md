@@ -3,6 +3,9 @@
 A small, free, keyless API for the current price of HNT, over plain HTTP, a
 WebSocket, or Server-Sent Events.
 
+There is an interactive version of this page, with a live ticker running on the
+stream described below, at <https://heliumtools.org/hnt-price>.
+
 ## Overview
 
 Two prices matter for HNT, and they are not the same number:

@@ -13,7 +13,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - React + Vite, Tailwind CSS
 - Routes defined in `src/main.jsx` (React Router)
 - Tool listing hardcoded in `src/pages/Landing.jsx` features array
-- Each tool has its own directory: `src/oui-notifier/`, `src/dc-purchase/`, `src/l1-migration/`, `src/iot-onboard/`, `src/multi-gateway/`
+- Each tool has its own directory, e.g. `src/oui-notifier/`, `src/dc-purchase/`, `src/l1-migration/`, `src/iot-onboard/`, `src/multi-gateway/`, `src/hnt-price/`
 - Tools needing Solana wallets are wrapped in `SolanaProvider` in `main.jsx`
 - **Boxes use shadow, not borders.** Raised content cards/panels/modals/popovers are defined by the layered `shadow-soft` utility (and `shadow-soft-lg` for hover/floating elevation), not a `border border-border`. The shadow is a dark-mode-aware CSS variable (`--shadow-card` / `--shadow-card-lg` in `index.css`). Borders still belong on non-box elements: inputs, buttons, pills/tags, internal dividers (`border-b`, `divide-*`), and recessed `bg-surface-inset` panels.
 
@@ -66,7 +66,7 @@ in this root file are a higher-level overview.
 | Hotspot Reward Claimer | `worker/src/tools/hotspot-claimer/CLAUDE.md` | Treasury-subsidized reward claims |
 | L1 Migration | `worker/src/tools/l1-migration/CLAUDE.md` | Broadcasts pre-signed migration txns |
 | veHNT Positions | `worker/src/tools/ve-hnt/CLAUDE.md` | Governance lockup analyzer |
-| HNT Price | `worker/src/tools/hnt-price/CLAUDE.md` | **Worker-only, no frontend** — public HNT price API for other teams (replaces unauthenticated Pyth Hermes): KV snapshot (`/current`), live chain read (`/instant`), and WebSocket (`/ws`) and SSE (`/sse`) streams from the `HntPriceHub` DO. `README.md` next to it is the external API reference |
+| HNT Price | `worker/src/tools/hnt-price/CLAUDE.md` | **Worker-heavy** — public HNT price API for other teams (replaces unauthenticated Pyth Hermes): KV snapshot (`/current`), live chain read (`/instant`), and WebSocket (`/ws`) and SSE (`/sse`) streams from the `HntPriceHub` DO. `README.md` next to it is the external API reference; the `/hnt-price` page is a live SSE-driven demo of it plus human-readable endpoint docs |
 | Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind pages** — live vote activity, outcomes + trend chart (`/vote`, election-aware), plus a current/past-votes index (`/votes`). Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC); resolved votes freeze and rebuild their roster from D1 |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
