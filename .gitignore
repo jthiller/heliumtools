@@ -71,3 +71,4 @@ out/
 tmp/
 temp/
 *.tmp
+.claude/

@@ -1,8 +1,11 @@
 # HNT Price
 
 A public, keyless HNT price API for third-party consumers (Helium Docs first).
-**Worker-only — there is no frontend.** `README.md` next to this file is the
-external product documentation; keep it accurate, it is what integrators read.
+**Worker-heavy**: the API is the product, and the frontend is one page at
+`/hnt-price` that demos and documents it (see [Frontend](#frontend-pagespublicsrchnt-price)).
+`README.md` next to this file is the external product documentation; keep it
+accurate, it is what integrators read, and the page has to stay consistent with
+it.
 
 Built because Pyth's unauthenticated `hermes.pyth.network` stops serving public
 traffic on **2026-08-18**. Anything in the ecosystem reading HNT prices from
@@ -298,6 +301,38 @@ streaming, the hub refreshes every 15s, but with an idle hub the snapshot would
 otherwise only be rebuilt by a cold `/current`. 15 min keeps the KV entry alive
 and warm well inside its safety TTL.
 
+### Frontend (`pages/public/src/hnt-price/`)
+
+One page, `HntPriceTool.jsx`, routed at `/hnt-price` **outside** `SolanaProvider`
+in `pages/public/src/main.jsx` — it is read-only and connects no wallet. Linked
+from the landing page's "HNT Holders" section. Client module is
+`pages/public/src/lib/hntPriceApi.js` (the usual `API_BASE` split: `/api/hnt-price`
+through the vite proxy in dev, `https://api.heliumtools.org/hnt-price` in prod),
+which also exports `PUBLIC_API_BASE`/`PUBLIC_WS_BASE` — the always-absolute
+origins the rendered code snippets use, since those are meant to be copied into
+someone else's project.
+
+It is two things at once:
+
+- **A live demo.** The hero ticker is a real `EventSource` on `/sse`, not a
+  mock: spot price, `oracle.mint_price_usd`, `dc_per_hnt`, a connect/live/
+  reconnect/offline status pill off `readyState`, and a client-ticked "last
+  frame" age. Reconnect is left entirely to `EventSource` (the DO's
+  `retry: 3000` hint drives it); the `useEffect` cleanup **must** keep calling
+  `close()`, because an open SSE stream pins the `HntPriceHub` DO in memory and a
+  leaked stream per navigation is a real cost. Both payload halves are
+  null-checked and render a placeholder rather than `NaN`.
+- **Human-readable docs.** One card per endpoint (path, rate limit, "use for",
+  copyable snippet), live "Try it" buttons on `/current` and `/instant` that
+  print the real JSON response (429s surface `retryAfterSeconds`), the two-prices
+  explainer with the three live values side by side, and the payload schema
+  table.
+
+**The README stays canonical.** The page links to it as the full reference and
+must never contradict it: rate limits, the ~5-minute crank caveat on `/instant`,
+the shared 500-subscriber ceiling, and the mixed timestamp units are all repeated
+on the page, so a README change means a page change in the same commit.
+
 ## Storage (KV)
 
 | Key | Contents | TTL |
@@ -383,8 +418,10 @@ whose callers can tolerate a skipped refresh).
   Unix seconds (matching their sources), `snapshot_at` is Unix milliseconds
   (`Date.now()`). Documented in the README; don't silently normalize one, it is a
   published wire format now.
-- **`README.md` is the product.** There is no UI, so a behavior change that is
-  not reflected there is an undocumented breaking change for external consumers.
+- **`README.md` is the product.** The `/hnt-price` page is a tour of it, not a
+  substitute: a behavior change that is not reflected in the README is an
+  undocumented breaking change for external consumers. Change both together, and
+  never let the page state a limit or a guarantee the README does not.
 
 ## Environment
 

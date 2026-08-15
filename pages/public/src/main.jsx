@@ -103,6 +103,7 @@ const DcPurchaseTool = lazy(() => import("./dc-purchase/DcPurchaseTool.jsx"));
 const OrderStatus = lazy(() => import("./dc-purchase/OrderStatus.jsx"));
 const HotspotClaimer = lazy(() => import("./hotspot-claimer/HotspotClaimer.jsx"));
 const HotspotMap = lazy(() => import("./hotspot-map/HotspotMap.jsx"));
+const HntPriceTool = lazy(() => import("./hnt-price/HntPriceTool.jsx"));
 const MultiGateway = lazy(() => import("./multi-gateway/MultiGateway.jsx"));
 const DcMintTool = lazy(() => import("./dc-mint/DcMintTool.jsx"));
 const IotOnboard = lazy(() => import("./iot-onboard/IotOnboard.jsx"));
@@ -126,6 +127,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/dc-purchase/order/:orderId" element={<OrderStatus />} />
             <Route path="/hotspot-claimer" element={<HotspotClaimer />} />
             <Route path="/hotspot-map" element={<HotspotMap />} />
+            {/* Read-only API demo + docs. No wallet, so no SolanaProvider. */}
+            <Route path="/hnt-price" element={<HntPriceTool />} />
             <Route path="/multi-gateway" element={<SolanaProvider><MultiGateway /></SolanaProvider>} />
             <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
             <Route path="/iot-onboard" element={<SolanaProvider><IotOnboard /></SolanaProvider>} />

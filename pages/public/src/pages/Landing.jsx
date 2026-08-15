@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, MapPinIcon, SignalIcon, LockClosedIcon, WalletIcon, WifiIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, CurrencyDollarIcon, MapPinIcon, SignalIcon, LockClosedIcon, WalletIcon, WifiIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import ShaderDithering from "../components/ShaderDithering.jsx";
 
@@ -113,8 +113,17 @@ const sections = [
   },
   {
     title: "HNT Holders",
-    description: "Tools for HNT stakers and voters",
+    description: "Tools for HNT stakers, voters, and integrators",
     tools: [
+      {
+        name: "HNT Price API",
+        description:
+          "A public, keyless price API. Live market price plus the on-chain oracle price the Data Credits mint pays, over HTTP, WebSocket, or SSE.",
+        href: "/hnt-price",
+        icon: CurrencyDollarIcon,
+        iconBg: "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
+        badge: "New",
+      },
       {
         name: "veHNT Positions",
         description:
