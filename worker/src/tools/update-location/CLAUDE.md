@@ -130,3 +130,7 @@ own Hotspot, `payer = dc_fee_payer = hotspot_owner = the connected wallet`.
 - `SOLANA_RPC_URL` — Helius staked endpoint for on-chain reads, DAS, and the LUT
   (never log or expose).
 - `KV` — used indirectly via the shared `iot-onboard:fees:v1` fee cache.
+
+## WebMCP
+
+The /update-location page registers the read-only agent tool `get-hotspot-onchain-info` from `pages/public/src/update-location/webmcpTools.js`; the assert stays wallet-signed in the UI. Framework: `pages/public/src/webmcp/CLAUDE.md`.

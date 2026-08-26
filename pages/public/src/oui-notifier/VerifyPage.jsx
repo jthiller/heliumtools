@@ -3,9 +3,14 @@ import { API_BASE } from "../lib/api.js";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import { setLocalStorageItem } from "../lib/utils.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 
 export default function VerifyPage() {
   const [state, setState] = useState({ tone: "loading", message: "Verifying your email…" });
+
+  // Terminal confirmation page, but still agent-navigable: register the
+  // site-wide tools (no router in this entry, so full page loads).
+  useWebMcpTools(() => import("../webmcp/siteTools.js").then((m) => m.makeSiteTools(null)), []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

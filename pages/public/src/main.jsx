@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing.jsx";
+import WebMcpSiteTools from "./webmcp/SiteTools.jsx";
 import { registerSW } from "./lib/registerSW.js";
 import "../fonts/inter.css";
 import "./index.css";
@@ -118,6 +119,8 @@ const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
+      {/* Site-wide WebMCP tools (agent discovery + navigation) on every route */}
+      <WebMcpSiteTools />
       <ChunkLoadBoundary>
         <Suspense fallback={null}>
           <Routes>

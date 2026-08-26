@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowTopRightOnSquareIcon,
   ArrowPathIcon,
@@ -28,6 +28,8 @@ import { readChartColors } from "../lib/chartColors.js";
 import useDarkMode from "../lib/useDarkMode.js";
 import { numberFormatter, truncateString } from "../lib/utils.js";
 import { fetchProposal, fetchVotes, fetchActivity, fetchHistory, fetchVoterHistory } from "../lib/voteApi.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeVoteTools } from "./webmcpTools.js";
 import {
   fmtVeHnt, fmtDate, relTime, StatusPill, isFinalStatus, hasOutcome,
   isMultiChoice, participatingVeHnt, isElection, electedChoices,
@@ -910,7 +912,9 @@ const VoteTrendChart = memo(function VoteTrendChart({ history, proposal }) {
 
 export default function Vote() {
   const params = useParams();
+  const navigate = useNavigate();
   const proposalId = params.proposalId || DEFAULT_PROPOSAL;
+  useWebMcpTools(() => makeVoteTools(navigate), []);
 
   const [proposal, setProposal] = useState(null);
   const [votes, setVotes] = useState(null);

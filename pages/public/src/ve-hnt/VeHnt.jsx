@@ -18,6 +18,8 @@ import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import Tooltip from "../components/Tooltip.jsx";
 import { formatDuration, numberFormatter, truncateString } from "../lib/utils.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeVeHntTools } from "./webmcpTools.js";
 import { fetchPositions, fetchPositionEpochs, buildClaimTransactions } from "../lib/veHntApi.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -720,6 +722,17 @@ export default function VeHnt() {
     lastLoadedRef.current = null;
     if (submittedWalletStr) load(submittedWalletStr);
   }, [submittedWalletStr, load]);
+
+  // Agent path: one fetch serves both the tool result and the rendered
+  // page. Marking lastLoadedRef first keeps the auto-query effect from
+  // firing a duplicate load for the same wallet.
+  const analyzeWallet = useCallback((wallet) => {
+    setInput(wallet);
+    const resolved = resolveSolanaWallet(wallet).toBase58();
+    lastLoadedRef.current = resolved;
+    return load(resolved);
+  }, [load]);
+  useWebMcpTools(() => makeVeHntTools(analyzeWallet), []);
 
   const [claimStates, setClaimStates] = useState({});
   const [claimErrors, setClaimErrors] = useState({});

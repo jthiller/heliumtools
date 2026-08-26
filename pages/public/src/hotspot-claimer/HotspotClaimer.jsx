@@ -12,6 +12,8 @@ import {
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
 import Tooltip from "../components/Tooltip.jsx";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeClaimerTools } from "./webmcpTools.js";
 import {
   lookupHotspot,
   fetchRewards,
@@ -1468,13 +1470,31 @@ export default function HotspotClaimer() {
     }, { replace: true });
   }, [setSearchParams]);
 
+  // Read the LIVE params from window.location, not the functional updater:
+  // react-router's functional setSearchParams hands back closure-captured
+  // params, so the once-registered agent tools would see mount-time URL
+  // state and drop/resurrect the other param. window.location is always
+  // current, and preserving the other param this way serves UI clicks and
+  // agent tools alike.
   const handleNavigateToHotspot = useCallback((entityKey) => {
-    setSearchParams({ mode: "hotspot", key: entityKey, ...(urlWallet ? { wallet: urlWallet } : {}) }, { replace: true });
-  }, [setSearchParams, urlWallet]);
+    const next = new URLSearchParams(window.location.search);
+    next.set("mode", "hotspot");
+    next.set("key", entityKey);
+    setSearchParams(next, { replace: true });
+  }, [setSearchParams]);
 
   const handleNavigateToWallet = useCallback((walletAddress) => {
-    setSearchParams({ mode: "wallet", wallet: walletAddress, ...(urlKey ? { key: urlKey } : {}) }, { replace: true });
-  }, [setSearchParams, urlKey]);
+    const next = new URLSearchParams(window.location.search);
+    next.set("mode", "wallet");
+    next.set("wallet", walletAddress);
+    setSearchParams(next, { replace: true });
+  }, [setSearchParams]);
+
+  // Agent tools drive the same URL params the UI does.
+  useWebMcpTools(() => makeClaimerTools({
+    showHotspot: handleNavigateToHotspot,
+    showWallet: handleNavigateToWallet,
+  }), []);
 
   return (
     <div className="min-h-screen bg-surface">

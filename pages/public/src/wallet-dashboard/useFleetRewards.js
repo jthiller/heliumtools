@@ -1,8 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { fetchRewards } from "../lib/walletDashboardApi.js";
 
-const BATCH_SIZE = 50; // matches the worker's REWARDS_BATCH_SIZE (fewer requests/load)
+export const REWARDS_BATCH_SIZE = 50; // matches the worker's REWARDS_BATCH_SIZE (fewer requests/load)
 const CONCURRENCY = 3; // bounded fan-out — respects Helius RPS + the rate-limit cap
+
+/**
+ * The fleet rows /rewards batches are built from: filtered to claimable
+ * rows, sorted so batch composition is deterministic (the worker caches
+ * per batch by its sorted entity keys — stable batches = cache hits), and
+ * projected to the {entityKey, assetId} pairs the endpoint takes. Shared
+ * with the page's WebMCP tool so agent batches hit the same warm cache.
+ */
+export function eligibleRewardHotspots(hotspots) {
+  return (hotspots || [])
+    .filter((h) => h.entityKey && h.assetId)
+    .sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0))
+    .map((h) => ({ entityKey: h.entityKey, assetId: h.assetId }));
+}
 
 /**
  * Progressively fetch pending + lifetime rewards for an entire fleet via the
@@ -28,11 +42,7 @@ export default function useFleetRewards(wallet, hotspots) {
     // loaded and is genuinely empty. Only report `done` in the latter case so
     // cards show a loading state ("…") instead of a false settled "$0 / 0 earning".
     const fleetLoaded = Array.isArray(hotspots);
-    // Sort so the batch composition is deterministic across reloads — the worker
-    // caches per batch by its (sorted) entity keys, so stable batches = cache hits.
-    const eligible = (hotspots || [])
-      .filter((h) => h.entityKey && h.assetId)
-      .sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0));
+    const eligible = eligibleRewardHotspots(hotspots);
     if (!wallet || eligible.length === 0) {
       setState({
         rewardsByKey: {},
@@ -44,8 +54,8 @@ export default function useFleetRewards(wallet, hotspots) {
     }
 
     const batches = [];
-    for (let i = 0; i < eligible.length; i += BATCH_SIZE) {
-      batches.push(eligible.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < eligible.length; i += REWARDS_BATCH_SIZE) {
+      batches.push(eligible.slice(i, i + REWARDS_BATCH_SIZE));
     }
 
     setState({
@@ -66,10 +76,7 @@ export default function useFleetRewards(wallet, hotspots) {
         if (idx >= batches.length) return;
         const batch = batches[idx];
         try {
-          const results = await fetchRewards(
-            wallet,
-            batch.map((h) => ({ entityKey: h.entityKey, assetId: h.assetId })),
-          );
+          const results = await fetchRewards(wallet, batch);
           if (cancelled || runId !== runIdRef.current) return;
           for (const [key, val] of Object.entries(results || {})) {
             rewardsByKey[key] = val?.rewards || null;

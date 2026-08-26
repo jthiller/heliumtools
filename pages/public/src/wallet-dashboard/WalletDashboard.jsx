@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import StatusBanner from "../components/StatusBanner.jsx";
@@ -19,6 +19,8 @@ import DeploymentTimelineCard from "./cards/DeploymentTimelineCard.jsx";
 import TransactionsCard from "./cards/TransactionsCard.jsx";
 import FleetTableCard from "./cards/FleetTableCard.jsx";
 import { SEARCH_INPUT_CLASS } from "./cards/primitives.jsx";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeWalletDashboardTools } from "./webmcpTools.js";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const isValidWallet = (a) => typeof a === "string" && a.length >= 32 && a.length <= 44 && BASE58_RE.test(a);
@@ -128,6 +130,12 @@ export default function WalletDashboard() {
   const [govError, setGovError] = useState(null);
 
   const valid = isValidWallet(wallet);
+
+  // Ref keeps the registered tools reading the wallet currently shown
+  // without re-registering on navigation.
+  const walletRef = useRef(null);
+  walletRef.current = valid ? wallet : null;
+  useWebMcpTools(() => makeWalletDashboardTools(navigate, () => walletRef.current), []);
 
   useEffect(() => {
     if (!valid) return;

@@ -20,3 +20,11 @@ export function resolveSolanaWallet(input) {
     }
   }
 }
+
+/**
+ * The inverse: a Solana PublicKey's Helium B58 form (version 0, mainnet,
+ * ed25519 — the same underlying key, two encodings).
+ */
+export function toHeliumB58(pubkey) {
+  return new Address(0, 0, 1, pubkey.toBytes()).b58;
+}

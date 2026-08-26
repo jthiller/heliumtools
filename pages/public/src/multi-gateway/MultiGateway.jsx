@@ -57,6 +57,8 @@ import {
 } from "./packetWorkerClient.js";
 import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeMultiGatewayTools } from "./webmcpTools.js";
 import SpectrumChart from "./SpectrumChart.jsx";
 import { packetMatchesFilters } from "./filters.js";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -1950,6 +1952,13 @@ export default function MultiGateway() {
       setSearchParams({}, { replace: true });
     }
   };
+
+  // Agent tools read the live gateway list through a ref so the
+  // once-registered tools stay current across SSE updates; selectMac closes
+  // over only stable setters, so passing it directly is safe.
+  const gatewaysRef = useRef(gateways);
+  gatewaysRef.current = gateways;
+  useWebMcpTools(() => makeMultiGatewayTools(selectMac, () => gatewaysRef.current), []);
 
   // Fetch OUI → DevAddr mapping once
   useEffect(() => {

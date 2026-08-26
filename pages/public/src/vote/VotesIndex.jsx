@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ChevronRightIcon, CheckBadgeIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import { numberFormatter } from "../lib/utils.js";
 import { fetchProposals } from "../lib/voteApi.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeVoteTools } from "./webmcpTools.js";
 import { fmtVeHnt, fmtDate, StatusPill, isFinalStatus, isElection, electedChoices, choiceTone } from "./voteUi.jsx";
 
 // Blind index page (like /vote itself, deliberately not on the landing page):
@@ -107,8 +109,10 @@ function VoteCard({ p }) {
 }
 
 export default function VotesIndex() {
+  const navigate = useNavigate();
   const [proposals, setProposals] = useState(null);
   const [error, setError] = useState(null);
+  useWebMcpTools(() => makeVoteTools(navigate), []);
 
   const refresh = useCallback(async () => {
     try {

@@ -1,3 +1,5 @@
+import { dedupeAsync } from "./requestDedupe.js";
+
 export const API_BASE = import.meta.env.DEV
   ? "/api/oui-notifier"
   : "https://api.heliumtools.org/oui-notifier";
@@ -46,7 +48,9 @@ export async function fetchOuiIndex() {
   return Array.isArray(data?.orgs) ? data.orgs : [];
 }
 
-export async function fetchBalanceForOui(oui) {
+// Deduped: the WebMCP tool fetches and drives the lookup input, whose
+// debounced effect would otherwise repeat the identical request.
+export const fetchBalanceForOui = dedupeAsync(async (oui) => {
   const query = new URLSearchParams({ oui: String(oui) });
   const res = await fetch(`${API_BASE}/balance?${query.toString()}`);
   const data = await parseJson(res);
@@ -57,7 +61,7 @@ export async function fetchBalanceForOui(oui) {
     throw new Error(data.error);
   }
   return data;
-}
+});
 
 export async function subscribeToAlerts(payload) {
   const form = new URLSearchParams();

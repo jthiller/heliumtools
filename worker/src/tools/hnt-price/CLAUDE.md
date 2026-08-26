@@ -430,3 +430,7 @@ whose callers can tolerate a skipped refresh).
 - `KV` binding — snapshot, lock, rate-limit counters.
 - `HNT_PRICE_HUB` — Durable Object binding (`HntPriceHub`).
 - No new env vars, and no D1.
+
+## WebMCP
+
+WebMCP agents get `get-hnt-price` (the cached `/current` snapshot) site-wide via `pages/public/src/webmcp/siteTools.js`, plus `get-hnt-price-instant` (`/instant`) on the /hnt-price page from `pages/public/src/hnt-price/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.

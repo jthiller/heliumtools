@@ -239,3 +239,7 @@ Config in `config.js`; runtime values in `wrangler.jsonc` (vars) and `wrangler s
 - DB schema: `worker/schema.sql` (`users`, `subscriptions`, `ouis`, `oui_balances`, legacy `balances`)
 - Worker route registration + cron wiring: `worker/src/index.js`
 - Root architecture overview: `/CLAUDE.md`
+
+## WebMCP
+
+The OUI Notifier page registers agent tools `list-ouis`, `get-oui-balance` (also drives the lookup UI), and `prefill-alert-subscription` (fills the form; the user still clicks Subscribe) from `pages/public/src/oui-notifier/webmcpTools.js`. Being a separate Vite entry, it also registers the site-wide tools itself (`makeSiteTools(null)` in `Home.jsx`). Framework: `pages/public/src/webmcp/CLAUDE.md`.
