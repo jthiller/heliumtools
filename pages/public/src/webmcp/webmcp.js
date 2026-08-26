@@ -254,7 +254,8 @@ function wrapTool(tool) {
  *   name         required; 1-128 chars of [a-zA-Z0-9_.-]
  *   title        optional human-readable label
  *   description  required; natural language, written for the agent
- *   inputSchema  JSON Schema for the arguments (see SUPPORTED_KEYWORDS)
+ *   inputSchema  JSON Schema for the arguments (the enforced keyword
+ *                subset is listed on validateAgainstSchema's doc)
  *   annotations  { readOnlyHint } etc.
  *   validate     optional async domain check run after schema validation —
  *                return an error string to reject the arguments

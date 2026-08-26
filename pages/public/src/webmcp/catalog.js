@@ -26,7 +26,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Wallet Dashboard",
     summary:
-      "Read-only overview of any Helium wallet (Solana base58 or legacy Helium B58 address): token balances with USD values, Hotspot fleet with locations and activity, unclaimed rewards, governance positions, and recent transactions. No wallet connection needed.",
+      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and activity, unclaimed rewards, governance positions, and recent transactions. No wallet connection needed.",
     tools: [
       "open-wallet-dashboard",
       "get-wallet-summary",
