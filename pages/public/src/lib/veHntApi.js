@@ -1,5 +1,4 @@
 import { ApiError, parseJson, throwIfApiError } from "./api.js";
-import { dedupeAsync } from "./requestDedupe.js";
 
 export { ApiError };
 
@@ -7,15 +6,16 @@ export const API_BASE = import.meta.env.DEV
   ? "/api/ve-hnt"
   : "https://api.heliumtools.org/ve-hnt";
 
-// Deduped: the WebMCP tool fetches and drives the page input, whose
-// debounced effect would otherwise re-run this heavy analysis moments later.
-export const fetchPositions = dedupeAsync(async (wallet) => {
+// NOT deduped: the post-claim refresh re-reads this and must reflect the
+// claim immediately. The WebMCP tool avoids double-fetching by going
+// through the page's own load (see VeHnt.jsx analyzeWallet).
+export async function fetchPositions(wallet) {
   const query = new URLSearchParams({ wallet });
   const res = await fetch(`${API_BASE}/positions?${query.toString()}`);
   const data = await parseJson(res);
   throwIfApiError(res, data);
   return data;
-});
+}
 
 export async function fetchPositionEpochs(positionMint) {
   const query = new URLSearchParams({ positionMint });

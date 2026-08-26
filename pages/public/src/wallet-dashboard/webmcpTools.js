@@ -111,7 +111,13 @@ export function makeWalletDashboardTools(navigate, getWallet) {
         const decimalsByToken = {};
         const byHotspot = [];
         let errors = 0;
-        for (const results of await Promise.all(batches.map((batch) => fetchRewards(wallet, batch)))) {
+        let failedBatches = 0;
+        // allSettled, matching useFleetRewards: one slow or rate-limited
+        // batch shouldn't discard the others' totals.
+        const settled = await Promise.allSettled(batches.map((batch) => fetchRewards(wallet, batch)));
+        for (const outcome of settled) {
+          if (outcome.status === "rejected") { failedBatches++; continue; }
+          const results = outcome.value;
           for (const [entityKey, entry] of Object.entries(results || {})) {
             if (entry?.error) { errors++; continue; }
             const pending = {};
@@ -126,6 +132,9 @@ export function makeWalletDashboardTools(navigate, getWallet) {
             if (Object.keys(pending).length > 0) byHotspot.push({ entityKey, pending });
           }
         }
+        if (failedBatches === batches.length && batches.length > 0) {
+          throw new Error("every rewards batch failed — try again shortly");
+        }
         const totalPending = Object.fromEntries(
           Object.entries(totals).map(([token, amount]) => [token, formatBaseUnits(amount, decimalsByToken[token])]),
         );
@@ -137,6 +146,9 @@ export function makeWalletDashboardTools(navigate, getWallet) {
             ? { truncated: `rewards summed for ${counted.length} of ${eligible.length} Hotspots` }
             : {}),
           ...(errors ? { lookupErrors: errors } : {}),
+          ...(failedBatches
+            ? { failedBatches: `${failedBatches} of ${batches.length} reward batches failed — totals are partial` }
+            : {}),
           totalPending,
           hotspotsWithPending: byHotspot,
         };

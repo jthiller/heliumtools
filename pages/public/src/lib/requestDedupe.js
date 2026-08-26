@@ -17,8 +17,11 @@ export function dedupeAsync(fn, ttlMs = 3_000) {
     const promise = Promise.resolve().then(() => fn(...args));
     entries.set(key, { at: Date.now(), promise });
     // Failures aren't cached; callers still see the rejection on the
-    // promise they were handed.
-    promise.catch(() => entries.delete(key));
+    // promise they were handed. Only evict our own entry — a slow, expired
+    // call rejecting late must not delete a newer entry under the same key.
+    promise.catch(() => {
+      if (entries.get(key)?.promise === promise) entries.delete(key);
+    });
     return promise;
   };
 }

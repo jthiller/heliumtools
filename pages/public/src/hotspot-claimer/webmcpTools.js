@@ -1,5 +1,5 @@
 import { lookupHotspot, fetchRewards, claimRewards, fetchWalletHotspots } from "../lib/hotspotClaimerApi.js";
-import { ENTITY_KEY_SCHEMA, WALLET_ADDRESS_SCHEMA, capListField } from "../webmcp/helpers.js";
+import { ENTITY_KEY_SCHEMA, SOLANA_ADDRESS_SCHEMA, capListField } from "../webmcp/helpers.js";
 
 /** Cap wallet Hotspot lists in tool results; the UI still shows everything. */
 const WALLET_RESULT_CAP = 300;
@@ -69,7 +69,8 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       inputSchema: {
         type: "object",
         properties: {
-          address: { ...WALLET_ADDRESS_SCHEMA, description: "The owner wallet address (Solana base58 or Helium B58)." },
+          // Solana-only: the /wallet endpoint (and the page) reject Helium B58.
+          address: { ...SOLANA_ADDRESS_SCHEMA, description: "The owner's Solana wallet address (base58)." },
         },
         required: ["address"],
         additionalProperties: false,

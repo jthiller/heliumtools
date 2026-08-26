@@ -73,11 +73,16 @@ page component. Handlers that close over only stable setters can be
 passed directly; handlers that read changing state go through a ref (see
 MultiGateway's `gatewaysRef`).
 
-Tools that also fetch after driving the page: the page's own debounced
-effect repeats the same request moments later, so those read fetchers are
-wrapped in `lib/requestDedupe.js` `dedupeAsync` (short-TTL in-flight
-sharing). Never wrap mutations or reads that must reflect a mutation
-immediately (the claimer's rewards reads stay live).
+Tools that also fetch after driving the page would pay the request twice
+(the page's debounced effect repeats it). Two remedies, by situation:
+where the page exposes its own loader, route the tool through it so one
+fetch serves both the tool result and the render (ve-hnt's
+`analyzeWallet`); otherwise wrap the read fetcher in
+`lib/requestDedupe.js` `dedupeAsync` (short-TTL in-flight sharing — the
+oui balance and the claimer's lookup/wallet fetchers). Never dedupe
+mutations or reads that must reflect a mutation immediately (the
+claimer's rewards reads and ve-hnt's post-claim positions refresh stay
+live).
 
 ## Coverage
 

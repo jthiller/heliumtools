@@ -739,8 +739,12 @@ export default function HotspotMap() {
         if (merged.some((h) => h.coords)) {
           fitBounds(merged.filter((h) => h.coords));
         }
+        // Resolved entries on success, null on failure — the UI flows read
+        // the error state instead, but the agent tools need the signal.
+        return merged;
       } catch (err) {
         setError(err.message);
+        return null;
       } finally {
         setResolving(false);
         setProgress({ done: 0, total: 0 });
@@ -904,7 +908,8 @@ export default function HotspotMap() {
     walletCountRef.current += 1;
     const entityKeys = merged.map((h) => h.entityKey);
     const nameMap = new Map(merged.map((h) => [h.entityKey, h.name]));
-    await resolveKeys(entityKeys, nameMap, `Wallet ${walletCountRef.current}`);
+    const resolved = await resolveKeys(entityKeys, nameMap, `Wallet ${walletCountRef.current}`);
+    if (!resolved) throw new Error("failed to resolve Hotspot locations — the page shows the error");
     return {
       added: entityKeys.length,
       hotspots: merged.map((h) => ({ entityKey: h.entityKey, name: h.name, networks: h.networks })),
@@ -916,8 +921,9 @@ export default function HotspotMap() {
     if (valid.length === 0) throw new Error("No valid entity keys given.");
     setMode("keys");
     setKeysInput(valid.join("\n"));
-    await resolveKeys(valid);
-    return { requested: keys.length, plotted: valid.length };
+    const resolved = await resolveKeys(valid);
+    if (!resolved) throw new Error("failed to resolve Hotspot locations — the page shows the error");
+    return { requested: keys.length, plotted: resolved.length };
   }, [resolveKeys]);
 
   useWebMcpTools(() => makeHotspotMapTools({ addWalletToMap, addKeysToMap }), [addWalletToMap, addKeysToMap]);

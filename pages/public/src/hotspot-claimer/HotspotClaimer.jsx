@@ -1470,24 +1470,24 @@ export default function HotspotClaimer() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  // Functional updates: identity depends only on the stable setSearchParams,
-  // so these serve UI clicks and the once-registered agent tools alike.
+  // Read the LIVE params from window.location, not the functional updater:
+  // react-router's functional setSearchParams hands back closure-captured
+  // params, so the once-registered agent tools would see mount-time URL
+  // state and drop/resurrect the other param. window.location is always
+  // current, and preserving the other param this way serves UI clicks and
+  // agent tools alike.
   const handleNavigateToHotspot = useCallback((entityKey) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("mode", "hotspot");
-      next.set("key", entityKey);
-      return next;
-    }, { replace: true });
+    const next = new URLSearchParams(window.location.search);
+    next.set("mode", "hotspot");
+    next.set("key", entityKey);
+    setSearchParams(next, { replace: true });
   }, [setSearchParams]);
 
   const handleNavigateToWallet = useCallback((walletAddress) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("mode", "wallet");
-      next.set("wallet", walletAddress);
-      return next;
-    }, { replace: true });
+    const next = new URLSearchParams(window.location.search);
+    next.set("mode", "wallet");
+    next.set("wallet", walletAddress);
+    setSearchParams(next, { replace: true });
   }, [setSearchParams]);
 
   // Agent tools drive the same URL params the UI does.

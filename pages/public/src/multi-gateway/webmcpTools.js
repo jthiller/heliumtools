@@ -1,3 +1,4 @@
+import animalHash from "angry-purple-tiger";
 import { fetchGatewayPackets } from "../lib/multiGatewayApi.js";
 
 /** Cap packet lists in tool results; the UI streams everything live. */
@@ -32,7 +33,12 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute() {
-        return getGateways() || [];
+        // Gateway rows carry no name in state — the UI derives display
+        // names from the public key at render time; do the same here.
+        return (getGateways() || []).map((g) => ({
+          ...g,
+          name: g.public_key ? animalHash(g.public_key) : null,
+        }));
       },
     },
     {
@@ -54,7 +60,8 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       execute({ mac }) {
         const gateway = findGateway(mac);
         selectMac(gateway.mac);
-        return `Inspecting gateway ${gateway.name || gateway.mac}.`;
+        const name = gateway.public_key ? animalHash(gateway.public_key) : gateway.mac;
+        return `Inspecting gateway ${name} (${gateway.mac}).`;
       },
     },
     {

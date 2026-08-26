@@ -674,10 +674,6 @@ export default function VeHnt() {
 
   const { execute: load, result: data, error, loading } = useAsyncCallback(fetchPositions);
 
-  // setInput drives the page's own auto-query effect, so the agent's lookup
-  // renders in the UI exactly like a pasted address.
-  useWebMcpTools(() => makeVeHntTools(setInput), []);
-
   // Track the connected wallet so we can distinguish "initial connect"
   // from "user switched wallets in Phantom/Solflare". Initial connect only
   // autofills when the input is empty (so it doesn't clobber a pasted
@@ -726,6 +722,17 @@ export default function VeHnt() {
     lastLoadedRef.current = null;
     if (submittedWalletStr) load(submittedWalletStr);
   }, [submittedWalletStr, load]);
+
+  // Agent path: one fetch serves both the tool result and the rendered
+  // page. Marking lastLoadedRef first keeps the auto-query effect from
+  // firing a duplicate load for the same wallet.
+  const analyzeWallet = useCallback((wallet) => {
+    setInput(wallet);
+    const resolved = resolveSolanaWallet(wallet).toBase58();
+    lastLoadedRef.current = resolved;
+    return load(resolved);
+  }, [load]);
+  useWebMcpTools(() => makeVeHntTools(analyzeWallet), []);
 
   const [claimStates, setClaimStates] = useState({});
   const [claimErrors, setClaimErrors] = useState({});
