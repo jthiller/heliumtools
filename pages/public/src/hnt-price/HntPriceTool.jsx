@@ -4,6 +4,8 @@ import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import { formatTimeAgo, numberFormatter } from "../lib/utils.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { hntPriceTools } from "./webmcpTools.js";
 import {
   PUBLIC_API_BASE,
   PUBLIC_WS_BASE,
@@ -433,6 +435,7 @@ function PriceRow({ field, live, children }) {
 
 export default function HntPriceTool() {
   const { snapshot, status, lastFrameAt } = useHntPriceStream();
+  useWebMcpTools(() => hntPriceTools, []);
 
   return (
     <div className="min-h-screen bg-surface">

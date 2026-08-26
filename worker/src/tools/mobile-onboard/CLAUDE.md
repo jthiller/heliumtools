@@ -505,3 +505,7 @@ value, so it must exist on both sides or the option is unselectable.
   per-keystroke search without re-reading their usage policy.
 - **docs.helium.com** — vendor guides (linked, not fetched).
 - **helium.plus** — the enterprise-carrier path linked from the intro/banner.
+
+## WebMCP
+
+The /mobile-onboard page registers agent tools `get-mobile-onboard-fees` and `open-mobile-onboard-tab` from `pages/public/src/mobile-onboard/webmcpTools.js` — complementary to (not replacing) the existing agent-brief link-handoff flow. Framework: `pages/public/src/webmcp/CLAUDE.md`.

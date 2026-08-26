@@ -235,3 +235,7 @@ offset 104). Historically the legacy receiver feed
 - Price sourcing (oracle account decoding, Jupiter spot fallback, the snapshot
   payload shape) lives in `worker/src/tools/hnt-price/` — its `README.md` is the
   API reference for the snapshot fields `/price` maps from.
+
+## WebMCP
+
+The /dc-mint page registers agent tools `get-dc-mint-quote` (oracle-price conversion between HNT/DC/USD via `/price`) and `resolve-oui` (OUI number or payer key) from `pages/public/src/dc-mint/webmcpTools.js`. The burn itself stays wallet-signed in the UI. Framework: `pages/public/src/webmcp/CLAUDE.md`.

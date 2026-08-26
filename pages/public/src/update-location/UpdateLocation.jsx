@@ -6,9 +6,12 @@ import Header from "../components/Header.jsx";
 import { fetchFleet } from "../lib/walletDashboardApi.js";
 import HotspotList from "./HotspotList.jsx";
 import UpdatePanel from "./UpdatePanel.jsx";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { updateLocationTools } from "./webmcpTools.js";
 
 export default function UpdateLocation() {
   const { connected, publicKey } = useWallet();
+  useWebMcpTools(() => updateLocationTools, []);
 
   const [hotspots, setHotspots] = useState(null);
   const [loading, setLoading] = useState(false);

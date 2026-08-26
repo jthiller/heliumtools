@@ -4,6 +4,8 @@ import Header from "../components/Header.jsx";
 import OnboardWizard from "./OnboardWizard.jsx";
 import ManageTab from "./ManageTab.jsx";
 import VendorGuide from "./VendorGuide.jsx";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeMobileOnboardTools } from "./webmcpTools.js";
 
 const TABS = [
   { key: "onboard", label: "Onboard" },
@@ -26,6 +28,10 @@ export default function MobileOnboard() {
   const setTab = (key) => {
     setSearchParams(key === "onboard" ? {} : { tab: key }, { replace: true });
   };
+
+  // setTab only closes over the stable setSearchParams, so registering once
+  // is safe.
+  useWebMcpTools(() => makeMobileOnboardTools(setTab), []);
 
   return (
     <div className="min-h-screen bg-surface">

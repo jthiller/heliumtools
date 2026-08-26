@@ -152,3 +152,7 @@ considers the wallet incomplete), so the authoritative completeness check is
   `pages/public/src/lib/solanaAddress.js` is a generic Helium-B58-or-Solana
   resolver; if another frontend tool needs to accept legacy L1 addresses, reuse
   it rather than re-deriving.
+
+## WebMCP
+
+The /l1-migration page registers agent tools `derive-helium-addresses` (pure client-side conversion) and `migrate-l1-wallet` (the permissionless broadcast; mirrors outcome into the page banner) from `pages/public/src/l1-migration/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.

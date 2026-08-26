@@ -229,3 +229,7 @@ involved (it has no R2 binding); the browser fetches the `.img` directly.
   `bleProto.js` mirror its `add_gateway_v1` / `wifi_*` messages.
 - Helium onboarding server API: `https://onboarding.dewi.org/api/v3`.
 - `@helium/address` — Helium B58 address construction for the `add_gateway` owner/payer.
+
+## WebMCP
+
+The /iot-onboard page registers the read-only agent tool `get-iot-onboard-fees` from `pages/public/src/iot-onboard/webmcpTools.js`; BLE and wallet steps stay human-only. Framework: `pages/public/src/webmcp/CLAUDE.md`.

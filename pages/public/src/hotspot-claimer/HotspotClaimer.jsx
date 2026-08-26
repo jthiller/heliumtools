@@ -12,6 +12,8 @@ import {
 import Header from "../components/Header.jsx";
 import CopyButton from "../components/CopyButton.jsx";
 import Tooltip from "../components/Tooltip.jsx";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeClaimerTools } from "./webmcpTools.js";
 import {
   lookupHotspot,
   fetchRewards,
@@ -1475,6 +1477,23 @@ export default function HotspotClaimer() {
   const handleNavigateToWallet = useCallback((walletAddress) => {
     setSearchParams({ mode: "wallet", wallet: walletAddress, ...(urlKey ? { key: urlKey } : {}) }, { replace: true });
   }, [setSearchParams, urlKey]);
+
+  // Agent tools drive the same URL params the UI does. Functional updates
+  // close over only the stable setSearchParams, so registering once is safe.
+  useWebMcpTools(() => makeClaimerTools({
+    showHotspot: (key) => setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("mode", "hotspot");
+      next.set("key", key);
+      return next;
+    }, { replace: true }),
+    showWallet: (addr) => setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("mode", "wallet");
+      next.set("wallet", addr);
+      return next;
+    }, { replace: true }),
+  }), []);
 
   return (
     <div className="min-h-screen bg-surface">

@@ -108,3 +108,7 @@ re-implementing on-chain logic.
   `api-key` is parsed from it for the enhanced-transactions REST API.
 - `KV` binding — data caches (`wd:summary:*`, `wd:fleet:*`, `wd:rw:*`, `wd:prices`) and
   rate-limit counters (`rl:wd:*`).
+
+## WebMCP
+
+The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (capped at 200 rows), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.

@@ -360,3 +360,7 @@ ECC verification HTTP endpoint: `https://ecc-verifier.web.helium.io`.
   align. Changing one without the other tears the alignment.
 - **IDB cache is best-effort** (Safari worker-transaction stall bug). Never treat
   `cached_packets` as authoritative — the network batch always overwrites it.
+
+## WebMCP
+
+The /multi-gateway page registers agent tools `list-gateways` (live page state, no refetch), `select-gateway` (drives the inspector via `selectMac`), and `get-gateway-packets` (capped, default 25) from `pages/public/src/multi-gateway/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.

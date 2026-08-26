@@ -13,6 +13,8 @@ import {
 import { truncateString } from "../lib/utils.js";
 import { HNT_MINT, DC_MINT } from "./constants.js";
 import { confirmAndVerify, cleanInt, cleanDecimal } from "./solanaUtils.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { dcMintTools } from "./webmcpTools.js";
 
 const INPUT_CLASS = "w-full rounded-lg border border-border bg-surface-inset px-3 py-2 font-mono text-sm text-content-primary placeholder:text-content-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
@@ -543,6 +545,7 @@ function DelegateTab({ hntPrice, dcBalance, hasDcAta, onBalanceChange }) {
 export default function DcMintTool() {
   const { connected, publicKey: walletPubkey } = useWallet();
   const { connection } = useConnection();
+  useWebMcpTools(() => dcMintTools, []);
   const [tab, setTab] = useState("mint");
   const [hntPrice, setHntPrice] = useState(null);
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);

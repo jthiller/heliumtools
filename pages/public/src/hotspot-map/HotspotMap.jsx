@@ -20,6 +20,8 @@ import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/
 import { h3ToLatLng } from "../lib/h3.js";
 import { encodeKeys, decodeKeys } from "../lib/urlCompression.js";
 import useDarkMode from "../lib/useDarkMode.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeHotspotMapTools } from "./webmcpTools.js";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -891,6 +893,34 @@ export default function HotspotMap() {
     setWalletSelected(new Set());
     setWalletLabel("");
   }, []);
+
+  // Agent tools reuse the same resolveKeys pipeline as the manual flows.
+  // The wallet tool skips the preview step — the agent's ask already names
+  // the wallet, so everything it owns goes straight onto the map.
+  const addWalletToMap = useCallback(async (address) => {
+    const result = await fetchWalletHotspots(address);
+    if (!result.hotspots?.length) throw new Error("No Helium Hotspots found for this wallet.");
+    const merged = mergeByEntityKey(result.hotspots);
+    walletCountRef.current += 1;
+    const entityKeys = [...new Set(merged.map((h) => h.entityKey))];
+    const nameMap = new Map(merged.map((h) => [h.entityKey, h.name]));
+    await resolveKeys(entityKeys, nameMap, `Wallet ${walletCountRef.current}`);
+    return {
+      added: entityKeys.length,
+      hotspots: merged.map((h) => ({ entityKey: h.entityKey, name: h.name, networks: h.networks })),
+    };
+  }, [resolveKeys]);
+
+  const addKeysToMap = useCallback(async (keys) => {
+    const valid = keys.filter(isValidEntityKey);
+    if (valid.length === 0) throw new Error("No valid entity keys given.");
+    setMode("keys");
+    setKeysInput(valid.join("\n"));
+    await resolveKeys(valid);
+    return { requested: keys.length, plotted: valid.length };
+  }, [resolveKeys]);
+
+  useWebMcpTools(() => makeHotspotMapTools({ addWalletToMap, addKeysToMap }), [addWalletToMap, addKeysToMap]);
 
   const flyToHotspot = useCallback((hotspot) => {
     setSelectedHotspot(hotspot.entityKey);

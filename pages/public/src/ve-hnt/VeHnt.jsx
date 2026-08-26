@@ -18,6 +18,8 @@ import CopyButton from "../components/CopyButton.jsx";
 import StatusBanner from "../components/StatusBanner.jsx";
 import Tooltip from "../components/Tooltip.jsx";
 import { formatDuration, numberFormatter, truncateString } from "../lib/utils.js";
+import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
+import { makeVeHntTools } from "./webmcpTools.js";
 import { fetchPositions, fetchPositionEpochs, buildClaimTransactions } from "../lib/veHntApi.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -671,6 +673,10 @@ export default function VeHnt() {
   const canClaim = Boolean(connectedKey && submittedWalletStr && connectedStr === submittedWalletStr);
 
   const { execute: load, result: data, error, loading } = useAsyncCallback(fetchPositions);
+
+  // setInput drives the page's own auto-query effect, so the agent's lookup
+  // renders in the UI exactly like a pasted address.
+  useWebMcpTools(() => makeVeHntTools(setInput), []);
 
   // Track the connected wallet so we can distinguish "initial connect"
   // from "user switched wallets in Phantom/Solflare". Initial connect only

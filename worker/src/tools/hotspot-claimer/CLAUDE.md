@@ -94,3 +94,7 @@ cd worker && npx wrangler tail --env production --format json
 # Filter to claims only
 cd worker && npx wrangler tail --env production --format json | grep '"event":"claim"'
 ```
+
+## WebMCP
+
+The /hotspot-claimer page registers agent tools `lookup-hotspot` and `list-wallet-hotspots` (both also drive the ?mode=&key=/wallet= URL so the UI follows), `get-hotspot-rewards`, and `claim-hotspot-rewards` (the permissionless treasury-subsidized claim — the tool description tells agents to check pending rewards first) from `pages/public/src/hotspot-claimer/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.

@@ -45,3 +45,7 @@ Merged shape:   { entityKey, networks: ["iot", "mobile"], networkDetails: { iot:
 
 - `POST /hotspot-map/resolve` — Accepts `{ entityKeys: string[] }`, returns `{ hotspots: [...] }` with on-chain metadata
 - `GET /hotspot-map/wallet?address=...` — Returns all Hotspot entity keys + names for a Solana wallet
+
+## WebMCP
+
+The page registers agent tools `map-wallet-hotspots` (plots everything a wallet owns — skips the manual preview step) and `map-hotspots` (plot explicit entity keys) from `webmcpTools.js`, both reusing `resolveKeys`. Framework: `pages/public/src/webmcp/CLAUDE.md`.

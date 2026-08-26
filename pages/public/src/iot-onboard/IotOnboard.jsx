@@ -8,6 +8,8 @@ import MapGL, { Source, Layer } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Header from '../components/Header.jsx';
 import StatusBanner from '../components/StatusBanner.jsx';
+import { useWebMcpTools } from '../webmcp/useWebMcpTools.js';
+import { iotOnboardTools } from './webmcpTools.js';
 import CopyButton from '../components/CopyButton.jsx';
 import { signAndBroadcast } from '../dc-mint/solanaUtils.js';
 import { lookupHotspot, requestIssue, requestOnboard } from '../lib/iotOnboardApi.js';
@@ -970,6 +972,7 @@ function OnboardPanel({ ble }) {
 export default function IotOnboard() {
   const ble = useHotspotBle();
   const bleSupported = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+  useWebMcpTools(() => iotOnboardTools, []);
 
   return (
     <div className="min-h-screen bg-surface">

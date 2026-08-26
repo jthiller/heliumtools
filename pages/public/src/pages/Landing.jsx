@@ -238,6 +238,9 @@ export default function Landing() {
 
       <footer className="border-t border-border py-8">
         <p className="text-center text-sm text-content-tertiary">&copy; {new Date().getFullYear()} Helium Tools</p>
+        <p className="mt-1.5 text-center text-xs text-content-tertiary">
+          Agent-ready — every tool exposes <a href="https://webmachinelearning.github.io/webmcp/" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">WebMCP</a> actions to AI agents in supporting browsers.
+        </p>
       </footer>
     </div>
   );

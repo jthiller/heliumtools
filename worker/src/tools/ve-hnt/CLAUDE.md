@@ -144,3 +144,7 @@ is not open to us. Therefore:
 - `programs/helium-sub-daos/src/state.rs`
 - `programs/helium-sub-daos/src/instructions/delegation/claim_rewards_v1.rs`
 - `packages/voter-stake-registry-sdk/src/pdas.ts`
+
+## WebMCP
+
+The /ve-hnt page registers the agent tool `get-vehnt-positions` (fetches positions and drives the page input so the UI shows the same analysis) from `pages/public/src/ve-hnt/webmcpTools.js`; claiming stays wallet-signed. Framework: `pages/public/src/webmcp/CLAUDE.md`.

@@ -5,10 +5,16 @@ import { ArrowRightIcon } from '@heroicons/react/24/outline';
 import StatusBanner from '../components/StatusBanner.jsx';
 import { resolveSolanaWallet } from '../lib/solanaAddress.js';
 import { migrateWallet } from '../lib/l1MigrationApi.js';
+import { useWebMcpTools } from '../webmcp/useWebMcpTools.js';
+import { makeL1MigrationTools } from './webmcpTools.js';
 
 export const L1MigrationToolContent = () => {
     const [wallet, setWallet] = useState("");
     const [status, setStatus] = useState(null);
+
+    // Agent-run migrations mirror into the page: address into the input,
+    // outcome into the status banner.
+    useWebMcpTools(() => makeL1MigrationTools({ showWallet: setWallet, reportStatus: setStatus }), []);
 
     const solanaWallet = useMemo(() => resolveSolanaWallet(wallet), [wallet]);
 
