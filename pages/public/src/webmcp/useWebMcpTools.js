@@ -20,7 +20,9 @@ import { useEffect } from "react";
 export function useWebMcpTools(factory, deps = []) {
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
-    if (!document.modelContext && !navigator.modelContext) return undefined;
+    const hasWebMcp =
+      document.modelContext || (typeof navigator !== "undefined" && navigator.modelContext);
+    if (!hasWebMcp) return undefined;
     let cancelled = false;
     let cleanup;
     Promise.all([import("./webmcp.js"), factory()])
