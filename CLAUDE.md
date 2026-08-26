@@ -54,6 +54,13 @@ program IDs, cross-tool wiring, or documented behavior, update its `CLAUDE.md` i
 same commit (and add a row to the table below when you add a tool). The sections below
 in this root file are a higher-level overview.
 
+**A tool's WebMCP surface is part of its documented behavior.** Any change to a tool's
+endpoints, parameters, response shapes, or user flows — and any new or removed tool
+page — must update, in the same commit: the tool's `webmcpTools.js` (schemas and
+descriptions are the agent-facing API docs), `pages/public/src/webmcp/catalog.js`, and
+the `## WebMCP` section of the tool's `CLAUDE.md`. Follow the checklist in
+`pages/public/src/webmcp/CLAUDE.md`.
+
 | Tool | Doc | Notes |
 |---|---|---|
 | Wallet Dashboard | `worker/src/tools/wallet-dashboard/CLAUDE.md` | Read-only aggregation over other tools |

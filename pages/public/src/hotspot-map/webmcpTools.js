@@ -28,8 +28,17 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
         required: ["address"],
         additionalProperties: false,
       },
-      execute({ address }) {
-        return addWalletToMap(address);
+      async execute({ address }) {
+        const result = await addWalletToMap(address);
+        // Everything is plotted; only the returned list is capped.
+        if (result.hotspots.length > 300) {
+          return {
+            ...result,
+            hotspots: result.hotspots.slice(0, 300),
+            truncated: `listing 300 of ${result.hotspots.length} plotted Hotspots`,
+          };
+        }
+        return result;
       },
     },
     {

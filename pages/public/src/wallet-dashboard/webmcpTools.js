@@ -1,5 +1,10 @@
-import { fetchSummary, fetchFleet, fetchTransactions } from "../lib/walletDashboardApi.js";
+import { fetchSummary, fetchFleet, fetchRewards, fetchTransactions } from "../lib/walletDashboardApi.js";
 import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+
+/** Matches the worker's REWARDS_BATCH_SIZE (see useFleetRewards.js). */
+const REWARDS_BATCH_SIZE = 50;
+/** Two batches keeps the tool bounded on maker-sized fleets. */
+const REWARDS_HOTSPOT_CAP = 100;
 
 const ADDRESS_SCHEMA = {
   type: "string",
@@ -85,6 +90,57 @@ export function makeWalletDashboardTools(navigate, getWallet) {
           };
         }
         return data;
+      },
+    },
+    {
+      name: "get-wallet-rewards",
+      title: "Get wallet unclaimed rewards",
+      description:
+        `Pending (unclaimed) Hotspot rewards across a wallet's fleet, totaled per token and listed per Hotspot where nonzero. Amounts are in base units (IOT/MOBILE: 6 decimals, HNT: 8). Served from a ~15min cache — rewards distribute roughly daily. Covers up to ${REWARDS_HOTSPOT_CAP} Hotspots; claim via the /hotspot-claimer page's tools.`,
+      inputSchema: {
+        type: "object",
+        properties: { address: ADDRESS_SCHEMA },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute({ address }) {
+        const wallet = resolve(address);
+        if (!wallet) return { content: [{ type: "text", text: "No wallet given and none loaded in the dashboard — pass `address`." }], isError: true };
+        const fleet = await fetchFleet(wallet);
+        // Same filter + sort as useFleetRewards: the worker caches per batch
+        // by its sorted entity keys, so stable batches mean cache hits.
+        const eligible = (fleet?.hotspots || [])
+          .filter((h) => h.entityKey && h.assetId)
+          .sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0));
+        const counted = eligible.slice(0, REWARDS_HOTSPOT_CAP);
+        const totals = {};
+        const byHotspot = [];
+        let errors = 0;
+        for (let i = 0; i < counted.length; i += REWARDS_BATCH_SIZE) {
+          const results = await fetchRewards(wallet, counted.slice(i, i + REWARDS_BATCH_SIZE));
+          for (const [entityKey, entry] of Object.entries(results || {})) {
+            if (entry?.error) { errors++; continue; }
+            const pending = {};
+            for (const [token, tokenResult] of Object.entries(entry?.rewards || {})) {
+              const amount = BigInt(tokenResult?.pending || "0");
+              if (amount <= 0n) continue;
+              pending[token] = amount.toString();
+              totals[token] = ((totals[token] ? BigInt(totals[token]) : 0n) + amount).toString();
+            }
+            if (Object.keys(pending).length > 0) byHotspot.push({ entityKey, pending });
+          }
+        }
+        return {
+          wallet,
+          fleetSize: eligible.length,
+          hotspotsCounted: counted.length,
+          ...(eligible.length > counted.length
+            ? { truncated: `rewards summed for ${counted.length} of ${eligible.length} Hotspots` }
+            : {}),
+          ...(errors ? { lookupErrors: errors } : {}),
+          totalPending: totals,
+          hotspotsWithPending: byHotspot,
+        };
       },
     },
     {

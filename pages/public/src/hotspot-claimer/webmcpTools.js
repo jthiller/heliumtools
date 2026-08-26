@@ -1,6 +1,9 @@
 import { lookupHotspot, fetchRewards, claimRewards, fetchWalletHotspots } from "../lib/hotspotClaimerApi.js";
 import { BASE58_PATTERN } from "../webmcp/webmcp.js";
 
+/** Cap wallet Hotspot lists in tool results; the UI still shows everything. */
+const WALLET_RESULT_CAP = 300;
+
 const ENTITY_KEY_SCHEMA = {
   type: "string",
   pattern: BASE58_PATTERN,
@@ -86,9 +89,18 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ address }) {
+      async execute({ address }) {
         showWallet(address);
-        return fetchWalletHotspots(address);
+        const result = await fetchWalletHotspots(address);
+        const hotspots = result?.hotspots;
+        if (Array.isArray(hotspots) && hotspots.length > WALLET_RESULT_CAP) {
+          return {
+            ...result,
+            hotspots: hotspots.slice(0, WALLET_RESULT_CAP),
+            truncated: `showing ${WALLET_RESULT_CAP} of ${hotspots.length} Hotspots (the page UI lists all)`,
+          };
+        }
+        return result;
       },
     },
   ];

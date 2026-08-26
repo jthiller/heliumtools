@@ -58,6 +58,53 @@ Pure API tools export an array; tools that drive the page export a
 Register with one `useWebMcpTools(() => makeXTools(...), [])` call in the
 page component; unstable handlers go through refs (see MultiGateway).
 
+## Coverage
+
+Every reachable page registers at least the site-wide tools. The SPA
+mounts `SiteTools` outside `<Routes>`, so unmatched (404) paths keep them
+too; the two oui-notifier entries register them locally.
+
+| Surface | Page tools |
+|---|---|
+| `/` (landing) | site tools only |
+| `/wallet-dashboard[/:address]` | open-wallet-dashboard, get-wallet-summary, get-wallet-fleet, get-wallet-rewards, get-wallet-transactions |
+| `/hnt-price` | get-hnt-price-instant |
+| `/hotspot-claimer` | lookup-hotspot, get-hotspot-rewards, claim-hotspot-rewards, list-wallet-hotspots |
+| `/ve-hnt` | get-vehnt-positions |
+| `/vote[/:proposalId]`, `/votes` | list-vote-proposals, get-vote-details, get-voter-history, open-vote |
+| `/dc-mint` | get-dc-mint-quote, resolve-oui |
+| `/oui-notifier/` (own entry) | list-ouis, get-oui-balance, prefill-alert-subscription |
+| `/oui-notifier/verify/` (own entry) | site tools only (terminal confirmation page) |
+| `/iot-onboard` | get-iot-onboard-fees |
+| `/mobile-onboard` | get-mobile-onboard-fees, open-mobile-onboard-tab |
+| `/update-location` | get-hotspot-onchain-info |
+| `/multi-gateway` | list-gateways, select-gateway, get-gateway-packets |
+| `/hotspot-map` | map-wallet-hotspots, map-hotspots |
+| `/l1-migration` | derive-helium-addresses, migrate-l1-wallet |
+| `/dc-purchase`, `/dc-purchase/order/:id` | none — tool is disabled ("Coming Soon"); add tools when it ships |
+
+Intentionally not exposed: BLE flows (iot-onboard scanning/connecting —
+Web Bluetooth requires a user gesture), every wallet-signing action, and
+iot-onboard's `/lookup` (its inputs come from mid-BLE-flow reads).
+
+## Checklist: adding or changing tools
+
+**Adding a tool page** (do all four, same commit):
+1. Create `src/<tool>/webmcpTools.js` — an exported array for pure API
+   tools, a `make*Tools(callbacks)` factory when tools drive page state.
+2. Register it with one `useWebMcpTools(...)` call in the page component.
+3. Add the page to `catalog.js` (path, entry, agent-facing summary, tool
+   names) and to the Coverage table above.
+4. Add a `## WebMCP` section to the tool's own CLAUDE.md.
+
+**Changing an existing tool** (endpoints, params, response shape, flows):
+- Update its `webmcpTools.js` in the same commit — the descriptions and
+  `inputSchema` are the agent's API docs, so a stale schema is a bug, not
+  a doc nit.
+- Mirror renamed/added/removed tool names in `catalog.js`, the Coverage
+  table, and the tool's CLAUDE.md `## WebMCP` section.
+- Removing a page: delete its catalog entry and Coverage row too.
+
 ## Validation contract
 
 `registerWebMcpTools` wraps every `execute`: arguments are normalized

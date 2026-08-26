@@ -31,6 +31,7 @@ export const TOOL_CATALOG = [
       "open-wallet-dashboard",
       "get-wallet-summary",
       "get-wallet-fleet",
+      "get-wallet-rewards",
       "get-wallet-transactions",
     ],
   },

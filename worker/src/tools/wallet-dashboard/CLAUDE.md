@@ -111,4 +111,4 @@ re-implementing on-chain logic.
 
 ## WebMCP
 
-The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (capped at 200 rows), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.
+The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (capped at 200 rows), `get-wallet-rewards` (fleet-wide pending totals via the cached `/rewards` batches — same filter/sort as `useFleetRewards` so batches stay cache-stable; capped at 100 Hotspots), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.

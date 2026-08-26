@@ -35,6 +35,9 @@ export const dcMintTools = [
     async execute({ hnt_amount, dc_amount, usd_amount }) {
       const price = await fetchHntPrice();
       const { dc_per_hnt, dc_per_usd } = price;
+      if (!(dc_per_hnt > 0) || !(dc_per_usd > 0)) {
+        throw new Error("price feed returned no usable HNT price — try again shortly");
+      }
       let dc;
       if (hnt_amount !== undefined) dc = hnt_amount * dc_per_hnt;
       else if (dc_amount !== undefined) dc = dc_amount;
