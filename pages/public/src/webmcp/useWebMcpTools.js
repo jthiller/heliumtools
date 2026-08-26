@@ -25,7 +25,9 @@ export function useWebMcpTools(factory, deps = []) {
     if (!hasWebMcp) return undefined;
     let cancelled = false;
     let cleanup;
-    Promise.all([import("./webmcp.js"), factory()])
+    // Promise.resolve().then(factory) turns a synchronous factory throw
+    // into a rejection for the .catch below, instead of crashing the mount.
+    Promise.all([import("./webmcp.js"), Promise.resolve().then(factory)])
       .then(([core, tools]) => {
         if (!cancelled) cleanup = core.registerWebMcpTools(tools || []);
       })
