@@ -82,7 +82,10 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       async execute({ mac, limit }) {
         const data = await fetchGatewayPackets(mac);
         const packets = Array.isArray(data) ? data : data?.packets || [];
-        return { total: packets.length, packets: packets.slice(-limit) };
+        // Upstream order isn't guaranteed (the chart pipeline sorts too),
+        // so order by timestamp before taking the newest `limit`.
+        const sorted = [...packets].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+        return { total: sorted.length, packets: sorted.slice(-limit) };
       },
     },
   ];

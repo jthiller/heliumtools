@@ -40,10 +40,19 @@ export function getModelContext() {
 // compatible across implementations that don't auto-wrap return values.
 // ---------------------------------------------------------------------------
 
-/** Wrap any value as a successful MCP text result. */
+/** Wrap any value as a successful MCP text result. Always yields a string
+ * `text`: JSON.stringify returns undefined for undefined and throws on
+ * BigInt, either of which would corrupt the result of a tool that itself
+ * succeeded. */
 export function toolResult(value) {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return { content: [{ type: "text", text }] };
+  if (typeof value === "string") return { content: [{ type: "text", text: value }] };
+  let text;
+  try {
+    text = JSON.stringify(value, (key, v) => (typeof v === "bigint" ? v.toString() : v));
+  } catch {
+    text = null;
+  }
+  return { content: [{ type: "text", text: typeof text === "string" ? text : String(value) }] };
 }
 
 /** Wrap a message as an MCP error result the agent can read and retry on. */
