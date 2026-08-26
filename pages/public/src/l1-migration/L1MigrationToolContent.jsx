@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useAsyncCallback } from 'react-async-hook';
-import Address from '@helium/address';
 import { ArrowRightIcon } from '@heroicons/react/24/outline';
 import StatusBanner from '../components/StatusBanner.jsx';
-import { resolveSolanaWallet } from '../lib/solanaAddress.js';
+import { resolveSolanaWallet, toHeliumB58 } from '../lib/solanaAddress.js';
 import { migrateWallet } from '../lib/l1MigrationApi.js';
 import { useWebMcpTools } from '../webmcp/useWebMcpTools.js';
 import { makeL1MigrationTools } from './webmcpTools.js';
@@ -21,7 +20,7 @@ export const L1MigrationToolContent = () => {
     const heliumWallet = useMemo(() => {
         if (!solanaWallet) return null;
         try {
-            return new Address(0, 0, 1, solanaWallet.toBytes());
+            return toHeliumB58(solanaWallet);
         } catch (e) {
             console.error("Error creating helium address", e);
             return null;
@@ -74,7 +73,7 @@ export const L1MigrationToolContent = () => {
             <div className="grid gap-px bg-border rounded-xl overflow-hidden">
                 <div className="bg-surface-raised p-4">
                     <p className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-1">Helium Address</p>
-                    <p className="font-mono text-sm text-content break-all">{heliumWallet?.b58 || '—'}</p>
+                    <p className="font-mono text-sm text-content break-all">{heliumWallet || '—'}</p>
                 </div>
                 <div className="bg-surface-raised p-4">
                     <p className="text-sm font-mono uppercase tracking-widest text-content-tertiary mb-1">Solana Address</p>

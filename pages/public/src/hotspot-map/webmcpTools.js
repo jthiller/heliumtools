@@ -1,4 +1,7 @@
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { SOLANA_ADDRESS_SCHEMA, ENTITY_KEY_SCHEMA, capListField } from "../webmcp/helpers.js";
+
+/** Cap the returned list; everything is still plotted on the map. */
+const MAP_RESULT_CAP = 300;
 
 /**
  * WebMCP tools for /hotspot-map. Both callbacks are provided by the page
@@ -17,28 +20,13 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
       inputSchema: {
         type: "object",
         properties: {
-          address: {
-            type: "string",
-            pattern: BASE58_PATTERN,
-            minLength: 32,
-            maxLength: 44,
-            description: "The owner's Solana wallet address (base58).",
-          },
+          address: { ...SOLANA_ADDRESS_SCHEMA, description: "The owner's Solana wallet address (base58)." },
         },
         required: ["address"],
         additionalProperties: false,
       },
       async execute({ address }) {
-        const result = await addWalletToMap(address);
-        // Everything is plotted; only the returned list is capped.
-        if (result.hotspots.length > 300) {
-          return {
-            ...result,
-            hotspots: result.hotspots.slice(0, 300),
-            truncated: `listing 300 of ${result.hotspots.length} plotted Hotspots`,
-          };
-        }
-        return result;
+        return capListField(await addWalletToMap(address), "hotspots", MAP_RESULT_CAP);
       },
     },
     {
@@ -53,7 +41,7 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
             type: "array",
             minItems: 1,
             maxItems: 500,
-            items: { type: "string", pattern: BASE58_PATTERN, minLength: 20, maxLength: 500 },
+            items: ENTITY_KEY_SCHEMA,
             description: "Hotspot entity keys (base58).",
           },
         },

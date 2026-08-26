@@ -1,5 +1,5 @@
 import { fetchPositions } from "../lib/veHntApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { WALLET_ADDRESS_SCHEMA } from "../webmcp/helpers.js";
 
 /**
  * WebMCP tools for /ve-hnt. `showWallet` pushes the address into the
@@ -17,13 +17,7 @@ export function makeVeHntTools(showWallet) {
       inputSchema: {
         type: "object",
         properties: {
-          wallet: {
-            type: "string",
-            pattern: BASE58_PATTERN,
-            minLength: 32,
-            maxLength: 60,
-            description: "Wallet address (Solana base58 or Helium B58).",
-          },
+          wallet: WALLET_ADDRESS_SCHEMA,
         },
         required: ["wallet"],
         additionalProperties: false,

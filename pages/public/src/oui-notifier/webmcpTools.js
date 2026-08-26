@@ -2,12 +2,14 @@ import { fetchOuiIndex, fetchBalanceForOui } from "../lib/api.js";
 
 /**
  * WebMCP tools for the OUI Notifier page (its own Vite entry — no
- * router). `showOui` pushes an OUI into the page's lookup input, which
+ * router). `getOuis` reads the OUI index the page already fetched on
+ * mount (shared context — refetched only if it isn't loaded yet);
+ * `showOui` pushes an OUI into the page's lookup input, which
  * auto-fetches and renders; `prefillSubscription` fills the alert form but
  * deliberately does NOT submit — subscribing sends a verification email,
  * so the user clicks Subscribe themselves.
  */
-export function makeOuiNotifierTools({ showOui, prefillSubscription }) {
+export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) {
   const OUI_SCHEMA = { type: "integer", minimum: 0, description: "The OUI number." };
 
   return [
@@ -19,7 +21,8 @@ export function makeOuiNotifierTools({ showOui, prefillSubscription }) {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute() {
-        return fetchOuiIndex();
+        const loaded = getOuis();
+        return loaded?.length ? loaded : fetchOuiIndex();
       },
     },
     {

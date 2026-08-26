@@ -1,15 +1,16 @@
-import Address from "@helium/address";
-import { resolveSolanaWallet } from "../lib/solanaAddress.js";
+import { resolveSolanaWallet, toHeliumB58 } from "../lib/solanaAddress.js";
 import { migrateWallet } from "../lib/l1MigrationApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { WALLET_ADDRESS_SCHEMA } from "../webmcp/helpers.js";
 
 const ADDRESS_SCHEMA = {
-  type: "string",
-  pattern: BASE58_PATTERN,
-  minLength: 32,
-  maxLength: 60,
+  ...WALLET_ADDRESS_SCHEMA,
   description: "Legacy Helium B58 address or its Solana base58 form.",
 };
+
+// Shared domain check: base58 shape passes the schema, but the address
+// must decode as a real Helium or Solana key.
+const validateAddress = ({ address }) =>
+  resolveSolanaWallet(address) ? null : `"${address}" is not a valid Helium or Solana address`;
 
 /**
  * WebMCP tools for /l1-migration. Migration is the one on-chain action on
@@ -33,15 +34,10 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
+      validate: validateAddress,
       execute({ address }) {
         const solana = resolveSolanaWallet(address);
-        if (!solana) {
-          return { content: [{ type: "text", text: `"${address}" is not a valid Helium or Solana address.` }], isError: true };
-        }
-        return {
-          solana: solana.toBase58(),
-          helium: new Address(0, 0, 1, solana.toBytes()).b58,
-        };
+        return { solana: solana.toBase58(), helium: toHeliumB58(solana) };
       },
     },
     {
@@ -55,13 +51,10 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
         required: ["address"],
         additionalProperties: false,
       },
+      validate: validateAddress,
       async execute({ address }) {
-        const solana = resolveSolanaWallet(address);
-        if (!solana) {
-          return { content: [{ type: "text", text: `"${address}" is not a valid Helium or Solana address.` }], isError: true };
-        }
         showWallet(address);
-        const result = await migrateWallet(solana.toBase58());
+        const result = await migrateWallet(resolveSolanaWallet(address).toBase58());
         reportStatus({
           tone: result.success ? (result.transactionsProcessed === 0 ? "info" : "success") : "error",
           message: result.message,

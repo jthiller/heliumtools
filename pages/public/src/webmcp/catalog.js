@@ -145,6 +145,13 @@ export const TOOL_CATALOG = [
   },
 ];
 
+/**
+ * The names `makeSiteTools` registers on every page. Kept here so the
+ * core's DEV drift warning can build the full set of promised tool names
+ * from one module.
+ */
+export const SITE_TOOL_NAMES = ["list-helium-tools", "open-helium-tool", "get-hnt-price"];
+
 /** Catalog entry for a path, or null. */
 export function catalogEntry(path) {
   return TOOL_CATALOG.find((t) => t.path === path) || null;

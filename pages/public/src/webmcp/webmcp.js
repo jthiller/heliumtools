@@ -17,20 +17,7 @@
  * can act on, never as thrown exceptions.
  */
 
-/**
- * Base58 alphabet pattern for `inputSchema` string fields holding Solana
- * pubkeys, Helium B58 addresses, or Hotspot entity keys. Pair with
- * minLength/maxLength per field; deeper checks belong in a tool's
- * `validate` hook.
- */
-export const BASE58_PATTERN = "^[1-9A-HJ-NP-Za-km-z]+$";
-
-/** The subset of JSON Schema keywords `validateAgainstSchema` enforces. */
-const SUPPORTED_KEYWORDS = [
-  "type", "properties", "required", "additionalProperties", "enum", "const",
-  "pattern", "minLength", "maxLength", "minimum", "maximum",
-  "exclusiveMinimum", "exclusiveMaximum", "items", "minItems", "maxItems",
-];
+import { TOOL_CATALOG, SITE_TOOL_NAMES } from "./catalog.js";
 
 /**
  * Feature-detect the Model Context entry point. Returns null when the
@@ -45,11 +32,6 @@ export function getModelContext() {
     return navigator.modelContext;
   }
   return null;
-}
-
-/** True when this browser exposes any WebMCP surface. */
-export function isWebMcpAvailable() {
-  return getModelContext() !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +98,12 @@ export function normalizeInput(schema, input) {
 }
 
 /**
- * Validate `value` against a JSON Schema subset (see SUPPORTED_KEYWORDS).
- * Returns an array of human-readable error strings; empty means valid.
- * Unknown keywords are ignored, matching JSON Schema semantics.
+ * Validate `value` against a JSON Schema subset. Enforced keywords: type,
+ * properties, required, additionalProperties, enum, const, pattern,
+ * minLength/maxLength, minimum/maximum, exclusiveMinimum/exclusiveMaximum,
+ * items, minItems/maxItems. Returns an array of human-readable error
+ * strings; empty means valid. Unknown keywords are ignored, matching JSON
+ * Schema semantics.
  */
 export function validateAgainstSchema(schema, value, path = "input") {
   const errors = [];
@@ -262,21 +247,34 @@ function wrapTool(tool) {
  *   description  required; natural language, written for the agent
  *   inputSchema  JSON Schema for the arguments (see SUPPORTED_KEYWORDS)
  *   annotations  { readOnlyHint } etc.
- *   validate     optional async domain check run after schema validation
+ *   validate     optional async domain check run after schema validation —
+ *                return an error string to reject the arguments
  *   execute      (input, { signal }) => result; may return any JSON value,
- *                a string, or a full MCP { content } object
+ *                a string, or a full MCP { content } object. Signal
+ *                failures by throwing — thrown errors become isError
+ *                results ("<name> failed: <message>").
  */
 export function registerWebMcpTools(tools) {
   const mc = getModelContext();
   if (!mc || tools.length === 0) return () => {};
 
   if (import.meta.env.DEV) {
+    // Names the catalog promises agents (per-page lists + the site tools).
+    // Registering a name outside this set means catalog.js drifted from
+    // the actual registrations — the checklist in CLAUDE.md was missed.
+    const catalogNames = new Set([
+      ...SITE_TOOL_NAMES,
+      ...TOOL_CATALOG.flatMap((entry) => entry.tools),
+    ]);
     for (const tool of tools) {
       if (!/^[a-zA-Z0-9_.-]{1,128}$/.test(tool.name)) {
         warnOnce(`name:${tool.name}`, `tool name "${tool.name}" is not a valid MCP tool name`);
       }
       if (activeToolNames.has(tool.name)) {
         warnOnce(`dup:${tool.name}`, `tool "${tool.name}" is already registered on this page`);
+      }
+      if (!catalogNames.has(tool.name)) {
+        warnOnce(`catalog:${tool.name}`, `tool "${tool.name}" is not listed in webmcp/catalog.js — update the catalog (see webmcp/CLAUDE.md checklist)`);
       }
     }
   }

@@ -1,17 +1,18 @@
 import { fetchSummary, fetchFleet, fetchRewards, fetchTransactions } from "../lib/walletDashboardApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { SOLANA_ADDRESS_SCHEMA, capListField } from "../webmcp/helpers.js";
+import { REWARD_DECIMALS } from "./format.js";
+import { REWARDS_BATCH_SIZE, eligibleRewardHotspots } from "./useFleetRewards.js";
 
-/** Matches the worker's REWARDS_BATCH_SIZE (see useFleetRewards.js). */
-const REWARDS_BATCH_SIZE = 50;
-/** Two batches keeps the tool bounded on maker-sized fleets. */
+const ADDRESS_SCHEMA = {
+  ...SOLANA_ADDRESS_SCHEMA,
+  description:
+    "Solana wallet address (base58). Optional when the dashboard already shows a wallet — defaults to that one.",
+};
+
+/** Cap fleet lists in tool results; the UI still shows everything. */
+const FLEET_RESULT_CAP = 200;
+/** Two reward batches keeps the tool bounded on maker-sized fleets. */
 const REWARDS_HOTSPOT_CAP = 100;
-
-/**
- * Fallback per-token decimals for reward amounts. The worker's token
- * results normally carry their own `decimals`; this only covers entries
- * that lack it.
- */
-const REWARD_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
 
 /** Format a base-unit BigInt as a decimal token string, trimming zeros. */
 function formatBaseUnits(amount, decimals) {
@@ -21,18 +22,6 @@ function formatBaseUnits(amount, decimals) {
   const frac = s.slice(-decimals).replace(/0+$/, "");
   return frac ? `${whole}.${frac}` : whole;
 }
-
-const ADDRESS_SCHEMA = {
-  type: "string",
-  pattern: BASE58_PATTERN,
-  minLength: 32,
-  maxLength: 44,
-  description:
-    "Solana wallet address (base58). Optional when the dashboard already shows a wallet — defaults to that one.",
-};
-
-/** Cap fleet lists in tool results; the UI still shows everything. */
-const FLEET_RESULT_CAP = 200;
 
 /**
  * WebMCP tools for /wallet-dashboard. The URL is the page's source of
@@ -44,9 +33,12 @@ const FLEET_RESULT_CAP = 200;
  * live getter so tools registered once stay correct across navigation.
  */
 export function makeWalletDashboardTools(navigate, getWallet) {
-  // Resolve the explicit address argument or fall back to the wallet the
-  // page is showing; returns an MCP-friendly error string when neither.
-  const resolve = (address) => address || getWallet() || null;
+  // The explicit address argument, or the wallet the page is showing.
+  const requireWallet = (address) => {
+    const wallet = address || getWallet();
+    if (!wallet) throw new Error("no wallet given and none loaded in the dashboard — pass `address`");
+    return wallet;
+  };
 
   return [
     {
@@ -56,7 +48,7 @@ export function makeWalletDashboardTools(navigate, getWallet) {
         "Show a wallet in the dashboard UI: balances, fleet map, rewards, governance, and activity all load for the user to see. Use the get-* tools to read the underlying data.",
       inputSchema: {
         type: "object",
-        properties: { address: { ...ADDRESS_SCHEMA, description: "Solana wallet address (base58) to display." } },
+        properties: { address: { ...SOLANA_ADDRESS_SCHEMA, description: "Solana wallet address (base58) to display." } },
         required: ["address"],
         additionalProperties: false,
       },
@@ -76,10 +68,8 @@ export function makeWalletDashboardTools(navigate, getWallet) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      async execute({ address }) {
-        const wallet = resolve(address);
-        if (!wallet) return { content: [{ type: "text", text: "No wallet given and none loaded in the dashboard — pass `address`." }], isError: true };
-        return fetchSummary(wallet);
+      execute({ address }) {
+        return fetchSummary(requireWallet(address));
       },
     },
     {
@@ -94,18 +84,7 @@ export function makeWalletDashboardTools(navigate, getWallet) {
       },
       annotations: { readOnlyHint: true },
       async execute({ address }) {
-        const wallet = resolve(address);
-        if (!wallet) return { content: [{ type: "text", text: "No wallet given and none loaded in the dashboard — pass `address`." }], isError: true };
-        const data = await fetchFleet(wallet);
-        const hotspots = data?.hotspots;
-        if (Array.isArray(hotspots) && hotspots.length > FLEET_RESULT_CAP) {
-          return {
-            ...data,
-            hotspots: hotspots.slice(0, FLEET_RESULT_CAP),
-            truncated: `showing ${FLEET_RESULT_CAP} of ${hotspots.length} Hotspots`,
-          };
-        }
-        return data;
+        return capListField(await fetchFleet(requireWallet(address)), "hotspots", FLEET_RESULT_CAP);
       },
     },
     {
@@ -120,28 +99,26 @@ export function makeWalletDashboardTools(navigate, getWallet) {
       },
       annotations: { readOnlyHint: true },
       async execute({ address }) {
-        const wallet = resolve(address);
-        if (!wallet) return { content: [{ type: "text", text: "No wallet given and none loaded in the dashboard — pass `address`." }], isError: true };
+        const wallet = requireWallet(address);
         const fleet = await fetchFleet(wallet);
-        // Same filter + sort as useFleetRewards: the worker caches per batch
-        // by its sorted entity keys, so stable batches mean cache hits.
-        const eligible = (fleet?.hotspots || [])
-          .filter((h) => h.entityKey && h.assetId)
-          .sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0));
+        const eligible = eligibleRewardHotspots(fleet?.hotspots);
         const counted = eligible.slice(0, REWARDS_HOTSPOT_CAP);
+        const batches = [];
+        for (let i = 0; i < counted.length; i += REWARDS_BATCH_SIZE) {
+          batches.push(counted.slice(i, i + REWARDS_BATCH_SIZE));
+        }
         const totals = {}; // token -> BigInt base units (exact summing)
         const decimalsByToken = {};
         const byHotspot = [];
         let errors = 0;
-        for (let i = 0; i < counted.length; i += REWARDS_BATCH_SIZE) {
-          const results = await fetchRewards(wallet, counted.slice(i, i + REWARDS_BATCH_SIZE));
+        for (const results of await Promise.all(batches.map((batch) => fetchRewards(wallet, batch)))) {
           for (const [entityKey, entry] of Object.entries(results || {})) {
             if (entry?.error) { errors++; continue; }
             const pending = {};
             for (const [token, tokenResult] of Object.entries(entry?.rewards || {})) {
               const amount = BigInt(tokenResult?.pending || "0");
               if (amount <= 0n) continue;
-              const decimals = tokenResult.decimals ?? REWARD_DECIMALS[token] ?? 0;
+              const decimals = tokenResult.decimals ?? REWARD_DECIMALS[token];
               decimalsByToken[token] = decimals;
               pending[token] = formatBaseUnits(amount, decimals);
               totals[token] = (totals[token] ?? 0n) + amount;
@@ -180,10 +157,8 @@ export function makeWalletDashboardTools(navigate, getWallet) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      async execute({ address, limit, before }) {
-        const wallet = resolve(address);
-        if (!wallet) return { content: [{ type: "text", text: "No wallet given and none loaded in the dashboard — pass `address`." }], isError: true };
-        return fetchTransactions(wallet, { limit, before });
+      execute({ address, limit, before }) {
+        return fetchTransactions(requireWallet(address), { limit, before });
       },
     },
   ];

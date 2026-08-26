@@ -1,5 +1,5 @@
 import { fetchHntPrice, resolveOui, resolvePayerKey } from "../lib/dcMintApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { BASE58_PATTERN } from "../webmcp/helpers.js";
 
 const AMOUNT = { type: "number", exclusiveMinimum: 0 };
 
@@ -77,9 +77,7 @@ export const dcMintTools = [
         : new RegExp(BASE58_PATTERN).test(trimmed)
           ? await resolvePayerKey(trimmed)
           : null;
-      if (!result) {
-        return { content: [{ type: "text", text: `No OUI or payer found for "${trimmed}".` }], isError: true };
-      }
+      if (!result) throw new Error(`no OUI or payer found for "${trimmed}"`);
       return result;
     },
   },

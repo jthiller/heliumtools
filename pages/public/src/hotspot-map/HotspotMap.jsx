@@ -902,7 +902,7 @@ export default function HotspotMap() {
     if (!result.hotspots?.length) throw new Error("No Helium Hotspots found for this wallet.");
     const merged = mergeByEntityKey(result.hotspots);
     walletCountRef.current += 1;
-    const entityKeys = [...new Set(merged.map((h) => h.entityKey))];
+    const entityKeys = merged.map((h) => h.entityKey);
     const nameMap = new Map(merged.map((h) => [h.entityKey, h.name]));
     await resolveKeys(entityKeys, nameMap, `Wallet ${walletCountRef.current}`);
     return {

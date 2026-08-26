@@ -22,23 +22,36 @@ before any action runs. In browsers without WebMCP everything no-ops.
 
 ## Files
 
-- `webmcp.js` — framework-free core: `getModelContext()` feature detection
-  (document → navigator fallback), `registerWebMcpTools(tools)` (handles the
-  legacy `provideContext()`-only shape too), the JSON-Schema-subset
-  validator, `normalizeInput` (defaults + numeric-string coercion), result
-  helpers, `BASE58_PATTERN`.
+- `webmcp.js` — the core: `getModelContext()` feature detection (document →
+  navigator fallback), `registerWebMcpTools(tools)` (handles the legacy
+  `provideContext()`-only shape too), the JSON-Schema-subset validator,
+  `normalizeInput` (defaults + numeric-string coercion), result helpers,
+  and DEV-only drift warnings (invalid/duplicate names, and names missing
+  from `catalog.js`).
+- `helpers.js` — tiny, dependency-free schema fragments
+  (`BASE58_PATTERN`, `SOLANA_ADDRESS_SCHEMA`, `WALLET_ADDRESS_SCHEMA`,
+  `ENTITY_KEY_SCHEMA` — spread and override `description` per field) and
+  `capListField` (result truncation). This is the ONLY webmcp module
+  per-page `webmcpTools.js` files may import statically.
 - `useWebMcpTools.js` — React hook: register on mount, unregister on
-  unmount (StrictMode-safe). Keep `deps` `[]` and read live values via refs.
+  unmount (StrictMode-safe). Keep `deps` `[]` and read live values via
+  refs. **Bundle discipline lives here**: the hook feature-detects first
+  and dynamically imports `webmcp.js` only when the browser exposes
+  WebMCP, so human visitors never download or parse the core. The factory
+  may return a Promise — site-tool registrations use that to lazy-load
+  `siteTools.js` (and the catalog it carries) too.
 - `catalog.js` — agent-facing catalog of every tool page (path, summary,
-  the WebMCP tools it registers). Separate from Landing's marketing copy on
-  purpose; includes the unlisted /vote pages. **Update it when adding a
-  page or renaming a page's tools.**
+  the WebMCP tools it registers) plus `SITE_TOOL_NAMES`. Separate from
+  Landing's marketing copy on purpose; includes the unlisted /vote pages.
+  **Update it when adding a page or renaming a page's tools** — in dev,
+  registering a name the catalog doesn't list logs a console warning.
 - `siteTools.js` — the three tools registered on every page:
   `list-helium-tools`, `open-helium-tool` (SPA navigate or full page load
   cross-entry), `get-hnt-price`.
 - `SiteTools.jsx` — mounts the site tools inside the SPA router
-  (`main.jsx`). The oui-notifier entry (no router) registers them from
-  `oui-notifier/Home.jsx` with `makeSiteTools(null)`.
+  (`main.jsx`), outside `<Routes>` so 404 paths keep them. The
+  oui-notifier entry (no router) registers them from `oui-notifier/
+  Home.jsx` and `VerifyPage.jsx` with `makeSiteTools(null)`.
 
 ## Per-page pattern
 
@@ -56,32 +69,27 @@ Pure API tools export an array; tools that drive the page export a
   call setters/handlers passed in from the component.
 
 Register with one `useWebMcpTools(() => makeXTools(...), [])` call in the
-page component; unstable handlers go through refs (see MultiGateway).
+page component. Handlers that close over only stable setters can be
+passed directly; handlers that read changing state go through a ref (see
+MultiGateway's `gatewaysRef`).
+
+Tools that also fetch after driving the page: the page's own debounced
+effect repeats the same request moments later, so those read fetchers are
+wrapped in `lib/requestDedupe.js` `dedupeAsync` (short-TTL in-flight
+sharing). Never wrap mutations or reads that must reflect a mutation
+immediately (the claimer's rewards reads stay live).
 
 ## Coverage
 
-Every reachable page registers at least the site-wide tools. The SPA
-mounts `SiteTools` outside `<Routes>`, so unmatched (404) paths keep them
-too; the two oui-notifier entries register them locally.
+**The per-page tool lists live in `catalog.js`** — the single source,
+served live to agents by `list-helium-tools`; don't duplicate them here.
+Every reachable page registers at least the site-wide tools: the SPA
+mounts `SiteTools` outside `<Routes>` (so unmatched 404 paths keep them),
+and both oui-notifier entry pages register them locally.
 
-| Surface | Page tools |
-|---|---|
-| `/` (landing) | site tools only |
-| `/wallet-dashboard[/:address]` | open-wallet-dashboard, get-wallet-summary, get-wallet-fleet, get-wallet-rewards, get-wallet-transactions |
-| `/hnt-price` | get-hnt-price-instant |
-| `/hotspot-claimer` | lookup-hotspot, get-hotspot-rewards, claim-hotspot-rewards, list-wallet-hotspots |
-| `/ve-hnt` | get-vehnt-positions |
-| `/vote[/:proposalId]`, `/votes` | list-vote-proposals, get-vote-details, get-voter-history, open-vote |
-| `/dc-mint` | get-dc-mint-quote, resolve-oui |
-| `/oui-notifier/` (own entry) | list-ouis, get-oui-balance, prefill-alert-subscription |
-| `/oui-notifier/verify/` (own entry) | site tools only (terminal confirmation page) |
-| `/iot-onboard` | get-iot-onboard-fees |
-| `/mobile-onboard` | get-mobile-onboard-fees, open-mobile-onboard-tab |
-| `/update-location` | get-hotspot-onchain-info |
-| `/multi-gateway` | list-gateways, select-gateway, get-gateway-packets |
-| `/hotspot-map` | map-wallet-hotspots, map-hotspots |
-| `/l1-migration` | derive-helium-addresses, migrate-l1-wallet |
-| `/dc-purchase`, `/dc-purchase/order/:id` | none — tool is disabled ("Coming Soon"); add tools when it ships |
+Pages with deliberately no page tools: `/` (landing), `/oui-notifier/
+verify/` (terminal confirmation page), and `/dc-purchase` + its order
+page (tool is disabled "Coming Soon" — add tools when it ships).
 
 Intentionally not exposed: BLE flows (iot-onboard scanning/connecting —
 Web Bluetooth requires a user gesture), every wallet-signing action, and
@@ -92,18 +100,20 @@ iot-onboard's `/lookup` (its inputs come from mid-BLE-flow reads).
 **Adding a tool page** (do all four, same commit):
 1. Create `src/<tool>/webmcpTools.js` — an exported array for pure API
    tools, a `make*Tools(callbacks)` factory when tools drive page state.
+   Import only `../webmcp/helpers.js` statically.
 2. Register it with one `useWebMcpTools(...)` call in the page component.
 3. Add the page to `catalog.js` (path, entry, agent-facing summary, tool
-   names) and to the Coverage table above.
+   names). The DEV drift warning flags registered names the catalog
+   doesn't list.
 4. Add a `## WebMCP` section to the tool's own CLAUDE.md.
 
 **Changing an existing tool** (endpoints, params, response shape, flows):
 - Update its `webmcpTools.js` in the same commit — the descriptions and
   `inputSchema` are the agent's API docs, so a stale schema is a bug, not
   a doc nit.
-- Mirror renamed/added/removed tool names in `catalog.js`, the Coverage
-  table, and the tool's CLAUDE.md `## WebMCP` section.
-- Removing a page: delete its catalog entry and Coverage row too.
+- Mirror renamed/added/removed tool names in `catalog.js` and the tool's
+  CLAUDE.md `## WebMCP` section.
+- Removing a page: delete its catalog entry too.
 
 ## Validation contract
 
@@ -115,6 +125,11 @@ MAC in the gateway list"). Failures and thrown errors (incl. rate-limit
 info from `ApiError`) come back as `isError: true` MCP results the agent
 can read and retry — never as exceptions. Browsers do NOT validate agent
 arguments against `inputSchema`; this wrapper is the enforcement point.
+
+Error convention inside tools: reject bad arguments via the `validate`
+hook; `throw` for everything else (the wrapper renders it as
+"<name> failed: <message>"). Don't hand-build `{ content, isError }`
+literals — `toolError` in webmcp.js exists only for custom shaping.
 
 ## Safety rules
 

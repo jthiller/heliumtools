@@ -1470,29 +1470,30 @@ export default function HotspotClaimer() {
     }, { replace: true });
   }, [setSearchParams]);
 
+  // Functional updates: identity depends only on the stable setSearchParams,
+  // so these serve UI clicks and the once-registered agent tools alike.
   const handleNavigateToHotspot = useCallback((entityKey) => {
-    setSearchParams({ mode: "hotspot", key: entityKey, ...(urlWallet ? { wallet: urlWallet } : {}) }, { replace: true });
-  }, [setSearchParams, urlWallet]);
-
-  const handleNavigateToWallet = useCallback((walletAddress) => {
-    setSearchParams({ mode: "wallet", wallet: walletAddress, ...(urlKey ? { key: urlKey } : {}) }, { replace: true });
-  }, [setSearchParams, urlKey]);
-
-  // Agent tools drive the same URL params the UI does. Functional updates
-  // close over only the stable setSearchParams, so registering once is safe.
-  useWebMcpTools(() => makeClaimerTools({
-    showHotspot: (key) => setSearchParams((prev) => {
+    setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set("mode", "hotspot");
-      next.set("key", key);
+      next.set("key", entityKey);
       return next;
-    }, { replace: true }),
-    showWallet: (addr) => setSearchParams((prev) => {
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleNavigateToWallet = useCallback((walletAddress) => {
+    setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set("mode", "wallet");
-      next.set("wallet", addr);
+      next.set("wallet", walletAddress);
       return next;
-    }, { replace: true }),
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // Agent tools drive the same URL params the UI does.
+  useWebMcpTools(() => makeClaimerTools({
+    showHotspot: handleNavigateToHotspot,
+    showWallet: handleNavigateToWallet,
   }), []);
 
   return (

@@ -1,16 +1,8 @@
 import { lookupHotspot, fetchRewards, claimRewards, fetchWalletHotspots } from "../lib/hotspotClaimerApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { ENTITY_KEY_SCHEMA, WALLET_ADDRESS_SCHEMA, capListField } from "../webmcp/helpers.js";
 
 /** Cap wallet Hotspot lists in tool results; the UI still shows everything. */
 const WALLET_RESULT_CAP = 300;
-
-const ENTITY_KEY_SCHEMA = {
-  type: "string",
-  pattern: BASE58_PATTERN,
-  minLength: 32,
-  maxLength: 60,
-  description: "The Hotspot's entity key (its Helium public key, base58).",
-};
 
 /**
  * WebMCP tools for /hotspot-claimer. Lookups also drive the page (the URL
@@ -77,13 +69,7 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       inputSchema: {
         type: "object",
         properties: {
-          address: {
-            type: "string",
-            pattern: BASE58_PATTERN,
-            minLength: 32,
-            maxLength: 60,
-            description: "The owner wallet address (Solana base58 or Helium B58).",
-          },
+          address: { ...WALLET_ADDRESS_SCHEMA, description: "The owner wallet address (Solana base58 or Helium B58)." },
         },
         required: ["address"],
         additionalProperties: false,
@@ -91,16 +77,7 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       annotations: { readOnlyHint: true },
       async execute({ address }) {
         showWallet(address);
-        const result = await fetchWalletHotspots(address);
-        const hotspots = result?.hotspots;
-        if (Array.isArray(hotspots) && hotspots.length > WALLET_RESULT_CAP) {
-          return {
-            ...result,
-            hotspots: hotspots.slice(0, WALLET_RESULT_CAP),
-            truncated: `showing ${WALLET_RESULT_CAP} of ${hotspots.length} Hotspots (the page UI lists all)`,
-          };
-        }
-        return result;
+        return capListField(await fetchWalletHotspots(address), "hotspots", WALLET_RESULT_CAP);
       },
     },
   ];

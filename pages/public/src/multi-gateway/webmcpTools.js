@@ -3,6 +3,14 @@ import { fetchGatewayPackets } from "../lib/multiGatewayApi.js";
 /** Cap packet lists in tool results; the UI streams everything live. */
 const PACKETS_DEFAULT = 25;
 
+const MAC_SCHEMA = {
+  type: "string",
+  pattern: "^[0-9A-Za-z:_-]+$",
+  minLength: 6,
+  maxLength: 32,
+  description: "Gateway MAC from list-gateways.",
+};
+
 /**
  * WebMCP tools for /multi-gateway. `getGateways` reads the live SSE-fed
  * gateway list already in page state (shared context — no refetch);
@@ -35,7 +43,7 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       inputSchema: {
         type: "object",
         properties: {
-          mac: { type: "string", pattern: "^[0-9A-Za-z:_-]+$", minLength: 6, maxLength: 32, description: "Gateway MAC from list-gateways." },
+          mac: MAC_SCHEMA,
         },
         required: ["mac"],
         additionalProperties: false,
@@ -57,7 +65,7 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       inputSchema: {
         type: "object",
         properties: {
-          mac: { type: "string", pattern: "^[0-9A-Za-z:_-]+$", minLength: 6, maxLength: 32, description: "Gateway MAC from list-gateways." },
+          mac: MAC_SCHEMA,
           limit: { type: "integer", minimum: 1, maximum: 200, default: PACKETS_DEFAULT },
         },
         required: ["mac"],

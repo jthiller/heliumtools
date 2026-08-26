@@ -1,5 +1,5 @@
 import { fetchHotspotStatus } from "../lib/updateLocationApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { ENTITY_KEY_SCHEMA } from "../webmcp/helpers.js";
 
 /**
  * WebMCP tools for /update-location. The assert transaction needs the
@@ -15,13 +15,7 @@ export const updateLocationTools = [
     inputSchema: {
       type: "object",
       properties: {
-        gateway: {
-          type: "string",
-          pattern: BASE58_PATTERN,
-          minLength: 32,
-          maxLength: 60,
-          description: "The Hotspot's gateway public key (Helium base58 entity key).",
-        },
+        gateway: { ...ENTITY_KEY_SCHEMA, description: "The Hotspot's gateway public key (Helium base58 entity key)." },
       },
       required: ["gateway"],
       additionalProperties: false,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowPathIcon,
   BellAlertIcon,
@@ -33,7 +33,6 @@ import {
 import useDarkMode from "../lib/useDarkMode.js";
 import { readChartColors } from "../lib/chartColors.js";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
-import { makeSiteTools } from "../webmcp/siteTools.js";
 import { makeOuiNotifierTools } from "./webmcpTools.js";
 
 // Standard input class for consistency
@@ -66,12 +65,16 @@ export default function HomePage() {
   const [editWebhook, setEditWebhook] = useState("");
 
   // WebMCP: this entry has no router, so the site-wide tools get no SPA
-  // navigate (open-helium-tool falls back to full page loads). Setting
-  // ouiInput auto-runs the lookup via the debounced effect below, and the
-  // prefill tool never submits — subscribing stays a human click.
-  useWebMcpTools(() => [
-    ...makeSiteTools(null),
+  // navigate (open-helium-tool falls back to full page loads; the tools
+  // module loads lazily to keep this entry lean). Setting ouiInput
+  // auto-runs the lookup via the debounced effect below, and the prefill
+  // tool never submits — subscribing stays a human click.
+  const ouisRef = useRef(ouis);
+  ouisRef.current = ouis;
+  useWebMcpTools(() => import("../webmcp/siteTools.js").then((m) => [
+    ...m.makeSiteTools(null),
     ...makeOuiNotifierTools({
+      getOuis: () => ouisRef.current,
       showOui: (oui) => setOuiInput(String(oui)),
       prefillSubscription: ({ oui, email, label, webhook_url }) => {
         setOuiInput(String(oui));
@@ -81,7 +84,7 @@ export default function HomePage() {
         setFormStatus({ tone: "muted", message: "Filled in by your AI agent — review and click Subscribe." });
       },
     }),
-  ], []);
+  ]), []);
 
   useEffect(() => {
     const savedEmail = getLocalStorageItem("ouiNotifierEmail");

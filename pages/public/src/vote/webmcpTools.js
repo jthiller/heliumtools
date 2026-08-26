@@ -1,11 +1,8 @@
 import { fetchProposals, fetchProposal, fetchVoterHistory } from "../lib/voteApi.js";
-import { BASE58_PATTERN } from "../webmcp/webmcp.js";
+import { SOLANA_ADDRESS_SCHEMA } from "../webmcp/helpers.js";
 
 const PROPOSAL_SCHEMA = {
-  type: "string",
-  pattern: BASE58_PATTERN,
-  minLength: 32,
-  maxLength: 44,
+  ...SOLANA_ADDRESS_SCHEMA,
   description:
     "Proposal account address (Solana base58), as returned by list-vote-proposals. Omit for the currently featured vote.",
 };
@@ -52,13 +49,7 @@ export function makeVoteTools(navigate) {
       inputSchema: {
         type: "object",
         properties: {
-          voter: {
-            type: "string",
-            pattern: BASE58_PATTERN,
-            minLength: 32,
-            maxLength: 44,
-            description: "The voter's wallet address (Solana base58).",
-          },
+          voter: { ...SOLANA_ADDRESS_SCHEMA, description: "The voter's wallet address (Solana base58)." },
           proposal: PROPOSAL_SCHEMA,
         },
         required: ["voter"],

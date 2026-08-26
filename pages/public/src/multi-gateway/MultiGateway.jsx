@@ -1953,16 +1953,12 @@ export default function MultiGateway() {
     }
   };
 
-  // Agent tools read the live gateway list and select through the page's own
-  // handler; refs keep the once-registered tools current across SSE updates.
+  // Agent tools read the live gateway list through a ref so the
+  // once-registered tools stay current across SSE updates; selectMac closes
+  // over only stable setters, so passing it directly is safe.
   const gatewaysRef = useRef(gateways);
   gatewaysRef.current = gateways;
-  const selectMacRef = useRef(selectMac);
-  selectMacRef.current = selectMac;
-  useWebMcpTools(
-    () => makeMultiGatewayTools((mac) => selectMacRef.current(mac), () => gatewaysRef.current),
-    [],
-  );
+  useWebMcpTools(() => makeMultiGatewayTools(selectMac, () => gatewaysRef.current), []);
 
   // Fetch OUI → DevAddr mapping once
   useEffect(() => {
