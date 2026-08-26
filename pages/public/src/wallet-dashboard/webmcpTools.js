@@ -6,6 +6,22 @@ const REWARDS_BATCH_SIZE = 50;
 /** Two batches keeps the tool bounded on maker-sized fleets. */
 const REWARDS_HOTSPOT_CAP = 100;
 
+/**
+ * Fallback per-token decimals for reward amounts. The worker's token
+ * results normally carry their own `decimals`; this only covers entries
+ * that lack it.
+ */
+const REWARD_DECIMALS = { iot: 6, mobile: 6, hnt: 8 };
+
+/** Format a base-unit BigInt as a decimal token string, trimming zeros. */
+function formatBaseUnits(amount, decimals) {
+  if (!decimals) return amount.toString();
+  const s = amount.toString().padStart(decimals + 1, "0");
+  const whole = s.slice(0, -decimals);
+  const frac = s.slice(-decimals).replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole;
+}
+
 const ADDRESS_SCHEMA = {
   type: "string",
   pattern: BASE58_PATTERN,
@@ -96,7 +112,7 @@ export function makeWalletDashboardTools(navigate, getWallet) {
       name: "get-wallet-rewards",
       title: "Get wallet unclaimed rewards",
       description:
-        `Pending (unclaimed) Hotspot rewards across a wallet's fleet, totaled per token and listed per Hotspot where nonzero. Amounts are in base units (IOT/MOBILE: 6 decimals, HNT: 8). Served from a ~15min cache — rewards distribute roughly daily. Covers up to ${REWARDS_HOTSPOT_CAP} Hotspots; claim via the /hotspot-claimer page's tools.`,
+        `Pending (unclaimed) Hotspot rewards across a wallet's fleet as decimal token amounts (e.g. "12.345678" IOT), totaled per token and listed per Hotspot where nonzero. Served from a ~15min cache — rewards distribute roughly daily. Covers up to ${REWARDS_HOTSPOT_CAP} Hotspots; claim via the /hotspot-claimer page's tools.`,
       inputSchema: {
         type: "object",
         properties: { address: ADDRESS_SCHEMA },
@@ -113,7 +129,8 @@ export function makeWalletDashboardTools(navigate, getWallet) {
           .filter((h) => h.entityKey && h.assetId)
           .sort((a, b) => (a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0));
         const counted = eligible.slice(0, REWARDS_HOTSPOT_CAP);
-        const totals = {};
+        const totals = {}; // token -> BigInt base units (exact summing)
+        const decimalsByToken = {};
         const byHotspot = [];
         let errors = 0;
         for (let i = 0; i < counted.length; i += REWARDS_BATCH_SIZE) {
@@ -124,12 +141,17 @@ export function makeWalletDashboardTools(navigate, getWallet) {
             for (const [token, tokenResult] of Object.entries(entry?.rewards || {})) {
               const amount = BigInt(tokenResult?.pending || "0");
               if (amount <= 0n) continue;
-              pending[token] = amount.toString();
-              totals[token] = ((totals[token] ? BigInt(totals[token]) : 0n) + amount).toString();
+              const decimals = tokenResult.decimals ?? REWARD_DECIMALS[token] ?? 0;
+              decimalsByToken[token] = decimals;
+              pending[token] = formatBaseUnits(amount, decimals);
+              totals[token] = (totals[token] ?? 0n) + amount;
             }
             if (Object.keys(pending).length > 0) byHotspot.push({ entityKey, pending });
           }
         }
+        const totalPending = Object.fromEntries(
+          Object.entries(totals).map(([token, amount]) => [token, formatBaseUnits(amount, decimalsByToken[token])]),
+        );
         return {
           wallet,
           fleetSize: eligible.length,
@@ -138,7 +160,7 @@ export function makeWalletDashboardTools(navigate, getWallet) {
             ? { truncated: `rewards summed for ${counted.length} of ${eligible.length} Hotspots` }
             : {}),
           ...(errors ? { lookupErrors: errors } : {}),
-          totalPending: totals,
+          totalPending,
           hotspotsWithPending: byHotspot,
         };
       },
