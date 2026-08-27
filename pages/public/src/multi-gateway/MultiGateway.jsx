@@ -353,11 +353,16 @@ function SetupNote() {
           </p>
           <p className="mt-3 text-content-tertiary">
             This is a public demo of{" "}
+            <a href="https://github.com/jthiller/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">jthiller/multi-gateway</a>,
+            a fork of{" "}
             <a href="https://github.com/helium/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">helium/multi-gateway</a>,
             an open-source aggregator that lets a single server manage many
             LoRaWAN gateways on the Helium network. You can{" "}
-            <a href="https://docs.helium.com/iot/gateway-fleet-onboarding" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">self-host your own instance</a>{" "}
-            for private fleet management.
+            <a href="https://docs.helium.com/iot/onboard-a-hotspot/server/" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">self-host your own instance</a>{" "}
+            for private fleet management. Note the live packet stream, packet
+            history, and on-chain onboarding on this page rely on endpoints the
+            fork adds, so a stock upstream build serves the gateway list but not
+            those.
           </p>
         </div>
       )}

@@ -28,8 +28,12 @@ aggregator**, not from heliumtools-owned code. The deployment runs a fork:
 - **Fork (what this deployment runs)**:
   [`jthiller/multi-gateway`](https://github.com/jthiller/multi-gateway), a fork of
   the above; its README documents the same endpoints and does not state what was
-  changed. The frontend footer links upstream as "Built on helium/multi-gateway"
-  and the fork as "Source" (`MultiGateway.jsx`).
+  changed (verified 2026-08-27 — **still the outstanding gap**: the divergence is
+  documented here and in the site copy, not in the fork's own README). The
+  frontend footer links upstream as "Built on helium/multi-gateway" and the fork
+  as "Source"; the setup note names the fork as what this demo runs and warns
+  that the live stream, packet history, and onboarding need the fork's added
+  endpoints (`MultiGateway.jsx`).
 
 ### What the worker actually calls
 
@@ -259,8 +263,11 @@ Two-step Solana flow, both built server-side in `handlers/issue.js` using
 `buildOnboardInstruction`; `buildIssueInstruction` is also used by
 mobile-onboard — `iot-onboard` delegates to
 the Helium onboarding server instead). Note both steps register the gateway as a
-**data-only IoT Hotspot** (1M-DC tier; no PoC) — `buildOnboardInstruction`
-supports a `full` mode but this tool always builds data-only.
+**data-only IoT Hotspot** (no PoC): 50,000 DC base + 50,000 DC location =
+100,000 DC, which is what `ONBOARD_DC_COST` below uses. The 1,000,000 DC base is
+the **full** tier, which this tool never builds — `buildOnboardInstruction`
+supports a `full` mode but this tool always builds data-only. Live tier costs:
+`GET https://api.heliumtools.org/iot-onboard/fees`.
 
 **Issue** (`POST /issue`):
 1. `findGateway` locates the gateway and its `public_key`.
