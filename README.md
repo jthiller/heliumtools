@@ -9,6 +9,8 @@ This repo contains:
 
 This repo is published as a **reference for LLM-built tooling** — operator utilities for the Helium network built with an AI coding agent. Use it as a reference when building your own tools: read `CLAUDE.md` for the conventions the agent follows and adapt what fits. It is a starting point to learn from, not a drop-in dependency.
 
+Licensed under the [MIT License](LICENSE), so you are free to copy, adapt, and ship pieces of it. There is no API stability promise and no support.
+
 ## Deployment
 
 Both Pages and Worker auto-deploy from the `main` branch via GitHub.
@@ -35,3 +37,7 @@ cp .dev.vars.example .dev.vars   # then fill in real values
 npm install
 wrangler dev
 ```
+
+## License
+
+[MIT](LICENSE) © 2025-2026 Joey Hiller.
