@@ -27,7 +27,7 @@ export async function fetchPrices(env) {
   const priced = Object.entries(BALANCE_TOKENS).filter(([, t]) => t.priceMint);
   try {
     const mints = [...new Set(priced.map(([, t]) => t.priceMint))];
-    const quoted = await fetchJupiterUsdPrices(mints);
+    const quoted = await fetchJupiterUsdPrices(env, mints);
     for (const [key, t] of priced) {
       if (quoted[t.priceMint] != null) usd[key] = quoted[t.priceMint];
     }

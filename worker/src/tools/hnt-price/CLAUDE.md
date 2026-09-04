@@ -76,9 +76,11 @@ The README tells consumers to always include a path segment.
   from the shared `worker/src/lib/helium-solana.js`) →
   `getAccountInfo(oracle, "confirmed")` → decode
   `PriceUpdateV2` → `{ usd, conf_usd, mint_price_usd, publish_time, account }`.
-- `fetchSpotPrice()` — a thin wrapper over `fetchJupiterUsdPrices([HNT mint])`
-  from the shared `worker/src/lib/jupiter.js` (Jupiter Price v3,
-  `AbortSignal.timeout(10s)`, response keyed by mint with `usdPrice`). That lib
+- `fetchSpotPrice(env)` — a thin wrapper over
+  `fetchJupiterUsdPrices(env, [HNT mint])` from the shared
+  `worker/src/lib/jupiter.js` (Jupiter Price v3 on the keyed `api.jup.ag` host,
+  `JUPITER_API_KEY` when set, `AbortSignal.timeout(10s)`, response keyed by mint
+  with `usdPrice`). That lib
   is the single Jupiter client, shared with wallet-dashboard's
   `services/prices.js`; the difference is only posture — a missing quote is a
   failed source here, a null row there. CoinGecko is intentionally avoided

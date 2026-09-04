@@ -184,9 +184,9 @@ async function fetchOraclePrice(connection) {
  *
  * @returns {Promise<{usd:number, source:string, updated_at:number}>}
  */
-async function fetchSpotPrice() {
+async function fetchSpotPrice(env) {
   const mint = HNT_MINT.toBase58();
-  const usd = (await fetchJupiterUsdPrices([mint]))[mint];
+  const usd = (await fetchJupiterUsdPrices(env, [mint]))[mint];
   if (usd == null) {
     throw new Error("Jupiter price API returned no usable HNT price");
   }
@@ -222,7 +222,7 @@ async function oracleRead(env) {
 export async function buildSnapshot(env) {
   // A snapshot with one half missing is far more useful than none, so these are
   // settled independently. Only a double failure is fatal.
-  const [oracleResult, spotResult] = await Promise.allSettled([oracleRead(env), fetchSpotPrice()]);
+  const [oracleResult, spotResult] = await Promise.allSettled([oracleRead(env), fetchSpotPrice(env)]);
 
   const oracle = oracleResult.status === "fulfilled" ? oracleResult.value : null;
   const spot = spotResult.status === "fulfilled" ? spotResult.value : null;
