@@ -10,19 +10,28 @@ stream described below, at <https://heliumtools.org/hnt-price>.
 
 Two prices matter for HNT, and they are not the same number:
 
-1. **The market price.** What HNT trades at right now. Use it for display.
-2. **The on-chain oracle price.** What the Helium Data Credits program reads when
-   it converts burned HNT into Data Credits. Use it to size a transaction.
+1. **The market price**, `spot.usd`. What HNT trades at right now. Use it for
+   display.
+2. **The price a burn actually pays**, `oracle.mint_price_usd`. What the Helium
+   Data Credits program computes when it converts burned HNT into Data Credits.
+   Use it to size a transaction, or read the `dc_per_hnt` we derive from it.
 
 This service returns both in one payload, on every surface, so you never have to
 guess which one you are looking at.
 
+> **Building a Data Credits calculator?** Read **`dc_per_hnt`**. That is the
+> whole integration: it is the DC a user receives for burning one HNT, already
+> computed at the conservative price the program pays. Do not derive DC from
+> `spot.usd`, and do not derive it from `oracle.usd` either. Both sit above what
+> a burn yields, so both over-promise DC. See
+> [the three prices](#spotusd-vs-oracleusd-vs-oraclemint_price_usd).
+
 It exists because Pyth's unauthenticated Hermes endpoint
-(`hermes.pyth.network`) stops serving public traffic on 2026-08-18. Anything that
-was reading HNT prices from Hermes without an API key needs a new source. This
-API is that source: it reads the price oracle account directly from the Solana
-chain, adds a market quote from Jupiter, caches the result, and hands it out over
-a plain HTTP request or a live stream.
+(`hermes.pyth.network`) stopped serving public traffic on 2026-08-18. Anything
+that was reading HNT prices from Hermes without an API key needed a new source.
+This API is that source: it reads the price oracle account directly from the
+Solana chain, adds a market quote from Jupiter, caches the result, and hands it
+out over a plain HTTP request or a live stream.
 
 No API key, no registration, no CORS restrictions.
 
@@ -95,12 +104,20 @@ An `/instant` call also refreshes the shared cache, so calling it warms
 A WebSocket stream. Connect and you receive:
 
 - One snapshot frame immediately on connect, so you have a price without waiting.
-- A new snapshot frame **only when the price changes**, checked about every 15
-  seconds.
+- A new snapshot frame when the price changes, checked about every 15 seconds.
 
 Every frame is a complete snapshot payload as JSON text, identical in shape to
 the `/current` response. There are no other frame types, no envelopes, and no
 message ids.
+
+**What "changes" means in practice.** Change detection keys on the market price
+together with the oracle's `publish_time`. The market price is a continuously
+moving float, so while trading is active almost every 15-second check produces a
+frame. Expect a roughly 15-second cadence rather than rare bursts, and do not
+read the arrival of a frame as "the oracle moved" — the oracle advances only
+every ~5 minutes, so consecutive frames often carry a byte-identical `oracle`
+block. If you only care about the on-chain price, de-duplicate on
+`oracle.publish_time`.
 
 ```
 wss://api.heliumtools.org/hnt-price/ws
@@ -108,13 +125,15 @@ wss://api.heliumtools.org/hnt-price/ws
 
 Two things to know:
 
-- **A quiet socket is a healthy socket.** Frames are sent only on a change, so
-  silence means the price has not moved. Do not treat a gap between frames as a
-  fault on its own.
-- **The server does not send pings.** Reconnect when the socket closes, and
-  optionally when you have had no frame for far longer than you would expect
-  (several minutes). Intermediate proxies and mobile radios can drop a socket
-  without either end noticing.
+- **Silence is legal but uncommon.** Nothing is sent when the price has not
+  moved, so a gap is not a fault by itself. In practice, though, the market price
+  moves on most checks, so a socket that has been silent for many minutes is more
+  likely dead than stable.
+- **The server does not send pings.** This surface has no liveness signal of its
+  own: reconnect when the socket closes, and optionally after silence far longer
+  than you would expect. Intermediate proxies and mobile radios can drop a socket
+  without either end noticing. If you want a guaranteed heartbeat, use `/sse`,
+  which sends a comment frame on any check that produced no data.
 
 Browser example with reconnect and backoff:
 
@@ -171,7 +190,11 @@ of them.
 What arrives on the stream:
 
 - One snapshot immediately on connect, so you have a price without waiting.
-- A new snapshot **only when the price changes**, checked about every 15 seconds.
+- A new snapshot when the price changes, checked about every 15 seconds. As on
+  `/ws`, change detection keys on the market price, which moves on most checks,
+  so expect a frame at roughly that cadence while trading is active. A frame does
+  not mean the oracle advanced; de-duplicate on `oracle.publish_time` if that is
+  all you care about.
 - A comment line (`: ping`) on any 15-second check that produced no snapshot.
   `EventSource` discards comments, so you never see it in your handler. Between
   the two, something reaches you roughly every 15 seconds for as long as you are
@@ -193,20 +216,20 @@ Every surface returns the same object.
 {
   "symbol": "HNT",
   "spot": {
-    "usd": 2.4137,
+    "usd": 0.6057272,
     "source": "jupiter",
-    "updated_at": 1755187200
+    "updated_at": 1788544200
   },
   "oracle": {
-    "usd": 2.41,
-    "conf_usd": 0.0021,
-    "mint_price_usd": 2.4058,
-    "publish_time": 1755186930,
+    "usd": 0.6049048,
+    "conf_usd": 0.0005952,
+    "mint_price_usd": 0.6045032,
+    "publish_time": 1788543930,
     "account": "He5mhwVQQNvjFxqjEjFDb7enJWFwFJ7Rq7zknqBz89A5"
   },
-  "dc_per_hnt": 240580,
+  "dc_per_hnt": 60450,
   "dc_per_usd": 100000,
-  "snapshot_at": 1755187204512
+  "snapshot_at": 1788544204512
 }
 ```
 
@@ -218,7 +241,7 @@ Every surface returns the same object.
 | `spot.source` | string | Which market source produced it. Currently always `"jupiter"`. |
 | `spot.updated_at` | number | Unix seconds when we fetched it. |
 | `oracle` | object or null | On-chain price oracle state. `null` if the chain read failed for this snapshot. |
-| `oracle.usd` | number | The oracle's current price, decoded from the feed account. |
+| `oracle.usd` | number | The oracle's headline posted price, decoded from the feed account. Not what a burn pays: use `mint_price_usd` or `dc_per_hnt` for that. |
 | `oracle.conf_usd` | number | The oracle's confidence interval, in USD. |
 | `oracle.mint_price_usd` | number | **The price the Data Credits program pays.** See below. |
 | `oracle.publish_time` | number | Unix seconds the oracle price was posted on-chain. Advances only when a crank posts, roughly every 5 minutes. |
@@ -233,8 +256,13 @@ These three numbers will differ, always, and each is correct for a different job
 
 - **`spot.usd`** is the live market. It moves continuously. It is what a person
   means by "the price of HNT". Nothing on-chain reads it.
-- **`oracle.usd`** is the price currently posted to the oracle account on Solana.
-  It lags the market by up to one crank interval (~5 minutes).
+- **`oracle.usd`** is the headline price currently posted to the oracle account
+  on Solana. It lags the market by up to one crank interval (~5 minutes). **It is
+  not what a burn pays.** It is the posted `price` field, not the moving average
+  the program actually computes with, so sizing a burn from it over-promises DC
+  by `(price − ema_price) + 2 × ema_conf`. That gap is small but not stable: in
+  live sampling across a single 5-minute crank it ranged from 0.07% to 0.55%,
+  because most of it is EMA lag that widens whenever the market moves.
 - **`oracle.mint_price_usd`** is the conservative price the Data Credits program
   computes for a burn: the oracle's exponentially-weighted moving average with
   two confidence intervals subtracted (`ema_price − 2 × ema_conf`). It is
@@ -242,8 +270,14 @@ These three numbers will differ, always, and each is correct for a different job
   out DC at the optimistic end of an uncertain quote.
 
 If you are showing a price to a human, use `spot.usd`. If you are telling a user
-how much DC a burn will yield, use `mint_price_usd` or the `dc_per_hnt` derived
-from it. Using `spot.usd` to preview a burn will over-promise the DC yield.
+how much DC a burn will yield, use `dc_per_hnt`, or `mint_price_usd` if you need
+the price itself. Previewing a burn from either `spot.usd` or `oracle.usd`
+over-promises the yield, and always in the direction of promising more DC than
+the user will receive.
+
+A fully honest display shows both: `spot.usd` labelled as the market price, and
+`mint_price_usd` or `dc_per_hnt` labelled as what the burn pays. That is what the
+[interactive page](https://heliumtools.org/hnt-price) does.
 
 ### `dc_per_hnt` and `dc_per_usd`
 

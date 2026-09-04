@@ -7,9 +7,10 @@ A public, keyless HNT price API for third-party consumers (Helium Docs first).
 accurate, it is what integrators read, and the page has to stay consistent with
 it.
 
-Built because Pyth's unauthenticated `hermes.pyth.network` stops serving public
-traffic on **2026-08-18**. Anything in the ecosystem reading HNT prices from
-Hermes without a key needed a replacement, and we already had the pieces: our own
+Built because Pyth's unauthenticated `hermes.pyth.network` stopped serving public
+traffic on **2026-08-18** and now returns 401 to a keyless request. Anything in
+the ecosystem that had been reading HNT prices from Hermes without a key needed a
+replacement, and we already had the pieces: our own
 staked RPC, a KV snapshot pattern, and a WebSocket fan-out Durable Object.
 
 Four surfaces, in increasing cost per call:

@@ -8,7 +8,9 @@
 import { kvGetJson, kvPutJson } from "../../../lib/kv.js";
 import { PROXY_MAP_CACHE_TTL } from "../config.js";
 
-const PROXIES_URL = "https://raw.githubusercontent.com/helium/helium-vote-proxies/master/proxies.json";
+// Branch is `main`. The old `master` URL only still resolved through GitHub's
+// renamed-default-branch redirect; that shim is not something to depend on.
+const PROXIES_URL = "https://raw.githubusercontent.com/helium/helium-vote-proxies/main/proxies.json";
 const CACHE_KEY = "vote:proxymap";
 
 /** Map of proxy wallet → { name }. Best-effort: {} if the fetch fails. */
