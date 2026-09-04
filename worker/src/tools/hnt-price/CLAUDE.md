@@ -7,9 +7,10 @@ A public, keyless HNT price API for third-party consumers (Helium Docs first).
 accurate, it is what integrators read, and the page has to stay consistent with
 it.
 
-Built because Pyth's unauthenticated `hermes.pyth.network` stops serving public
-traffic on **2026-08-18**. Anything in the ecosystem reading HNT prices from
-Hermes without a key needed a replacement, and we already had the pieces: our own
+Built because Pyth's unauthenticated `hermes.pyth.network` stopped serving public
+traffic on **2026-08-18** and now returns 401 to a keyless request. Anything in
+the ecosystem that had been reading HNT prices from Hermes without a key needed a
+replacement, and we already had the pieces: our own
 staked RPC, a KV snapshot pattern, and a WebSocket fan-out Durable Object.
 
 Four surfaces, in increasing cost per call:
@@ -75,9 +76,11 @@ The README tells consumers to always include a path segment.
   from the shared `worker/src/lib/helium-solana.js`) →
   `getAccountInfo(oracle, "confirmed")` → decode
   `PriceUpdateV2` → `{ usd, conf_usd, mint_price_usd, publish_time, account }`.
-- `fetchSpotPrice()` — a thin wrapper over `fetchJupiterUsdPrices([HNT mint])`
-  from the shared `worker/src/lib/jupiter.js` (Jupiter Price v3,
-  `AbortSignal.timeout(10s)`, response keyed by mint with `usdPrice`). That lib
+- `fetchSpotPrice(env)` — a thin wrapper over
+  `fetchJupiterUsdPrices(env, [HNT mint])` from the shared
+  `worker/src/lib/jupiter.js` (Jupiter Price v3 on the keyed `api.jup.ag` host,
+  `JUPITER_API_KEY` when set, `AbortSignal.timeout(10s)`, response keyed by mint
+  with `usdPrice`). That lib
   is the single Jupiter client, shared with wallet-dashboard's
   `services/prices.js`; the difference is only posture — a missing quote is a
   failed source here, a null row there. CoinGecko is intentionally avoided

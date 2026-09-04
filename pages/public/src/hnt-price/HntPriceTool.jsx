@@ -253,8 +253,9 @@ function LiveTicker({ snapshot, status, lastFrameAt }) {
 
       <div className="border-t border-border-muted px-6 py-4 text-xs leading-relaxed text-content-tertiary">
         Streaming live over Server-Sent Events. One snapshot arrives on connect, then a new
-        frame only when the price changes, so a quiet ticker while the pill reads Live means a
-        still market rather than a broken stream. The{" "}
+        frame when the price changes. Change detection tracks the market price, which moves on
+        most checks, so frames land at roughly a 15 second cadence while trading is active. A
+        frame does not mean the oracle advanced: that happens about every 5 minutes. The{" "}
         <span className="font-mono text-content-secondary">/ws</span> WebSocket carries identical
         frames on the identical schedule.
       </div>
@@ -513,14 +514,14 @@ export default function HntPriceTool() {
               <EndpointCard
                 path="/sse"
                 limit="500 subscribers, shared with /ws"
-                description="The same stream over Server-Sent Events, and the shortest integration on offer. One snapshot arrives on connect, then a new snapshot only when the price changes. Quiet checks send a comment line instead, so something reaches you roughly every 15 seconds for as long as you are connected. A much longer gap means the stream is broken, not that the price is stable. The server opens with a retry: 3000 hint and EventSource reconnects on its own."
+                description="The same stream over Server-Sent Events, and the shortest integration on offer. One snapshot arrives on connect, then a new snapshot when the price changes. Change detection tracks the market price, so in practice a frame lands about every 15 seconds while trading is active; de-duplicate on oracle.publish_time if you only care about the on-chain price. Checks that produce nothing send a comment line instead, so something reaches you roughly every 15 seconds for as long as you are connected. A much longer gap means the stream is broken, not that the price is stable. The server opens with a retry: 3000 hint and EventSource reconnects on its own."
                 snippet={JS_SSE}
               />
 
               <EndpointCard
                 path="/ws"
                 limit="500 subscribers, shared with /sse"
-                description={`The same stream over a WebSocket, at ${PUBLIC_WS_BASE}/ws. One snapshot frame on connect, then a frame only when the price changes. There are no pings and no heartbeat frames, so a quiet socket is a healthy socket. Reconnect when the socket closes, and optionally after far longer silence than you would expect, since proxies and mobile radios can drop a socket without either end noticing.`}
+                description={`The same stream over a WebSocket, at ${PUBLIC_WS_BASE}/ws. One snapshot frame on connect, then a frame when the price changes, which in practice is most 15 second checks. There are no pings and no heartbeat frames, so this surface carries no liveness signal of its own: silence is legal, but a socket quiet for many minutes is more likely dead than stable. Reconnect when the socket closes, and optionally after far longer silence than you would expect, since proxies and mobile radios can drop a socket without either end noticing. Use /sse if you want a guaranteed heartbeat.`}
                 copyUrl={`${PUBLIC_WS_BASE}/ws`}
                 snippet={JS_WS}
               />
