@@ -205,7 +205,11 @@ chart subtree and is rate-limited (not memo-gated) to avoid a re-render cascade.
   widely-separated bands (e.g. US915 uplinks ~902–915 vs downlinks ~923–928) get a
   fixed-width visual break (`CLUSTER_GAP_MHZ=5`). RSSI maps to opacity.
 - `SolanaProvider.jsx` — wallet-adapter (`Phantom`, `Solflare`) + `ConnectionProvider`
-  for the on-chain onboarding steps. RPC URL from `VITE_SOLANA_URL`.
+  for the on-chain onboarding steps. RPC URL from the build-time
+  `VITE_SOLANA_URL`, falling back to the public Solana RPC (rate limited) with a
+  console warning when unset. This file is shared: every wallet-connected tool
+  on the site imports this provider, so a change here affects dc-mint,
+  update-location, iot-onboard and mobile-onboard too.
 
 All three time-series surfaces (scatter, events bar, table) share one `hover`
 state so hovering a dot highlights the matching table row and event marker.
@@ -341,7 +345,10 @@ ECC verification HTTP endpoint: `https://ecc-verifier.web.helium.io`.
   or expose).
 - `MULTI_GATEWAY_HUB` — Durable Object binding (`MultiGatewayHub`).
 - `KV` binding — OUI/DevAddr catalog cache (`oui-devaddr-map`, 24h TTL).
-- Frontend: `VITE_SOLANA_URL` for the wallet-adapter connection.
+- Frontend: `VITE_SOLANA_URL` for the wallet-adapter connection — a Cloudflare
+  Pages build variable in production, `.env.development` locally, documented in
+  `pages/public/.env.example`. Vite inlines it into the public bundle, so it is
+  not a secret: restrict any embedded API key by origin at the provider.
 
 ## Gotchas
 
