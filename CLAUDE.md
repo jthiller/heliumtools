@@ -15,6 +15,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 - Tool listing hardcoded in `src/pages/Landing.jsx` features array
 - Each tool has its own directory, e.g. `src/oui-notifier/`, `src/dc-purchase/`, `src/l1-migration/`, `src/iot-onboard/`, `src/multi-gateway/`, `src/hnt-price/`
 - Tools needing Solana wallets are wrapped in `SolanaProvider` in `main.jsx`
+- Static, directly-linkable files live in `pages/public/public/` (Vite copies it to the site root). The Helium logo set under `public/brand/` is the one such asset library; `public/_headers` makes `/brand/*` CORS-open. Never rename a file there — its URL is embedded on other sites.
 - **WebMCP (AI agent tools)**: every page registers validated agent tools via the W3C Web Model Context API. Core + site-wide tools live in `src/webmcp/` (mounted router-level in `main.jsx` and from `oui-notifier/Home.jsx` for that separate entry); each tool page has a colocated `webmcpTools.js`. See `pages/public/src/webmcp/CLAUDE.md`. **Keep `src/webmcp/catalog.js` in sync** when adding a tool page or renaming a page's agent tools.
 - **Boxes use shadow, not borders.** Raised content cards/panels/modals/popovers are defined by the layered `shadow-soft` utility (and `shadow-soft-lg` for hover/floating elevation), not a `border border-border`. The shadow is a dark-mode-aware CSS variable (`--shadow-card` / `--shadow-card-lg` in `index.css`). Borders still belong on non-box elements: inputs, buttons, pills/tags, internal dividers (`border-b`, `divide-*`), and recessed `bg-surface-inset` panels.
 
@@ -77,6 +78,7 @@ the `## WebMCP` section of the tool's `CLAUDE.md`. Follow the checklist in
 | HNT Price | `worker/src/tools/hnt-price/CLAUDE.md` | **Worker-heavy** — public HNT price API for other teams (replaces unauthenticated Pyth Hermes): KV snapshot (`/current`), live chain read (`/instant`), and WebSocket (`/ws`) and SSE (`/sse`) streams from the `HntPriceHub` DO. `README.md` next to it is the external API reference; the `/hnt-price` page is a live SSE-driven demo of it plus human-readable endpoint docs |
 | Vote (Proposal Viewer) | `worker/src/tools/vote/CLAUDE.md` | **Blind pages** — live vote activity, outcomes + trend chart (`/vote`, election-aware), plus a current/past-votes index (`/votes`). Worker cron-polls the RPC and serves all viewers from a KV snapshot + D1 history (no per-viewer RPC); resolved votes freeze and rebuild their roster from D1 |
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
+| Brand Guidelines | `pages/public/src/brand/CLAUDE.md` | Frontend-only; Helium logo files hosted at stable `/brand/*` direct-link URLs (`pages/public/public/brand/`, CORS via `_headers`) + usage rules |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
 | WebMCP agent tools | `pages/public/src/webmcp/CLAUDE.md` | Cross-cutting frontend — W3C Web Model Context API: site-wide + per-page agent tools with input validation |
 

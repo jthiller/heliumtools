@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, CurrencyDollarIcon, MapPinIcon, SignalIcon, LockClosedIcon, WalletIcon, WifiIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, CurrencyDollarIcon, MapPinIcon, SignalIcon, LockClosedIcon, SwatchIcon, WalletIcon, WifiIcon } from "@heroicons/react/24/outline";
 import Header from "../components/Header.jsx";
 import ShaderDithering from "../components/ShaderDithering.jsx";
 
@@ -140,6 +140,21 @@ const sections = [
         icon: ArrowPathIcon,
         iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
         badge: null,
+      },
+    ],
+  },
+  {
+    title: "Brand",
+    description: "Logos and usage rules for the Helium marks",
+    tools: [
+      {
+        name: "Brand Guidelines",
+        description:
+          "The official Helium, HeliumOS, and Plus logos in SVG and PNG at stable direct-link URLs, with the rules for using the roundel correctly.",
+        href: "/brand",
+        icon: SwatchIcon,
+        iconBg: "bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-950/40 dark:text-fuchsia-400",
+        badge: "New",
       },
     ],
   },

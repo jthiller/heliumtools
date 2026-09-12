@@ -1,0 +1,9 @@
+# Cloudflare Pages _headers.
+#
+# Brand assets (/brand/*) exist to be hot-linked and fetched from other
+# sites, so they are CORS-open. Their URLs are the product and are not
+# content-hashed, so they get a modest one-hour cache instead of the
+# immutable caching Pages applies to hashed build output.
+/brand/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=3600
