@@ -273,8 +273,7 @@ export default function BrandGuidelines() {
           <p className="max-w-2xl text-[15px] leading-relaxed text-content-secondary">
             The official Helium logos, hosted here so you can link to them directly from docs,
             decks, sites, and app listings. Every file has a stable URL: drop it in an image tag
-            or download the SVG. The rules are short and mostly about one thing. The symbol lives
-            inside its circle, and the circle is never optional.
+            or download the SVG.
           </p>
           <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-content-tertiary">
             heliumtools.org is a third-party site. The marks belong to Nova Labs and the Helium
