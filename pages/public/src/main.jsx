@@ -114,6 +114,7 @@ const VeHnt = lazy(() => import("./ve-hnt/VeHnt.jsx"));
 const Vote = lazy(() => import("./vote/Vote.jsx"));
 const VotesIndex = lazy(() => import("./vote/VotesIndex.jsx"));
 const WalletDashboard = lazy(() => import("./wallet-dashboard/WalletDashboard.jsx"));
+const BrandGuidelines = lazy(() => import("./brand/BrandGuidelines.jsx"));
 const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -147,6 +148,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/votes" element={<VotesIndex />} />
             <Route path="/wallet-dashboard" element={<WalletDashboard />} />
             <Route path="/wallet-dashboard/:address" element={<WalletDashboard />} />
+            {/* Static brand guidelines + direct-link logo assets (served from
+                public/brand/). No worker, no wallet. */}
+            <Route path="/brand" element={<BrandGuidelines />} />
           </Routes>
         </Suspense>
       </ChunkLoadBoundary>

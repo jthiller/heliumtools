@@ -136,6 +136,14 @@ export const TOOL_CATALOG = [
     tools: ["map-wallet-hotspots", "map-hotspots"],
   },
   {
+    path: "/brand",
+    entry: "spa",
+    title: "Brand Guidelines",
+    summary:
+      "Official Helium logo files at stable direct-link URLs under https://heliumtools.org/brand/ (Helium lockup, roundel, HeliumOS and Plus product lockups; purple/black/white; SVG and PNG; one ZIP of all 24), plus the usage rules: the symbol is always inside its circle, never rotated, and appears only in the supplied colorways. Also carries a brief palette and type (Figtree) reference from the Helium Design System. heliumtools.org is a third-party mirror; the marks belong to Nova Labs and the Helium Foundation, whose terms govern use. Static page, no wallet.",
+    tools: ["list-helium-brand-assets", "get-helium-logo-guidelines"],
+  },
+  {
     path: "/l1-migration",
     entry: "spa",
     title: "L1 Migration",
