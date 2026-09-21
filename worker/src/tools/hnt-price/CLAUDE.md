@@ -436,4 +436,16 @@ whose callers can tolerate a skipped refresh).
 
 ## WebMCP
 
-WebMCP agents get `get-hnt-price` (the cached `/current` snapshot) site-wide via `pages/public/src/webmcp/siteTools.js`, plus `get-hnt-price-instant` (`/instant`) on the /hnt-price page from `pages/public/src/hnt-price/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.
+WebMCP agents get `get-hnt-price` (the cached `/current` snapshot) site-wide via
+`pages/public/src/webmcp/siteTools.js`. On `/hnt-price`,
+`pages/public/src/hnt-price/webmcpTools.js` also registers:
+
+- `get-hnt-price-instant` — calls `/instant` for a fresh RPC account read and
+  Jupiter quote; its description makes clear that the oracle account itself only
+  advances when its crank posts, roughly every 5 minutes.
+- `get-hnt-price-api-reference` — returns the URLs, selection guidance, limits,
+  stream behavior, payload semantics, nullability, and timestamp units for all
+  four API surfaces (`/current`, `/instant`, `/sse`, and `/ws`). Streaming is
+  documented rather than held open inside a tool invocation.
+
+Framework: `pages/public/src/webmcp/CLAUDE.md`.

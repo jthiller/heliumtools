@@ -41,7 +41,7 @@ export const TOOL_CATALOG = [
     title: "HNT Price API",
     summary:
       "Public keyless HNT price API: live market price (Jupiter) plus the on-chain oracle price the Data Credits mint pays, over HTTP, WebSocket, or SSE. The page documents the API and streams a live demo.",
-    tools: ["get-hnt-price-instant"],
+    tools: ["get-hnt-price-instant", "get-hnt-price-api-reference"],
   },
   {
     path: "/hotspot-claimer",
