@@ -35,9 +35,9 @@ export const hntPriceTools = [
         payload: {
           symbol: 'Always "HNT".',
           spot:
-            "Jupiter market price for display; nullable when that source is unavailable. spot.updated_at is Unix seconds.",
+            'Market price for display; nullable when that source is unavailable. spot.usd is USD per HNT, spot.source identifies the market source (currently "jupiter"), and spot.updated_at is Unix seconds.',
           oracle:
-            "On-chain Pyth state used by the Data Credits program; nullable when the chain read fails. oracle.usd is the posted price; oracle.mint_price_usd is the conservative EMA minus 2× confidence price a DC burn pays; oracle.publish_time is Unix seconds and normally advances about every 5 minutes.",
+            "On-chain Pyth state used by the Data Credits program; nullable when the chain read fails. oracle.usd is the posted USD price, oracle.conf_usd is its confidence interval in USD, oracle.mint_price_usd is the conservative EMA minus 2× confidence price a DC burn pays, oracle.publish_time is Unix seconds and normally advances about every 5 minutes, and oracle.account is the governance-resolved base58 feed address.",
           dc_per_hnt:
             "Integer DC yielded by burning 1 HNT at oracle.mint_price_usd; null when oracle is null. Do not derive DC yield from spot.usd.",
           dc_per_usd: "Always 100000.",
