@@ -32,6 +32,8 @@ export const hntPriceTools = [
       return {
         authentication: "None",
         cors: "Open",
+        rateLimits:
+          "Fixed 60-second window per endpoint, counted per client IP. Requests from a Cloudflare Worker on another zone are counted per calling zone (the CF-Worker header), not per IP. On HTTP 429, wait retryAfterSeconds before retrying.",
         payload: {
           symbol: 'Always "HNT".',
           spot:

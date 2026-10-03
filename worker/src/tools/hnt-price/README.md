@@ -310,6 +310,12 @@ On a 429, back off for `retryAfterSeconds` before retrying. The limit is a
 fixed-window counter per IP per endpoint, so `/current` and `/instant` have
 separate budgets.
 
+**Calling from a Cloudflare Worker.** Cloudflare sends every Worker on another
+zone to this API from the same source address, so those requests are counted
+per calling zone instead of per IP. The zone comes from the `CF-Worker` header
+Cloudflare attaches (`<your-subdomain>.workers.dev` for a workers.dev Worker).
+Each zone gets the full per-endpoint budget, shared by all of its own Workers.
+
 ## Notes for integrators
 
 - The oracle feed account is **never hardcoded** in this service. It is read from

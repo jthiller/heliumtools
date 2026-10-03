@@ -14,6 +14,41 @@ function getClientIp(request) {
 }
 
 /**
+ * The fixed source address Cloudflare stamps into CF-Connecting-IP on every
+ * cross-zone Worker subrequest, in place of the real client IP. See
+ * https://developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ip-in-worker-subrequests
+ */
+const WORKERS_EGRESS_IP = "2a06:98c0:3600::103";
+
+// Hostname-shaped and within DNS's 253-char ceiling. Bounds the KV key; anything
+// else falls back to the shared egress-IP bucket.
+const ZONE_NAME_RE = /^[a-z0-9.-]{1,253}$/;
+
+/**
+ * Who a rate-limit window belongs to: the client IP, except for Workers on
+ * other Cloudflare zones. Those all arrive with the same egress address above,
+ * so keying on IP would put every Worker integrator in one shared bucket (a
+ * handful polling /hnt-price/current at the documented cadence would 429 each
+ * other). For them, key on `CF-Worker` instead — the zone that owns the calling
+ * Worker (`<subdomain>.workers.dev` for workers.dev Workers), which Cloudflare
+ * adds to every Worker `fetch()` subrequest.
+ *
+ * `CF-Worker` is only trusted when CF-Connecting-IP is the egress address, and
+ * that header is read directly rather than through `getClientIp`'s local-dev
+ * X-Forwarded-For fallback: a direct client can send any `CF-Worker` it likes
+ * but cannot set CF-Connecting-IP, so browsers and scripts stay keyed per IP.
+ * The `worker:` prefix keeps zone keys out of the IP key space.
+ */
+function getRateLimitIdentity(request) {
+  const connectingIp = request.headers.get("CF-Connecting-IP")?.toLowerCase();
+  if (connectingIp === WORKERS_EGRESS_IP) {
+    const zone = request.headers.get("CF-Worker")?.trim().toLowerCase();
+    if (zone && ZONE_NAME_RE.test(zone)) return `worker:${zone}`;
+  }
+  return getClientIp(request);
+}
+
+/**
  * Read the stored window record for a key.
  *
  * Returns `{ n, ts }` or null when there is nothing usable. Legacy values are a
@@ -35,6 +70,9 @@ async function readWindow(env, key) {
  * Check IP-based rate limit using KV.
  * Returns null if under limit, or a 429 Response if over limit.
  *
+ * Keyed `${prefix}:<ip>`, or `${prefix}:worker:<zone>` for cross-zone Worker
+ * callers — see `getRateLimitIdentity`.
+ *
  * The counter is a *window-anchored* record — `{ n, ts }` where `ts` is the
  * epoch-second start of the current window. Anchoring matters: if the TTL alone
  * defined the window, every request would refresh it, so a client polling faster
@@ -52,8 +90,7 @@ export async function checkIpRateLimit(
   request,
   { prefix, maxRequests, windowSeconds }
 ) {
-  const ip = getClientIp(request);
-  const key = `${prefix}:${ip}`;
+  const key = `${prefix}:${getRateLimitIdentity(request)}`;
   const now = Math.floor(Date.now() / 1000);
 
   const stored = await readWindow(env, key);

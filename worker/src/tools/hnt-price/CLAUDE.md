@@ -345,6 +345,13 @@ on the page, so a README change means a page change in the same commit.
 | `rl:hntprice:<ip>` | `/current` rate-limit window record `{n, ts}` | 120s (2× the 60s window; the window itself is anchored by `ts`) |
 | `rl:hntprice-instant:<ip>` | `/instant` rate-limit window record `{n, ts}` | 120s |
 
+`<ip>` is `worker:<zone>` for a Worker on another Cloudflare zone. Cloudflare
+stamps all of those with one egress address in CF-Connecting-IP
+(`2a06:98c0:3600::103`), which would put every Worker integrator in one shared
+bucket, so `worker/src/lib/rateLimit.js` keys them on the `CF-Worker` header
+(the calling zone) instead. `CF-Worker` is trusted only alongside that egress
+address. The README's 429 section tells integrators this.
+
 The lock is `withKvLock` from the shared `worker/src/lib/kv.js`: best-effort (KV
 has no atomic put-if-absent), released in a `finally`, and **fails open** — a
 KV error allows the refresh rather than blocking it. When the lock IS held,
