@@ -33,7 +33,7 @@ export const hntPriceTools = [
         authentication: "None",
         cors: "Open",
         rateLimits:
-          "Fixed 60-second window per endpoint, counted per client IP. Requests from a Cloudflare Worker on another zone are counted per calling zone (the CF-Worker header), not per IP. On HTTP 429, wait retryAfterSeconds before retrying.",
+          "/current and /instant use a fixed 60-second window, counted per client IP. Requests from a Cloudflare Worker on another zone are counted per CF-Worker header value (the calling zone) instead, and all such Workers together are capped at 300 requests/minute per endpoint per Cloudflare location. On HTTP 429, wait retryAfterSeconds before retrying. /sse and /ws have no per-caller rate limit, only the shared 500-subscriber ceiling.",
         payload: {
           symbol: 'Always "HNT".',
           spot:

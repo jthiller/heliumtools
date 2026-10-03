@@ -55,7 +55,8 @@ In steady state it never reads the chain on your behalf, so it is fast and safe
 to poll. The one exception is a cold start (nothing cached yet), where the first
 request builds the snapshot live and takes a couple of seconds.
 
-Rate limit: **60 requests per minute per IP**.
+Rate limit: **60 requests per minute per IP** (counted differently from a
+Cloudflare Worker; see [Errors](#errors)).
 
 ```bash
 curl "https://api.heliumtools.org/hnt-price/current"
@@ -78,7 +79,8 @@ a dashboard or a docs page. If you want lower latency than that, use `/ws`.
 The live endpoint. Reads the Solana chain and Jupiter on every single call and
 returns the result without consulting the cache first.
 
-Rate limit: **15 requests per minute per IP**.
+Rate limit: **15 requests per minute per IP** (counted differently from a
+Cloudflare Worker; see [Errors](#errors)).
 
 ```bash
 curl "https://api.heliumtools.org/hnt-price/instant"
@@ -300,7 +302,7 @@ Errors are JSON with an `error` string.
 
 | Status | When | Body |
 |---|---|---|
-| 429 | Over the per-IP rate limit | `{ "error": "Too many requests. Please try again later.", "rateLimited": true, "retryAfterSeconds": 60 }` |
+| 429 | Over the rate limit (per IP, or per `CF-Worker` value from a Cloudflare Worker) | `{ "error": "Too many requests. Please try again later.", "rateLimited": true, "retryAfterSeconds": 60 }` |
 | 404 | Unknown path under `/hnt-price/` | `{ "error": "Not found" }` |
 | 500 | `/current` had nothing cached and could not build a snapshot | `{"error": "HNT price temporarily unavailable"}` |
 | 502 | `/instant` could reach neither the chain nor the market source | `{"error": "HNT price temporarily unavailable"}` |
@@ -310,11 +312,15 @@ On a 429, back off for `retryAfterSeconds` before retrying. The limit is a
 fixed-window counter per IP per endpoint, so `/current` and `/instant` have
 separate budgets.
 
-**Calling from a Cloudflare Worker.** Cloudflare sends every Worker on another
-zone to this API from the same source address, so those requests are counted
-per calling zone instead of per IP. The zone comes from the `CF-Worker` header
-Cloudflare attaches (`<your-subdomain>.workers.dev` for a workers.dev Worker).
-Each zone gets the full per-endpoint budget, shared by all of its own Workers.
+**Calling from a Cloudflare Worker.** Cloudflare sends requests from every
+Worker on another zone to this API from one shared source address, so those
+requests are counted per `CF-Worker` value instead of per IP. That is the
+header Cloudflare attaches to name the calling Worker's zone; for a workers.dev
+Worker it is your `<subdomain>.workers.dev`. Each value gets the full
+per-endpoint budget, shared by every Worker that sends it. As an abuse backstop,
+all Worker callers together are also capped at 300 requests per minute per
+endpoint at each Cloudflare location; a 429 from that cap carries
+`retryAfterSeconds` like any other.
 
 ## Notes for integrators
 

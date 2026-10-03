@@ -20,9 +20,18 @@ function getClientIp(request) {
  */
 const WORKERS_EGRESS_IP = "2a06:98c0:3600::103";
 
-// Hostname-shaped and within DNS's 253-char ceiling. Bounds the KV key; anything
+// Two or more dot-separated DNS labels (1-63 chars, alphanumeric at both ends),
+// 253 chars total — every zone name has this shape. Bounds the KV key; anything
 // else falls back to the shared egress-IP bucket.
-const ZONE_NAME_RE = /^[a-z0-9.-]{1,253}$/;
+const ZONE_NAME_RE =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+const WORKER_ID_PREFIX = "worker:";
+
+// Must match `simple.period` on the WORKER_CALLER_CEILING binding in
+// worker/wrangler.jsonc; the binding doesn't report time left, so a 429 from the
+// ceiling reports the whole period.
+const WORKER_CEILING_PERIOD_SECONDS = 60;
 
 /**
  * Who a rate-limit window belongs to: the client IP, except for Workers on
@@ -43,9 +52,50 @@ function getRateLimitIdentity(request) {
   const connectingIp = request.headers.get("CF-Connecting-IP")?.toLowerCase();
   if (connectingIp === WORKERS_EGRESS_IP) {
     const zone = request.headers.get("CF-Worker")?.trim().toLowerCase();
-    if (zone && ZONE_NAME_RE.test(zone)) return `worker:${zone}`;
+    if (zone && ZONE_NAME_RE.test(zone)) return `${WORKER_ID_PREFIX}${zone}`;
   }
   return getClientIp(request);
+}
+
+/**
+ * Backstop for the per-zone keying: every Worker-zone caller under one
+ * rate-limit prefix, combined, against one ceiling (the limit lives on the
+ * binding in worker/wrangler.jsonc). A prefix is one endpoint for hnt-price, but
+ * several handlers share one (`rl:wd`, `rl:rewards`) and so share its ceiling.
+ * Cloudflare documents that it adds `CF-Worker`, not that a Worker can't
+ * overwrite it; if one can, rotating values would otherwise mint a fresh window
+ * per value — unbounded /hnt-price/instant chain reads, for one. Before per-zone
+ * keying, the shared egress-IP bucket was this bound. The cost is the same as
+ * that bucket's, only at a much higher threshold: whoever exhausts the ceiling
+ * 429s every Worker caller of that prefix at that location for up to a minute.
+ *
+ * A Rate Limiting binding rather than a KV counter: one key written by every
+ * Worker request would hit KV's 1-write/sec/key limit and stall near 60/min,
+ * so it could never count up to a ceiling above that. The binding counts per
+ * Cloudflare location and approximately, which is fine for a backstop.
+ *
+ * Fails open, like the KV window: no binding (an env that didn't declare it) or
+ * a binding error allows the request.
+ */
+async function underWorkerCeiling(env, prefix) {
+  if (!env.WORKER_CALLER_CEILING) return true;
+  try {
+    const { success } = await env.WORKER_CALLER_CEILING.limit({ key: prefix });
+    return success;
+  } catch {
+    return true;
+  }
+}
+
+function tooManyRequests(retryAfterSeconds) {
+  return jsonResponse(
+    {
+      error: "Too many requests. Please try again later.",
+      rateLimited: true,
+      retryAfterSeconds,
+    },
+    429
+  );
 }
 
 /**
@@ -71,7 +121,8 @@ async function readWindow(env, key) {
  * Returns null if under limit, or a 429 Response if over limit.
  *
  * Keyed `${prefix}:<ip>`, or `${prefix}:worker:<zone>` for cross-zone Worker
- * callers — see `getRateLimitIdentity`.
+ * callers — see `getRateLimitIdentity`. Those callers also count against a
+ * combined per-prefix ceiling — see `underWorkerCeiling`.
  *
  * The counter is a *window-anchored* record — `{ n, ts }` where `ts` is the
  * epoch-second start of the current window. Anchoring matters: if the TTL alone
@@ -90,7 +141,8 @@ export async function checkIpRateLimit(
   request,
   { prefix, maxRequests, windowSeconds }
 ) {
-  const key = `${prefix}:${getRateLimitIdentity(request)}`;
+  const identity = getRateLimitIdentity(request);
+  const key = `${prefix}:${identity}`;
   const now = Math.floor(Date.now() / 1000);
 
   const stored = await readWindow(env, key);
@@ -100,15 +152,13 @@ export async function checkIpRateLimit(
   if (!expired && stored.n >= maxRequests) {
     // Report the time left in *this* window rather than the full window length —
     // more useful to the caller and still an honest upper bound.
-    const remaining = Math.max(1, stored.ts + windowSeconds - now);
-    return jsonResponse(
-      {
-        error: "Too many requests. Please try again later.",
-        rateLimited: true,
-        retryAfterSeconds: remaining,
-      },
-      429
-    );
+    return tooManyRequests(Math.max(1, stored.ts + windowSeconds - now));
+  }
+
+  // Checked only once the caller's own window has room, so requests its window
+  // already refused don't use up the shared ceiling.
+  if (identity.startsWith(WORKER_ID_PREFIX) && !(await underWorkerCeiling(env, prefix))) {
+    return tooManyRequests(WORKER_CEILING_PERIOD_SECONDS);
   }
 
   // `kvPutJson` swallows write failures, which is the posture we want: a

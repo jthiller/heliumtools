@@ -350,7 +350,10 @@ stamps all of those with one egress address in CF-Connecting-IP
 (`2a06:98c0:3600::103`), which would put every Worker integrator in one shared
 bucket, so `worker/src/lib/rateLimit.js` keys them on the `CF-Worker` header
 (the calling zone) instead. `CF-Worker` is trusted only alongside that egress
-address. The README's 429 section tells integrators this.
+address. Worker callers also count against a combined ceiling per prefix (300/min
+per Cloudflare location, the `WORKER_CALLER_CEILING` Rate Limiting binding — not
+KV, whose 1-write/sec/key limit can't count that high). The README's 429 section
+tells integrators both.
 
 The lock is `withKvLock` from the shared `worker/src/lib/kv.js`: best-effort (KV
 has no atomic put-if-absent), released in a `finally`, and **fails open** — a
@@ -438,6 +441,8 @@ whose callers can tolerate a skipped refresh).
 - `SOLANA_RPC_URL` — Helius staked endpoint, for the DataCreditsV0 and feed
   account reads (never log or expose).
 - `KV` binding — snapshot, lock, rate-limit counters.
+- `WORKER_CALLER_CEILING` — Rate Limiting binding behind the shared limiter's
+  combined per-prefix cap on cross-zone Worker callers (not hnt-price-specific).
 - `HNT_PRICE_HUB` — Durable Object binding (`HntPriceHub`).
 - No new env vars, and no D1.
 

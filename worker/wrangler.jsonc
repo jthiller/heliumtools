@@ -27,6 +27,19 @@
             "id": "aea1fbf2cf5e4d64970043dc302dcc03"
         }
     ],
+    // Combined ceiling on cross-zone Worker callers, per rate-limit prefix
+    // (worker/src/lib/rateLimit.js `underWorkerCeiling`). Counted per Cloudflare
+    // location. `period` must match WORKER_CEILING_PERIOD_SECONDS there.
+    // namespace_id is account-wide, so dev and production use different ones to
+    // keep their counters apart. Redeclared in env.production below — envs
+    // don't inherit top-level keys.
+    "ratelimits": [
+        {
+            "name": "WORKER_CALLER_CEILING",
+            "namespace_id": "1001",
+            "simple": { "limit": 300, "period": 60 }
+        }
+    ],
     // Durable Objects:
     //   MultiGatewayHub fans out one upstream-per-region SSE subscription to
     //     many browser clients over WebSocket. See
@@ -92,6 +105,13 @@
                 {
                     "binding": "KV",
                     "id": "338f0cc920654b268ca54f11f3c86580"
+                }
+            ],
+            "ratelimits": [
+                {
+                    "name": "WORKER_CALLER_CEILING",
+                    "namespace_id": "1002",
+                    "simple": { "limit": 300, "period": 60 }
                 }
             ],
             "durable_objects": {
