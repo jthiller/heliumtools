@@ -1,4 +1,11 @@
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { InformationCircleIcon } from "@heroicons/react/24/outline";
 import { classNames } from "../../lib/utils.js";
+
+/** Small outlined action button (table actions, Retry). */
+export const ACTION_BTN =
+  "inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-content-secondary transition hover:border-content-tertiary";
 
 /** Shared class for the icon-prefixed search / address inputs. */
 export const SEARCH_INPUT_CLASS =
@@ -112,6 +119,145 @@ export function Badge({ children, tone = "default" }) {
     >
       {children}
     </span>
+  );
+}
+
+
+const CALLOUT_TONES = {
+  warn: {
+    box: "bg-rose-50 dark:bg-rose-950/30",
+    head: "text-rose-700 dark:text-rose-300/80",
+    text: "text-rose-700 dark:text-rose-300",
+  },
+  caution: {
+    box: "bg-amber-50 dark:bg-amber-950/30",
+    head: "text-amber-700 dark:text-amber-300/80",
+    text: "text-amber-700 dark:text-amber-300",
+  },
+  default: { box: "bg-surface-inset", head: "text-content-tertiary", text: "text-content-secondary" },
+};
+
+/** Callout listing the first few Hotspot names with an "and N more" overflow.
+ * `tone`: "warn" (rose) | "caution" (amber) | default (neutral). `total` (when
+ * `names` is already just the first few) sizes the overflow. */
+export function NameCallout({ title, names, tone, total = names.length }) {
+  const styles = CALLOUT_TONES[tone] || CALLOUT_TONES.default;
+  return (
+    <div className={classNames("mt-3 rounded-lg p-3", styles.box)}>
+      <div className={classNames("mb-1 text-[11px] font-medium uppercase tracking-wide", styles.head)}>
+        {title}
+      </div>
+      <div className={classNames("text-xs", styles.text)}>
+        {names.slice(0, 4).join(", ")}
+        {total > 4 && ` and ${total - 4} more`}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Info glyph that explains the label beside it. A real button, so the text is
+ * reachable by every input: hover or keyboard focus shows it, and a click/tap
+ * toggles it (iOS doesn't focus a tapped button, so focus alone isn't enough).
+ * Closes on blur, Escape, or a tap elsewhere. The bubble is portaled to <body>
+ * so card/table overflow can't clip it; screen readers get the text as the
+ * button's description.
+ */
+// Viewport px an InfoTip needs above its glyph (a few lines of bubble plus a
+// sticky page header) before it opens below instead.
+const TIP_ROOM_ABOVE = 180;
+
+export function InfoTip({ text, label = "More info" }) {
+  const id = useId();
+  const ref = useRef(null);
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [pos, setPos] = useState(null);
+  const open = hover || pinned;
+
+  const place = useCallback(() => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const half = Math.min(160, window.innerWidth / 2 - 8); // ≤ 20rem bubble
+    // Above the glyph, unless that would run under a sticky page header or
+    // off the top: then below it.
+    const below = r.top < TIP_ROOM_ABOVE;
+    setPos({
+      x: Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8),
+      y: below ? r.bottom + 6 : r.top - 6,
+      below,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, place]);
+
+  useEffect(() => {
+    if (!pinned) return;
+    const away = (e) => !ref.current?.contains(e.target) && setPinned(false);
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [pinned]);
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        aria-describedby={id}
+        aria-expanded={open}
+        onClick={() => setPinned((p) => !p)}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onFocus={() => setHover(true)}
+        onBlur={() => {
+          setHover(false);
+          setPinned(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && open) {
+            e.stopPropagation();
+            setHover(false);
+            setPinned(false);
+          }
+        }}
+        className="inline-flex shrink-0 rounded-full align-[-2px] text-content-tertiary transition hover:text-content-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+      >
+        <InformationCircleIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {/* Always in the DOM (hidden when closed) so aria-describedby resolves. */}
+      {open && pos ? (
+        createPortal(
+          <span
+            id={id}
+            role="tooltip"
+            style={{
+              position: "fixed",
+              left: pos.x,
+              top: pos.y,
+              transform: pos.below ? "translateX(-50%)" : "translate(-50%, -100%)",
+            }}
+            className="pointer-events-none z-[1000] w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-md bg-surface-raised px-2.5 py-1.5 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-content shadow-soft-lg"
+          >
+            {text}
+          </span>,
+          document.body,
+        )
+      ) : (
+        <span id={id} hidden>
+          {text}
+        </span>
+      )}
+    </>
   );
 }
 

@@ -1,23 +1,25 @@
 import { useState, useEffect, useRef } from "react";
-import { fetchGatewayStatus } from "../lib/iotStatusApi.js";
+import { scanGatewayStatuses } from "../lib/iotStatusApi.js";
 import { hasIotStatus } from "./format.js";
 
-// Per-address GETs (the service has no batch endpoint — it's designed for
-// per-row bursts and collapses them at its edge cache). Bounded fan-out; state
-// flushes are time-throttled so a large fleet re-renders the dashboard a few
-// times per scan, not once per completed lookup.
-const CONCURRENCY = 8;
+// State flushes are time-throttled so a large fleet re-renders the dashboard a
+// few times per scan, not once per completed lookup.
 const FLUSH_INTERVAL_MS = 500;
 
 /**
- * Progressively fetch IoT connectivity status (active/inactive) for a fleet
- * from api-iot.heliumtools.org, one GET per IoT Hotspot (see hasIotStatus for
- * eligibility — mobile-only rows are skipped; the service covers IoT only).
+ * Progressively fetch each IoT Hotspot's api-iot.heliumtools.org record — IoT
+ * connectivity (active/inactive) plus its 30-day traffic (`utilization`)
+ * block — one GET per IoT Hotspot via `scanGatewayStatuses` (see hasIotStatus
+ * for eligibility — mobile-only rows are skipped; the service covers IoT
+ * only). This is the ONLY per-row fan-out to the service; per-Hotspot detail
+ * and coverage are fetched lazily for an opened Hotspot.
  *
- * statusByKey values: { status: 0|1 } | { notFound: true } | null (lookup
- * failed → "unknown"); a key that is absent is still loading. `dataThrough` is
- * the liveness feed's newest event timestamp (shared by every lookup) — the
- * anchor for "setting up" derivation and the "as of" display.
+ * statusByKey values: the `fetchGatewayStatus` record ({ status, dataThrough,
+ * hex, utilization, utilizationState }) | { notFound: true } | null (lookup
+ * failed → "unknown"); a key that is absent is still loading. Derive verdicts
+ * through format.js (`aggregateIotStatus` / `iotRowOf`). `dataThrough` is the
+ * newest liveness anchor seen across lookups — the fallback for "setting up"
+ * derivation.
  *
  * @returns {{ statusByKey, dataThrough, done }}
  */
@@ -40,45 +42,23 @@ export default function useFleetIotStatus(hotspots) {
     setState({ statusByKey: {}, dataThrough: null, done: false });
 
     let cancelled = false;
-    const statusByKey = {};
-    let dataThrough = null;
+    const isCancelled = () => cancelled || runId !== runIdRef.current;
     let lastFlush = 0;
-    let cursor = 0;
-
-    const flush = (done = false) => {
+    const flush = ({ statusByKey, dataThrough }, done = false) => {
       lastFlush = Date.now();
       setState({ statusByKey: { ...statusByKey }, dataThrough, done });
     };
 
-    async function worker() {
-      while (!cancelled && runId === runIdRef.current) {
-        const idx = cursor++;
-        if (idx >= eligible.length) return;
-        const h = eligible[idx];
-        try {
-          const entry = await fetchGatewayStatus(h.entityKey);
-          if (cancelled || runId !== runIdRef.current) return;
-          statusByKey[h.entityKey] = entry;
-          // Keep the NEWEST anchor seen (ISO strings order lexicographically).
-          // First-wins would be nondeterministic under concurrency and could
-          // pin a stale day when a scan mixes cached and fresh lookups.
-          if (entry.dataThrough && (!dataThrough || entry.dataThrough > dataThrough)) {
-            dataThrough = entry.dataThrough;
-          }
-        } catch {
-          // Transport failure / 5xx — record as null so the Hotspot reads as
-          // "unknown" instead of silently counting as inactive.
-          if (cancelled || runId !== runIdRef.current) return;
-          statusByKey[h.entityKey] = null;
-        }
-        if (Date.now() - lastFlush >= FLUSH_INTERVAL_MS) flush();
-      }
-    }
-
-    const pool = Array.from({ length: Math.min(CONCURRENCY, eligible.length) }, worker);
-    Promise.all(pool).then(() => {
-      if (cancelled || runId !== runIdRef.current) return;
-      flush(true);
+    scanGatewayStatuses(
+      eligible.map((h) => h.entityKey),
+      {
+        isCancelled,
+        onProgress: (result) => {
+          if (Date.now() - lastFlush >= FLUSH_INTERVAL_MS) flush(result);
+        },
+      },
+    ).then((result) => {
+      if (!isCancelled()) flush(result, true);
     });
 
     return () => {
