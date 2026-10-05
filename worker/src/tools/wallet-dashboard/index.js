@@ -3,6 +3,7 @@ import { handleSummary } from "./handlers/summary.js";
 import { handleFleet } from "./handlers/fleet.js";
 import { handleTransactions } from "./handlers/transactions.js";
 import { handleRewards } from "./handlers/rewards.js";
+import { handleOnboarded } from "./handlers/onboarded.js";
 
 /**
  * Wallet Dashboard — read-only aggregation API.
@@ -10,6 +11,7 @@ import { handleRewards } from "./handlers/rewards.js";
  *   GET  /fleet?wallet=         full per-Hotspot list + stats
  *   GET  /transactions?wallet=  categorized recent transactions
  *   POST /rewards               batched + cached pending/lifetime rewards
+ *   POST /onboarded             batched + cached on-chain onboard dates
  *
  * Governance (veHNT) is served by the existing /ve-hnt endpoint, called from the
  * client. The shared /hotspot-claimer/wallet/rewards is intentionally NOT used
@@ -34,6 +36,9 @@ export async function handleWalletDashboardRequest(request, env) {
   }
   if (pathname === "/rewards" && request.method === "POST") {
     return handleRewards(request, env);
+  }
+  if (pathname === "/onboarded" && request.method === "POST") {
+    return handleOnboarded(request, env);
   }
 
   return jsonResponse({ error: "Not found" }, 404);

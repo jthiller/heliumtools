@@ -21,9 +21,11 @@ import {
   lifetimeUi,
   isEarning,
   isTrafficKnown,
+  onboardedAtOf,
   iotActionRank,
   IOT_STATUS_LABEL,
   IOT_STATUS_COLOR,
+  ONBOARDED_NOTE,
   IOT_HEALTH,
   IOT_HEALTH_ORDER,
   IOT_MESSAGES_NOTE,
@@ -124,12 +126,13 @@ function MessagesCell({ row: r, messages, trafficState, expanded, onToggle }) {
  * One table row, memo'd so the progressive scans stay cheap: it takes only
  * primitives derived from the scan (plus the row object and a stable toggle),
  * so a status flush re-renders only the rows whose values actually changed
- * (row object identities are stable across status flushes — see the rows memo
- * below). Rewards flushes re-clone the row objects, so those still repaint
- * every row.
+ * (row object identities are stable across status and onboard-date flushes —
+ * see the rows memo below). Rewards flushes re-clone the row objects, so those
+ * still repaint every row.
  */
 const FleetRow = memo(function FleetRow({
   row: r,
+  onboardedAt,
   status,
   health,
   messages,
@@ -148,7 +151,9 @@ const FleetRow = memo(function FleetRow({
       <td className="px-3 py-2 text-content-secondary">
         {[r.city, r.state].filter(Boolean).join(", ") || "—"}
       </td>
-      <td className="px-3 py-2 text-content-secondary">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
+      <td className="px-3 py-2 text-content-secondary">
+        {onboardedAt === undefined ? <span className="text-content-tertiary">…</span> : fmtDate(onboardedAt)}
+      </td>
       <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
         {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
       </td>
@@ -217,11 +222,14 @@ function Th({ children, sortKey, sort, onSort, className = "" }) {
  * @param iotStatus  the shell's `aggregateIotStatus` result: per-row verdicts
  *                   (`rows`), health counts and data days — derived once per
  *                   scan flush, never recomputed here.
+ * @param onboardedByKey  the onboard scan's per-network dates (see onboardedAtOf;
+ *                   absent = loading)
  */
 export default function FleetTableCard({
   hotspots,
   rewardsByKey,
   rewardsDone,
+  onboardedByKey,
   iotStatus,
   iotFilter = null,
   onIotFilterChange,
@@ -265,6 +273,8 @@ export default function FleetTableCard({
   // filtering by health, so other orderings don't re-sort on every flush.
   const readsScan = sort.key === "status" || sort.key === "messages" || Boolean(iotFilter);
   const scanRows = readsScan ? iotRows : null;
+  // Likewise the onboard dates, only while sorting by them.
+  const sortDates = sort.key === "onboarded" ? onboardedByKey : null;
   const rows = useMemo(() => {
     const scan = (r) => scanRows?.get(r.entityKey) ?? NON_IOT;
     const list = iotFilter ? baseRows.filter((r) => scan(r).health === iotFilter) : [...baseRows];
@@ -274,7 +284,10 @@ export default function FleetTableCard({
       switch (sort.key) {
         case "device": av = a.deviceType || ""; bv = b.deviceType || ""; break;
         case "location": av = `${a.state || ""}${a.city || ""}`; bv = `${b.state || ""}${b.city || ""}`; break;
-        case "created": av = a.createdAt || ""; bv = b.createdAt || ""; break;
+        case "onboarded":
+          av = onboardedAtOf(sortDates?.[a.entityKey]) || "";
+          bv = onboardedAtOf(sortDates?.[b.entityKey]) || "";
+          break;
         case "lifetime": av = a._hntLife; bv = b._hntLife; break;
         case "status": {
           const sa = scan(a);
@@ -298,7 +311,7 @@ export default function FleetTableCard({
       return 0;
     });
     return list;
-  }, [baseRows, scanRows, iotFilter, sort]);
+  }, [baseRows, scanRows, sortDates, iotFilter, sort]);
 
   // One open detail at a time; collapse it when its row leaves the table
   // (search, filter, wallet change) rather than reopening it on return.
@@ -364,7 +377,7 @@ export default function FleetTableCard({
   const downloadCsv = useCallback(() => {
     const header = [
       "name", "entity_key", "asset_id", "network", "device_type",
-      "city", "state", "country", "h3_location", "created_at",
+      "city", "state", "country", "h3_location", "onboarded_at",
       "iot_status", "iot_health", "iot_messages_30d", "iot_oui_ids", "iot_traffic_through",
       "lifetime_iot", "lifetime_hnt",
     ];
@@ -380,7 +393,7 @@ export default function FleetTableCard({
       const block = isTrafficKnown(traffic) ? traffic : null;
       lines.push(
         [
-          r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt,
+          r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, onboardedAtOf(onboardedByKey?.[r.entityKey]),
           IOT_STATUS_CSV[status] ?? "", health ? IOT_HEALTH[health].csv : "", messages, block?.ouis.join(";"), block?.dataThrough,
           r._iotLife, r._hntLife,
         ]
@@ -389,8 +402,8 @@ export default function FleetTableCard({
       );
     }
     downloadTextFile("hotspots.csv", lines.join("\n"), "text/csv;charset=utf-8");
-    // scanOf reads iotRows — the export reflects the scan as it stands.
-  }, [rows, iotRows]);
+    // scanOf reads iotRows — the export reflects the scans as they stand.
+  }, [rows, iotRows, onboardedByKey]);
 
   // The chip row exists from the first frame for any fleet with IoT Hotspots
   // (a placeholder while the scan has nothing yet), so the table never shifts
@@ -480,7 +493,9 @@ export default function FleetTableCard({
               <Th sortKey="name" sort={sort} onSort={onSort}>Name</Th>
               <Th sortKey="device" sort={sort} onSort={onSort}>Device</Th>
               <Th sortKey="location" sort={sort} onSort={onSort}>Location</Th>
-              <Th sortKey="created" sort={sort} onSort={onSort}>Created</Th>
+              <Th sortKey="onboarded" sort={sort} onSort={onSort}>
+                <span title={ONBOARDED_NOTE}>Onboarded</span>
+              </Th>
               <Th sortKey="lifetime" sort={sort} onSort={onSort} className="text-right">Lifetime HNT</Th>
               <Th sortKey="status" sort={sort} onSort={onSort}>
                 <span title={statusTitle}>Status</span>
@@ -515,6 +530,7 @@ export default function FleetTableCard({
                   <FleetRow
                     key={r.entityKey}
                     row={r}
+                    onboardedAt={onboardedAtOf(onboardedByKey?.[r.entityKey])}
                     status={scan.status}
                     health={scan.health}
                     messages={scan.messages}

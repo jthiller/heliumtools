@@ -1,4 +1,4 @@
-import { fetchSummary, fetchFleet, fetchRewards, fetchTransactions } from "../lib/walletDashboardApi.js";
+import { fetchSummary, fetchFleet, fetchRewards, scanOnboardDates, fetchTransactions } from "../lib/walletDashboardApi.js";
 import {
   scanGatewayStatuses,
   fetchUtilizationIndex,
@@ -12,11 +12,14 @@ import {
   IOT_CONNECTIVITY_NOTE,
   hasIotStatus,
   isTrafficKnown,
+  iotStatusOf,
   iotActionRank,
   byMessagesDesc,
   indexForBuild,
   aggregateIotStatus,
   deriveTrafficDetail,
+  onboardingStats,
+  onboardedAtOf,
 } from "./format.js";
 import { REWARDS_BATCH_SIZE, eligibleRewardHotspots } from "./useFleetRewards.js";
 
@@ -30,6 +33,8 @@ const ADDRESS_SCHEMA = {
 const FLEET_RESULT_CAP = 200;
 /** Two reward batches keeps the tool bounded on maker-sized fleets. */
 const REWARDS_HOTSPOT_CAP = 100;
+/** Four onboard batches — matches the fleet tool's row cap. */
+const ONBOARDED_HOTSPOT_CAP = FLEET_RESULT_CAP;
 /** IoT status lookups when the tool scans a wallet itself (one GET each).
  * Kept equal to FLEET_RESULT_CAP so a scanned list never also hits the list
  * cap — the two `truncated` notes can't collide. */
@@ -108,7 +113,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
       name: "get-wallet-summary",
       title: "Get wallet summary",
       description:
-        "Token balances (HNT/MOBILE/IOT/SOL/DC) with USD prices, portfolio total, and fleet stats for a wallet. Cached server-side ~60s.",
+        "Token balances (HNT/MOBILE/IOT/SOL/DC) with USD prices, portfolio total, and fleet stats (counts by network/device type, asserted locations, regions, onboarding DC) for a wallet. Cached server-side ~60s. Onboard dates are not included — use get-wallet-onboarding.",
       inputSchema: {
         type: "object",
         properties: { address: ADDRESS_SCHEMA },
@@ -123,7 +128,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
       name: "get-wallet-fleet",
       title: "Get wallet Hotspot fleet",
       description:
-        `Full per-Hotspot list for a wallet plus fleet stats (counts by network/device type, regions, onboarding timeline). Each row: name, entityKey, assetId, network(s), deviceType, location (H3 cell) with city/state/country, createdAt, elevation (m), gain (tenths of a dBi), and dcOnboardingFeePaid. On-chain metadata only — for IoT connectivity and traffic use get-wallet-iot-status; for rewards, get-wallet-rewards. Large fleets are truncated to ${FLEET_RESULT_CAP} Hotspots in the result (the UI shows all).`,
+        `Full per-Hotspot list for a wallet plus fleet stats (counts by network/device type, asserted locations, regions, onboarding DC). Each row: name, entityKey, assetId, network(s), deviceType, location (H3 cell) with city/state/country, elevation (m), gain (tenths of a dBi), and dcOnboardingFeePaid. On-chain metadata only — for onboard dates use get-wallet-onboarding; for IoT connectivity and traffic, get-wallet-iot-status; for rewards, get-wallet-rewards. Large fleets are truncated to ${FLEET_RESULT_CAP} Hotspots in the result (the UI shows all).`,
       inputSchema: {
         type: "object",
         properties: { address: ADDRESS_SCHEMA },
@@ -202,6 +207,52 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
       },
     },
     {
+      name: "get-wallet-onboarding",
+      title: "Get wallet Hotspot onboard dates",
+      description:
+        `When a wallet's Hotspots were onboarded, read from chain (block time of the first successful transaction on each Hotspot's IoT/Mobile info account): first and latest date, a per-month count (UTC), and per-Hotspot ISO dates (a Hotspot on both networks shows the earlier one; null = couldn't be determined). Hotspots from before Helium's April 2023 move to Solana show their migration date, not their original deployment. Covers up to ${ONBOARDED_HOTSPOT_CAP} Hotspots; dates are cached server-side once resolved, so a first lookup of a large fleet is the slow one.`,
+      inputSchema: {
+        type: "object",
+        properties: { address: ADDRESS_SCHEMA },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute({ address }) {
+        const wallet = requireWallet(address);
+        const fleet = await fetchFleet(wallet);
+        const all = fleet?.hotspots || [];
+        const counted = all.slice(0, ONBOARDED_HOTSPOT_CAP);
+        // A failed or rate-limited batch reads null for its Hotspots rather than
+        // discarding the others' dates (the agent gets a partial result, not a wait).
+        const { onboardedByKey, failedBatches, batchCount } = await scanOnboardDates(counted);
+        if (failedBatches === batchCount && batchCount > 0) {
+          throw new Error("every onboard-date batch failed — try again shortly");
+        }
+        const { oldest, newest, timeline } = onboardingStats(onboardedByKey);
+        const unknown = counted.filter((h) => !onboardedAtOf(onboardedByKey[h.entityKey])).length;
+        return {
+          wallet,
+          fleetSize: all.length,
+          hotspotsCounted: counted.length,
+          ...(all.length > counted.length
+            ? { truncated: `dates read for ${counted.length} of ${all.length} Hotspots` }
+            : {}),
+          ...(failedBatches
+            ? { failedBatches: `${failedBatches} of ${batchCount} batches failed — those Hotspots read null` }
+            : {}),
+          ...(unknown ? { undetermined: unknown } : {}),
+          firstOnboarded: oldest,
+          latestOnboarded: newest,
+          byMonth: timeline,
+          hotspots: counted.map((h) => ({
+            name: h.name,
+            entityKey: h.entityKey,
+            onboardedAt: onboardedAtOf(onboardedByKey[h.entityKey]),
+          })),
+        };
+      },
+    },
+    {
       name: "get-wallet-iot-status",
       title: "Get wallet IoT connectivity and traffic",
       description:
@@ -229,7 +280,13 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
           if (hotspots.length > 0 && hotspots.every((h) => statusByKey[h.entityKey] === null)) {
             throw new Error("every IoT status lookup failed — try again shortly");
           }
-          agg = aggregateIotStatus(hotspots, statusByKey, dataThrough);
+          // /fleet rows carry no onboard date, and a not-active verdict needs
+          // one (setting up vs inactive): iotStatusOf holds exactly those rows
+          // as pending. Read dates for them alone; a failed read lands as null,
+          // which falls through, so no row stays pending.
+          const undated = hotspots.filter((h) => iotStatusOf(h, statusByKey[h.entityKey], dataThrough) === "pending");
+          const { onboardedByKey } = await scanOnboardDates(undated);
+          agg = aggregateIotStatus(hotspots, statusByKey, dataThrough, onboardedByKey);
         }
         const index = await indexPromise;
 

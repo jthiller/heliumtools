@@ -10,20 +10,7 @@ import { fetchProposalMarkers } from "./builders.js";
 import { getSignaturesForAddress } from "./rpc.js";
 import { getRecordedMarkers, insertVoteEvents } from "./history.js";
 import { MARKER_TIME_CONCURRENCY, MAX_NEW_MARKERS_PER_RUN } from "../config.js";
-
-/** Run `fn` over `items` with bounded concurrency, preserving order. */
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
+import { mapLimit } from "../../../lib/async.js";
 
 /**
  * @param markers pre-fetched markers (from the snapshot) to avoid a second

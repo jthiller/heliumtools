@@ -99,6 +99,49 @@ export function deviceLabel(key) {
   return DEVICE_LABEL[key] || key || "Unknown";
 }
 
+// ── Onboard dates (/wallet-dashboard/onboarded) ──────────────────────────────
+// `onboardedByKey` (useFleetOnboarded / scanOnboardDates): entityKey → that
+// Hotspot's dates per network, `{ iot?, mobile? }` (ISO, or null when unknown);
+// an absent key is still loading. Hotspots from the legacy Helium L1 carry
+// their migration date.
+
+/** User-facing caveat for every surface that shows an onboard date. */
+export const ONBOARDED_NOTE =
+  "Date each Hotspot was onboarded on Solana. Hotspots from before Helium's April 2023 move to Solana show their migration date.";
+
+/** A Hotspot's onboard date for display — its earliest network's (ISO) — from
+ * its `onboardedByKey` entry; null when unknown, undefined while loading. */
+export function onboardedAtOf(dates) {
+  if (dates === undefined) return undefined;
+  // ISO timestamps from toISOString sort chronologically as strings.
+  return Object.values(dates).filter(Boolean).sort()[0] ?? null;
+}
+
+/** The IoT onboard date `iotStatusOf` needs (setting up vs inactive): ISO, null
+ * when unknown, undefined while loading. */
+function iotOnboardedAtOf(dates) {
+  return dates === undefined ? undefined : (dates.iot ?? null);
+}
+
+/** Oldest/newest onboard date and a per-month (UTC) count over the dated Hotspots. */
+export function onboardingStats(onboardedByKey) {
+  const months = {};
+  let oldest = null;
+  let newest = null;
+  for (const dates of Object.values(onboardedByKey || {})) {
+    const t = onboardedAtOf(dates);
+    if (!t) continue;
+    const month = t.slice(0, 7); // YYYY-MM (the worker emits toISOString)
+    months[month] = (months[month] || 0) + 1;
+    if (!oldest || t < oldest) oldest = t;
+    if (!newest || t > newest) newest = t;
+  }
+  const timeline = Object.entries(months)
+    .map(([month, count]) => ({ month, count }))
+    .sort((a, b) => (a.month < b.month ? -1 : 1));
+  return { oldest, newest, timeline };
+}
+
 // ── IoT connectivity (api-iot.heliumtools.org) ───────────────────────────────
 // Per-day granularity: "active" = connected to the Helium Packet Router during
 // the liveness feed's most recent reported day — not "online right now". Its
@@ -137,27 +180,36 @@ export function hasIotStatus(hotspot) {
 /**
  * Derive one Hotspot's IoT connectivity state from its api-iot lookup entry.
  *   "active" | "inactive" — the service's per-day liveness verdict
- *   "settingUp"           — created after the feed's newest data, so it hasn't
- *                           been reported on yet (per the API reference: treat
- *                           as setting up, not inactive)
+ *   "settingUp"           — onboarded after the feed's newest data, so it
+ *                           hasn't been reported on yet (per the API reference:
+ *                           treat as setting up, not inactive)
  *   "unknown"             — lookup failed, or the address isn't in the
  *                           service's inventory
- *   "pending"             — not fetched yet (scan still running)
+ *   "pending"             — not fetched yet (scan still running), or not
+ *                           active and `onboardedAt` — which decides
+ *                           settingUp vs inactive/unknown — is still loading
+ *                           (undefined)
  *   null                  — no IoT status applies (see hasIotStatus)
  * Resolved verdicts are exactly the IOT_STATUS_LABEL keys. Invalid dates
- * compare false and simply fall through to inactive/unknown.
+ * compare false and simply fall through to inactive/unknown. `onboardedAt` is
+ * the Hotspot's IoT onboard date (not its earliest network's: a Hotspot that
+ * joined Mobile long ago and IoT yesterday is setting up on IoT).
  */
-export function iotStatusOf(hotspot, entry, dataThrough) {
+export function iotStatusOf(hotspot, entry, dataThrough, onboardedAt) {
   if (!hasIotStatus(hotspot)) return null;
   if (entry === undefined) return "pending";
   if (entry === null) return "unknown";
   if (!entry.notFound && entry.status === 0) return "active";
-  // Anchor "created after the feed" to the dataThrough this entry was computed
+  // Hold the verdict while the onboard date loads rather than flash "Inactive"
+  // on a Hotspot that turns out to be setting up. A date that couldn't be
+  // resolved (null) falls through to inactive/unknown.
+  if (onboardedAt === undefined) return "pending";
+  // Anchor "onboarded after the feed" to the dataThrough this entry was computed
   // against; the fleet-wide anchor is only a fallback (404 entries carry none).
   // Mixing them would mispair verdict and anchor when a scan spans a feed-day
   // rollover (per-address edge caches expire independently).
   const anchor = entry.dataThrough ?? dataThrough;
-  if (anchor && hotspot.createdAt && new Date(hotspot.createdAt).getTime() > new Date(anchor).getTime()) {
+  if (anchor && onboardedAt && new Date(onboardedAt).getTime() > new Date(anchor).getTime()) {
     return "settingUp";
   }
   return entry.notFound ? "unknown" : "inactive";
@@ -342,8 +394,8 @@ export function iotActionRank(status, health) {
  *              (name its day with livenessDay), else null
  *   hex      — the service's asserted res-12 cell, or null
  */
-export function iotRowOf(hotspot, entry, dataThrough) {
-  const status = iotStatusOf(hotspot, entry, dataThrough);
+export function iotRowOf(hotspot, entry, dataThrough, onboardedAt) {
+  const status = iotStatusOf(hotspot, entry, dataThrough, onboardedAt);
   if (status === null) return null;
   const traffic = iotTrafficOf(hotspot, entry);
   return {
@@ -366,7 +418,10 @@ export function byMessagesDesc(a, b) {
 /**
  * Aggregate per-Hotspot IoT connectivity + traffic for the whole dashboard —
  * one pass per scan flush. `counted` excludes still-pending lookups so
- * percentages stay honest during the progressive scan.
+ * percentages stay honest during the progressive scan. `onboardedByKey` is
+ * required: a not-active row stays pending until its onboard date is in it.
+ * `awaitingDate` counts those rows — while it's above zero the resolved rows
+ * skew active (active verdicts need no date), so shares shouldn't be shown.
  *
  * `rows`: Map entityKey → iotRowOf row, for every IoT Hotspot (pending too).
  * `groups`: {IOT_HEALTH key: [{hotspot, row}]} in fleet order (sort what you show).
@@ -380,8 +435,8 @@ export function byMessagesDesc(a, b) {
  *   evidently published.
  * `livenessRange` / `trafficRange`: {min,max} data days across reported rows.
  */
-export function aggregateIotStatus(hotspots, statusByKey, dataThrough) {
-  const agg = { iotTotal: 0, counted: 0 };
+export function aggregateIotStatus(hotspots, statusByKey, dataThrough, onboardedByKey) {
+  const agg = { iotTotal: 0, counted: 0, awaitingDate: 0 };
   for (const s of IOT_STATUSES) agg[s] = 0;
   const rows = new Map();
   const groups = Object.fromEntries(IOT_HEALTH_ORDER.map((k) => [k, []]));
@@ -398,11 +453,15 @@ export function aggregateIotStatus(hotspots, statusByKey, dataThrough) {
   // raw extremes and name their days once, not per row.
   let livMin = null, livMax = null, trMin = null, trMax = null;
   for (const h of hotspots || []) {
-    const row = iotRowOf(h, statusByKey?.[h.entityKey], dataThrough);
+    const entry = statusByKey?.[h.entityKey];
+    const row = iotRowOf(h, entry, dataThrough, iotOnboardedAtOf(onboardedByKey?.[h.entityKey]));
     if (row === null) continue;
     rows.set(h.entityKey, row);
     agg.iotTotal++;
-    if (row.status === "pending") continue;
+    if (row.status === "pending") {
+      if (entry !== undefined) agg.awaitingDate++;
+      continue;
+    }
     agg.counted++;
     agg[row.status]++;
     if (row.anchor) {

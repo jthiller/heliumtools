@@ -9,6 +9,9 @@
 import { Connection, PublicKey, TransactionInstruction, SystemProgram } from "@solana/web3.js";
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
+import { rpc } from "./solanaRpc.js";
+import { kvGetJson, kvPutJson } from "./kv.js";
+import { mapLimit } from "./async.js";
 
 // ---------------------------------------------------------------------------
 // ECC Verifier
@@ -223,9 +226,13 @@ export async function resolveHntPriceOracle(connection) {
 // callers already wrap derivation in try/catch, so an over-length key surfaces
 // as their normal "invalid key" error rather than burning Worker CPU.
 const MAX_ENTITY_KEY_LEN = 64;
+// The ceiling for any Hotspot's entity key (Mobile WiFi keys run ~366 chars):
+// request validators (`isValidEntityKey`) and hotspotInfoKey's decode both use
+// this one definition, so a key the handlers accept always derives.
+export const MAX_HOTSPOT_ENTITY_KEY_LEN = 500;
 
-export function entityKeyHash(gatewayPubkeyB58) {
-  if (typeof gatewayPubkeyB58 !== "string" || gatewayPubkeyB58.length > MAX_ENTITY_KEY_LEN) {
+export function entityKeyHash(gatewayPubkeyB58, maxLen = MAX_ENTITY_KEY_LEN) {
+  if (typeof gatewayPubkeyB58 !== "string" || gatewayPubkeyB58.length > maxLen) {
     throw new Error("Invalid entity key");
   }
   const bytes = bs58.decode(gatewayPubkeyB58);
@@ -242,6 +249,32 @@ export function iotInfoKey(gatewayPubkeyB58) {
 
 export function mobileInfoKey(gatewayPubkeyB58) {
   return findPDA([Buffer.from("mobile_info"), MOBILE_REWARDABLE_ENTITY_CONFIG_KEY.toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
+}
+
+const INFO_CONFIG_BY_NETWORK = { iot: REWARDABLE_ENTITY_CONFIG_KEY, mobile: MOBILE_REWARDABLE_ENTITY_CONFIG_KEY };
+export const HOTSPOT_NETWORKS = Object.keys(INFO_CONFIG_BY_NETWORK);
+
+/**
+ * A Hotspot's IotHotspotInfoV0 / MobileHotspotInfoV0 PDA for `network` (one of
+ * HOTSPOT_NETWORKS). Same seeds as iotInfoKey / mobileInfoKey, but accepts any
+ * Hotspot's entity key (see MAX_HOTSPOT_ENTITY_KEY_LEN).
+ */
+export function hotspotInfoKey(network, entityKey) {
+  return findPDA(
+    [Buffer.from(`${network}_info`), INFO_CONFIG_BY_NETWORK[network].toBuffer(), entityKeyHash(entityKey, MAX_HOTSPOT_ENTITY_KEY_LEN)],
+    ENTITY_MANAGER,
+  );
+}
+
+/**
+ * A Hotspot's info-account addresses for `networks` (filtered to
+ * HOTSPOT_NETWORKS, deduped): [[network, address], ...]. Throws on an invalid
+ * entity key.
+ */
+export function hotspotInfoAccounts(entityKey, networks) {
+  return [...new Set(networks)]
+    .filter((n) => HOTSPOT_NETWORKS.includes(n))
+    .map((n) => [n, hotspotInfoKey(n, entityKey).toBase58()]);
 }
 
 export function collectionMetadataKey(collection) {
@@ -590,6 +623,127 @@ export function buildUpdateMobileInfoInstruction(owner, gatewayPubkeyB58, merkle
   }
 
   return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
+}
+
+// ---------------------------------------------------------------------------
+// Hotspot onboard time
+// ---------------------------------------------------------------------------
+
+// getSignaturesForAddress returns newest-first, at most this many per call.
+const SIGNATURE_PAGE_LIMIT = 1000;
+// getMultipleAccounts takes at most this many addresses per call.
+const MULTIPLE_ACCOUNTS_LIMIT = 100;
+// Signature lookups in flight per onboardedAtFor call — bounds one request's
+// burst against the shared Helius RPS budget.
+const ONBOARDED_LOOKUP_CONCURRENCY = 4;
+
+/**
+ * When a Hotspot was onboarded to a network: the block time of the oldest
+ * successful transaction on its IotHotspotInfoV0 / MobileHotspotInfoV0 account
+ * — the account the onboard instruction creates (matched each sampled asset's
+ * compressed-NFT mint to the minute). A failed onboard attempt can precede the
+ * real one, so failed signatures are skipped.
+ *
+ * Hotspots that predate Helium's April 2023 move to Solana have no on-chain
+ * onboarding: the L1 migration created their info accounts, so this returns
+ * their migration date (genesis, or later for a wallet seeded lazily).
+ *
+ * Never use the Entity API's `created_at` instead — it's the indexer's
+ * row-insert time, and its IoT table was bulk re-indexed on 2025-08-05.
+ *
+ * Returns { createdAt, final }: `createdAt` is unix seconds, or null when one
+ * page doesn't settle it; `final` says the answer can't change — a found date,
+ * or a full page (the oldest entry is out of reach for good, since signatures
+ * only accumulate; info accounts see a handful of transactions, so null beats
+ * paging an unbounded history). No successful transaction yet isn't final.
+ * Throws on RPC failure. Use onboardedAtFor (cached, batched) rather than this.
+ *
+ * @param {object} env  Worker env (reads SOLANA_RPC_URL)
+ * @param {string} address  info-account address (base58)
+ * @returns {Promise<{createdAt: number|null, final: boolean}>}
+ */
+export async function hotspotInfoCreatedAt(env, address) {
+  const sigs = await rpc(env, "getSignaturesForAddress", [address, { limit: SIGNATURE_PAGE_LIMIT }]);
+  if (!Array.isArray(sigs)) return { createdAt: null, final: false };
+  if (sigs.length >= SIGNATURE_PAGE_LIMIT) return { createdAt: null, final: true };
+  for (let i = sigs.length - 1; i >= 0; i--) {
+    if (sigs[i].err == null && sigs[i].blockTime) return { createdAt: sigs[i].blockTime, final: true };
+  }
+  return { createdAt: null, final: false };
+}
+
+// A final answer never changes (the TTL only ages out entries nobody views);
+// an account with no successful transaction yet is retried daily.
+const ONBOARDED_TTL = 90 * 86_400;
+const ONBOARDED_UNKNOWN_TTL = 86_400;
+// Keyed per info account: the date is a pure function of the address, so one
+// entry serves every tool (wallet-dashboard and hotspot-map `/onboarded`).
+// Cached as { at } so a cached null is distinguishable from a miss.
+const onboardedCacheKey = (address) => `onb:${address}`;
+
+/** The subset of `addresses` that exist on chain (one getMultipleAccounts per 100). */
+async function existingAccounts(env, addresses) {
+  const existing = new Set();
+  for (let i = 0; i < addresses.length; i += MULTIPLE_ACCOUNTS_LIMIT) {
+    const chunk = addresses.slice(i, i + MULTIPLE_ACCOUNTS_LIMIT);
+    const res = await rpc(env, "getMultipleAccounts", [chunk, { encoding: "base64", dataSlice: { offset: 0, length: 0 } }]);
+    (res?.value || []).forEach((account, j) => account && existing.add(chunk[j]));
+  }
+  return existing;
+}
+
+/**
+ * Onboard dates (ISO, or null) for info-account `addresses` — the one entry
+ * point for every caller: the shared KV cache first, then chain.
+ *
+ * `beforeMiss()` runs once if anything is uncached; return a Response (e.g. a
+ * rate-limit 429) to stop, and it comes back as `{ stop }`. Otherwise returns
+ * `{ dates: { [address]: iso | null }, cached }`, where an address left out of
+ * `dates` hit a transient failure (uncached, retried next time).
+ *
+ * Misses are checked for existence in one batched call first: an account that
+ * doesn't exist reads null and is neither looked up nor cached, so a made-up
+ * entity key costs a slice of one getMultipleAccounts rather than a signature
+ * lookup and a KV write, and a Hotspot that onboards later shows up at once.
+ */
+export async function onboardedAtFor(env, addresses, { beforeMiss } = {}) {
+  const entries = await Promise.all(addresses.map((a) => kvGetJson(env, onboardedCacheKey(a))));
+  const dates = {};
+  addresses.forEach((a, i) => {
+    const entry = entries[i];
+    if (entry && typeof entry === "object" && "at" in entry) dates[a] = entry.at;
+  });
+  const misses = addresses.filter((a) => !(a in dates));
+  if (misses.length === 0) return { dates, cached: true };
+
+  const stop = await beforeMiss?.();
+  if (stop) return { stop };
+
+  let existing;
+  try {
+    existing = await existingAccounts(env, misses);
+  } catch {
+    return { dates, cached: false }; // every miss stays out: transient
+  }
+  const toResolve = [];
+  for (const a of misses) {
+    if (existing.has(a)) toResolve.push(a);
+    else dates[a] = null;
+  }
+  const resolved = await mapLimit(toResolve, ONBOARDED_LOOKUP_CONCURRENCY, async (a) => {
+    try {
+      const { createdAt, final } = await hotspotInfoCreatedAt(env, a);
+      const at = createdAt == null ? null : new Date(createdAt * 1000).toISOString();
+      await kvPutJson(env, onboardedCacheKey(a), { at }, final ? ONBOARDED_TTL : ONBOARDED_UNKNOWN_TTL);
+      return at;
+    } catch {
+      return undefined;
+    }
+  });
+  toResolve.forEach((a, i) => {
+    if (resolved[i] !== undefined) dates[a] = resolved[i];
+  });
+  return { dates, cached: false };
 }
 
 // ---------------------------------------------------------------------------

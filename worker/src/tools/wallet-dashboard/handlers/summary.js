@@ -58,7 +58,8 @@ export async function handleSummary(url, env, request) {
     fleet: { count: fleet.count, ...fleet.stats },
     // NOTE: we deliberately do NOT expose a wallet-level "operating since" — that
     // would require a full transaction/ownership lookback we don't do. The fleet's
-    // oldest Hotspot onboard date (fleet.oldestCreatedAt) is the honest stat.
+    // oldest Hotspot onboard date (resolved client-side via /onboarded) is the
+    // honest stat.
     generatedAt: Date.now(),
   };
 

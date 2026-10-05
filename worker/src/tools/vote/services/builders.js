@@ -20,20 +20,7 @@ import {
   DEFAULT_ACTIVITY_LIMIT,
   ACTIVITY_DECODE_CONCURRENCY,
 } from "../config.js";
-
-/** Run `fn` over `items` with bounded concurrency, preserving order. */
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
+import { mapLimit } from "../../../lib/async.js";
 
 /** Carries an HTTP status so callers can surface 404/400 rather than 500. */
 export class VoteError extends Error {

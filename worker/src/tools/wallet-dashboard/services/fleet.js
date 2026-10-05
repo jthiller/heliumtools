@@ -10,6 +10,10 @@ import { kvGetJson, kvPutJson } from "../utils.js";
  *
  * NOTE: never read `is_active` from the Entity API — it is always false and
  * meaningless. Activity is derived from rewards on the client instead.
+ *
+ * NOTE: never read `created_at` as a date either (getNetworks uses it only as
+ * a presence signal) — it's an indexer re-index time; onboard dates come from
+ * chain via /onboarded (see `hotspotInfoCreatedAt` in lib/helium-solana.js).
  */
 export async function fetchFleet(env, wallet) {
   const cacheKey = `wd:fleet:${wallet}`;
@@ -93,7 +97,7 @@ function mapHotspot(h) {
   const network = networks[0] || null;
 
   // Read the IoT and Mobile sub-objects directly. They carry disjoint fields
-  // (IoT: location/city/state/created_at/fee/elevation/gain; Mobile: location/
+  // (IoT: location/city/state/fee/elevation/gain; Mobile: location/
   // device_type), so a dual-network Hotspot must not be funneled through a single
   // sub-object — that would drop half its metadata. Merge per-field, preferring
   // IoT (it has the rich on-chain data): the Entity API returns an `iot`
@@ -117,7 +121,6 @@ function mapHotspot(h) {
     state: pick("state"),
     country: pick("country"),
     street: pick("street"),
-    createdAt: pick("created_at"),
     elevation: num(pick("elevation")),
     gain: num(pick("gain")),
     // The row's fee (and the fleet onboarding-DC total) counts either network's;
@@ -133,18 +136,18 @@ const topN = (obj, n = 8) =>
     .sort((a, b) => b.count - a.count)
     .slice(0, n);
 
-/** Compute fleet-wide aggregates used by the summary cards. */
+/**
+ * Compute fleet-wide aggregates used by the summary cards. Onboard-date stats
+ * (oldest/newest, timeline) are derived on the client from /onboarded.
+ */
 function deriveFleetStats(hotspots) {
   const byNetwork = {};
   const byDeviceType = {};
   const countries = {};
   const states = {};
   const cities = {};
-  const monthBuckets = {};
   let asserted = 0;
   let onboardingDcTotal = 0;
-  let oldest = null;
-  let newest = null;
 
   for (const h of hotspots) {
     // Count each Hotspot once under its primary network so sum(byNetwork) === total
@@ -159,17 +162,7 @@ function deriveFleetStats(hotspots) {
       const label = h.state ? `${h.city}, ${h.state}` : h.city;
       cities[label] = (cities[label] || 0) + 1;
     }
-    if (h.createdAt) {
-      const month = h.createdAt.slice(0, 7); // YYYY-MM
-      monthBuckets[month] = (monthBuckets[month] || 0) + 1;
-      if (!oldest || h.createdAt < oldest) oldest = h.createdAt;
-      if (!newest || h.createdAt > newest) newest = h.createdAt;
-    }
   }
-
-  const timeline = Object.entries(monthBuckets)
-    .map(([month, count]) => ({ month, count }))
-    .sort((a, b) => (a.month < b.month ? -1 : 1));
 
   return {
     total: hotspots.length,
@@ -178,9 +171,6 @@ function deriveFleetStats(hotspots) {
     asserted,
     unasserted: hotspots.length - asserted,
     onboardingDcTotal,
-    oldestCreatedAt: oldest,
-    newestCreatedAt: newest,
-    timeline,
     regions: {
       countriesDistinct: Object.keys(countries).length,
       statesDistinct: Object.keys(states).length,

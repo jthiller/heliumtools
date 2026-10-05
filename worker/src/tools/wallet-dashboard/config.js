@@ -59,9 +59,23 @@ export const CACHE_TTL = {
 // batch (25) so a fleet needs far fewer requests (455 ⇒ 10 vs 19).
 export const REWARDS_BATCH_SIZE = 50;
 
+// Max Hotspots per /onboarded request. An uncached Hotspot costs one
+// getSignaturesForAddress per network it's on, so a fully cold batch is at most
+// 100 RPC subrequests (all dual-network) and usually 50.
+export const ONBOARDED_BATCH_SIZE = 50;
+
 // ── Rate limits (per IP) ─────────────────────────────────────────────────────
 export const RATE_LIMIT = {
   prefix: "rl:wd",
+  maxRequests: 30,
+  windowSeconds: 60,
+};
+
+// /onboarded misses get their own window: each one is up to 100 RPC calls (far
+// heavier than a /rewards miss), and a separate bucket keeps a large fleet's
+// cold onboard scan from starving its reward batches. Cache hits spend nothing.
+export const ONBOARDED_RATE_LIMIT = {
+  prefix: "rl:wd:onb",
   maxRequests: 30,
   windowSeconds: 60,
 };

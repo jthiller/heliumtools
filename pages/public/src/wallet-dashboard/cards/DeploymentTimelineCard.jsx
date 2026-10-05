@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Card, Skeleton, CardEmpty } from "./primitives.jsx";
-import { plural } from "../format.js";
+import { plural, fmtCount, ONBOARDED_NOTE } from "../format.js";
 
 function monthLabel(ym) {
   // "2026-05" → "May ’26"
@@ -11,10 +11,16 @@ function monthLabel(ym) {
 
 // memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
 // this card's props are referentially stable across those, so skip the churn.
-export default memo(function DeploymentTimelineCard({ timeline }) {
+// `timeline` stays null until every onboard date has resolved (a half-built
+// histogram would reshuffle as batches land); `progress` drives the wait.
+export default memo(function DeploymentTimelineCard({ timeline, progress }) {
   if (!timeline) {
+    const scanning = progress?.total > 0;
     return (
-      <Card title="Deployment timeline">
+      <Card
+        title="Deployment timeline"
+        subtitle={scanning ? `Reading onboard dates… ${fmtCount(progress.done)} of ${fmtCount(progress.total)}` : null}
+      >
         <Skeleton className="h-28 w-full" />
       </Card>
     );
@@ -33,7 +39,7 @@ export default memo(function DeploymentTimelineCard({ timeline }) {
   const last = timeline[timeline.length - 1];
 
   return (
-    <Card title="Deployment timeline" subtitle={`${plural(total, "Hotspot")} added`}>
+    <Card title="Deployment timeline" subtitle={`${plural(total, "Hotspot")} by onboard date`}>
       <div className="flex h-36 items-end gap-px">
         {timeline.map((b) => (
           <div
@@ -50,6 +56,7 @@ export default memo(function DeploymentTimelineCard({ timeline }) {
         <span>{monthLabel(first.month)}</span>
         <span>{monthLabel(last.month)}</span>
       </div>
+      <p className="mt-3 text-[11px] leading-snug text-content-tertiary">{ONBOARDED_NOTE}</p>
     </Card>
   );
 });
