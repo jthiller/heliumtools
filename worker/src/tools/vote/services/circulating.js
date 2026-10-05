@@ -32,22 +32,11 @@ import {
   CIRCULATING_SHARDS,
   CIRCULATING_SHARD_CONCURRENCY,
 } from "../config.js";
+import { mapLimit } from "../../../lib/async.js";
 
 const CACHE_KEY = "vote:circulating";
 const LOCK_KEY = "vote:circulating:lock";
 const POSITION_DISC_B58 = bs58.encode(Buffer.from(POSITION_DISCRIMINATOR));
-
-/** Run `fn` over `items` with bounded concurrency. */
-async function mapLimit(items, limit, fn) {
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-}
 
 // One shard of the position scan: HNT positions whose mint's first byte == byte.
 function fetchPositionShard(env, byte) {

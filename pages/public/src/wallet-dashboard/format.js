@@ -100,20 +100,36 @@ export function deviceLabel(key) {
 }
 
 // ── Onboard dates (/wallet-dashboard/onboarded) ──────────────────────────────
-// `onboardedByKey` (useFleetOnboarded / scanOnboardDates): entityKey → ISO
-// timestamp, or null when it couldn't be determined; an absent key is still
-// loading. Hotspots from the legacy Helium L1 carry their migration date.
+// `onboardedByKey` (useFleetOnboarded / scanOnboardDates): entityKey → that
+// Hotspot's dates per network, `{ iot?, mobile? }` (ISO, or null when unknown);
+// an absent key is still loading. Hotspots from the legacy Helium L1 carry
+// their migration date.
 
 /** User-facing caveat for every surface that shows an onboard date. */
 export const ONBOARDED_NOTE =
   "Date each Hotspot was onboarded on Solana. Hotspots from before Helium's April 2023 move to Solana show their migration date.";
+
+/** A Hotspot's onboard date for display — its earliest network's (ISO) — from
+ * its `onboardedByKey` entry; null when unknown, undefined while loading. */
+export function onboardedAtOf(dates) {
+  if (dates === undefined) return undefined;
+  // ISO timestamps from toISOString sort chronologically as strings.
+  return Object.values(dates).filter(Boolean).sort()[0] ?? null;
+}
+
+/** The IoT onboard date `iotStatusOf` needs (setting up vs inactive): ISO, null
+ * when unknown, undefined while loading. */
+function iotOnboardedAtOf(dates) {
+  return dates === undefined ? undefined : (dates.iot ?? null);
+}
 
 /** Oldest/newest onboard date and a per-month (UTC) count over the dated Hotspots. */
 export function onboardingStats(onboardedByKey) {
   const months = {};
   let oldest = null;
   let newest = null;
-  for (const t of Object.values(onboardedByKey || {})) {
+  for (const dates of Object.values(onboardedByKey || {})) {
+    const t = onboardedAtOf(dates);
     if (!t) continue;
     const month = t.slice(0, 7); // YYYY-MM (the worker emits toISOString)
     months[month] = (months[month] || 0) + 1;
@@ -176,7 +192,8 @@ export function hasIotStatus(hotspot) {
  *   null                  — no IoT status applies (see hasIotStatus)
  * Resolved verdicts are exactly the IOT_STATUS_LABEL keys. Invalid dates
  * compare false and simply fall through to inactive/unknown. `onboardedAt` is
- * the Hotspot's `onboardedByKey` entry.
+ * the Hotspot's IoT onboard date (not its earliest network's: a Hotspot that
+ * joined Mobile long ago and IoT yesterday is setting up on IoT).
  */
 export function iotStatusOf(hotspot, entry, dataThrough, onboardedAt) {
   if (!hasIotStatus(hotspot)) return null;
@@ -403,6 +420,8 @@ export function byMessagesDesc(a, b) {
  * one pass per scan flush. `counted` excludes still-pending lookups so
  * percentages stay honest during the progressive scan. `onboardedByKey` is
  * required: a not-active row stays pending until its onboard date is in it.
+ * `awaitingDate` counts those rows — while it's above zero the resolved rows
+ * skew active (active verdicts need no date), so shares shouldn't be shown.
  *
  * `rows`: Map entityKey → iotRowOf row, for every IoT Hotspot (pending too).
  * `groups`: {IOT_HEALTH key: [{hotspot, row}]} in fleet order (sort what you show).
@@ -417,7 +436,7 @@ export function byMessagesDesc(a, b) {
  * `livenessRange` / `trafficRange`: {min,max} data days across reported rows.
  */
 export function aggregateIotStatus(hotspots, statusByKey, dataThrough, onboardedByKey) {
-  const agg = { iotTotal: 0, counted: 0 };
+  const agg = { iotTotal: 0, counted: 0, awaitingDate: 0 };
   for (const s of IOT_STATUSES) agg[s] = 0;
   const rows = new Map();
   const groups = Object.fromEntries(IOT_HEALTH_ORDER.map((k) => [k, []]));
@@ -434,11 +453,15 @@ export function aggregateIotStatus(hotspots, statusByKey, dataThrough, onboarded
   // raw extremes and name their days once, not per row.
   let livMin = null, livMax = null, trMin = null, trMax = null;
   for (const h of hotspots || []) {
-    const row = iotRowOf(h, statusByKey?.[h.entityKey], dataThrough, onboardedByKey?.[h.entityKey]);
+    const entry = statusByKey?.[h.entityKey];
+    const row = iotRowOf(h, entry, dataThrough, iotOnboardedAtOf(onboardedByKey?.[h.entityKey]));
     if (row === null) continue;
     rows.set(h.entityKey, row);
     agg.iotTotal++;
-    if (row.status === "pending") continue;
+    if (row.status === "pending") {
+      if (entry !== undefined) agg.awaitingDate++;
+      continue;
+    }
     agg.counted++;
     agg[row.status]++;
     if (row.anchor) {

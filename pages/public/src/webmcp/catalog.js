@@ -135,8 +135,8 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Hotspot Map",
     summary:
-      "Plot Helium IoT and Mobile Hotspot locations on an interactive map, loaded from a wallet address or a list of entity keys.",
-    tools: ["map-wallet-hotspots", "map-hotspots"],
+      "Plot Helium IoT and Mobile Hotspot locations on an interactive map, loaded from a wallet address or a list of entity keys, and read a Hotspot's on-chain onboard dates.",
+    tools: ["map-wallet-hotspots", "map-hotspots", "get-hotspot-onboard-dates"],
   },
   {
     path: "/brand",

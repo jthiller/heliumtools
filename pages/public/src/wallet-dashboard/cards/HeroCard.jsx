@@ -57,7 +57,9 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
   // Unknown (failed lookups) and setting-up Hotspots are excluded from the
   // denominator — otherwise an api-iot outage would render as "IoT Active 0%",
   // indistinguishable from the whole fleet being offline.
-  const iotKnown = (iotStatus?.active || 0) + (iotStatus?.inactive || 0);
+  // Withheld while rows await their onboard date: those are all not-active
+  // rows, so the resolved ones skew active until the dates land.
+  const iotKnown = iotStatus?.awaitingDate ? 0 : (iotStatus?.active || 0) + (iotStatus?.inactive || 0);
   const iotActivePct = iotKnown ? Math.round((iotStatus.active / iotKnown) * 100) : null;
   // Wallet-wide unclaimed value: Hotspot pending + veHNT delegation pending.
   const unclaimedUsd = unclaimedTotalUsd(rewards, governance, prices);

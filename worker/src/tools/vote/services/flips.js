@@ -12,20 +12,7 @@ import { getSignaturesForAddress, getTransaction } from "./rpc.js";
 import { actionsForMarker } from "./voteDecode.js";
 import { getUnresolvedMarkers, setMarkerFlips } from "./history.js";
 import { FLIP_RESOLVE_CONCURRENCY } from "../config.js";
-
-/** Run `fn` over `items` with bounded concurrency, preserving order. */
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
+import { mapLimit } from "../../../lib/async.js";
 
 // getTransaction de-duplicated within a run: proxy batch votes touch many
 // markers but share signatures, so caching the in-flight promise keeps the

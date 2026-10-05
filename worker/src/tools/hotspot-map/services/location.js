@@ -1,8 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { RPC_BATCH_SIZE } from "../config.js";
 import { titleCase } from "../utils.js";
-import { deriveIotInfoPDA, deriveMobileInfoPDA, hashEntityKey } from "./pda.js";
-import { parseMobileInfo as parseMobileInfoShared } from "../../../lib/helium-solana.js";
+import { hotspotInfoKey, parseMobileInfo as parseMobileInfoShared } from "../../../lib/helium-solana.js";
 
 /**
  * Batch fetch asset metadata from DAS using getAssetBatch.
@@ -174,10 +173,8 @@ function parseMobileInfo(data) {
  * Returns Map<entityKey, ["iot"] | ["mobile"] | ["iot", "mobile"]>.
  */
 export async function resolveNetworks(env, entityKeys) {
-  const hashes = await Promise.all(entityKeys.map(hashEntityKey));
-
-  const iotPDAs = hashes.map(deriveIotInfoPDA);
-  const mobilePDAs = hashes.map(deriveMobileInfoPDA);
+  const iotPDAs = entityKeys.map((k) => hotspotInfoKey("iot", k));
+  const mobilePDAs = entityKeys.map((k) => hotspotInfoKey("mobile", k));
 
   const allPDAs = [];
   for (let i = 0; i < entityKeys.length; i++) {
@@ -202,11 +199,9 @@ export async function resolveNetworks(env, entityKeys) {
  * Returns { hotspots: [...], errors: [...] }
  */
 export async function resolveLocations(env, entityKeys) {
-  // 1. Hash all entity keys and derive PDAs
-  const hashes = await Promise.all(entityKeys.map(hashEntityKey));
-
-  const iotPDAs = hashes.map(deriveIotInfoPDA);
-  const mobilePDAs = hashes.map(deriveMobileInfoPDA);
+  // 1. Derive each key's IoT and Mobile info PDAs
+  const iotPDAs = entityKeys.map((k) => hotspotInfoKey("iot", k));
+  const mobilePDAs = entityKeys.map((k) => hotspotInfoKey("mobile", k));
 
   // Interleave: [iot0, mobile0, iot1, mobile1, ...]
   const allPDAs = [];

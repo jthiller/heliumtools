@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { scanOnboardDates } from "../lib/walletDashboardApi.js";
+import { hasIotStatus } from "./format.js";
 
 // State flushes are time-throttled: a warm cache answers a big fleet's batches
 // back-to-back, and each flush re-derives the dashboard's IoT verdicts.
@@ -13,8 +14,10 @@ const EMPTY = Object.freeze({});
  * `scanOnboardDates` (the dashboard's cached /onboarded endpoint), waiting out
  * rate limits.
  *
- * onboardedByKey values: an ISO timestamp, or null (unknown — the chain history
- * didn't settle it, or the lookup failed); an absent key is still loading.
+ * onboardedByKey values: the Hotspot's dates per network, `{ iot?, mobile? }`
+ * (ISO, or null when unknown — the chain history didn't settle it, or the
+ * lookup failed); an absent key is still loading. IoT Hotspots are scanned
+ * first: a not-active IoT verdict waits on its date, Mobile rows hold nothing.
  * `progress` counts resolved Hotspots for the timeline's wait state.
  *
  * @returns {{ onboardedByKey, progress: {done,total}, done }}
@@ -28,7 +31,8 @@ export default function useFleetOnboarded(hotspots) {
 
     // `hotspots === undefined` means the fleet hasn't loaded yet; `[]` means it
     // loaded and is genuinely empty (mirrors useFleetRewards).
-    const eligible = (hotspots || []).filter((h) => h.entityKey);
+    // Stable sort: IoT rows first, fleet order within each group.
+    const eligible = (hotspots || []).filter((h) => h.entityKey).sort((a, b) => hasIotStatus(b) - hasIotStatus(a));
     const total = eligible.length;
     setState({ onboardedByKey: EMPTY, progress: { done: 0, total }, done: total === 0 && Array.isArray(hotspots) });
     if (total === 0) return;

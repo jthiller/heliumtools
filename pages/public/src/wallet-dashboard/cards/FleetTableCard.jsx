@@ -21,6 +21,7 @@ import {
   lifetimeUi,
   isEarning,
   isTrafficKnown,
+  onboardedAtOf,
   iotActionRank,
   IOT_STATUS_LABEL,
   IOT_STATUS_COLOR,
@@ -221,7 +222,8 @@ function Th({ children, sortKey, sort, onSort, className = "" }) {
  * @param iotStatus  the shell's `aggregateIotStatus` result: per-row verdicts
  *                   (`rows`), health counts and data days — derived once per
  *                   scan flush, never recomputed here.
- * @param onboardedByKey  the onboard scan's dates (ISO | null; absent = loading)
+ * @param onboardedByKey  the onboard scan's per-network dates (see onboardedAtOf;
+ *                   absent = loading)
  */
 export default function FleetTableCard({
   hotspots,
@@ -282,7 +284,10 @@ export default function FleetTableCard({
       switch (sort.key) {
         case "device": av = a.deviceType || ""; bv = b.deviceType || ""; break;
         case "location": av = `${a.state || ""}${a.city || ""}`; bv = `${b.state || ""}${b.city || ""}`; break;
-        case "onboarded": av = sortDates?.[a.entityKey] || ""; bv = sortDates?.[b.entityKey] || ""; break;
+        case "onboarded":
+          av = onboardedAtOf(sortDates?.[a.entityKey]) || "";
+          bv = onboardedAtOf(sortDates?.[b.entityKey]) || "";
+          break;
         case "lifetime": av = a._hntLife; bv = b._hntLife; break;
         case "status": {
           const sa = scan(a);
@@ -388,7 +393,7 @@ export default function FleetTableCard({
       const block = isTrafficKnown(traffic) ? traffic : null;
       lines.push(
         [
-          r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, onboardedByKey?.[r.entityKey],
+          r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, onboardedAtOf(onboardedByKey?.[r.entityKey]),
           IOT_STATUS_CSV[status] ?? "", health ? IOT_HEALTH[health].csv : "", messages, block?.ouis.join(";"), block?.dataThrough,
           r._iotLife, r._hntLife,
         ]
@@ -525,7 +530,7 @@ export default function FleetTableCard({
                   <FleetRow
                     key={r.entityKey}
                     row={r}
-                    onboardedAt={onboardedByKey?.[r.entityKey]}
+                    onboardedAt={onboardedAtOf(onboardedByKey?.[r.entityKey])}
                     status={scan.status}
                     health={scan.health}
                     messages={scan.messages}

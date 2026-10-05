@@ -1,6 +1,6 @@
 import { memo, useMemo } from "react";
 import { Card, Skeleton, NameCallout } from "./primitives.jsx";
-import { fmtCount, fmtUsd, fmtDate, isEarning, hotspotLifetimeUsd, DC_PER_USD, ONBOARDED_NOTE } from "../format.js";
+import { fmtCount, fmtUsd, fmtDate, isEarning, hotspotLifetimeUsd, onboardedAtOf, DC_PER_USD, ONBOARDED_NOTE } from "../format.js";
 
 function InsightRow({ label, value, tone, title }) {
   const valueClass =
@@ -47,7 +47,7 @@ export default memo(function OperatorAnalyticsCard({
         const usd = hotspotLifetimeUsd(rewards, prices) || 0;
         // Age on Solana. Lifetime is the Solana reward oracles' running total,
         // so an L1-era Hotspot's migration date is a fitting start here too.
-        const onboardedAt = onboardedByKey?.[key];
+        const onboardedAt = onboardedAtOf(onboardedByKey?.[key]);
         let ageDays = null;
         if (onboardedAt) {
           ageDays = Math.max(1, (Date.now() - new Date(onboardedAt).getTime()) / 86_400_000);

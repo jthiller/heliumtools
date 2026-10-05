@@ -10,6 +10,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+// Closest a tooltip may sit to the viewport's left/right edge.
+const VIEWPORT_MARGIN = 8;
+
 /**
  * Hover/focus tooltip styled to match the app. Drop-in replacement for the
  * native `title` attribute when you need multi-line content, consistent
@@ -19,7 +22,8 @@ import { createPortal } from "react-dom";
  * ancestor `overflow: hidden` / `overflow: auto` clipping (e.g., inside a
  * rounded card or a horizontally-scrolling table). Position is computed
  * from the trigger's viewport rect at show time and re-tracked on scroll
- * and resize while visible.
+ * and resize while visible. It centers on the trigger, shifted sideways just
+ * enough to stay inside the viewport when the trigger is near an edge.
  *
  * Usage:
  *   <Tooltip content="Copy to clipboard"><button>...</button></Tooltip>
@@ -42,8 +46,11 @@ export default function Tooltip({
 }) {
   const id = useId();
   const triggerRef = useRef(null);
+  const tooltipRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState(null);
+  // Horizontal correction (px) that keeps the centered tooltip on screen.
+  const [shift, setShift] = useState(0);
 
   const computeCoords = useCallback(() => {
     const el = triggerRef.current;
@@ -74,6 +81,18 @@ export default function Tooltip({
     };
   }, [visible, computeCoords]);
 
+  // Measure after layout, before paint. offsetWidth ignores transforms, so the
+  // shift depends only on the trigger's center and the tooltip's width.
+  useLayoutEffect(() => {
+    const el = tooltipRef.current;
+    if (!visible || !coords || !el) return;
+    const width = el.offsetWidth;
+    const natural = coords.cx - width / 2;
+    const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - VIEWPORT_MARGIN - width);
+    const clamped = Math.min(Math.max(natural, VIEWPORT_MARGIN), maxLeft);
+    setShift(clamped - natural);
+  }, [visible, coords, content]);
+
   if (content == null || content === "") return children;
 
   const only = Children.count(children) === 1 ? Children.only(children) : null;
@@ -90,8 +109,8 @@ export default function Tooltip({
   const positionStyle =
     visible && coords
       ? placement === "bottom"
-        ? { left: coords.cx, top: coords.bottom + 6, transform: "translateX(-50%)" }
-        : { left: coords.cx, top: coords.top - 6, transform: "translate(-50%, -100%)" }
+        ? { left: coords.cx, top: coords.bottom + 6, transform: `translateX(calc(-50% + ${shift}px))` }
+        : { left: coords.cx, top: coords.top - 6, transform: `translate(calc(-50% + ${shift}px), -100%)` }
       : null;
 
   return (
@@ -109,6 +128,7 @@ export default function Tooltip({
       {visible && coords &&
         createPortal(
           <span
+            ref={tooltipRef}
             role="tooltip"
             id={id}
             style={{ position: "fixed", ...positionStyle }}

@@ -10,21 +10,9 @@ import { getSignaturesForAddress, getTransaction } from "./rpc.js";
 import { getVoterMarkers } from "./history.js";
 import { actionsForMarker } from "./voteDecode.js";
 import { VOTER_HISTORY_CACHE_TTL, MAX_VOTER_HISTORY_MARKERS } from "../config.js";
+import { mapLimit } from "../../../lib/async.js";
 
 const MARKER_TX_CONCURRENCY = 6;
-
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
 
 /**
  * Parse one marker's transactions into [{ ts, action, choice, signature }]. If

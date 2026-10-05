@@ -19,6 +19,7 @@ import {
   aggregateIotStatus,
   deriveTrafficDetail,
   onboardingStats,
+  onboardedAtOf,
 } from "./format.js";
 import { REWARDS_BATCH_SIZE, eligibleRewardHotspots } from "./useFleetRewards.js";
 
@@ -209,7 +210,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
       name: "get-wallet-onboarding",
       title: "Get wallet Hotspot onboard dates",
       description:
-        `When a wallet's Hotspots were onboarded, read from chain (block time of the first successful transaction on each Hotspot's IoT/Mobile info account): first and latest date, a per-month count (UTC), and per-Hotspot ISO dates (null = couldn't be determined). Hotspots from before Helium's April 2023 move to Solana show their migration date, not their original deployment. Covers up to ${ONBOARDED_HOTSPOT_CAP} Hotspots; dates are cached server-side once resolved, so a first lookup of a large fleet is the slow one.`,
+        `When a wallet's Hotspots were onboarded, read from chain (block time of the first successful transaction on each Hotspot's IoT/Mobile info account): first and latest date, a per-month count (UTC), and per-Hotspot ISO dates (a Hotspot on both networks shows the earlier one; null = couldn't be determined). Hotspots from before Helium's April 2023 move to Solana show their migration date, not their original deployment. Covers up to ${ONBOARDED_HOTSPOT_CAP} Hotspots; dates are cached server-side once resolved, so a first lookup of a large fleet is the slow one.`,
       inputSchema: {
         type: "object",
         properties: { address: ADDRESS_SCHEMA },
@@ -228,7 +229,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
           throw new Error("every onboard-date batch failed — try again shortly");
         }
         const { oldest, newest, timeline } = onboardingStats(onboardedByKey);
-        const unknown = counted.filter((h) => !onboardedByKey[h.entityKey]).length;
+        const unknown = counted.filter((h) => !onboardedAtOf(onboardedByKey[h.entityKey])).length;
         return {
           wallet,
           fleetSize: all.length,
@@ -243,7 +244,11 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
           firstOnboarded: oldest,
           latestOnboarded: newest,
           byMonth: timeline,
-          hotspots: counted.map((h) => ({ name: h.name, entityKey: h.entityKey, onboardedAt: onboardedByKey[h.entityKey] })),
+          hotspots: counted.map((h) => ({
+            name: h.name,
+            entityKey: h.entityKey,
+            onboardedAt: onboardedAtOf(onboardedByKey[h.entityKey]),
+          })),
         };
       },
     },

@@ -370,12 +370,13 @@ function HotspotDetail({ hotspot }) {
                 <span className="text-content-tertiary">{d.deviceType}</span>
               )}
               {dates?.[net] && (
-                // Native title, not <Tooltip>: that one centers on its trigger
-                // without clamping, and this row can sit at the card's left
-                // edge, which would clip the note off-screen.
-                <span title={ONBOARDED_NOTE}>
-                  Onboarded: <strong className="text-content-secondary">{formatDate(dates[net])}</strong>
-                </span>
+                // <Tooltip>, not a native title: it also shows on tap and focus,
+                // so touch users (the mobile sheet) see the migration caveat.
+                <Tooltip content={ONBOARDED_NOTE}>
+                  <span tabIndex={0}>
+                    Onboarded: <strong className="text-content-secondary">{formatDate(dates[net])}</strong>
+                  </span>
+                </Tooltip>
               )}
             </div>
           </div>

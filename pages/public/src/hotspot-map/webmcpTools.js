@@ -1,4 +1,5 @@
 import { SOLANA_ADDRESS_SCHEMA, ENTITY_KEY_SCHEMA, capListField } from "../webmcp/helpers.js";
+import { fetchOnboardDates } from "../lib/hotspotMapApi.js";
 
 /** Cap the returned list; everything is still plotted on the map. */
 const MAP_RESULT_CAP = 300;
@@ -9,6 +10,8 @@ const MAP_RESULT_CAP = 300;
  * exactly like the user's own input: merge, fit-bounds, dedupe):
  *   addWalletToMap(address) -> resolves a wallet's Hotspots onto the map
  *   addKeysToMap(keys[])    -> resolves explicit entity keys onto the map
+ * get-hotspot-onboard-dates is a plain read through the same client (and
+ * session cache) the detail card uses.
  */
 export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
   return [
@@ -50,6 +53,33 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
       },
       execute({ entity_keys }) {
         return addKeysToMap(entity_keys);
+      },
+    },
+    {
+      name: "get-hotspot-onboard-dates",
+      title: "Get a Hotspot's onboard dates",
+      description:
+        "When one Hotspot was onboarded to each network, read from chain (block time of the first successful transaction on its IoT/Mobile info account) — the date the map's detail card shows. Hotspots from before Helium's April 2023 move to Solana show their migration date, not their original deployment. null means not on that network or not determinable. For a whole wallet at once, use /wallet-dashboard's get-wallet-onboarding.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          entity_key: { ...ENTITY_KEY_SCHEMA, description: "The Hotspot's entity key (base58)." },
+          networks: {
+            type: "array",
+            minItems: 1,
+            maxItems: 2,
+            items: { type: "string", enum: ["iot", "mobile"] },
+            description: "Networks to read (default both).",
+          },
+        },
+        required: ["entity_key"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      async execute({ entity_key, networks = ["iot", "mobile"] }) {
+        const onboarded = await fetchOnboardDates(entity_key, [...new Set(networks)].join(","));
+        if (!onboarded) throw new Error("onboard-date lookup failed or was rate-limited — try again shortly");
+        return { entityKey: entity_key, onboarded };
       },
     },
   ];

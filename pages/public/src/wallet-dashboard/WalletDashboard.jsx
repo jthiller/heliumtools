@@ -26,6 +26,9 @@ import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeWalletDashboardTools } from "./webmcpTools.js";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+// Stable stand-in for a fleet that failed to load (a fresh [] per render would
+// restart the onboard scan each time).
+const EMPTY_FLEET = [];
 const isValidWallet = (a) => typeof a === "string" && a.length >= 32 && a.length <= 44 && BASE58_RE.test(a);
 
 function AddressForm({ initial = "", onSubmit, autoFocus, className = "" }) {
@@ -205,8 +208,11 @@ export default function WalletDashboard() {
   const iotStatusState = useFleetIotStatus(fleet?.hotspots);
   // On-chain onboard dates (the Entity API's are a re-index artifact), keyed
   // by entityKey like rewardsByKey. Only once the fleet on screen is this
-  // wallet's, so a wallet switch doesn't scan the previous fleet for a render.
-  const onboardedState = useFleetOnboarded(fleet?.wallet === wallet ? fleet.hotspots : undefined);
+  // wallet's, so a wallet switch doesn't scan the previous fleet for a render;
+  // a fleet that failed to load settles as empty rather than loading forever.
+  const onboardedState = useFleetOnboarded(
+    fleetError ? EMPTY_FLEET : fleet?.wallet === wallet ? fleet.hotspots : undefined,
+  );
   const { onboardedByKey } = onboardedState;
   // Stats appear once every date is in (a half-built histogram would reshuffle).
   const onboarding = useMemo(
