@@ -77,8 +77,10 @@ re-implementing on-chain logic.
   parsed from `SOLANA_RPC_URL`), falling back to `getSignaturesForAddress`.
 - `services/onboarded.js` — onboard dates from chain via the shared
   `hotspotInfoCreatedAt` (`worker/src/lib/helium-solana.js`, one
-  `getSignaturesForAddress` per info account), ≤8 in flight, earliest across a
-  dual-network Hotspot's accounts. Caches per entity key (`wd:onb:*`).
+  `getSignaturesForAddress` per info account; also used by hotspot-map's
+  `/onboarded`), ≤8 in flight, earliest across a dual-network Hotspot's
+  accounts. Caches per entity key (`wd:onb:*`), separately from hotspot-map's
+  per-info-account cache (`hm:onb:*`).
 
 ### Frontend
 - `pages/public/src/wallet-dashboard/WalletDashboard.jsx` — bento shell; the

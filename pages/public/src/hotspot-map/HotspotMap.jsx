@@ -16,7 +16,7 @@ import {
 } from "@heroicons/react/24/outline";
 import MiddleEllipsis from "react-middle-ellipsis";
 import Tooltip from "../components/Tooltip.jsx";
-import { resolveLocations, fetchWalletHotspots, fetchEntityDates } from "../lib/hotspotMapApi.js";
+import { resolveLocations, fetchWalletHotspots, fetchOnboardDates } from "../lib/hotspotMapApi.js";
 import { h3ToLatLng } from "../lib/h3.js";
 import { encodeKeys, decodeKeys } from "../lib/urlCompression.js";
 import useDarkMode from "../lib/useDarkMode.js";
@@ -55,6 +55,9 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 function formatDate(iso) {
   return dateFormatter.format(new Date(iso));
 }
+
+const ONBOARDED_NOTE =
+  "Date this Hotspot was onboarded on Solana. Hotspots from before Helium's April 2023 move to Solana show their migration date.";
 
 /**
  * Build a sector polygon (fan shape) in [lng, lat] coords.
@@ -304,14 +307,17 @@ function CopyableRow({ label, value }) {
 
 function HotspotDetail({ hotspot }) {
   const [dates, setDates] = useState(null);
+  // A string dep, so the lookup reruns only when the network set changes, not
+  // when the `networks` array's identity does.
+  const networksKey = hotspot.networks.join(",");
 
   useEffect(() => {
     let stale = false;
-    fetchEntityDates(hotspot.entityKey)
+    fetchOnboardDates(hotspot.entityKey, networksKey.split(","))
       .then((d) => { if (!stale) setDates(d); })
       .catch(() => {});
     return () => { stale = true; };
-  }, [hotspot.entityKey]);
+  }, [hotspot.entityKey, networksKey]);
 
   return (
     <div className="px-4 py-3 space-y-3">
@@ -364,7 +370,12 @@ function HotspotDetail({ hotspot }) {
                 <span className="text-content-tertiary">{d.deviceType}</span>
               )}
               {dates?.[net] && (
-                <span>Onboarded: <strong className="text-content-secondary">{formatDate(dates[net])}</strong></span>
+                // Native title, not <Tooltip>: that one centers on its trigger
+                // without clamping, and this row can sit at the card's left
+                // edge, which would clip the note off-screen.
+                <span title={ONBOARDED_NOTE}>
+                  Onboarded: <strong className="text-content-secondary">{formatDate(dates[net])}</strong>
+                </span>
               )}
             </div>
           </div>

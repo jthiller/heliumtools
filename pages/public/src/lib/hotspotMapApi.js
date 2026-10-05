@@ -1,34 +1,9 @@
-import { PublicKey } from "@solana/web3.js";
-import bs58 from "bs58";
 import { parseJson } from "./api.js";
+import { dedupeAsync } from "./requestDedupe.js";
 
 export const API_BASE = import.meta.env.DEV
   ? "/api/hotspot-map"
   : "https://api.heliumtools.org/hotspot-map";
-
-const ENTITY_MANAGER_PID = new PublicKey("hemjuPXBpNvggtaUnN1MwT3wrdhttKEfosTcc2P9Pg8");
-const SUB_DAOS_PID = new PublicKey("hdaoVTCqhfHHo75XdAMxBKdUqvq1i5bF23sisBqVgGR");
-const HNT_MINT = new PublicKey("hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux");
-
-const [DAO] = PublicKey.findProgramAddressSync(
-  [Buffer.from("dao"), HNT_MINT.toBuffer()],
-  SUB_DAOS_PID
-);
-
-/**
- * Derive the keyToAsset PDA for an entity key.
- * Seeds: ["key_to_asset", dao, sha256(bs58decode(entityKey))]
- */
-async function deriveKeyToAssetKey(entityKey) {
-  const hash = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", bs58.decode(entityKey))
-  );
-  const [pda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("key_to_asset"), DAO.toBuffer(), Buffer.from(hash)],
-    ENTITY_MANAGER_PID
-  );
-  return pda.toBase58();
-}
 
 /**
  * POST /resolve — batch resolve entity keys to on-chain locations.
@@ -47,31 +22,38 @@ export async function resolveLocations(entityKeys) {
 }
 
 /**
- * Fetch onboarding dates from the Helium Entity API.
- * Derives the keyToAsset PDA and queries the v2 endpoint, which works
- * for both short IoT and long Mobile entity keys.
- * Returns { iot: "ISO string", mobile: "ISO string" } or subset.
+ * GET /onboarded — on-chain onboard date per network for one Hotspot, read
+ * from chain by the worker. (Not the Entity API's `created_at`: that's an
+ * indexer re-index time, 2025-08-05 for most IoT Hotspots.) Hotspots from
+ * before Helium's April 2023 move to Solana carry their migration date.
+ * Returns { iot?: iso | null, mobile?: iso | null } for the requested
+ * networks, or null if the lookup failed.
  */
-const entityDatesCache = new Map();
+const onboardDatesCache = new Map();
 const DATES_CACHE_MAX = 500;
 
-export async function fetchEntityDates(entityKey) {
-  if (entityDatesCache.has(entityKey)) return entityDatesCache.get(entityKey);
+// Deduped: the detail card mounts twice per selection (desktop sidebar +
+// mobile sheet), and a cold lookup costs the worker RPC calls.
+const requestOnboardDates = dedupeAsync(async (entityKey, networksCsv) => {
+  const query = new URLSearchParams({ entityKey, networks: networksCsv });
+  const res = await fetch(`${API_BASE}/onboarded?${query.toString()}`);
+  const data = await parseJson(res);
+  return res.ok && data?.onboarded ? data.onboarded : null;
+});
 
-  const keyToAssetKey = await deriveKeyToAssetKey(entityKey);
-  const res = await fetch(`https://entities.nft.helium.io/v2/hotspot/${keyToAssetKey}`);
-  if (!res.ok) return null;
+export async function fetchOnboardDates(entityKey, networks) {
+  const networksCsv = networks.join(",");
+  const cacheKey = `${entityKey}|${networksCsv}`;
+  if (onboardDatesCache.has(cacheKey)) return onboardDatesCache.get(cacheKey);
 
-  const data = await res.json();
-  const dates = {};
-  if (data.hotspot_infos?.iot?.created_at) dates.iot = data.hotspot_infos.iot.created_at;
-  if (data.hotspot_infos?.mobile?.created_at) dates.mobile = data.hotspot_infos.mobile.created_at;
+  const onboarded = await requestOnboardDates(entityKey, networksCsv);
+  if (!onboarded) return null;
 
-  if (entityDatesCache.size >= DATES_CACHE_MAX) {
-    entityDatesCache.delete(entityDatesCache.keys().next().value);
+  if (onboardDatesCache.size >= DATES_CACHE_MAX) {
+    onboardDatesCache.delete(onboardDatesCache.keys().next().value);
   }
-  entityDatesCache.set(entityKey, dates);
-  return dates;
+  onboardDatesCache.set(cacheKey, onboarded);
+  return onboarded;
 }
 
 /**

@@ -622,7 +622,7 @@ const SIGNATURE_PAGE_LIMIT = 1000;
  * won't batch historical methods — so callers bound how many they make and
  * cache the result (it never changes once found).
  *
- * Used by wallet-dashboard (`/onboarded`).
+ * Used by wallet-dashboard (`/onboarded`) and hotspot-map (`/onboarded`).
  *
  * @param {object} env  Worker env (reads SOLANA_RPC_URL)
  * @param {string} address  info-account address (base58)

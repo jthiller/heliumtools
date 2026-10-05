@@ -5,7 +5,7 @@ Interactive map tool for visualizing Helium Hotspot locations. Users paste entit
 ## Files
 
 - `HotspotMap.jsx` — Single-file React component (all UI, state, map layers)
-- `../lib/hotspotMapApi.js` — API client (`resolveLocations`, `fetchWalletHotspots`)
+- `../lib/hotspotMapApi.js` — API client (`resolveLocations`, `fetchWalletHotspots`, `fetchOnboardDates`)
 - `../lib/h3.js` — H3 cell index → lat/lng conversion
 
 ## Data Model
@@ -28,6 +28,7 @@ Merged shape:   { entityKey, networks: ["iot", "mobile"], networkDetails: { iot:
 - **H3 location**: On-chain location stored as decimal u64 H3 cell index, converted to lat/lng via `h3-js`
 - **Coverage sectors**: WiFi outdoor Hotspots (`deviceType: "wifiOutdoor"`) render a 120° fan polygon at their azimuth
 - **Pulse animation**: Selected Hotspot gets a ~30fps expanding ring. The pulse layer is kept separate from static layers to avoid rebuilding deck.gl layers every frame.
+- **Onboard dates**: the detail card's per-network "Onboarded" date is fetched lazily per selected Hotspot from `GET /onboarded` — the block time of the first successful transaction on that network's info account (`hotspotInfoCreatedAt` in `worker/src/lib/helium-solana.js`, shared with the Wallet Dashboard). **Never use the Entity API's `created_at`**: it's an indexer row-insert time, and the IoT table's 2025-08-05 re-index stamped nearly every IoT Hotspot with that date (the map read it directly from `entities.nft.helium.io` until Oct 2026). Hotspots from before the April 2023 move to Solana show their migration date, which the date's tooltip says.
 
 ## Layout
 
@@ -45,7 +46,8 @@ Merged shape:   { entityKey, networks: ["iot", "mobile"], networkDetails: { iot:
 
 - `POST /hotspot-map/resolve` — Accepts `{ entityKeys: string[] }`, returns `{ hotspots: [...] }` with on-chain metadata
 - `GET /hotspot-map/wallet?address=...` — Returns all Hotspot entity keys + names for a Solana wallet
+- `GET /hotspot-map/onboarded?entityKey=...&networks=iot,mobile` — Returns `{ entityKey, onboarded: { [network]: iso | null }, cached }` for one Hotspot (`networks` defaults to both; a network it isn't on reads null). The worker derives the info-account PDAs from the entity key (`services/pda.js`, same as `/resolve`) — it never takes addresses from the client. One RPC call per uncached network; KV-cached per info account (`hm:onb:<address>`, 90 days for a found date, 1 day for null); a fully cached lookup spends no rate-limit token (`rl:hm:onb`, 30/min)
 
 ## WebMCP
 
-The page registers agent tools `map-wallet-hotspots` (plots everything a wallet owns — skips the manual preview step) and `map-hotspots` (plot explicit entity keys) from `webmcpTools.js`, both reusing `resolveKeys`. Framework: `pages/public/src/webmcp/CLAUDE.md`.
+The page registers agent tools `map-wallet-hotspots` (plots everything a wallet owns — skips the manual preview step) and `map-hotspots` (plot explicit entity keys) from `webmcpTools.js`, both reusing `resolveKeys`. Neither returns onboard dates (`GET /onboarded` serves only the detail card); per wallet, `/wallet-dashboard`'s `get-wallet-onboarding` covers them. Framework: `pages/public/src/webmcp/CLAUDE.md`.

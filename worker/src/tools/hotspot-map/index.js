@@ -1,6 +1,7 @@
 import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { handleResolve } from "./handlers/resolve.js";
 import { handleWallet } from "./handlers/wallet.js";
+import { handleOnboarded } from "./handlers/onboarded.js";
 
 export async function handleHotspotMapRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -17,6 +18,10 @@ export async function handleHotspotMapRequest(request, env, ctx) {
 
   if (pathname === "/wallet" && request.method === "GET") {
     return handleWallet(url, env, request);
+  }
+
+  if (pathname === "/onboarded" && request.method === "GET") {
+    return handleOnboarded(url, env, request);
   }
 
   return jsonResponse({ error: "Not found" }, 404);
