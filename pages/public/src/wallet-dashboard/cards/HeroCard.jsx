@@ -110,7 +110,7 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
             />
           )}
           <HeroStat
-            label="Earning"
+            label="Ever rewarded"
             value={earningPct == null ? (rewardsDone ? "—" : "…") : `${earningPct}%`}
             sub={counted ? `${rewards.earning} of ${counted}` : null}
           />

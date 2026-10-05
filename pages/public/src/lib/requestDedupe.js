@@ -6,22 +6,29 @@
  * meaningfully stale (page debounces are 400-800ms, well inside the TTL).
  * Read-only fetchers only — never wrap mutations or reads that must
  * reflect a mutation immediately (e.g. the claimer's rewards refresh).
+ *
+ * Also a plain read cache with a longer `ttlMs` (Infinity = per session):
+ * `max` bounds the entry count (oldest entry evicted first), and `keep(value)`
+ * returning false drops a resolved value once in-flight callers have it, so
+ * a transient answer is never served from cache.
  */
-export function dedupeAsync(fn, ttlMs = 3_000) {
+export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep } = {}) {
   const entries = new Map(); // JSON args key -> { at, promise }
   return (...args) => {
     const key = JSON.stringify(args);
     const hit = entries.get(key);
     if (hit && Date.now() - hit.at < ttlMs) return hit.promise;
-    if (entries.size > 100) entries.clear();
+    if (hit) entries.delete(key); // expired: re-inserted below as the newest
+    if (entries.size >= max) entries.delete(entries.keys().next().value);
     const promise = Promise.resolve().then(() => fn(...args));
     entries.set(key, { at: Date.now(), promise });
     // Failures aren't cached; callers still see the rejection on the
     // promise they were handed. Only evict our own entry — a slow, expired
     // call rejecting late must not delete a newer entry under the same key.
-    promise.catch(() => {
+    const evict = () => {
       if (entries.get(key)?.promise === promise) entries.delete(key);
-    });
+    };
+    promise.then((value) => keep && !keep(value) && evict(), evict);
     return promise;
   };
 }
