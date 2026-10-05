@@ -526,6 +526,13 @@ export default function HntPriceTool() {
                 snippet={JS_WS}
               />
             </div>
+
+            <p className="mt-5 text-[14px] leading-relaxed text-content-secondary">
+              Calling from a Cloudflare Worker? Cloudflare gives every Worker on another zone the
+              same source address, so those requests are counted per calling zone (the{" "}
+              <span className="font-mono text-content">CF-Worker</span> header) instead of per IP.
+              The README covers the details, including the combined cap on all Worker callers.
+            </p>
           </section>
 
           {/* Two prices */}
