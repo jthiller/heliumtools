@@ -6,7 +6,8 @@ import { fetchSummary, fetchFleet } from "../lib/walletDashboardApi.js";
 import { fetchPositions } from "../lib/veHntApi.js";
 import useFleetRewards from "./useFleetRewards.js";
 import useFleetIotStatus from "./useFleetIotStatus.js";
-import { aggregateRewards, aggregateIotStatus } from "./format.js";
+import useFleetOnboarded from "./useFleetOnboarded.js";
+import { aggregateRewards, aggregateIotStatus, withOnboardedAt, onboardingStats } from "./format.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
 import BalancesCard from "./cards/BalancesCard.jsx";
@@ -178,10 +179,22 @@ export default function WalletDashboard() {
   // IoT connectivity (active/inactive) from api-iot.heliumtools.org, fetched
   // directly from the browser — the service is CORS-open and edge-cached.
   const iotStatusState = useFleetIotStatus(fleet?.hotspots);
+  // On-chain onboard dates (the Entity API's are a re-index artifact), merged
+  // into the rows every display surface reads. The scan hooks keep the raw
+  // `fleet?.hotspots` — a merged array changes identity per flush and would
+  // restart them.
+  const onboardedState = useFleetOnboarded(valid ? wallet : null, fleet?.hotspots);
+  const hotspots = useMemo(
+    () => withOnboardedAt(fleet?.hotspots, onboardedState.onboardedByKey),
+    [fleet?.hotspots, onboardedState.onboardedByKey],
+  );
+  const onboarding = useMemo(() => onboardingStats(hotspots), [hotspots]);
+  // Not-active IoT verdicts wait on onboard dates (settingUp vs inactive), so
+  // the IoT figures are final only once both scans are.
+  const iotStatusDone = iotStatusState.done && onboardedState.done;
   const iotStatusAgg = useMemo(
-    () =>
-      aggregateIotStatus(fleet?.hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough),
-    [fleet?.hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough],
+    () => aggregateIotStatus(hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough),
+    [hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough],
   );
   const prices = summary?.prices;
   // Every reward batch failed (e.g. rate-limited) even though the wallet has
@@ -227,7 +240,9 @@ export default function WalletDashboard() {
             rewardsDone={rewardsState.done}
             rewardsUnavailable={rewardsUnavailable}
             iotStatus={iotStatusAgg}
-            iotStatusDone={iotStatusState.done}
+            iotStatusDone={iotStatusDone}
+            firstOnboarded={onboarding.oldest}
+            onboardedDone={onboardedState.done}
             prices={prices}
             governance={governance}
             govLoading={govLoading}
@@ -248,7 +263,7 @@ export default function WalletDashboard() {
                 </div>
               ) : (
                 <FleetMap
-                  hotspots={fleet?.hotspots || []}
+                  hotspots={hotspots || []}
                   rewardsByKey={rewardsState.rewardsByKey}
                   iotStatusByKey={iotStatusState.statusByKey}
                   iotDataThrough={iotStatusState.dataThrough}
@@ -275,7 +290,7 @@ export default function WalletDashboard() {
           {/* Fleet — list view, directly under the map (spatial + tabular pair) */}
           <div className="lg:col-span-8">
             <FleetTableCard
-              hotspots={fleet?.hotspots || []}
+              hotspots={hotspots || []}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
               iotStatusByKey={iotStatusState.statusByKey}
@@ -296,7 +311,7 @@ export default function WalletDashboard() {
               rewards={rewardsAgg}
               rewardsDone={rewardsState.done}
               iotStatus={iotStatusAgg}
-              iotStatusDone={iotStatusState.done}
+              iotStatusDone={iotStatusDone}
               iotDataThrough={iotStatusState.dataThrough}
             />
           </div>
@@ -309,18 +324,23 @@ export default function WalletDashboard() {
 
           <div className="lg:col-span-6">
             <OperatorAnalyticsCard
-              hotspots={fleet?.hotspots}
+              hotspots={hotspots}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
               iotStatusByKey={iotStatusState.statusByKey}
-              iotStatusDone={iotStatusState.done}
+              iotStatusDone={iotStatusDone}
               iotDataThrough={iotStatusState.dataThrough}
+              onboarding={onboarding}
+              onboardedDone={onboardedState.done}
               prices={prices}
               stats={summary?.fleet}
             />
           </div>
           <div className="lg:col-span-6">
-            <DeploymentTimelineCard timeline={summary?.fleet?.timeline} />
+            <DeploymentTimelineCard
+              timeline={onboardedState.done ? onboarding.timeline : null}
+              progress={onboardedState.progress}
+            />
           </div>
         </div>
       </main>

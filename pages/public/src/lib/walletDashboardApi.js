@@ -15,7 +15,7 @@ export async function fetchSummary(wallet) {
   return data;
 }
 
-/** Full per-Hotspot list (map + table + geo + timeline) plus fleet stats. */
+/** Full per-Hotspot list (map + table + geo) plus fleet stats. */
 export async function fetchFleet(wallet) {
   const query = new URLSearchParams({ wallet });
   const res = await fetch(`${API_BASE}/fleet?${query.toString()}`, {
@@ -35,6 +35,22 @@ export async function fetchRewards(owner, hotspots) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ owner, hotspots }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const data = await parseJson(res);
+  throwIfApiError(res, data);
+  return data.results;
+}
+
+/**
+ * Batched + cached on-chain onboard dates for a set of the wallet's Hotspots.
+ * Returns the `{ [entityKey]: iso | null }` results map.
+ */
+export async function fetchOnboarded(wallet, entityKeys) {
+  const res = await fetch(`${API_BASE}/onboarded`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ wallet, entityKeys }),
     signal: AbortSignal.timeout(60_000),
   });
   const data = await parseJson(res);

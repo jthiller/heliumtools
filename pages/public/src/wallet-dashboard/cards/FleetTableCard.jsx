@@ -18,6 +18,7 @@ import {
   iotStatusOf,
   IOT_STATUS_LABEL,
   IOT_STATUS_COLOR,
+  ONBOARDED_NOTE,
 } from "../format.js";
 
 // Per-surface maps keyed by the iotStatusOf vocabulary (IOT_STATUS_LABEL keys
@@ -70,7 +71,9 @@ const FleetRow = memo(function FleetRow({ row: r, status, rewardsDone }) {
       <td className="px-3 py-2 text-content-secondary">
         {[r.city, r.state].filter(Boolean).join(", ") || "—"}
       </td>
-      <td className="px-3 py-2 text-content-secondary">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
+      <td className="px-3 py-2 text-content-secondary">
+        {r.onboardedAt === undefined ? <span className="text-content-tertiary">…</span> : fmtDate(r.onboardedAt)}
+      </td>
       <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
         {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
       </td>
@@ -157,7 +160,7 @@ export default function FleetTableCard({
       switch (sort.key) {
         case "device": av = a.deviceType || ""; bv = b.deviceType || ""; break;
         case "location": av = `${a.state || ""}${a.city || ""}`; bv = `${b.state || ""}${b.city || ""}`; break;
-        case "created": av = a.createdAt || ""; bv = b.createdAt || ""; break;
+        case "onboarded": av = a.onboardedAt || ""; bv = b.onboardedAt || ""; break;
         case "lifetime": av = a._hntLife; bv = b._hntLife; break;
         case "status": av = rankByKey.get(a.entityKey); bv = rankByKey.get(b.entityKey); break;
         default: av = (a.name || "").toLowerCase(); bv = (b.name || "").toLowerCase();
@@ -197,7 +200,7 @@ export default function FleetTableCard({
   const downloadCsv = useCallback(() => {
     const header = [
       "name", "entity_key", "asset_id", "network", "device_type",
-      "city", "state", "country", "h3_location", "created_at", "iot_status", "lifetime_iot", "lifetime_hnt",
+      "city", "state", "country", "h3_location", "onboarded_at", "iot_status", "lifetime_iot", "lifetime_hnt",
     ];
     const esc = (v) => {
       let s = v == null ? "" : String(v);
@@ -208,7 +211,7 @@ export default function FleetTableCard({
     const lines = [header.join(",")];
     for (const r of rows) {
       lines.push(
-        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.createdAt, IOT_STATUS_CSV[statusOf(r)] ?? "", r._iotLife, r._hntLife]
+        [r.name, r.entityKey, r.assetId, r.network, r.deviceType, r.city, r.state, r.country, r.location, r.onboardedAt, IOT_STATUS_CSV[statusOf(r)] ?? "", r._iotLife, r._hntLife]
           .map(esc)
           .join(","),
       );
@@ -262,7 +265,9 @@ export default function FleetTableCard({
               <Th sortKey="name" sort={sort} onSort={onSort}>Name</Th>
               <Th sortKey="device" sort={sort} onSort={onSort}>Device</Th>
               <Th sortKey="location" sort={sort} onSort={onSort}>Location</Th>
-              <Th sortKey="created" sort={sort} onSort={onSort}>Created</Th>
+              <Th sortKey="onboarded" sort={sort} onSort={onSort}>
+                <span title={ONBOARDED_NOTE}>Onboarded</span>
+              </Th>
               <Th sortKey="lifetime" sort={sort} onSort={onSort} className="text-right">Lifetime HNT</Th>
               <Th sortKey="status" sort={sort} onSort={onSort}>
                 <span title="IoT connectivity: connected to the Helium Packet Router during the most recent reported day">

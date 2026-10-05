@@ -9,6 +9,7 @@
 import { Connection, PublicKey, TransactionInstruction, SystemProgram } from "@solana/web3.js";
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
+import { rpc } from "./solanaRpc.js";
 
 // ---------------------------------------------------------------------------
 // ECC Verifier
@@ -590,6 +591,50 @@ export function buildUpdateMobileInfoInstruction(owner, gatewayPubkeyB58, merkle
   }
 
   return new TransactionInstruction({ keys: accounts, programId: ENTITY_MANAGER, data });
+}
+
+// ---------------------------------------------------------------------------
+// Hotspot onboard time
+// ---------------------------------------------------------------------------
+
+// getSignaturesForAddress returns newest-first, at most this many per call.
+const SIGNATURE_PAGE_LIMIT = 1000;
+
+/**
+ * When a Hotspot was onboarded to a network, as unix seconds: the block time
+ * of the oldest successful transaction on its IotHotspotInfoV0 /
+ * MobileHotspotInfoV0 account — the account the onboard instruction creates
+ * (matched each sampled asset's compressed-NFT mint to the minute). A failed
+ * onboard attempt can precede the real one, so failed signatures are skipped.
+ *
+ * Hotspots that predate Helium's April 2023 move to Solana have no on-chain
+ * onboarding: the L1 migration created their info accounts, so this returns
+ * their migration date (genesis, or later for a wallet seeded lazily).
+ *
+ * Never use the Entity API's `created_at` instead — it's the indexer's
+ * row-insert time, and its IoT table was bulk re-indexed on 2025-08-05.
+ *
+ * Null when one page doesn't settle it: no successful transaction (incl. an
+ * account that doesn't exist), or a full page, whose oldest entry isn't the
+ * account's first. Info accounts see a handful of transactions (onboard +
+ * location asserts), so a full page means something unusual; null beats paging
+ * an unbounded history. Throws on RPC failure. One subrequest per call — Helius
+ * won't batch historical methods — so callers bound how many they make and
+ * cache the result (it never changes once found).
+ *
+ * Used by wallet-dashboard (`/onboarded`).
+ *
+ * @param {object} env  Worker env (reads SOLANA_RPC_URL)
+ * @param {string} address  info-account address (base58)
+ * @returns {Promise<number|null>}
+ */
+export async function hotspotInfoCreatedAt(env, address) {
+  const sigs = await rpc(env, "getSignaturesForAddress", [address, { limit: SIGNATURE_PAGE_LIMIT }]);
+  if (!Array.isArray(sigs) || sigs.length >= SIGNATURE_PAGE_LIMIT) return null;
+  for (let i = sigs.length - 1; i >= 0; i--) {
+    if (sigs[i].err == null && sigs[i].blockTime) return sigs[i].blockTime;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

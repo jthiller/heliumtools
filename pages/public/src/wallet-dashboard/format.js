@@ -108,6 +108,45 @@ export function deviceLabel(key) {
   return DEVICE_LABEL[key] || key || "Unknown";
 }
 
+// ── Onboard dates (/wallet-dashboard/onboarded) ──────────────────────────────
+// The date each Hotspot was onboarded on Solana, read from chain. Hotspots
+// from the legacy Helium L1 carry their migration date instead (April 2023 or,
+// for a wallet migrated later, whenever it was). The Entity API's `created_at`
+// is never used: it's an indexer re-index time (2025-08-05 for most IoT rows).
+
+/** User-facing caveat for every surface that shows an onboard date. */
+export const ONBOARDED_NOTE =
+  "Date each Hotspot was onboarded on Solana. Hotspots from before Helium's April 2023 move to Solana show their migration date.";
+
+/**
+ * Fleet rows with `onboardedAt` merged in from the onboard scan: an ISO
+ * timestamp, null (couldn't be determined), or undefined while loading.
+ * Returns `hotspots` as-is (incl. undefined while the fleet loads).
+ */
+export function withOnboardedAt(hotspots, onboardedByKey) {
+  if (!hotspots) return hotspots;
+  return hotspots.map((h) => ({ ...h, onboardedAt: onboardedByKey?.[h.entityKey] }));
+}
+
+/** Oldest/newest onboard date and a per-month (UTC) count over dated rows. */
+export function onboardingStats(hotspots) {
+  const months = {};
+  let oldest = null;
+  let newest = null;
+  for (const h of hotspots || []) {
+    const t = h.onboardedAt;
+    if (!t) continue;
+    const month = t.slice(0, 7); // YYYY-MM (the worker emits toISOString)
+    months[month] = (months[month] || 0) + 1;
+    if (!oldest || t < oldest) oldest = t;
+    if (!newest || t > newest) newest = t;
+  }
+  const timeline = Object.entries(months)
+    .map(([month, count]) => ({ month, count }))
+    .sort((a, b) => (a.month < b.month ? -1 : 1));
+  return { oldest, newest, timeline };
+}
+
 // ── IoT connectivity (api-iot.heliumtools.org) ───────────────────────────────
 // Per-day granularity: "active" = connected to the Helium Packet Router during
 // the liveness feed's most recent reported day, anchored to `dataThrough` (the
@@ -145,27 +184,34 @@ export function hasIotStatus(hotspot) {
 /**
  * Derive one Hotspot's IoT connectivity state from its api-iot lookup entry.
  *   "active" | "inactive" — the service's per-day liveness verdict
- *   "settingUp"           — created after the feed's newest data, so it hasn't
- *                           been reported on yet (per the API reference: treat
- *                           as setting up, not inactive)
+ *   "settingUp"           — onboarded after the feed's newest data, so it
+ *                           hasn't been reported on yet (per the API reference:
+ *                           treat as setting up, not inactive)
  *   "unknown"             — lookup failed, or the address isn't in the
  *                           service's inventory
- *   "pending"             — not fetched yet (scan still running)
+ *   "pending"             — not fetched yet (scan still running), or not
+ *                           active and its onboard date — which decides
+ *                           settingUp vs inactive/unknown — is still loading
  *   null                  — no IoT status applies (see hasIotStatus)
  * Resolved verdicts are exactly the IOT_STATUS_LABEL keys. Invalid dates
- * compare false and simply fall through to inactive/unknown.
+ * compare false and simply fall through to inactive/unknown. Reads the row's
+ * `onboardedAt` (see withOnboardedAt).
  */
 export function iotStatusOf(hotspot, entry, dataThrough) {
   if (!hasIotStatus(hotspot)) return null;
   if (entry === undefined) return "pending";
   if (entry === null) return "unknown";
   if (!entry.notFound && entry.status === 0) return "active";
-  // Anchor "created after the feed" to the dataThrough this entry was computed
+  // Hold the verdict while the onboard date loads rather than flash "Inactive"
+  // on a Hotspot that turns out to be setting up. A date that couldn't be
+  // resolved (null) falls through to inactive/unknown.
+  if (hotspot.onboardedAt === undefined) return "pending";
+  // Anchor "onboarded after the feed" to the dataThrough this entry was computed
   // against; the fleet-wide anchor is only a fallback (404 entries carry none).
   // Mixing them would mispair verdict and anchor when a scan spans a feed-day
   // rollover (per-address edge caches expire independently).
   const anchor = entry.dataThrough ?? dataThrough;
-  if (anchor && hotspot.createdAt && new Date(hotspot.createdAt).getTime() > new Date(anchor).getTime()) {
+  if (anchor && hotspot.onboardedAt && new Date(hotspot.onboardedAt).getTime() > new Date(anchor).getTime()) {
     return "settingUp";
   }
   return entry.notFound ? "unknown" : "inactive";

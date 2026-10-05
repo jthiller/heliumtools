@@ -10,6 +10,7 @@ import {
   iotInactiveHotspots,
   hotspotLifetimeUsd,
   DC_PER_USD,
+  ONBOARDED_NOTE,
 } from "../format.js";
 
 /** Callout listing the first few Hotspot names with an "and N more" overflow. */
@@ -35,7 +36,7 @@ function NameCallout({ title, names, tone }) {
   );
 }
 
-function InsightRow({ label, value, tone }) {
+function InsightRow({ label, value, tone, title }) {
   const valueClass =
     tone === "warn"
       ? "text-amber-600 dark:text-amber-400"
@@ -43,7 +44,7 @@ function InsightRow({ label, value, tone }) {
         ? "text-emerald-600 dark:text-emerald-400"
         : "text-content";
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5 text-sm">
+    <div className="flex items-center justify-between gap-3 py-1.5 text-sm" title={title}>
       <span className="text-content-secondary">{label}</span>
       <span className={`shrink-0 font-medium tabular-nums ${valueClass}`}>{value}</span>
     </div>
@@ -57,6 +58,8 @@ export default function OperatorAnalyticsCard({
   iotStatusByKey,
   iotStatusDone,
   iotDataThrough,
+  onboarding,
+  onboardedDone,
   prices,
   stats,
 }) {
@@ -76,9 +79,11 @@ export default function OperatorAnalyticsCard({
         idleNames.push(h?.name || key);
       } else if (earning === true) {
         const usd = hotspotLifetimeUsd(rewards, prices) || 0;
+        // Age on Solana. Lifetime is the Solana reward oracles' running total,
+        // so an L1-era Hotspot's migration date is a fitting start here too.
         let ageDays = null;
-        if (h?.createdAt) {
-          ageDays = Math.max(1, (Date.now() - new Date(h.createdAt).getTime()) / 86_400_000);
+        if (h?.onboardedAt) {
+          ageDays = Math.max(1, (Date.now() - new Date(h.onboardedAt).getTime()) / 86_400_000);
         }
         perf.push({ name: h?.name || key, perDay: ageDays ? usd / ageDays : null });
       }
@@ -115,7 +120,9 @@ export default function OperatorAnalyticsCard({
   return (
     <Card
       title="Operator insights"
-      subtitle={!rewardsDone || !iotStatusDone ? "Fleet scan in progress…" : "Actionable fleet health"}
+      subtitle={
+        !rewardsDone || !iotStatusDone || !onboardedDone ? "Fleet scan in progress…" : "Actionable fleet health"
+      }
     >
       <div className="divide-y divide-border">
         {hasIotFleet && (
@@ -139,8 +146,16 @@ export default function OperatorAnalyticsCard({
           label="DC invested in onboarding"
           value={`${fmtCount(onboardingDc)} DC · ${fmtUsd(onboardingDc / DC_PER_USD)}`}
         />
-        <InsightRow label="Oldest deployment" value={fmtDate(stats.oldestCreatedAt)} />
-        <InsightRow label="Newest deployment" value={fmtDate(stats.newestCreatedAt)} />
+        <InsightRow
+          label="First onboarded"
+          value={onboardedDone ? fmtDate(onboarding?.oldest) : "…"}
+          title={ONBOARDED_NOTE}
+        />
+        <InsightRow
+          label="Latest onboarded"
+          value={onboardedDone ? fmtDate(onboarding?.newest) : "…"}
+          title={ONBOARDED_NOTE}
+        />
       </div>
 
       {inactiveIotNames.length > 0 && (

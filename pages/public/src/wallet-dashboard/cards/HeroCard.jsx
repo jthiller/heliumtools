@@ -6,7 +6,7 @@ import {
 } from "@heroicons/react/24/outline";
 import CopyButton from "../../components/CopyButton.jsx";
 import { Skeleton } from "./primitives.jsx";
-import { fmtUsd, fmtCount, fmtDate, truncateString, accountUrl, unclaimedTotalUsd } from "../format.js";
+import { fmtUsd, fmtCount, fmtDate, truncateString, accountUrl, unclaimedTotalUsd, ONBOARDED_NOTE } from "../format.js";
 
 function CopyLinkButton() {
   const [copied, setCopied] = useState(false);
@@ -35,9 +35,9 @@ function CopyLinkButton() {
   );
 }
 
-function HeroStat({ label, value, valueClass = "text-content", sub }) {
+function HeroStat({ label, value, valueClass = "text-content", sub, title }) {
   return (
-    <div className="px-5 first:pl-0">
+    <div className="px-5 first:pl-0" title={title}>
       <div className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-content-tertiary">
         {label}
       </div>
@@ -49,7 +49,7 @@ function HeroStat({ label, value, valueClass = "text-content", sub }) {
   );
 }
 
-export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, prices, governance, govLoading }) {
+export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, firstOnboarded, onboardedDone, prices, governance, govLoading }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
   // IoT connectivity: share of IoT Hotspots the liveness feed actually REPORTED
@@ -101,7 +101,11 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
 
         <div className="flex flex-wrap items-stretch gap-y-5 divide-x divide-border">
           <HeroStat label="Hotspots" value={loading ? "—" : fmtCount(fleetCount)} />
-          <HeroStat label="Oldest Hotspot" value={loading ? "—" : fmtDate(summary?.fleet?.oldestCreatedAt)} />
+          <HeroStat
+            label="First onboarded"
+            value={onboardedDone ? fmtDate(firstOnboarded) : "…"}
+            title={ONBOARDED_NOTE}
+          />
           {(iotStatus?.iotTotal || 0) > 0 && (
             <HeroStat
               label="IoT Active"
