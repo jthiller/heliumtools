@@ -19,12 +19,13 @@ function InsightRow({ label, value, tone, title }) {
 
 // memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
 // this card's props only change on rewards and onboard-date flushes.
+// `onboarding` is the shell's onboardingStats, null until every date is in.
 export default memo(function OperatorAnalyticsCard({
   hotspots,
   rewardsByKey,
   rewardsDone,
+  onboardedByKey,
   onboarding,
-  onboardedDone,
   prices,
   stats,
 }) {
@@ -46,9 +47,10 @@ export default memo(function OperatorAnalyticsCard({
         const usd = hotspotLifetimeUsd(rewards, prices) || 0;
         // Age on Solana. Lifetime is the Solana reward oracles' running total,
         // so an L1-era Hotspot's migration date is a fitting start here too.
+        const onboardedAt = onboardedByKey?.[key];
         let ageDays = null;
-        if (h?.onboardedAt) {
-          ageDays = Math.max(1, (Date.now() - new Date(h.onboardedAt).getTime()) / 86_400_000);
+        if (onboardedAt) {
+          ageDays = Math.max(1, (Date.now() - new Date(onboardedAt).getTime()) / 86_400_000);
         }
         perf.push({ name: h?.name || key, perDay: ageDays ? usd / ageDays : null });
       }
@@ -58,7 +60,7 @@ export default memo(function OperatorAnalyticsCard({
       .sort((a, b) => a.perDay - b.perDay)
       .slice(0, 3);
     return { idleNames, lowest };
-  }, [hotspots, byKey, rewardsByKey, prices]);
+  }, [hotspots, byKey, rewardsByKey, onboardedByKey, prices]);
 
   if (!stats || !analysis) {
     return (
@@ -73,7 +75,7 @@ export default memo(function OperatorAnalyticsCard({
   return (
     <Card
       title="Operator insights"
-      subtitle={rewardsDone && onboardedDone ? "Actionable fleet health" : "Fleet scan in progress…"}
+      subtitle={rewardsDone && onboarding ? "Actionable fleet health" : "Fleet scan in progress…"}
     >
       <div className="divide-y divide-border">
         <InsightRow
@@ -92,12 +94,12 @@ export default memo(function OperatorAnalyticsCard({
         />
         <InsightRow
           label="First onboarded"
-          value={onboardedDone ? fmtDate(onboarding?.oldest) : "…"}
+          value={onboarding ? fmtDate(onboarding.oldest) : "…"}
           title={ONBOARDED_NOTE}
         />
         <InsightRow
           label="Latest onboarded"
-          value={onboardedDone ? fmtDate(onboarding?.newest) : "…"}
+          value={onboarding ? fmtDate(onboarding.newest) : "…"}
           title={ONBOARDED_NOTE}
         />
       </div>

@@ -22,39 +22,25 @@ export async function resolveLocations(entityKeys) {
 }
 
 /**
- * GET /onboarded — on-chain onboard date per network for one Hotspot, read
- * from chain by the worker. (Not the Entity API's `created_at`: that's an
- * indexer re-index time, 2025-08-05 for most IoT Hotspots.) Hotspots from
- * before Helium's April 2023 move to Solana carry their migration date.
- * Returns { iot?: iso | null, mobile?: iso | null } for the requested
- * networks, or null if the lookup failed.
+ * GET /onboarded — one Hotspot's on-chain onboard date per network (`networks`
+ * a comma-separated subset of "iot,mobile"). Hotspots from before Helium's
+ * April 2023 move to Solana carry their migration date. Returns
+ * { iot?: iso | null, mobile?: iso | null }, or null if the lookup failed.
+ *
+ * A session cache that also shares in-flight requests: the detail card mounts
+ * twice per selection (desktop sidebar + mobile sheet), and a cold lookup costs
+ * the worker RPC calls. Failures aren't kept, so a later view retries.
  */
-const onboardDatesCache = new Map();
-const DATES_CACHE_MAX = 500;
-
-// Deduped: the detail card mounts twice per selection (desktop sidebar +
-// mobile sheet), and a cold lookup costs the worker RPC calls.
-const requestOnboardDates = dedupeAsync(async (entityKey, networksCsv) => {
-  const query = new URLSearchParams({ entityKey, networks: networksCsv });
-  const res = await fetch(`${API_BASE}/onboarded?${query.toString()}`);
-  const data = await parseJson(res);
-  return res.ok && data?.onboarded ? data.onboarded : null;
-});
-
-export async function fetchOnboardDates(entityKey, networks) {
-  const networksCsv = networks.join(",");
-  const cacheKey = `${entityKey}|${networksCsv}`;
-  if (onboardDatesCache.has(cacheKey)) return onboardDatesCache.get(cacheKey);
-
-  const onboarded = await requestOnboardDates(entityKey, networksCsv);
-  if (!onboarded) return null;
-
-  if (onboardDatesCache.size >= DATES_CACHE_MAX) {
-    onboardDatesCache.delete(onboardDatesCache.keys().next().value);
-  }
-  onboardDatesCache.set(cacheKey, onboarded);
-  return onboarded;
-}
+export const fetchOnboardDates = dedupeAsync(
+  async (entityKey, networks) => {
+    const query = new URLSearchParams({ entityKey, networks });
+    const res = await fetch(`${API_BASE}/onboarded?${query.toString()}`);
+    const data = await parseJson(res);
+    return res.ok && data?.onboarded ? data.onboarded : null;
+  },
+  Infinity,
+  { max: 500, keep: (onboarded) => onboarded != null },
+);
 
 /**
  * GET /wallet — fetch entity keys for a wallet address.

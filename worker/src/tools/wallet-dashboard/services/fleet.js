@@ -5,22 +5,18 @@ import { kvGetJson, kvPutJson } from "../utils.js";
  * Fetch a wallet's full Hotspot fleet from the Helium Entity API and derive
  * fleet-wide stats. One Entity API call returns every Hotspot with metadata.
  *
- * Returns { count, hotspots: [...], stats, infoAccounts }. Cached in KV (shared
- * by /summary, /fleet, and /onboarded so the Entity API is hit at most once per
- * wallet per TTL). `infoAccounts` ({ [entityKey]: [address, ...] }) is internal —
- * the IoT/Mobile info accounts /onboarded dates from; handlers don't return it.
+ * Returns { count, hotspots: [...], stats }. Cached in KV (shared by /summary
+ * and /fleet so the Entity API is hit at most once per wallet per TTL).
  *
  * NOTE: never read `is_active` from the Entity API — it is always false and
  * meaningless. Activity is derived from rewards on the client instead.
  *
- * NOTE: never read `created_at` either (except as a presence signal in
- * getNetworks). The IoT sub-object's value is the Entity API's bulk re-index
- * time — every pre-August-2025 IoT Hotspot sampled reads 2025-08-05 — so
- * onboard dates come from chain via /onboarded instead.
+ * NOTE: never read `created_at` as a date either (getNetworks uses it only as
+ * a presence signal) — it's an indexer re-index time; onboard dates come from
+ * chain via /onboarded (see `hotspotInfoCreatedAt` in lib/helium-solana.js).
  */
 export async function fetchFleet(env, wallet) {
-  // v2: entries carry `infoAccounts` (and rows no longer carry `createdAt`).
-  const cacheKey = `wd:fleet:v2:${wallet}`;
+  const cacheKey = `wd:fleet:${wallet}`;
   const cached = await kvGetJson(env, cacheKey);
   if (cached) return cached;
 
@@ -40,22 +36,11 @@ export async function fetchFleet(env, wallet) {
     throw new Error(`Entity API returned ${res.status}`);
   }
 
-  const hotspots = [];
-  const infoAccounts = {};
-  for (const raw of data.hotspots || []) {
-    const row = mapHotspot(raw);
-    if (!row) continue;
-    hotspots.push(row);
-    // Only real registrations carry an `address` — the husk sub-object the
-    // Entity API returns for a network the Hotspot isn't on ({ location: null })
-    // has none.
-    infoAccounts[row.entityKey] = [raw.hotspot_infos?.iot?.address, raw.hotspot_infos?.mobile?.address].filter(Boolean);
-  }
+  const hotspots = (data.hotspots || []).map(mapHotspot).filter(Boolean);
   const result = {
     count: data.hotspots_count ?? hotspots.length,
     hotspots,
     stats: deriveFleetStats(hotspots),
-    infoAccounts,
   };
 
   await kvPutJson(env, cacheKey, result, CACHE_TTL.fleet);

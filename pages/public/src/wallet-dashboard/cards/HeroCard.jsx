@@ -49,7 +49,7 @@ function HeroStat({ label, value, valueClass = "text-content", sub, title }) {
   );
 }
 
-export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, firstOnboarded, onboardedDone, prices, governance, govLoading }) {
+export default function HeroCard({ wallet, summary, loading, rewards, rewardsDone, rewardsUnavailable, iotStatus, iotStatusDone, onboarding, prices, governance, govLoading }) {
   const counted = rewards?.counted || 0;
   const earningPct = counted ? Math.round((rewards.earning / counted) * 100) : null;
   // IoT connectivity: share of IoT Hotspots the liveness feed actually REPORTED
@@ -103,7 +103,7 @@ export default function HeroCard({ wallet, summary, loading, rewards, rewardsDon
           <HeroStat label="Hotspots" value={loading ? "—" : fmtCount(fleetCount)} />
           <HeroStat
             label="First onboarded"
-            value={onboardedDone ? fmtDate(firstOnboarded) : "…"}
+            value={onboarding ? fmtDate(onboarding.oldest) : "…"}
             title={ONBOARDED_NOTE}
           />
           {(iotStatus?.iotTotal || 0) > 0 && (

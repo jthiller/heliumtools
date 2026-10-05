@@ -8,7 +8,7 @@ import useFleetRewards from "./useFleetRewards.js";
 import useFleetIotStatus from "./useFleetIotStatus.js";
 import useFleetOnboarded from "./useFleetOnboarded.js";
 import { useUtilizationIndex } from "./useIotLookups.js";
-import { aggregateRewards, aggregateIotStatus, withOnboardedAt, onboardingStats } from "./format.js";
+import { aggregateRewards, aggregateIotStatus, onboardingStats } from "./format.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
 import BalancesCard from "./cards/BalancesCard.jsx";
@@ -203,30 +203,30 @@ export default function WalletDashboard() {
   // api-iot.heliumtools.org, fetched directly from the browser — the service is
   // CORS-open and edge-cached. One GET per IoT Hotspot (the only per-row fan-out).
   const iotStatusState = useFleetIotStatus(fleet?.hotspots);
-  // On-chain onboard dates (the Entity API's are a re-index artifact), merged
-  // into the rows every display surface reads. The scan hooks keep the raw
-  // `fleet?.hotspots` — a merged array changes identity per flush and would
-  // restart them.
-  const onboardedState = useFleetOnboarded(valid ? wallet : null, fleet?.hotspots);
-  const hotspots = useMemo(
-    () => withOnboardedAt(fleet?.hotspots, onboardedState.onboardedByKey),
-    [fleet?.hotspots, onboardedState.onboardedByKey],
+  // On-chain onboard dates (the Entity API's are a re-index artifact), keyed
+  // by entityKey like rewardsByKey. Only once the fleet on screen is this
+  // wallet's, so a wallet switch doesn't scan the previous fleet for a render.
+  const onboardedState = useFleetOnboarded(fleet?.wallet === wallet ? fleet.hotspots : undefined);
+  const { onboardedByKey } = onboardedState;
+  // Stats appear once every date is in (a half-built histogram would reshuffle).
+  const onboarding = useMemo(
+    () => (onboardedState.done ? onboardingStats(onboardedByKey) : null),
+    [onboardedState.done, onboardedByKey],
   );
-  const onboarding = useMemo(() => onboardingStats(hotspots), [hotspots]);
-  // Not-active IoT verdicts wait on onboard dates (settingUp vs inactive), so
-  // the IoT figures are final only once both scans are.
-  const iotStatusDone = iotStatusState.done && onboardedState.done;
   // The one per-flush derivation of every row's IoT verdicts; every IoT
   // surface (hero, card, table, map, agent tools) reads this.
   const iotStatusAgg = useMemo(
-    () => aggregateIotStatus(hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough),
-    [hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough],
+    () => aggregateIotStatus(fleet?.hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough, onboardedByKey),
+    [fleet?.hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough, onboardedByKey],
   );
+  // Final once no IoT row is pending: a not-active verdict also waits on its
+  // onboard date (setting up vs inactive), but Mobile rows' dates don't hold it.
+  const iotStatusDone = iotStatusState.done && iotStatusAgg.counted === iotStatusAgg.iotTotal;
   // Only once the fleet on screen belongs to this wallet: right after a wallet
   // switch, the previous wallet's fleet + finished scan linger for a render.
   iotStateRef.current =
     valid && fleet?.wallet === wallet
-      ? { wallet, hotspots, iotStatus: iotStatusAgg, done: iotStatusDone }
+      ? { wallet, hotspots: fleet.hotspots, iotStatus: iotStatusAgg, done: iotStatusDone }
       : null;
   // Same rule as the scan's eligibility, so Mobile-only wallets never show the
   // IoT card and never reflow.
@@ -279,8 +279,7 @@ export default function WalletDashboard() {
             rewardsUnavailable={rewardsUnavailable}
             iotStatus={iotStatusAgg}
             iotStatusDone={iotStatusDone}
-            firstOnboarded={onboarding.oldest}
-            onboardedDone={onboardedState.done}
+            onboarding={onboarding}
             prices={prices}
             governance={governance}
             govLoading={govLoading}
@@ -301,7 +300,7 @@ export default function WalletDashboard() {
                 </div>
               ) : (
                 <FleetMap
-                  hotspots={hotspots || []}
+                  hotspots={fleet?.hotspots || []}
                   rewardsByKey={rewardsState.rewardsByKey}
                   iotStatus={iotStatusAgg}
                   wallet={wallet}
@@ -327,9 +326,10 @@ export default function WalletDashboard() {
           {/* Fleet — list view, directly under the map (spatial + tabular pair) */}
           <div ref={tableRef} className="scroll-mt-24 lg:col-span-8">
             <FleetTableCard
-              hotspots={hotspots || []}
+              hotspots={fleet?.hotspots || []}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
+              onboardedByKey={onboardedByKey}
               iotStatus={iotStatusAgg}
               iotFilter={iotFilter}
               onIotFilterChange={setIotFilter}
@@ -369,18 +369,18 @@ export default function WalletDashboard() {
           )}
           <div className={hasIotFleet ? "lg:col-span-4" : "lg:col-span-6"}>
             <OperatorAnalyticsCard
-              hotspots={hotspots}
+              hotspots={fleet?.hotspots}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
+              onboardedByKey={onboardedByKey}
               onboarding={onboarding}
-              onboardedDone={onboardedState.done}
               prices={prices}
               stats={summary?.fleet}
             />
           </div>
           <div className={hasIotFleet ? "lg:col-span-4" : "lg:col-span-6"}>
             <DeploymentTimelineCard
-              timeline={onboardedState.done ? onboarding.timeline : null}
+              timeline={onboarding?.timeline ?? null}
               progress={onboardedState.progress}
             />
           </div>

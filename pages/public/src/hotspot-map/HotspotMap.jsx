@@ -313,7 +313,7 @@ function HotspotDetail({ hotspot }) {
 
   useEffect(() => {
     let stale = false;
-    fetchOnboardDates(hotspot.entityKey, networksKey.split(","))
+    fetchOnboardDates(hotspot.entityKey, networksKey)
       .then((d) => { if (!stale) setDates(d); })
       .catch(() => {});
     return () => { stale = true; };

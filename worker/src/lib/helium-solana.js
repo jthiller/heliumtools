@@ -10,6 +10,7 @@ import { Connection, PublicKey, TransactionInstruction, SystemProgram } from "@s
 import { sha256 } from "js-sha256";
 import bs58 from "bs58";
 import { rpc } from "./solanaRpc.js";
+import { kvGetJson, kvPutJson } from "./kv.js";
 
 // ---------------------------------------------------------------------------
 // ECC Verifier
@@ -224,9 +225,13 @@ export async function resolveHntPriceOracle(connection) {
 // callers already wrap derivation in try/catch, so an over-length key surfaces
 // as their normal "invalid key" error rather than burning Worker CPU.
 const MAX_ENTITY_KEY_LEN = 64;
+// hotspotInfoKey takes any Hotspot, and Mobile WiFi entity keys run ~366 chars,
+// so it's bounded by the request validators' ceiling (`isValidEntityKey`)
+// instead — still a fixed cap on the decode.
+const MAX_HOTSPOT_ENTITY_KEY_LEN = 500;
 
-export function entityKeyHash(gatewayPubkeyB58) {
-  if (typeof gatewayPubkeyB58 !== "string" || gatewayPubkeyB58.length > MAX_ENTITY_KEY_LEN) {
+export function entityKeyHash(gatewayPubkeyB58, maxLen = MAX_ENTITY_KEY_LEN) {
+  if (typeof gatewayPubkeyB58 !== "string" || gatewayPubkeyB58.length > maxLen) {
     throw new Error("Invalid entity key");
   }
   const bytes = bs58.decode(gatewayPubkeyB58);
@@ -243,6 +248,21 @@ export function iotInfoKey(gatewayPubkeyB58) {
 
 export function mobileInfoKey(gatewayPubkeyB58) {
   return findPDA([Buffer.from("mobile_info"), MOBILE_REWARDABLE_ENTITY_CONFIG_KEY.toBuffer(), entityKeyHash(gatewayPubkeyB58)], ENTITY_MANAGER);
+}
+
+const INFO_CONFIG_BY_NETWORK = { iot: REWARDABLE_ENTITY_CONFIG_KEY, mobile: MOBILE_REWARDABLE_ENTITY_CONFIG_KEY };
+export const HOTSPOT_NETWORKS = Object.keys(INFO_CONFIG_BY_NETWORK);
+
+/**
+ * A Hotspot's IotHotspotInfoV0 / MobileHotspotInfoV0 PDA for `network` (one of
+ * HOTSPOT_NETWORKS). Same seeds as iotInfoKey / mobileInfoKey, but accepts any
+ * Hotspot's entity key (see MAX_HOTSPOT_ENTITY_KEY_LEN).
+ */
+export function hotspotInfoKey(network, entityKey) {
+  return findPDA(
+    [Buffer.from(`${network}_info`), INFO_CONFIG_BY_NETWORK[network].toBuffer(), entityKeyHash(entityKey, MAX_HOTSPOT_ENTITY_KEY_LEN)],
+    ENTITY_MANAGER,
+  );
 }
 
 export function collectionMetadataKey(collection) {
@@ -620,9 +640,8 @@ const SIGNATURE_PAGE_LIMIT = 1000;
  * location asserts), so a full page means something unusual; null beats paging
  * an unbounded history. Throws on RPC failure. One subrequest per call — Helius
  * won't batch historical methods — so callers bound how many they make and
- * cache the result (it never changes once found).
- *
- * Used by wallet-dashboard (`/onboarded`) and hotspot-map (`/onboarded`).
+ * cache the result (it never changes once found) — use the cached
+ * readCachedOnboardedAt / resolveOnboardedAt below rather than calling this.
  *
  * @param {object} env  Worker env (reads SOLANA_RPC_URL)
  * @param {string} address  info-account address (base58)
@@ -635,6 +654,39 @@ export async function hotspotInfoCreatedAt(env, address) {
     if (sigs[i].err == null && sigs[i].blockTime) return sigs[i].blockTime;
   }
   return null;
+}
+
+// A found date never changes (the TTL only ages out entries nobody views); a
+// null — not settled, including an account that doesn't exist yet — retries daily.
+const ONBOARDED_TTL = 90 * 86_400;
+const ONBOARDED_UNKNOWN_TTL = 86_400;
+// Keyed per info account: the date is a pure function of the address, so one
+// entry serves every tool (wallet-dashboard and hotspot-map `/onboarded`).
+// Cached as { at } so a cached null is distinguishable from a miss.
+const onboardedCacheKey = (address) => `onb:${address}`;
+
+/**
+ * Cached onboard dates for `addresses`: { [address]: iso | null }, hits only —
+ * a missing address is a miss, so callers can rate-limit just the misses.
+ */
+export async function readCachedOnboardedAt(env, addresses) {
+  const entries = await Promise.all(addresses.map((a) => kvGetJson(env, onboardedCacheKey(a))));
+  const hits = {};
+  addresses.forEach((a, i) => {
+    if (entries[i] && "at" in entries[i]) hits[a] = entries[i].at;
+  });
+  return hits;
+}
+
+/**
+ * hotspotInfoCreatedAt as an ISO timestamp (null = not settled), written to
+ * the shared cache. Throws on RPC failure, leaving it uncached.
+ */
+export async function resolveOnboardedAt(env, address) {
+  const t = await hotspotInfoCreatedAt(env, address);
+  const at = t == null ? null : new Date(t * 1000).toISOString();
+  await kvPutJson(env, onboardedCacheKey(address), { at }, at ? ONBOARDED_TTL : ONBOARDED_UNKNOWN_TTL);
+  return at;
 }
 
 // ---------------------------------------------------------------------------

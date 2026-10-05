@@ -18,8 +18,8 @@ re-implementing on-chain logic.
   portfolio total + fleet stats (counts by network/device, geo, onboarding-DC).
   KV-cached ~60s. No per-Hotspot list, and no onboard dates (see `/onboarded`).
 - `GET /fleet?wallet=` — full per-Hotspot rows for the map + exportable table.
-  KV-cached ~120s (shared with `/summary` and `/onboarded` so the Entity API is
-  hit once). Rows carry no onboard date.
+  KV-cached ~120s (shared with `/summary` so the Entity API is hit once). Rows
+  carry no onboard date.
 - `GET /transactions?wallet=&before=&limit=` — categorized recent transactions,
   paginated by signature cursor.
 - `POST /rewards { owner, hotspots:[{entityKey,assetId}] }` — batched (≤50) pending
@@ -27,13 +27,14 @@ re-implementing on-chain logic.
   per-batch in KV (~15 min; rewards distribute ~daily) and is **cache-first** so
   reloads don't consume the rate limit. The client fans the fleet out to this in
   batches of 50. Lifetime/earning-vs-idle analytics derive from it.
-- `POST /onboarded { wallet, entityKeys:[...] }` — batched (≤50) on-chain onboard
-  dates, `{ results: { [entityKey]: iso | null }, cached }`. Cache-first per
-  Hotspot (`wd:onb:<entityKey>`, ~90 days — the date never changes; a cached
-  null retries daily); a fully cached batch spends no rate-limit token. Misses
-  use their own window (`ONBOARDED_RATE_LIMIT`, `rl:wd:onb`). The client fans the
-  fleet out to this in batches of 50; the timeline, first/latest onboarded, the
-  table column, and IoT "Setting up" all derive from it. See the gotcha below.
+- `POST /onboarded { hotspots:[{entityKey,networks}] }` — batched (≤50) on-chain
+  onboard dates, earliest across each Hotspot's networks:
+  `{ results: { [entityKey]: iso | null }, cached }`. Cache-first per info account
+  (the shared `onb:*` cache); a fully cached batch spends no rate-limit token.
+  Misses use their own window (`ONBOARDED_RATE_LIMIT`, `rl:wd:onb`). The client
+  fans the fleet out to this in batches of 50; the timeline, first/latest
+  onboarded, the table column, and IoT "Setting up" all derive from it. See the
+  gotchas below.
 
 **Served by OTHER tools/services, called directly from the client:**
 - Governance: `GET /ve-hnt/positions?wallet=`
@@ -68,9 +69,6 @@ re-implementing on-chain logic.
 - `services/fleet.js` — fetches Helium Entity API (`/v2/wallet/<addr>`; 404 ⇒
   empty fleet) and maps the full per-Hotspot shape, reading the `hotspot_infos.iot`
   and `.mobile` sub-objects directly so dual-network Hotspots keep all metadata.
-  The cached entry (`wd:fleet:v2:*`) also holds an internal `infoAccounts` map
-  (entity key → its IoT/Mobile info-account addresses, from the sub-objects'
-  `address`) for `/onboarded`; handlers never return it.
   IoT data-only vs full is inferred from the onboarding fee (`< IOT_DATA_ONLY_FEE_MAX`
   ⇒ data-only). Coordinates are NOT taken from the Entity API lat/long (sparsely
   populated) — the client decodes the H3 `location`.
@@ -92,12 +90,9 @@ re-implementing on-chain logic.
   egress IPs). KV-cached ~60s.
 - `services/transactions.js` — Helius enhanced-transactions REST API (api-key
   parsed from `SOLANA_RPC_URL`), falling back to `getSignaturesForAddress`.
-- `services/onboarded.js` — onboard dates from chain via the shared
-  `hotspotInfoCreatedAt` (`worker/src/lib/helium-solana.js`, one
-  `getSignaturesForAddress` per info account; also used by hotspot-map's
-  `/onboarded`), ≤8 in flight, earliest across a dual-network Hotspot's
-  accounts. Caches per entity key (`wd:onb:*`), separately from hotspot-map's
-  per-info-account cache (`hm:onb:*`).
+- `services/onboarded.js` — derives each Hotspot's info accounts (lib
+  `hotspotInfoKey`), resolves cache misses through lib `resolveOnboardedAt` (≤4
+  RPC calls in flight), and takes the earliest date across a Hotspot's networks.
 
 ### Frontend
 - `pages/public/src/wallet-dashboard/WalletDashboard.jsx` — bento shell; the
@@ -110,15 +105,13 @@ re-implementing on-chain logic.
   the WebMCP tool runs the same loop), with throttled state flushes; returns
   `statusByKey` (full gateway records incl. the utilization block) and the newest
   liveness `dataThrough`.
-- `pages/public/src/wallet-dashboard/useFleetOnboarded.js` — progressive fan-out
-  to `/onboarded` (batches of 50, concurrency 2, waits out 429s up to 3×,
-  time-throttled flushes). `WalletDashboard.jsx` merges the dates into the rows
-  as `onboardedAt` (`withOnboardedAt` in `format.js`: ISO, `null` = unknown,
-  `undefined` = loading) for every display surface — including
-  `aggregateIotStatus`, whose `iotStatusOf` reads `onboardedAt` — and derives
-  `onboardingStats` (first/latest, per-month timeline) client-side. The scan
-  hooks keep the raw `fleet.hotspots` — the merged array changes identity per
-  flush and would restart them.
+- `pages/public/src/wallet-dashboard/useFleetOnboarded.js` — progressive onboard
+  scan via `scanOnboardDates` (lib/walletDashboardApi.js: batches of 50, two in
+  flight, optionally waiting out 429s — the WebMCP tools run the same loop, without
+  the waits), time-throttled flushes. Returns `onboardedByKey` (ISO | null; absent =
+  loading), which the shell passes like `rewardsByKey` — to `aggregateIotStatus`,
+  the table, and the analytics card — plus `onboardingStats` (first/latest,
+  per-month timeline), null until every date is in.
 - **One derivation per scan flush:** the shell's `aggregateIotStatus` (format.js)
   computes every row's verdicts once (`rows`: `iotRowOf` → status, traffic,
   health, messages, liveness anchor, hex) plus the health `groups` and fleet
@@ -158,37 +151,29 @@ re-implementing on-chain logic.
   value was close to chain for natively onboarded Hotspots, but nothing
   guarantees it survives the next re-index. `fleet.js` keeps it only as a
   presence signal in `getNetworks`.
-- **What the onboard date is** (`/onboarded`, defined once in
-  `hotspotInfoCreatedAt`): the block time of the first
-  successful transaction on the Hotspot's IoT/Mobile info account — the account
-  the onboard instruction creates (matched each sampled asset's cNFT mint to the
-  minute). Failed attempts are skipped. A full 1000-signature page means the
-  oldest is out of reach ⇒ null (cached a day) rather than paging; real info
-  accounts see a handful of txns. **L1-era Hotspots** have no on-chain
-  onboarding: their info accounts were created by the L1→Solana migration
-  (genesis, April 2023, or later for a wallet seeded lazily), so their date is
-  the migration date. Every surface shows `ONBOARDED_NOTE` (`format.js`) saying
+- **What the onboard date is** — see `hotspotInfoCreatedAt` (lib/helium-solana.js):
+  the block time of the oldest successful transaction on the Hotspot's IoT/Mobile
+  info account. **L1-era Hotspots** show their L1→Solana migration date, not their
+  original deployment; every surface shows `ONBOARDED_NOTE` (`format.js`) saying
   so. For per-day earnings that's the right span anyway (lifetime is the Solana
   reward oracles' total).
 - **`/onboarded` budget + trust.** Helius won't batch historical methods, so a
   miss costs one subrequest per info account: batches are ≤50 Hotspots (≤100
-  RPC calls if all dual-network). Info addresses come from the wallet's own
-  Entity API fleet (the sub-objects' `address`), never the client. (The shared
-  `entityKeyHash` couldn't derive them anyway: Mobile WiFi entity keys, ~366
-  chars, exceed its 64-char guard. hotspot-map derives with its own
-  `services/pda.js`, bounded by `isValidEntityKey`'s 500-char cap.) A key not in that wallet's fleet resolves null and is **not** cached
-  (the cache is per Hotspot, wallet-independent — caching it would poison the
-  real owner's entry); a failed lookup isn't cached either.
+  RPC calls if all dual-network). The info accounts are derived from each entity
+  key (lib `hotspotInfoKey`, which accepts ~366-char Mobile WiFi keys), never
+  taken from the client — so the RPC can't be pointed at arbitrary accounts, and
+  the shared per-account cache is right whoever asks. A failed lookup isn't
+  cached, and one unresolved account makes that Hotspot null.
 - **IoT status semantics** (api-iot.heliumtools.org): `status: 0` = active =
   "connected to the Helium Packet Router during the most recent reported day".
   Liveness lands once per UTC day; its `dataThrough` is an ISO timestamp marking
   the END of the 24h window, so the UI names the data day via `livenessDay()`
   ("2026-10-04T00:00Z" ⇒ "Oct 3") — never "online right now". A Hotspot onboarded
   *after* `dataThrough` hasn't been reported on yet ⇒ render "Setting up", not
-  "Inactive" (`iotStatusOf` in `format.js` owns this derivation, from
-  `onboardedAt`). A not-active verdict stays "pending" until the row's onboard
-  date lands, so the IoT figures (the card's and `iotStateRef`'s `done`) are final
-  only once both scans are; `get-wallet-iot-status`'s own scan reads dates for
+  "Inactive" (`iotStatusOf` in `format.js` owns this derivation, from the row's
+  `onboardedByKey` entry). A not-active verdict stays "pending" until that date
+  lands, so the IoT figures (the card's and `iotStateRef`'s `done`) are final only
+  once no IoT row is pending; `get-wallet-iot-status`'s own scan reads dates for
   just those rows. 404s and failed lookups render "Unknown" — never mislabeled
   inactive. Mobile-only Hotspots have no IoT status ("—").
 - **IoT traffic semantics.** The gateway record's `utilization` block counts
@@ -245,9 +230,10 @@ re-implementing on-chain logic.
 
 - `SOLANA_RPC_URL` — Helius staked endpoint (never log or expose). The Helius
   `api-key` is parsed from it for the enhanced-transactions REST API.
-- `KV` binding — data caches (`wd:summary:*`, `wd:fleet:v2:*`, `wd:rw:*`, `wd:onb:*`,
-  `wd:prices`) and rate-limit counters (`rl:wd:*`, `rl:wd:onb:*`).
+- `KV` binding — data caches (`wd:summary:*`, `wd:fleet:*`, `wd:rw:*`, `wd:prices`,
+  plus lib's shared onboard-date cache `onb:*`) and rate-limit counters
+  (`rl:wd:*`, `rl:wd:onb:*`).
 
 ## WebMCP
 
-The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (capped at 200 rows), `get-wallet-rewards` (fleet-wide pending totals via the cached `/rewards` batches — shares `useFleetRewards`' exported `eligibleRewardHotspots`/`REWARDS_BATCH_SIZE` so batches stay cache-stable; capped at 100 Hotspots), `get-wallet-onboarding` (on-chain onboard dates via `/onboarded` — first/latest, per-month counts, per-Hotspot dates; batches from `useFleetOnboarded`'s `onboardedBatches`, capped at 200 Hotspots; `/summary` and `/fleet` carry no dates, and their tool descriptions point here), `get-wallet-iot-status` (per-IoT-Hotspot connectivity, 30-day messages and health; reads the page's finished scan for the wallet on screen — no per-Hotspot requests, only the 5-min-memoized utilization index — otherwise scans up to 200 IoT Hotspots), `get-iot-hotspot-traffic` (one Hotspot's daily messages per OUI with well-known names; answers a known zero from the gateway record without a detail request), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. The health filter, map encoding and coverage footprint are UI-only and intentionally not exposed (`get-wallet-iot-status` already returns health; the footprint is a model for visual context). Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.
+The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (capped at 200 rows), `get-wallet-rewards` (fleet-wide pending totals via the cached `/rewards` batches — shares `useFleetRewards`' exported `eligibleRewardHotspots`/`REWARDS_BATCH_SIZE` so batches stay cache-stable; capped at 100 Hotspots), `get-wallet-onboarding` (on-chain onboard dates via `/onboarded` — first/latest, per-month counts, per-Hotspot dates; through the shared `scanOnboardDates` (no 429 waits — partial results instead), capped at 200 Hotspots; `/summary` and `/fleet` carry no dates, and their tool descriptions point here), `get-wallet-iot-status` (per-IoT-Hotspot connectivity, 30-day messages and health; reads the page's finished scan for the wallet on screen — no per-Hotspot requests, only the 5-min-memoized utilization index — otherwise scans up to 200 IoT Hotspots), `get-iot-hotspot-traffic` (one Hotspot's daily messages per OUI with well-known names; answers a known zero from the gateway record without a detail request), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. The health filter, map encoding and coverage footprint are UI-only and intentionally not exposed (`get-wallet-iot-status` already returns health; the footprint is a model for visual context). Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.

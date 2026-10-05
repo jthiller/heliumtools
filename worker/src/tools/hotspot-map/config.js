@@ -16,9 +16,3 @@ export const MAX_WALLET_LOOKUPS_PER_MINUTE = 10;
 export const MAX_ONBOARDED_PER_MINUTE = 30;
 export const MAX_ENTITY_KEYS_PER_REQUEST = 500;
 export const RPC_BATCH_SIZE = 100;
-
-// /onboarded KV cache (seconds). A found date never changes, so the TTL only
-// ages out entries nobody looks at; "not settled" (incl. not on that network)
-// is retried daily.
-export const ONBOARDED_CACHE_TTL = 90 * 86_400;
-export const ONBOARDED_UNKNOWN_CACHE_TTL = 86_400;

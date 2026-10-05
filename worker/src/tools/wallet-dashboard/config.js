@@ -53,12 +53,6 @@ export const CACHE_TTL = {
   // Helium rewards distribute on a ~daily cycle, so reward results are very
   // cacheable. Kept modest so a claim (which changes `claimed`) reflects soon.
   rewards: 900, // 15 min
-  // A Hotspot's on-chain onboard date never changes once resolved; the TTL only
-  // lets entries for Hotspots nobody looks at again age out.
-  onboarded: 90 * 86_400,
-  // "History doesn't settle it" (see services/onboarded.js) — retried daily
-  // rather than costing an RPC call on every load.
-  onboardedUnknown: 86_400,
 };
 
 // Max Hotspots per /rewards request. Larger than the claimer's single-lookup

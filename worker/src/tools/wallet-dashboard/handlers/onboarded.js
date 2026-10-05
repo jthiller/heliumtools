@@ -1,18 +1,16 @@
 import { jsonResponse } from "../../../lib/response.js";
 import { checkIpRateLimit } from "../../../lib/rateLimit.js";
+import { readCachedOnboardedAt } from "../../../lib/helium-solana.js";
 import { ONBOARDED_RATE_LIMIT, ONBOARDED_BATCH_SIZE } from "../config.js";
-import { isValidWalletAddress } from "../utils.js";
 import { isValidEntityKey } from "../../hotspot-claimer/utils.js";
-import { fetchFleet } from "../services/fleet.js";
-import { readCachedOnboardDates, resolveOnboardDates } from "../services/onboarded.js";
+import { infoAccountsOf, resolveMissing, earliestOnboardDates } from "../services/onboarded.js";
 
 /**
- * POST /onboarded { wallet, entityKeys: [...] }
+ * POST /onboarded { hotspots: [{ entityKey, networks }] }
  *
- * On-chain onboard dates for a batch (≤ ONBOARDED_BATCH_SIZE) of the wallet's
- * Hotspots — see services/onboarded.js for what the date means and why it isn't
- * the Entity API's `created_at`. The client fans the fleet out to this in
- * batches. Cache-first per Hotspot, and a fully cached batch doesn't spend a
+ * On-chain onboard dates for a batch (≤ ONBOARDED_BATCH_SIZE) of Hotspots —
+ * see services/onboarded.js. The client fans the fleet out to this in batches.
+ * Cache-first per info account, and a fully cached batch doesn't spend a
  * rate-limit token, so reloads are free.
  * Returns { results: { [entityKey]: iso | null }, cached }.
  */
@@ -24,33 +22,28 @@ export async function handleOnboarded(request, env) {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  const wallet = body?.wallet;
-  if (!isValidWalletAddress(wallet)) {
-    return jsonResponse({ error: "Invalid wallet address" }, 400);
-  }
-
-  // Drop malformed keys rather than 400-ing the batch (mirrors /rewards), and
-  // dedupe so a repeated key isn't looked up twice.
-  const entityKeys = [
-    ...new Set((Array.isArray(body?.entityKeys) ? body.entityKeys : []).filter(isValidEntityKey)),
+  // Drop malformed entries rather than 400-ing the batch (mirrors /rewards),
+  // and dedupe by entityKey so a repeated Hotspot isn't looked up twice.
+  const hotspots = [
+    ...new Map(
+      (Array.isArray(body?.hotspots) ? body.hotspots : [])
+        .filter((h) => h && isValidEntityKey(h.entityKey))
+        .map((h) => [h.entityKey, { entityKey: h.entityKey, networks: Array.isArray(h.networks) ? h.networks : [] }]),
+    ).values(),
   ];
-  if (entityKeys.length === 0) return jsonResponse({ results: {}, cached: false });
-  if (entityKeys.length > ONBOARDED_BATCH_SIZE) {
+  if (hotspots.length === 0) return jsonResponse({ results: {}, cached: false });
+  if (hotspots.length > ONBOARDED_BATCH_SIZE) {
     return jsonResponse({ error: `Too many Hotspots (max ${ONBOARDED_BATCH_SIZE})` }, 400);
   }
 
-  const results = await readCachedOnboardDates(env, entityKeys);
-  const misses = entityKeys.filter((k) => !(k in results));
-  if (misses.length === 0) return jsonResponse({ results, cached: true });
-
-  const limited = await checkIpRateLimit(env, request, ONBOARDED_RATE_LIMIT);
-  if (limited) return limited;
-
-  try {
-    const fleet = await fetchFleet(env, wallet);
-    Object.assign(results, await resolveOnboardDates(env, fleet, misses));
-  } catch (err) {
-    return jsonResponse({ error: `Failed to load onboard dates: ${err.message}` }, 502);
+  const accounts = infoAccountsOf(hotspots);
+  const addresses = [...new Set(accounts.flatMap((a) => a.addresses))];
+  const dates = await readCachedOnboardedAt(env, addresses);
+  const misses = addresses.filter((a) => !(a in dates));
+  if (misses.length > 0) {
+    const limited = await checkIpRateLimit(env, request, ONBOARDED_RATE_LIMIT);
+    if (limited) return limited;
+    Object.assign(dates, await resolveMissing(env, misses));
   }
-  return jsonResponse({ results, cached: false });
+  return jsonResponse({ results: earliestOnboardDates(accounts, dates), cached: misses.length === 0 });
 }

@@ -1,4 +1,4 @@
-import { fetchSummary, fetchFleet, fetchRewards, fetchOnboarded, fetchTransactions } from "../lib/walletDashboardApi.js";
+import { fetchSummary, fetchFleet, fetchRewards, scanOnboardDates, fetchTransactions } from "../lib/walletDashboardApi.js";
 import {
   scanGatewayStatuses,
   fetchUtilizationIndex,
@@ -18,11 +18,9 @@ import {
   indexForBuild,
   aggregateIotStatus,
   deriveTrafficDetail,
-  withOnboardedAt,
   onboardingStats,
 } from "./format.js";
 import { REWARDS_BATCH_SIZE, eligibleRewardHotspots } from "./useFleetRewards.js";
-import { onboardedBatches } from "./useFleetOnboarded.js";
 
 const ADDRESS_SCHEMA = {
   ...SOLANA_ADDRESS_SCHEMA,
@@ -36,8 +34,6 @@ const FLEET_RESULT_CAP = 200;
 const REWARDS_HOTSPOT_CAP = 100;
 /** Four onboard batches — matches the fleet tool's row cap. */
 const ONBOARDED_HOTSPOT_CAP = FLEET_RESULT_CAP;
-/** Onboard batches in flight at once (a cold one is up to 100 RPC lookups). */
-const ONBOARDED_CONCURRENCY = 2;
 /** IoT status lookups when the tool scans a wallet itself (one GET each).
  * Kept equal to FLEET_RESULT_CAP so a scanned list never also hits the list
  * cap — the two `truncated` notes can't collide. */
@@ -50,28 +46,6 @@ function formatBaseUnits(amount, decimals) {
   const whole = s.slice(0, -decimals);
   const frac = s.slice(-decimals).replace(/0+$/, "");
   return frac ? `${whole}.${frac}` : whole;
-}
-
-/**
- * Onboard dates for `hotspots` via the cached /onboarded batches,
- * ONBOARDED_CONCURRENCY at a time. allSettled, matching get-wallet-rewards: a
- * failed or rate-limited batch reads null for its Hotspots rather than
- * discarding the others' dates.
- */
-async function readOnboardDates(wallet, hotspots) {
-  const batches = onboardedBatches(hotspots);
-  const settled = [];
-  for (let i = 0; i < batches.length; i += ONBOARDED_CONCURRENCY) {
-    const group = batches.slice(i, i + ONBOARDED_CONCURRENCY);
-    settled.push(...(await Promise.allSettled(group.map((batch) => fetchOnboarded(wallet, batch)))));
-  }
-  const onboardedByKey = {};
-  let failedBatches = 0;
-  settled.forEach((outcome, i) => {
-    if (outcome.status === "rejected") failedBatches++;
-    for (const key of batches[i]) onboardedByKey[key] = outcome.value?.[key] ?? null;
-  });
-  return { onboardedByKey, failedBatches, batchCount: batches.length };
 }
 
 /**
@@ -247,13 +221,14 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
         const fleet = await fetchFleet(wallet);
         const all = fleet?.hotspots || [];
         const counted = all.slice(0, ONBOARDED_HOTSPOT_CAP);
-        const { onboardedByKey, failedBatches, batchCount } = await readOnboardDates(wallet, counted);
+        // A failed or rate-limited batch reads null for its Hotspots rather than
+        // discarding the others' dates (the agent gets a partial result, not a wait).
+        const { onboardedByKey, failedBatches, batchCount } = await scanOnboardDates(counted);
         if (failedBatches === batchCount && batchCount > 0) {
           throw new Error("every onboard-date batch failed — try again shortly");
         }
-        const rows = withOnboardedAt(counted, onboardedByKey);
-        const { oldest, newest, timeline } = onboardingStats(rows);
-        const unknown = rows.filter((h) => !h.onboardedAt).length;
+        const { oldest, newest, timeline } = onboardingStats(onboardedByKey);
+        const unknown = counted.filter((h) => !onboardedByKey[h.entityKey]).length;
         return {
           wallet,
           fleetSize: all.length,
@@ -268,7 +243,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
           firstOnboarded: oldest,
           latestOnboarded: newest,
           byMonth: timeline,
-          hotspots: rows.map((h) => ({ name: h.name, entityKey: h.entityKey, onboardedAt: h.onboardedAt })),
+          hotspots: counted.map((h) => ({ name: h.name, entityKey: h.entityKey, onboardedAt: onboardedByKey[h.entityKey] })),
         };
       },
     },
@@ -305,8 +280,8 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
           // as pending. Read dates for them alone; a failed read lands as null,
           // which falls through, so no row stays pending.
           const undated = hotspots.filter((h) => iotStatusOf(h, statusByKey[h.entityKey], dataThrough) === "pending");
-          const { onboardedByKey } = await readOnboardDates(wallet, undated);
-          agg = aggregateIotStatus(withOnboardedAt(hotspots, onboardedByKey), statusByKey, dataThrough);
+          const { onboardedByKey } = await scanOnboardDates(undated);
+          agg = aggregateIotStatus(hotspots, statusByKey, dataThrough, onboardedByKey);
         }
         const index = await indexPromise;
 
