@@ -1,40 +1,6 @@
-import { useMemo } from "react";
-import { Card, Skeleton } from "./primitives.jsx";
-import {
-  fmtCount,
-  fmtUsd,
-  fmtDate,
-  fmtDateUtc,
-  isEarning,
-  hasIotStatus,
-  iotInactiveHotspots,
-  hotspotLifetimeUsd,
-  DC_PER_USD,
-  ONBOARDED_NOTE,
-} from "../format.js";
-
-/** Callout listing the first few Hotspot names with an "and N more" overflow. */
-function NameCallout({ title, names, tone }) {
-  const styles =
-    tone === "warn"
-      ? {
-          box: "bg-rose-50 dark:bg-rose-950/30",
-          head: "text-rose-700/80 dark:text-rose-300/80",
-          text: "text-rose-700 dark:text-rose-300",
-        }
-      : { box: "bg-surface-inset", head: "text-content-tertiary", text: "text-content-secondary" };
-  return (
-    <div className={`mt-3 rounded-lg p-3 ${styles.box}`}>
-      <div className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${styles.head}`}>
-        {title}
-      </div>
-      <div className={`text-xs ${styles.text}`}>
-        {names.slice(0, 4).join(", ")}
-        {names.length > 4 && ` and ${names.length - 4} more`}
-      </div>
-    </div>
-  );
-}
+import { memo, useMemo } from "react";
+import { Card, Skeleton, NameCallout } from "./primitives.jsx";
+import { fmtCount, fmtUsd, fmtDate, isEarning, hotspotLifetimeUsd, DC_PER_USD, ONBOARDED_NOTE } from "../format.js";
 
 function InsightRow({ label, value, tone, title }) {
   const valueClass =
@@ -51,13 +17,12 @@ function InsightRow({ label, value, tone, title }) {
   );
 }
 
-export default function OperatorAnalyticsCard({
+// memo: the dashboard shell re-renders on every rewards/IoT-status scan flush;
+// this card's props only change on rewards and onboard-date flushes.
+export default memo(function OperatorAnalyticsCard({
   hotspots,
   rewardsByKey,
   rewardsDone,
-  iotStatusByKey,
-  iotStatusDone,
-  iotDataThrough,
   onboarding,
   onboardedDone,
   prices,
@@ -95,18 +60,6 @@ export default function OperatorAnalyticsCard({
     return { idleNames, lowest };
   }, [hotspots, byKey, rewardsByKey, prices]);
 
-  // IoT Hotspots the liveness feed marked inactive — didn't connect to the
-  // Packet Router during the most recent reported day. The most actionable
-  // signal here: an earning Hotspot that recently dropped offline shows up in
-  // this list long before its rewards flatline.
-  const inactiveIotNames = useMemo(
-    () => iotInactiveHotspots(hotspots, iotStatusByKey, iotDataThrough).map((h) => h.name || h.entityKey),
-    [hotspots, iotStatusByKey, iotDataThrough],
-  );
-  // Whether the fleet has any IoT Hotspots at all — mobile-only fleets get no
-  // IoT connectivity row (matching how every other surface gates on iotTotal).
-  const hasIotFleet = useMemo(() => (hotspots || []).some(hasIotStatus), [hotspots]);
-
   if (!stats || !analysis) {
     return (
       <Card title="Operator insights">
@@ -120,20 +73,11 @@ export default function OperatorAnalyticsCard({
   return (
     <Card
       title="Operator insights"
-      subtitle={
-        !rewardsDone || !iotStatusDone || !onboardedDone ? "Fleet scan in progress…" : "Actionable fleet health"
-      }
+      subtitle={rewardsDone && onboardedDone ? "Actionable fleet health" : "Fleet scan in progress…"}
     >
       <div className="divide-y divide-border">
-        {hasIotFleet && (
-          <InsightRow
-            label={`Inactive IoT Hotspots${iotDataThrough ? ` (as of ${fmtDateUtc(iotDataThrough)})` : ""}`}
-            value={fmtCount(inactiveIotNames.length)}
-            tone={inactiveIotNames.length > 0 ? "warn" : "ok"}
-          />
-        )}
         <InsightRow
-          label="Idle Hotspots (no rewards)"
+          label="Never rewarded"
           value={fmtCount(analysis.idleNames.length)}
           tone={analysis.idleNames.length > 0 ? "warn" : "ok"}
         />
@@ -158,15 +102,11 @@ export default function OperatorAnalyticsCard({
         />
       </div>
 
-      {inactiveIotNames.length > 0 && (
-        <NameCallout title="Inactive IoT Hotspots" names={inactiveIotNames} tone="warn" />
-      )}
-
-      {analysis.idleNames.length > 0 && <NameCallout title="Idle Hotspots" names={analysis.idleNames} />}
+      {analysis.idleNames.length > 0 && <NameCallout title="Never rewarded" names={analysis.idleNames} />}
 
       {analysis.lowest.length > 0 && (
         <NameCallout title="Lowest earners (per day)" names={analysis.lowest.map((p) => p.name)} />
       )}
     </Card>
   );
-}
+});

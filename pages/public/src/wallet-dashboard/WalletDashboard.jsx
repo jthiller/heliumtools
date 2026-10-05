@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import StatusBanner from "../components/StatusBanner.jsx";
@@ -7,6 +7,7 @@ import { fetchPositions } from "../lib/veHntApi.js";
 import useFleetRewards from "./useFleetRewards.js";
 import useFleetIotStatus from "./useFleetIotStatus.js";
 import useFleetOnboarded from "./useFleetOnboarded.js";
+import { useUtilizationIndex } from "./useIotLookups.js";
 import { aggregateRewards, aggregateIotStatus, withOnboardedAt, onboardingStats } from "./format.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
@@ -19,6 +20,7 @@ import OperatorAnalyticsCard from "./cards/OperatorAnalyticsCard.jsx";
 import DeploymentTimelineCard from "./cards/DeploymentTimelineCard.jsx";
 import TransactionsCard from "./cards/TransactionsCard.jsx";
 import FleetTableCard from "./cards/FleetTableCard.jsx";
+import IotStatusCard from "./cards/IotStatusCard.jsx";
 import { SEARCH_INPUT_CLASS } from "./cards/primitives.jsx";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeWalletDashboardTools } from "./webmcpTools.js";
@@ -132,11 +134,32 @@ export default function WalletDashboard() {
 
   const valid = isValidWallet(wallet);
 
-  // Ref keeps the registered tools reading the wallet currently shown
-  // without re-registering on navigation.
+  // Refs keep the registered tools reading the wallet (and its IoT scan)
+  // currently shown without re-registering on navigation.
   const walletRef = useRef(null);
   walletRef.current = valid ? wallet : null;
-  useWebMcpTools(() => makeWalletDashboardTools(navigate, () => walletRef.current), []);
+  const iotStateRef = useRef(null);
+  useWebMcpTools(
+    () => makeWalletDashboardTools(navigate, () => walletRef.current, () => iotStateRef.current),
+    [],
+  );
+
+  // Table filter by IoT health (lifted so the IoT card's rows can drive it).
+  // Stored with the wallet it was set for, so another wallet starts unfiltered.
+  const [iotFilterState, setIotFilterState] = useState({ wallet: null, health: null });
+  const iotFilter = iotFilterState.wallet === wallet ? iotFilterState.health : null;
+  const setIotFilter = useCallback(
+    (health) => setIotFilterState({ wallet: walletRef.current, health }),
+    [],
+  );
+  const tableRef = useRef(null);
+  const showHealthInTable = useCallback(
+    (health) => {
+      setIotFilter(health);
+      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    [setIotFilter],
+  );
 
   useEffect(() => {
     if (!valid) return;
@@ -176,8 +199,9 @@ export default function WalletDashboard() {
     () => aggregateRewards(rewardsState.rewardsByKey),
     [rewardsState.rewardsByKey],
   );
-  // IoT connectivity (active/inactive) from api-iot.heliumtools.org, fetched
-  // directly from the browser — the service is CORS-open and edge-cached.
+  // IoT connectivity (active/inactive) + 30-day traffic from
+  // api-iot.heliumtools.org, fetched directly from the browser — the service is
+  // CORS-open and edge-cached. One GET per IoT Hotspot (the only per-row fan-out).
   const iotStatusState = useFleetIotStatus(fleet?.hotspots);
   // On-chain onboard dates (the Entity API's are a re-index artifact), merged
   // into the rows every display surface reads. The scan hooks keep the raw
@@ -192,10 +216,24 @@ export default function WalletDashboard() {
   // Not-active IoT verdicts wait on onboard dates (settingUp vs inactive), so
   // the IoT figures are final only once both scans are.
   const iotStatusDone = iotStatusState.done && onboardedState.done;
+  // The one per-flush derivation of every row's IoT verdicts; every IoT
+  // surface (hero, card, table, map, agent tools) reads this.
   const iotStatusAgg = useMemo(
     () => aggregateIotStatus(hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough),
     [hotspots, iotStatusState.statusByKey, iotStatusState.dataThrough],
   );
+  // Only once the fleet on screen belongs to this wallet: right after a wallet
+  // switch, the previous wallet's fleet + finished scan linger for a render.
+  iotStateRef.current =
+    valid && fleet?.wallet === wallet
+      ? { wallet, hotspots, iotStatus: iotStatusAgg, done: iotStatusDone }
+      : null;
+  // Same rule as the scan's eligibility, so Mobile-only wallets never show the
+  // IoT card and never reflow.
+  const hasIotFleet = iotStatusAgg.iotTotal > 0;
+  // Network utilization index (one request per page): completeness of the
+  // 30-day window, for the "lower bound" note.
+  const { index: utilizationIndex } = useUtilizationIndex(hasIotFleet, iotStatusAgg.trafficRange?.max);
   const prices = summary?.prices;
   // Every reward batch failed (e.g. rate-limited) even though the wallet has
   // Hotspots — surface "unavailable" instead of a misleading $0.
@@ -265,8 +303,7 @@ export default function WalletDashboard() {
                 <FleetMap
                   hotspots={hotspots || []}
                   rewardsByKey={rewardsState.rewardsByKey}
-                  iotStatusByKey={iotStatusState.statusByKey}
-                  iotDataThrough={iotStatusState.dataThrough}
+                  iotStatus={iotStatusAgg}
                   wallet={wallet}
                 />
               )}
@@ -288,13 +325,14 @@ export default function WalletDashboard() {
           </div>
 
           {/* Fleet — list view, directly under the map (spatial + tabular pair) */}
-          <div className="lg:col-span-8">
+          <div ref={tableRef} className="scroll-mt-24 lg:col-span-8">
             <FleetTableCard
               hotspots={hotspots || []}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
-              iotStatusByKey={iotStatusState.statusByKey}
-              iotDataThrough={iotStatusState.dataThrough}
+              iotStatus={iotStatusAgg}
+              iotFilter={iotFilter}
+              onIotFilterChange={setIotFilter}
               loading={fleetLoading}
             />
           </div>
@@ -304,16 +342,13 @@ export default function WalletDashboard() {
             <TransactionsCard wallet={wallet} />
           </div>
 
-          {/* Analytics gauges */}
+          {/* Analytics gauges. The first row is the same for every wallet (it
+              never reflows when the fleet lands); IoT wallets get the IoT
+              connectivity & traffic card at the start of the second row, which
+              then splits in thirds. Literal classes so Tailwind's scanner sees
+              them. */}
           <div className="lg:col-span-4">
-            <FleetCompositionCard
-              stats={summary?.fleet}
-              rewards={rewardsAgg}
-              rewardsDone={rewardsState.done}
-              iotStatus={iotStatusAgg}
-              iotStatusDone={iotStatusDone}
-              iotDataThrough={iotStatusState.dataThrough}
-            />
+            <FleetCompositionCard stats={summary?.fleet} rewards={rewardsAgg} rewardsDone={rewardsState.done} />
           </div>
           <div className="lg:col-span-4">
             <GeoCard regions={summary?.fleet?.regions} />
@@ -322,21 +357,28 @@ export default function WalletDashboard() {
             <GovernanceCard positions={governance} loading={govLoading} error={govError} wallet={wallet} />
           </div>
 
-          <div className="lg:col-span-6">
+          {hasIotFleet && (
+            <div className="lg:col-span-4">
+              <IotStatusCard
+                iotStatus={iotStatusAgg}
+                done={iotStatusDone}
+                utilizationIndex={utilizationIndex}
+                onShowHealth={showHealthInTable}
+              />
+            </div>
+          )}
+          <div className={hasIotFleet ? "lg:col-span-4" : "lg:col-span-6"}>
             <OperatorAnalyticsCard
               hotspots={hotspots}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
-              iotStatusByKey={iotStatusState.statusByKey}
-              iotStatusDone={iotStatusDone}
-              iotDataThrough={iotStatusState.dataThrough}
               onboarding={onboarding}
               onboardedDone={onboardedState.done}
               prices={prices}
               stats={summary?.fleet}
             />
           </div>
-          <div className="lg:col-span-6">
+          <div className={hasIotFleet ? "lg:col-span-4" : "lg:col-span-6"}>
             <DeploymentTimelineCard
               timeline={onboardedState.done ? onboarding.timeline : null}
               progress={onboardedState.progress}
