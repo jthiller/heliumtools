@@ -32,6 +32,7 @@ import {
   IOT_CONNECTIVITY_NOTE,
   IOT_TRAFFIC_STATE_NOTE,
 } from "../format.js";
+import { MOBILE_ISSUES, MOBILE_ISSUE_ORDER, mobileActionRank } from "../mobileFormat.js";
 
 const COLUMN_COUNT = 8;
 
@@ -68,22 +69,50 @@ const trafficStateOf = (traffic) => (isTrafficKnown(traffic) ? "ok" : traffic ??
 
 const DETAIL_ID = "fleet-traffic-detail";
 
-/** Table cell for IoT connectivity, plus a health note when it's actionable. */
-function IotStatusCell({ status, health }) {
-  if (status === null) return <span className="text-content-tertiary">—</span>;
-  if (status === "pending") return <span className="text-content-tertiary">…</span>;
+// The Status column shows a row's IoT verdict and its top Mobile issue, so
+// it sorts on both: a row ranks with whichever network is more actionable,
+// placed on IoT's scale (iotActionRank): a Mobile ban beside IoT's most
+// urgent health, the WiFi signals beside the amber IoT states, a Mobile row
+// with no issue beside a healthy IoT one.
+const MOBILE_ON_IOT_RANK = { banned: 0, noHeartbeat: 1, lowTrust: 1, lowSpeedtest: 1, rejectedHeartbeats: 1 };
+const MOBILE_NO_ISSUE_RANK = 5;
+
+/** A row's Status sort rank across both networks (lower = more actionable). */
+function statusRank(scan, mobileRow) {
+  const mobile = mobileRow ? (MOBILE_ON_IOT_RANK[mobileRow.issue] ?? MOBILE_NO_ISSUE_RANK) : 99;
+  return Math.min(iotActionRank(scan.status, scan.health), mobile);
+}
+
+/** Table cell for IoT connectivity, plus a health note when it's actionable,
+ * plus the Mobile Hotspot's most actionable issue, if any (`mobileIssueText`:
+ * its wording for the current window, from aggregateMobile's issueText). */
+function IotStatusCell({ status, health, mobileIssue, mobileIssueText }) {
+  const issue = mobileIssue ? MOBILE_ISSUES[mobileIssue] : null;
+  const text = mobileIssueText || issue;
+  const issueLine = issue && (
+    <span title={text.hint} className={`inline-flex items-center gap-1.5 whitespace-nowrap ${issue.textClass}`}>
+      <Dot color={issue.color} />
+      {text.chip}
+    </span>
+  );
+  if (status === null) return issueLine || <span className="text-content-tertiary">—</span>;
   const note = HEALTH_NOTE[health];
   return (
     <>
-      <span className={`inline-flex items-center gap-1.5 ${IOT_STATUS_TEXT[status]}`}>
-        <Dot color={IOT_STATUS_COLOR[status]} />
-        {IOT_STATUS_LABEL[status]}
-      </span>
+      {status === "pending" ? (
+        <span className="text-content-tertiary">…</span>
+      ) : (
+        <span className={`inline-flex items-center gap-1.5 ${IOT_STATUS_TEXT[status]}`}>
+          <Dot color={IOT_STATUS_COLOR[status]} />
+          {IOT_STATUS_LABEL[status]}
+        </span>
+      )}
       {note && (
         <div title={IOT_HEALTH[health].hint} className={`whitespace-nowrap pl-3.5 text-[11px] ${IOT_HEALTH[health].textClass}`}>
           {note}
         </div>
       )}
+      {issueLine && <div className="text-[11px]">{issueLine}</div>}
     </>
   );
 }
@@ -135,6 +164,8 @@ const FleetRow = memo(function FleetRow({
   onboardedAt,
   status,
   health,
+  mobileIssue,
+  mobileIssueText,
   messages,
   trafficState,
   expanded,
@@ -158,7 +189,7 @@ const FleetRow = memo(function FleetRow({
         {r._hntLife ? fmtToken(r._hntLife, { max: 2 }) : rewardsDone ? "0" : "…"}
       </td>
       <td className="px-3 py-2">
-        <IotStatusCell status={status} health={health} />
+        <IotStatusCell status={status} health={health} mobileIssue={mobileIssue} mobileIssueText={mobileIssueText} />
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
         <MessagesCell
@@ -200,6 +231,16 @@ function FilterChip({ pressed, onClick, title, children }) {
   );
 }
 
+/** Network caption inside the chip row (when both networks have chips).
+ * Visual only: each chip group's label already names its network. */
+function ChipCaption({ children }) {
+  return (
+    <span aria-hidden="true" className="ml-1 text-[10px] font-medium uppercase tracking-wide text-content-tertiary">
+      {children}
+    </span>
+  );
+}
+
 function Th({ children, sortKey, sort, onSort, className = "" }) {
   const active = sort.key === sortKey;
   const ariaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
@@ -222,8 +263,14 @@ function Th({ children, sortKey, sort, onSort, className = "" }) {
  * @param iotStatus  the shell's `aggregateIotStatus` result: per-row verdicts
  *                   (`rows`), health counts and data days — derived once per
  *                   scan flush, never recomputed here.
+ * @param mobile     the shell's `aggregateMobile` result (per-row Mobile
+ *                   verdicts and issue counts), likewise derived once per
+ *                   Mobile update.
  * @param onboardedByKey  the onboard scan's per-network dates (see onboardedAtOf;
  *                   absent = loading)
+ * @param filter     the one active filter, `{ kind: "iot", key: <health> }` or
+ *                   `{ kind: "mobile", key: <issue> }`, or null (lifted to the
+ *                   shell so the IoT and Mobile cards can set it)
  */
 export default function FleetTableCard({
   hotspots,
@@ -231,8 +278,9 @@ export default function FleetTableCard({
   rewardsDone,
   onboardedByKey,
   iotStatus,
-  iotFilter = null,
-  onIotFilterChange,
+  mobile = null,
+  filter = null,
+  onFilterChange,
   loading,
 }) {
   const [query, setQuery] = useState("");
@@ -248,6 +296,9 @@ export default function FleetTableCard({
   const iotRows = iotStatus?.rows;
   const scanOf = (h) => iotRows?.get(h.entityKey) ?? NON_IOT;
   const healthCounts = iotStatus?.traffic.health;
+  const mobileRows = mobile?.rows;
+  const iotFilter = filter?.kind === "iot" ? filter.key : null;
+  const mobileFilter = filter?.kind === "mobile" ? filter.key : null;
 
   // Searched + enriched rows. Independent of the IoT scan, so its periodic
   // flushes keep these row objects (and the memo'd FleetRows) as they are.
@@ -270,14 +321,21 @@ export default function FleetTableCard({
   }, [hotspots, rewardsByKey, query]);
 
   // Filter + order. Reads the scan only when sorting by status/messages or
-  // filtering by health, so other orderings don't re-sort on every flush.
+  // filtering by health, so other orderings don't re-sort on every flush;
+  // likewise the Mobile verdicts, only while sorting by status or filtering
+  // by a Mobile issue.
   const readsScan = sort.key === "status" || sort.key === "messages" || Boolean(iotFilter);
   const scanRows = readsScan ? iotRows : null;
+  const issueRows = mobileFilter || sort.key === "status" ? mobileRows : null;
   // Likewise the onboard dates, only while sorting by them.
   const sortDates = sort.key === "onboarded" ? onboardedByKey : null;
   const rows = useMemo(() => {
     const scan = (r) => scanRows?.get(r.entityKey) ?? NON_IOT;
-    const list = iotFilter ? baseRows.filter((r) => scan(r).health === iotFilter) : [...baseRows];
+    const list = iotFilter
+      ? baseRows.filter((r) => scan(r).health === iotFilter)
+      : mobileFilter
+        ? baseRows.filter((r) => issueRows?.get(r.entityKey)?.issues.includes(mobileFilter))
+        : [...baseRows];
     const dir = sort.dir === "asc" ? 1 : -1;
     list.sort((a, b) => {
       let av, bv;
@@ -292,9 +350,18 @@ export default function FleetTableCard({
         case "status": {
           const sa = scan(a);
           const sb = scan(b);
-          const ra = iotActionRank(sa.status, sa.health);
-          const rb = iotActionRank(sb.status, sb.health);
+          const ma = issueRows?.get(a.entityKey);
+          const mb = issueRows?.get(b.entityKey);
+          const ra = statusRank(sa, ma);
+          const rb = statusRank(sb, mb);
           if (ra !== rb) return (ra - rb) * dir;
+          // Then IoT's own order, then the Mobile issues' (MOBILE_ISSUE_ORDER).
+          const ia = iotActionRank(sa.status, sa.health);
+          const ib = iotActionRank(sb.status, sb.health);
+          if (ia !== ib) return (ia - ib) * dir;
+          const xa = mobileActionRank(ma);
+          const xb = mobileActionRank(mb);
+          if (xa !== xb) return (xa - xb) * dir;
           // Within a group, most messages first in either direction.
           return (sb.messages ?? -1) - (sa.messages ?? -1);
         }
@@ -311,7 +378,7 @@ export default function FleetTableCard({
       return 0;
     });
     return list;
-  }, [baseRows, scanRows, sortDates, iotFilter, sort]);
+  }, [baseRows, scanRows, issueRows, sortDates, iotFilter, mobileFilter, sort]);
 
   // One open detail at a time; collapse it when its row leaves the table
   // (search, filter, wallet change) rather than reopening it on return.
@@ -413,15 +480,21 @@ export default function FleetTableCard({
   const anyHealth = Boolean(healthCounts) && IOT_HEALTH_ORDER.some((k) => healthCounts[k] > 0);
   const iotScanInProgress = Boolean(iotStatus) && iotStatus.counted < iotStatus.iotTotal;
   const showHealthChips = Boolean(iotFilter) || anyHealth || iotScanInProgress;
+  // Mobile issue chips join the row once there's an issue to show (or a
+  // Mobile filter to clear). No placeholder: most fleets have none.
+  const mobileChips = MOBILE_ISSUE_ORDER.filter((k) => mobile?.counts[k] > 0 || k === mobileFilter);
+  const showChips = showHealthChips || mobileChips.length > 0;
+  // Group captions only when both networks have chips.
+  const captionGroups = showHealthChips && mobileChips.length > 0;
 
   const statusTitle = `IoT connectivity${
     iotStatus?.livenessRange ? ` (${fmtDayRange(iotStatus.livenessRange)} UTC)` : ""
-  }. ${IOT_CONNECTIVITY_NOTE}`;
+  }. ${IOT_CONNECTIVITY_NOTE}${mobile?.mobileTotal ? " Mobile Hotspots show their most actionable issue, if any." : ""}`;
   const messagesTitle = `Messages over ${
     iotStatus?.trafficRange ? `the 30 days through ${fmtDayRange(iotStatus.trafficRange)} (UTC)` : "30 days"
   }. ${IOT_MESSAGES_NOTE}`;
 
-  const emptyText = iotFilter
+  const emptyText = filter
     ? query
       ? "No Hotspots match your search and filter."
       : "No Hotspots match this filter."
@@ -461,28 +534,50 @@ export default function FleetTableCard({
         />
       </div>
 
-      {showHealthChips && (
-        <div role="group" aria-label="Filter by IoT connectivity and traffic" className="mb-3 flex flex-wrap gap-1.5">
-          <FilterChip pressed={!iotFilter} onClick={() => onIotFilterChange(null)}>
+      {showChips && (
+        <div role="group" aria-label="Filter Hotspots" className="mb-3 flex flex-wrap items-center gap-1.5">
+          <FilterChip pressed={!filter} onClick={() => onFilterChange(null)}>
             All
           </FilterChip>
-          {!anyHealth && !iotFilter && (
-            <span className={`${CHIP_BTN} border-dashed border-border text-content-tertiary`}>
-              Checking IoT health…
-            </span>
+          {showHealthChips && (
+            <div role="group" aria-label="Filter by IoT connectivity and traffic" className="flex flex-wrap items-center gap-1.5">
+              {captionGroups && <ChipCaption>IoT</ChipCaption>}
+              {!anyHealth && !iotFilter && (
+                <span className={`${CHIP_BTN} border-dashed border-border text-content-tertiary`}>
+                  Checking IoT health…
+                </span>
+              )}
+              {IOT_HEALTH_ORDER.filter((k) => healthCounts?.[k] > 0 || k === iotFilter).map((k) => (
+                <FilterChip
+                  key={k}
+                  pressed={iotFilter === k}
+                  onClick={() => onFilterChange(iotFilter === k ? null : { kind: "iot", key: k })}
+                  title={IOT_HEALTH[k].hint}
+                >
+                  <Dot color={IOT_HEALTH[k].color} />
+                  {IOT_HEALTH[k].label}
+                  <span className="font-normal tabular-nums">{fmtCount(healthCounts?.[k])}</span>
+                </FilterChip>
+              ))}
+            </div>
           )}
-          {IOT_HEALTH_ORDER.filter((k) => healthCounts[k] > 0 || k === iotFilter).map((k) => (
-            <FilterChip
-              key={k}
-              pressed={iotFilter === k}
-              onClick={() => onIotFilterChange(iotFilter === k ? null : k)}
-              title={IOT_HEALTH[k].hint}
-            >
-              <Dot color={IOT_HEALTH[k].color} />
-              {IOT_HEALTH[k].label}
-              <span className="font-normal tabular-nums">{fmtCount(healthCounts[k])}</span>
-            </FilterChip>
-          ))}
+          {mobileChips.length > 0 && (
+            <div role="group" aria-label="Filter by Mobile issue" className="flex flex-wrap items-center gap-1.5">
+              {captionGroups && <ChipCaption>Mobile</ChipCaption>}
+              {mobileChips.map((k) => (
+                <FilterChip
+                  key={k}
+                  pressed={mobileFilter === k}
+                  onClick={() => onFilterChange(mobileFilter === k ? null : { kind: "mobile", key: k })}
+                  title={(mobile?.issueText[k] ?? MOBILE_ISSUES[k]).hint}
+                >
+                  <Dot color={MOBILE_ISSUES[k].color} />
+                  {(mobile?.issueText[k] ?? MOBILE_ISSUES[k]).chip}
+                  <span className="font-normal tabular-nums">{fmtCount(mobile?.counts[k])}</span>
+                </FilterChip>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -526,6 +621,7 @@ export default function FleetTableCard({
             ) : (
               rows.map((r) => {
                 const scan = scanOf(r);
+                const mobileIssue = mobileRows?.get(r.entityKey)?.issue ?? null;
                 return (
                   <FleetRow
                     key={r.entityKey}
@@ -533,6 +629,8 @@ export default function FleetTableCard({
                     onboardedAt={onboardedAtOf(onboardedByKey?.[r.entityKey])}
                     status={scan.status}
                     health={scan.health}
+                    mobileIssue={mobileIssue}
+                    mobileIssueText={mobileIssue ? mobile.issueText[mobileIssue] : null}
                     messages={scan.messages}
                     trafficState={trafficStateOf(scan.traffic)}
                     expanded={r.entityKey === expandedKey}

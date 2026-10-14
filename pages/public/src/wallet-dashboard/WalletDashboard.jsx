@@ -8,7 +8,9 @@ import useFleetRewards from "./useFleetRewards.js";
 import useFleetIotStatus from "./useFleetIotStatus.js";
 import useFleetOnboarded from "./useFleetOnboarded.js";
 import { useUtilizationIndex } from "./useIotLookups.js";
+import useMobileActivity from "./mobile/useMobileActivity.js";
 import { aggregateRewards, aggregateIotStatus, onboardingStats } from "./format.js";
+import { aggregateMobile, nextWindowFlip, windowText, SLIDING_SECTIONS } from "./mobileFormat.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
 import BalancesCard from "./cards/BalancesCard.jsx";
@@ -21,9 +23,11 @@ import DeploymentTimelineCard from "./cards/DeploymentTimelineCard.jsx";
 import TransactionsCard from "./cards/TransactionsCard.jsx";
 import FleetTableCard from "./cards/FleetTableCard.jsx";
 import IotStatusCard from "./cards/IotStatusCard.jsx";
+import MobileActivityCard from "./cards/MobileActivityCard.jsx";
 import { SEARCH_INPUT_CLASS } from "./cards/primitives.jsx";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeWalletDashboardTools } from "./webmcpTools.js";
+import { prefersReducedMotion } from "../lib/useReducedMotion.js";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 // Stable stand-in for a fleet that failed to load (a fresh [] per render would
@@ -130,6 +134,8 @@ export default function WalletDashboard() {
   const [summaryError, setSummaryError] = useState(null);
   const [fleet, setFleet] = useState(null);
   const [fleetLoading, setFleetLoading] = useState(false);
+  // `{ wallet, message }`: the failure stays with its wallet, so a switch
+  // doesn't show it for the next wallet before the fetch effect clears it.
   const [fleetError, setFleetError] = useState(null);
   const [governance, setGovernance] = useState(null);
   const [govLoading, setGovLoading] = useState(false);
@@ -137,32 +143,43 @@ export default function WalletDashboard() {
 
   const valid = isValidWallet(wallet);
 
-  // Refs keep the registered tools reading the wallet (and its IoT scan)
-  // currently shown without re-registering on navigation.
+  // Refs keep the registered tools reading the wallet (and its IoT scan and
+  // Mobile activity) currently shown without re-registering on navigation.
   const walletRef = useRef(null);
   walletRef.current = valid ? wallet : null;
   const iotStateRef = useRef(null);
+  const mobileStateRef = useRef(null);
   useWebMcpTools(
-    () => makeWalletDashboardTools(navigate, () => walletRef.current, () => iotStateRef.current),
+    () =>
+      makeWalletDashboardTools(
+        navigate,
+        () => walletRef.current,
+        () => iotStateRef.current,
+        () => mobileStateRef.current,
+      ),
     [],
   );
 
-  // Table filter by IoT health (lifted so the IoT card's rows can drive it).
-  // Stored with the wallet it was set for, so another wallet starts unfiltered.
-  const [iotFilterState, setIotFilterState] = useState({ wallet: null, health: null });
-  const iotFilter = iotFilterState.wallet === wallet ? iotFilterState.health : null;
-  const setIotFilter = useCallback(
-    (health) => setIotFilterState({ wallet: walletRef.current, health }),
+  // The Hotspot table's one filter: `{ kind: "iot", key: <IoT health> }` or
+  // `{ kind: "mobile", key: <Mobile issue> }` (lifted so the IoT and Mobile
+  // cards' rows can drive it). Stored with the wallet it was set for, so
+  // another wallet starts unfiltered.
+  const [tableFilterState, setTableFilterState] = useState({ wallet: null, filter: null });
+  const tableFilter = tableFilterState.wallet === wallet ? tableFilterState.filter : null;
+  const setTableFilter = useCallback(
+    (filter) => setTableFilterState({ wallet: walletRef.current, filter }),
     [],
   );
   const tableRef = useRef(null);
-  const showHealthInTable = useCallback(
-    (health) => {
-      setIotFilter(health);
-      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const showInTable = useCallback(
+    (filter) => {
+      setTableFilter(filter);
+      tableRef.current?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
     },
-    [setIotFilter],
+    [setTableFilter],
   );
+  const showHealthInTable = useCallback((health) => showInTable({ kind: "iot", key: health }), [showInTable]);
+  const showMobileIssueInTable = useCallback((issue) => showInTable({ kind: "mobile", key: issue }), [showInTable]);
 
   useEffect(() => {
     if (!valid) return;
@@ -181,7 +198,7 @@ export default function WalletDashboard() {
     setFleet(null);
     fetchFleet(wallet)
       .then((d) => !cancelled && setFleet(d))
-      .catch((e) => !cancelled && setFleetError(e.message))
+      .catch((e) => !cancelled && setFleetError({ wallet, message: e.message }))
       .finally(() => !cancelled && setFleetLoading(false));
 
     setGovLoading(true);
@@ -197,6 +214,12 @@ export default function WalletDashboard() {
     };
   }, [wallet, valid]);
 
+  // The fleet once it's this wallet's: right after a wallet switch the
+  // previous wallet's fleet lingers for a render. A fleet that failed to load
+  // settles as empty rather than loading forever.
+  const fleetFailed = fleetError?.wallet === wallet ? fleetError.message : null;
+  const walletHotspots = fleetFailed ? EMPTY_FLEET : fleet?.wallet === wallet ? fleet.hotspots : undefined;
+
   const rewardsState = useFleetRewards(valid ? wallet : null, fleet?.hotspots);
   const rewardsAgg = useMemo(
     () => aggregateRewards(rewardsState.rewardsByKey),
@@ -208,11 +231,8 @@ export default function WalletDashboard() {
   const iotStatusState = useFleetIotStatus(fleet?.hotspots);
   // On-chain onboard dates (the Entity API's are a re-index artifact), keyed
   // by entityKey like rewardsByKey. Only once the fleet on screen is this
-  // wallet's, so a wallet switch doesn't scan the previous fleet for a render;
-  // a fleet that failed to load settles as empty rather than loading forever.
-  const onboardedState = useFleetOnboarded(
-    fleetError ? EMPTY_FLEET : fleet?.wallet === wallet ? fleet.hotspots : undefined,
-  );
+  // wallet's, so a wallet switch doesn't scan the previous fleet for a render.
+  const onboardedState = useFleetOnboarded(walletHotspots);
   const { onboardedByKey } = onboardedState;
   // Stats appear once every date is in (a half-built histogram would reshuffle).
   const onboarding = useMemo(
@@ -240,6 +260,56 @@ export default function WalletDashboard() {
   // Network utilization index (one request per page): completeness of the
   // 30-day window, for the "lower bound" note.
   const { index: utilizationIndex } = useUtilizationIndex(hasIotFleet, iotStatusAgg.trafficRange?.max);
+
+  // Mobile Hotspots' network activity, read in a Web Worker straight from
+  // Helium's public Mobile network tables and kept live while the page is
+  // visible. Nothing runs for a fleet without Mobile Hotspots.
+  const mobileActivity = useMobileActivity(valid ? wallet : null, walletHotspots);
+  // A sliding window's label turns from "in the last 60 min" to "in the 60 min
+  // to 3:42 PM" once its table goes stale, which no update announces (a hidden
+  // tab, a stalled check): re-derive at that moment.
+  // The labels as of this render key the derivation, so any render after the
+  // flip (not only the timer's) picks it up; the timer just forces one.
+  const [, setWindowTick] = useState(0);
+  const windowFlipAt = nextWindowFlip(mobileActivity);
+  const windowSig = SLIDING_SECTIONS.map((s) => windowText(s, mobileActivity[s]?.until ?? null).long).join("|");
+  useEffect(() => {
+    if (windowFlipAt == null) return undefined;
+    // A little late rather than early: an early timer would re-derive the
+    // same label and never re-arm.
+    const id = setTimeout(() => setWindowTick((n) => n + 1), Math.max(0, windowFlipAt - Date.now()) + 50);
+    return () => clearTimeout(id);
+  }, [windowFlipAt]);
+  // The one derivation of every Mobile row's verdicts per activity update;
+  // the card, table, map and agent tools read this. Keyed on the sections
+  // (an update keeps unchanged ones' identity) and the tables' failures, so a
+  // check that changed nothing, and rewards/IoT flushes, don't re-derive it.
+  const { rewards: mRewards, usage: mUsage, heartbeats: mBeats, invalidHeartbeats: mRejected } = mobileActivity;
+  const { speedtests: mSpeed, bans: mBans } = mobileActivity;
+  const mobileFailedSig = `${mobileActivity.phase === "error"}:${Object.entries(mobileActivity.tables)
+    .filter(([, t]) => t.state === "error")
+    .map(([name]) => name)}`;
+  const mobileAgg = useMemo(
+    () => aggregateMobile(walletHotspots, mobileActivity),
+    // mobileActivity is read only through the sections and failures listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [walletHotspots, mRewards, mUsage, mBeats, mRejected, mSpeed, mBans, mobileFailedSig, windowSig],
+  );
+  // The map decides its one camera ease per selection on live heartbeats, not
+  // on the saved paint.
+  const heartbeatsLive = Boolean(mBeats) && !mobileActivity.cachedSections.includes("heartbeats");
+  // A failed fleet is published too, so the agent tool needn't wait for
+  // Mobile state that never comes.
+  mobileStateRef.current = !valid
+    ? null
+    : fleetFailed
+      ? { wallet, fleetError: fleetFailed }
+      : fleet?.wallet === wallet && mobileActivity.wallet === wallet
+        ? { wallet, hotspots: fleet.hotspots, activity: mobileActivity, mobile: mobileAgg }
+        : null;
+  const hasMobileFleet = mobileAgg.mobileTotal > 0;
+  // Thirds beside one network card; halves with none, or below both.
+  const analyticsSpan = hasIotFleet !== hasMobileFleet ? "lg:col-span-4" : "lg:col-span-6";
   const prices = summary?.prices;
   // Every reward batch failed (e.g. rate-limited) even though the wallet has
   // Hotspots — surface "unavailable" instead of a misleading $0.
@@ -300,15 +370,18 @@ export default function WalletDashboard() {
               </a>
             </div>
             <div className="min-h-[360px] flex-1 px-3 pb-3">
-              {fleetError ? (
+              {fleetFailed ? (
                 <div className="flex h-full min-h-[320px] items-center justify-center rounded-2xl border border-border bg-surface-inset px-6 text-center text-sm text-content-tertiary">
-                  Couldn&apos;t load Hotspots: {fleetError}
+                  Couldn&apos;t load Hotspots: {fleetFailed}
                 </div>
               ) : (
                 <FleetMap
                   hotspots={fleet?.hotspots || []}
                   rewardsByKey={rewardsState.rewardsByKey}
                   iotStatus={iotStatusAgg}
+                  mobile={mobileAgg}
+                  mobileArrivals={mobileActivity.arrivals}
+                  heartbeatsLive={heartbeatsLive}
                   wallet={wallet}
                 />
               )}
@@ -337,8 +410,9 @@ export default function WalletDashboard() {
               rewardsDone={rewardsState.done}
               onboardedByKey={onboardedByKey}
               iotStatus={iotStatusAgg}
-              iotFilter={iotFilter}
-              onIotFilterChange={setIotFilter}
+              mobile={mobileAgg}
+              filter={tableFilter}
+              onFilterChange={setTableFilter}
               loading={fleetLoading}
             />
           </div>
@@ -349,10 +423,11 @@ export default function WalletDashboard() {
           </div>
 
           {/* Analytics gauges. The first row is the same for every wallet (it
-              never reflows when the fleet lands); IoT wallets get the IoT
-              connectivity & traffic card at the start of the second row, which
-              then splits in thirds. Literal classes so Tailwind's scanner sees
-              them. */}
+              never reflows when the fleet lands). Wallets with IoT or Mobile
+              Hotspots get that network's card at the start of the second row,
+              which then splits in thirds; with both, the two network cards
+              share the second row and the analytics cards move to a third,
+              in halves. Literal classes so Tailwind's scanner sees them. */}
           <div className="lg:col-span-4">
             <FleetCompositionCard stats={summary?.fleet} rewards={rewardsAgg} rewardsDone={rewardsState.done} />
           </div>
@@ -364,7 +439,7 @@ export default function WalletDashboard() {
           </div>
 
           {hasIotFleet && (
-            <div className="lg:col-span-4">
+            <div className={hasMobileFleet ? "lg:col-span-6" : "lg:col-span-4"}>
               <IotStatusCard
                 iotStatus={iotStatusAgg}
                 done={iotStatusDone}
@@ -373,7 +448,17 @@ export default function WalletDashboard() {
               />
             </div>
           )}
-          <div className={hasIotFleet ? "lg:col-span-4" : "lg:col-span-6"}>
+          {hasMobileFleet && (
+            <div className={hasIotFleet ? "lg:col-span-6" : "lg:col-span-4"}>
+              <MobileActivityCard
+                key={wallet}
+                mobile={mobileAgg}
+                activity={mobileActivity}
+                onShowIssue={showMobileIssueInTable}
+              />
+            </div>
+          )}
+          <div className={analyticsSpan}>
             <OperatorAnalyticsCard
               hotspots={fleet?.hotspots}
               rewardsByKey={rewardsState.rewardsByKey}
@@ -384,7 +469,7 @@ export default function WalletDashboard() {
               stats={summary?.fleet}
             />
           </div>
-          <div className={hasIotFleet ? "lg:col-span-4" : "lg:col-span-6"}>
+          <div className={analyticsSpan}>
             <DeploymentTimelineCard
               timeline={onboarding?.timeline ?? null}
               progress={onboardedState.progress}

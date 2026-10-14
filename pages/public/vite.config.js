@@ -9,6 +9,19 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   plugins: [react(), nodePolyfills()],
   base: "/",
+  resolve: {
+    alias: [
+      // The Wallet Dashboard's Mobile engine reads ZSTD Parquet and Avro only:
+      // swap the full decompressor set (Brotli dictionary, Snappy WASM) for a
+      // slim module. A regex so only the bare specifier is rewritten; a string
+      // alias would also rewrite `hyparquet-compressors/src/gzip.js`, which the
+      // slim module imports.
+      {
+        find: /^hyparquet-compressors$/,
+        replacement: path.resolve(root, "src/wallet-dashboard/mobile/slimCompressors.js"),
+      },
+    ],
+  },
   server: {
     proxy: {
       "/api": {

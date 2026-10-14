@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { Card, Skeleton, ProgressBar, Dot, NameCallout, InfoTip } from "./primitives.jsx";
+import { Card, Skeleton, ProgressBar, NameCallout, InfoTip, CountRow } from "./primitives.jsx";
 import {
   fmtCount,
   fmtCompact,
@@ -56,48 +56,6 @@ function noneCarriedText(known, iotTotal, day) {
   const which = all ? "" : " with traffic data";
   if (known === 1) return `${all ? "Your" : "The"} IoT Hotspot${which} carried no traffic in the 30 days through ${day}.`;
   return `None of ${all ? "your" : "the"} ${fmtCount(known)} IoT Hotspots${which} carried traffic in the 30 days through ${day}.`;
-}
-
-/** One "● label … count" row; a full-width button when `onClick` is given. */
-function CountRow({ color, label, count, valueClass = "text-content", hint, onClick }) {
-  const rowClass = "flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm";
-  const body = (
-    <>
-      <span className="flex min-w-0 items-center gap-2">
-        <Dot color={color} />
-        <span className="truncate text-content-secondary">{label}</span>
-      </span>
-      <span className="flex shrink-0 items-center gap-2">
-        {onClick && (
-          <span
-            aria-hidden="true"
-            className="text-xs font-medium text-accent-text opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
-          >
-            Show →
-          </span>
-        )}
-        <span className={`font-medium tabular-nums ${valueClass}`}>{fmtCount(count)}</span>
-      </span>
-    </>
-  );
-  if (!onClick) {
-    return (
-      <div className={rowClass} title={hint}>
-        {body}
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={hint}
-      aria-label={`${label}: ${fmtCount(count)}. Show them in the Hotspot table.`}
-      className={`group ${rowClass} text-left transition hover:bg-surface-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
-    >
-      {body}
-    </button>
-  );
 }
 
 // memo: props are the shell's memoized aggregate + scan state, which only

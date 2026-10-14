@@ -64,6 +64,17 @@ export function fmtAgoSeconds(sec) {
   return fmtDate(sec * 1000);
 }
 
+/** Relative time from a ms timestamp, minute-grained for live data →
+ * "just now", "4 min ago", "3 h ago", "2 d ago". */
+export function fmtAgo(ms, now = Date.now()) {
+  if (!ms) return "—";
+  const min = Math.floor((now - ms) / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)} h ago`;
+  return `${Math.floor(min / (24 * 60))} d ago`;
+}
+
 // Solana explorer (Solscan) links.
 const SOLSCAN = "https://solscan.io";
 export const txUrl = (sig) => `${SOLSCAN}/tx/${sig}`;
@@ -270,6 +281,21 @@ const compactFmt = new Intl.NumberFormat(undefined, { notation: "compact", maxim
 export function fmtCompact(n) {
   if (n == null || Number.isNaN(n)) return "—";
   return n < 1000 ? fmtCount(n) : compactFmt.format(n);
+}
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
+
+/** Decimal (SI) byte sizes: "950 B", "1.25 GB", "34.8 GB", "412 TB". */
+export function fmtBytes(n) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  let v = Math.abs(n);
+  let i = 0;
+  while (v >= 1000 && i < BYTE_UNITS.length - 1) {
+    v /= 1000;
+    i++;
+  }
+  const digits = i === 0 ? 0 : v < 10 ? 2 : v < 100 ? 1 : 0;
+  return `${n < 0 ? "-" : ""}${v.toLocaleString(undefined, { maximumFractionDigits: digits })} ${BYTE_UNITS[i]}`;
 }
 
 /** The partial-window caveat: totals over fewer than `days` reported days. */
