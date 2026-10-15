@@ -142,3 +142,22 @@ absolute URLs with dimensions, byte sizes, the URL pattern, and the ZIP) and
 colorway/background pairing, principles, the don't list, clear space, minimum sizes,
 plus the supporting palette, type summary, and "beyond the logo" notes). Cataloged in
 `../webmcp/catalog.js`. Framework: `../webmcp/CLAUDE.md`.
+
+## Landing preview
+
+The `/` card (`../pages/landing/previews/brand.js`) shows the page's own UI from
+`BrandGuidelines.jsx`, never a logo file cropped out on its own: the back sheet is the
+Logo family matrix (the Helium, Helium Roundel and HeliumOS cards, each with its three
+colorway `Stage`s and swatch + hex labels; the capture's temporary CSS hides the family
+descriptions and file buttons), and on top lies the anchor, a dpr-3 macro of the Helium
+Roundel family's Purple column (swatch, `#5F26FC`, and its SVG and PNG `FileButton` rows
+with dimensions, byte size and copy-link icons).
+`scripts/tool-previews/capture/brand.mjs` loads the static `/brand` page (no wallet, no
+API, no mocks, nothing clicked), waits for every logo image to decode, and shoots light
+and dark from one load via `emulateMedia`, plus a second dpr-3 load for the file rows.
+Re-capture and re-bake when a change touches the Logo family cards (`FAMILIES`,
+`COLORWAYS` or `ROWS` order and labels, the pills, `Stage`, `FileButton`), the hosted
+logo files, or the structure the script relies on (it
+names the `main > div.space-y-12 > section` sections by position, so adding or
+reordering a top-level section shifts every crop); see
+`../pages/landing/CLAUDE.md`.

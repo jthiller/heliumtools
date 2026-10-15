@@ -1,0 +1,15 @@
+{
+  "name": "heliumtools-tool-previews",
+  "private": true,
+  "type": "module",
+  "description": "Capture kit for the landing page's tool-card previews: bake WebP prints from real captures, screenshot the cards.",
+  "scripts": {
+    "bake": "node bake.mjs",
+    "shoot": "node shoot.mjs",
+    "shoot:page": "node shoot.mjs page"
+  },
+  "devDependencies": {
+    "playwright-core": "1.55.0",
+    "sharp": "0.34.3"
+  }
+}

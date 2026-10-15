@@ -7,8 +7,9 @@ HNT to mint DC, and delegates that DC into the OUI's escrow account. No wallet
 connect — the buyer never signs anything; the treasury wallet does all on-chain
 work.
 
-**Status: disabled / "Coming Soon".** The Landing tile (`pages/public/src/pages/Landing.jsx`,
-features array) has `disabled: true` with a `"Coming Soon"` badge, so the tool
+**Status: hidden from the landing page.** Its Landing entry (`pages/public/src/pages/landing/sections.js`)
+has `hidden: true` (the tool isn't fully working yet), so `/` doesn't show it at all; it also keeps
+`disabled: true` with a `"Coming Soon"` badge for when it comes back as a placeholder, so the tool
 is not linked from the homepage. The routes, worker handlers, and DB tables all
 exist; it is disabled via the Landing tile flag, not absent.
 
@@ -241,3 +242,7 @@ Never log or expose any of these values.
 - Webhook payload shape is read defensively (`payload.data.* || payload.*`) because
   Coinbase Onramp event envelopes vary; keep that tolerance if Coinbase changes
   field nesting.
+
+## Landing preview
+
+The tool is `hidden` on `/` for now; its card config and baked prints are kept for when it returns (see "Hidden and disabled cards" in `pages/public/src/pages/landing/CLAUDE.md`). The card (`pages/public/src/pages/landing/previews/dc-purchase.js`) sets the upright Progress panel of `OrderStatus.jsx` (an order at Delegating to OUI, the five earlier steps green, Complete pending) behind the purchase form's checkout strip from `DcPurchaseTool.jsx` (Amount (USD) $250, the anchor, Minimum $5 USD and Continue to Coinbase). While the tool is `disabled` in `landing/sections.js` the card is a plain `<div>`, not a link: it never fans, its prints render desaturated (`saturate(0.2)`) on the neutral stone ground, and only its name is dimmed. `scripts/tool-previews/capture/dc-purchase.mjs` uses no wallet: it types OUI 2 and $250 on `/dc-purchase` (the OUI resolves live; the form is never submitted and no email is typed) for `hero.png`, then opens `/dc-purchase/order/<random uuid>` at a 430 px phone width with `GET /dc-purchase/orders/<id>` mocked by `page.route` (no order exists) for `order-progress.png`. Re-capture and re-bake when the amount field or Continue button, the Progress steps (`STATUS_FLOW`), the `#oui` / `#usd` inputs the script types into, or the order response shape its mock imitates change (`pages/public/src/pages/landing/CLAUDE.md`).

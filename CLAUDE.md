@@ -4,7 +4,7 @@
 
 heliumtools.org — operator utilities for the Helium network. Two deployable units:
 
-- **`pages/`** — Cloudflare Pages static site (Vite + React). Landing page at `pages/public/src/pages/Landing.jsx` defines all tools.
+- **`pages/`** — Cloudflare Pages static site (Vite + React). Landing page at `pages/public/src/pages/Landing.jsx`; its tool list is `pages/public/src/pages/landing/sections.js`.
 - **`worker/`** — Cloudflare Worker API + cron (api.heliumtools.org). D1 (SQLite) database, Resend for email, Solana RPC for on-chain balances.
 
 ## Architecture
@@ -12,7 +12,7 @@ heliumtools.org — operator utilities for the Helium network. Two deployable un
 ### Frontend (`pages/public/`)
 - React + Vite, Tailwind CSS
 - Routes defined in `src/main.jsx` (React Router)
-- Tool listing hardcoded in `src/pages/Landing.jsx` features array
+- Tool listing hardcoded in `src/pages/landing/sections.js` (`SECTIONS`, plain data: each section has its `tools`; rendered by `Landing.jsx`, and read by the preview bake's palette check). The page opens on a compact text header (no shader band) and every card flows through one shared grid, each section's heading over its first card. Each tool card is a tinted ground with framed, tilted snapshots of the real tool: the composition lives in `src/pages/landing/previews/<slug>.js` (keyed by the tool's `slug`; palette in `previews/tones.js`), the baked WebP prints in `src/assets/previews/<slug>/`, rendered by `ToolPreview.jsx` + `landing.css`. See `src/pages/landing/CLAUDE.md`. **Adding a tool means adding its preview** (config + baked prints). The capture/bake/shoot kit is `scripts/tool-previews/` (see its README). Its source captures are git-ignored and local only, so re-baking a card first means re-running that tool's capture script
 - Each tool has its own directory, e.g. `src/oui-notifier/`, `src/dc-purchase/`, `src/l1-migration/`, `src/iot-onboard/`, `src/multi-gateway/`, `src/hnt-price/`
 - Tools needing Solana wallets are wrapped in `SolanaProvider` in `main.jsx`
 - Static, directly-linkable files live in `pages/public/public/` (Vite copies it to the site root). The Helium logo set under `public/brand/` is the one such asset library; `public/_headers` makes `/brand/*` CORS-open. Never rename a file there — its URL is embedded on other sites.
@@ -62,12 +62,23 @@ descriptions are the agent-facing API docs), `pages/public/src/webmcp/catalog.js
 the `## WebMCP` section of the tool's `CLAUDE.md`. Follow the checklist in
 `pages/public/src/webmcp/CLAUDE.md`.
 
+**A tool's landing card is part of its documented behavior too.** Each card on `/` shows
+framed snapshots cropped from the real tool, so it goes stale when the tool's UI does. A
+new tool page ships with its card preview in the same commit: a `slug` in `landing/sections.js`, a
+capture script, a composition in `pages/public/src/pages/landing/previews/<slug>.js`
+(registered in `previews/index.js`), baked prints, and a `## Landing preview` section in
+the tool's `CLAUDE.md`. A change to anything a tool's card shows (the components and states
+listed in that `## Landing preview` section, or site-wide tokens, fonts and shared
+components they include) re-captures and re-bakes that card in the same commit. Renaming
+or removing a tool updates or removes its card. Follow the checklists in
+`pages/public/src/pages/landing/CLAUDE.md`.
+
 | Tool | Doc | Notes |
 |---|---|---|
 | Wallet Dashboard | `worker/src/tools/wallet-dashboard/CLAUDE.md` | Read-only aggregation over other tools; Mobile activity read browser-side from Helium's public Iceberg tables |
 | OUI Notifier | `worker/src/tools/oui-notifier/CLAUDE.md` | + `README.md` (full endpoint/API reference) |
 | DC Mint | `worker/src/tools/dc-mint/CLAUDE.md` | HNT→DC burn; `DcMintModal` reused by other tools |
-| Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **disabled / Coming Soon** |
+| Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **hidden from the landing page** (not fully working) |
 | IoT Hotspot Onboarding | `worker/src/tools/iot-onboard/CLAUDE.md` | Web Bluetooth + dewi.org onboarding proxy |
 | Mobile WiFi Onboarding | `worker/src/tools/mobile-onboard/CLAUDE.md` | Self-serve converted WiFi networks → Mobile data-only Hotspots; locally-built txns + RadSec cert proxy |
 | Update Hotspot Location | `worker/src/tools/update-location/CLAUDE.md` | Wallet-driven re-assert of `update_iot_info_v0` (location/elevation/gain) on onboarded IoT Hotspots |
@@ -80,6 +91,7 @@ the `## WebMCP` section of the tool's `CLAUDE.md`. Follow the checklist in
 | Hotspot Map | `pages/public/src/hotspot-map/CLAUDE.md` | Frontend-heavy; deck.gl/MapLibre map |
 | Brand Guidelines | `pages/public/src/brand/CLAUDE.md` | Frontend-only; Helium logo files hosted at stable `/brand/*` direct-link URLs (`pages/public/public/brand/`, CORS via `_headers`) + usage rules |
 | Shared utilities | `worker/src/tools/shared/CLAUDE.md` | Tool-agnostic `/shared` endpoints |
+| Landing tool cards | `pages/public/src/pages/landing/CLAUDE.md` | Cross-cutting frontend — the "paper stack" card previews on `/`: page header and shared card grid, per-tool compositions, palette (neighbour rule checked by the bake); kit in `scripts/tool-previews/` |
 | WebMCP agent tools | `pages/public/src/webmcp/CLAUDE.md` | Cross-cutting frontend — W3C Web Model Context API: site-wide + per-page agent tools with input validation |
 
 ## Common Commands

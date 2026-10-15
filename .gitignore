@@ -72,3 +72,7 @@ tmp/
 temp/
 *.tmp
 .claude/
+
+# Tool-preview capture kit: source captures and screenshot output stay local
+scripts/tool-previews/captures/
+scripts/tool-previews/out/

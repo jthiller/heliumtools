@@ -1,257 +1,229 @@
-import { ArrowRightIcon, BellAlertIcon, ArrowPathIcon, CreditCardIcon, BoltIcon, CurrencyDollarIcon, MapPinIcon, SignalIcon, LockClosedIcon, SwatchIcon, WalletIcon, WifiIcon } from "@heroicons/react/24/outline";
+import { useCallback, useRef } from "react";
 import Header from "../components/Header.jsx";
-import ShaderDithering from "../components/ShaderDithering.jsx";
+import ToolPreview from "./landing/ToolPreview.jsx";
+import { SECTIONS, placeCards, headingSlots } from "./landing/sections.js";
+import { PREVIEWS } from "./landing/previews/index.js";
+import { TONES, SECTION_RULES } from "./landing/previews/tones.js";
+import "./landing/landing.css";
 
-const sections = [
-  {
-    title: "Wallet",
-    description: "A full overview of any wallet",
-    tools: [
-      {
-        name: "Wallet Dashboard",
-        description:
-          "Read-only overview for any wallet: fleet map, token balances, unclaimed rewards, governance, recent activity, and an exportable Hotspot list.",
-        href: "/wallet-dashboard",
-        icon: WalletIcon,
-        iconBg: "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400",
-        badge: "New",
-      },
-    ],
-  },
-  {
-    title: "Network Operators",
-    description: "Tools for IoT network OUI operators",
-    tools: [
-      {
-        name: "OUI Notifier",
-        description: "Get alerts before your Data Credit escrow runs low. Lookup OUIs, fetch balances, and subscribe to email or webhook alerts.",
-        href: "/oui-notifier/",
-        icon: BellAlertIcon,
-        iconBg: "bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400",
-        badge: null,
-      },
-      {
-        name: "Mint Data Credits",
-        description:
-          "Convert HNT to Data Credits using your Solana wallet. Mint to your wallet or delegate directly to an OUI.",
-        href: "/dc-mint",
-        icon: BoltIcon,
-        iconBg: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
-        badge: null,
-      },
-      {
-        name: "Buy Data Credits",
-        description:
-          "Resolve an OUI, check escrow balance, and purchase Data Credits via Coinbase Onramp with automatic delegation.",
-        href: "/dc-purchase",
-        icon: CreditCardIcon,
-        iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
-        badge: "Coming Soon",
-        disabled: true,
-      },
-    ],
-  },
-  {
-    title: "Hotspot Operators",
-    description: "Tools for Hotspot owners and operators",
-    tools: [
-      {
-        name: "IoT Hotspot Setup",
-        description:
-          "Connect to a Helium IoT Hotspot over Bluetooth. View diagnostics, configure WiFi, and onboard your Hotspot to the IoT network.",
-        href: "/iot-onboard",
-        icon: SignalIcon,
-        iconBg: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-        badge: null,
-      },
-      {
-        name: "Mobile WiFi Onboarding",
-        description:
-          "Convert a WiFi network into a Helium Mobile Hotspot. Register it on-chain, retrieve RadSec certificates, and manage onboarded networks.",
-        href: "/mobile-onboard",
-        icon: WifiIcon,
-        iconBg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
-        badge: "New",
-      },
-      {
-        name: "Update Hotspot Location",
-        description:
-          "Connect your Solana wallet to re-assert the location, elevation, or antenna gain of your onboarded IoT Hotspots.",
-        href: "/update-location",
-        icon: MapPinIcon,
-        iconBg: "bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-400",
-        badge: "New",
-      },
-      {
-        name: "Add a Hotspot",
-        description:
-          "Add a LoRaWAN gateway to the Helium network and monitor it in real time. View signal quality, packet activity, and connection status.",
-        href: "/multi-gateway",
-        icon: SignalIcon,
-        iconBg: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400",
-        badge: null,
-      },
-      {
-        name: "Reward Claimer",
-        description:
-          "Look up any Hotspot or wallet, view pending IOT, MOBILE, and HNT rewards, and issue permissionless claim transactions.",
-        href: "/hotspot-claimer",
-        icon: BoltIcon,
-        iconBg: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400",
-        badge: null,
-      },
-      {
-        name: "Hotspot Map",
-        description:
-          "Plot Helium IoT and Mobile Hotspot locations on an interactive map. Load by entity keys or wallet address.",
-        href: "/hotspot-map",
-        icon: MapPinIcon,
-        iconBg: "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400",
-        badge: null,
-      },
-    ],
-  },
-  {
-    title: "HNT Holders",
-    description: "Tools for HNT stakers, voters, and integrators",
-    tools: [
-      {
-        name: "HNT Price API",
-        description:
-          "A public, keyless price API. Live market price plus the on-chain oracle price the Data Credits mint pays, over HTTP, WebSocket, or SSE.",
-        href: "/hnt-price",
-        icon: CurrencyDollarIcon,
-        iconBg: "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400",
-        badge: "New",
-      },
-      {
-        name: "veHNT Positions",
-        description:
-          "Analyze staked HNT positions on any wallet: lockup status, landrush bonus, delegation, pending rewards, and voting activity.",
-        href: "/ve-hnt",
-        icon: LockClosedIcon,
-        iconBg: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
-        badge: "New",
-      },
-      {
-        name: "L1 Migration",
-        description: "Migrate legacy Helium L1 accounts to Solana. Derive both addresses and seed the wallet on-chain.",
-        href: "/l1-migration",
-        icon: ArrowPathIcon,
-        iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
-        badge: null,
-      },
-    ],
-  },
-  {
-    title: "Brand",
-    description: "Logos and usage rules for the Helium marks",
-    tools: [
-      {
-        name: "Brand Guidelines",
-        description:
-          "The official Helium, HeliumOS, and Plus logos in SVG and PNG at stable direct-link URLs, with the rules for using the roundel correctly.",
-        href: "/brand",
-        icon: SwatchIcon,
-        iconBg: "bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-950/40 dark:text-fuchsia-400",
-        badge: "New",
-      },
-    ],
-  },
-];
+// The tool list itself lives in ./landing/sections.js (plain data, so the
+// preview bake can check the palette against the same order). Layout and card
+// docs: ./landing/CLAUDE.md.
 
-function ToolCard({ feature }) {
-  const Icon = feature.icon;
-  const Wrapper = feature.disabled ? "div" : "a";
-  const wrapperProps = feature.disabled ? {} : { href: feature.href };
-  return (
-    <Wrapper
-      {...wrapperProps}
-      className={`group relative flex flex-col rounded-[14px] border p-7 gap-4 transition ${
-        feature.disabled
-          ? "border-border bg-surface-inset opacity-60 cursor-default"
-          : "border-border bg-surface-raised hover:border-content-tertiary hover:shadow-md dark:hover:shadow-lg dark:hover:shadow-black/20"
-      }`}
-    >
-      <div className="flex items-center gap-3.5">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${
-          feature.disabled
-            ? "bg-surface-inset text-content-tertiary"
-            : feature.iconBg
-        }`}>
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </div>
-        <span className={`font-display text-lg font-semibold tracking-[-0.01em] ${feature.disabled ? "text-content-tertiary" : "text-content"}`}>
-          {feature.name}
-        </span>
-        {feature.badge && (
-          feature.disabled ? (
-            <span className="rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-content-tertiary">
-              {feature.badge}
-            </span>
-          ) : (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-              {feature.badge}
-            </span>
-          )
-        )}
+// Tone tokens for both themes ride on the card as custom properties;
+// landing.css picks the pair that matches prefers-color-scheme.
+function toneStyle(tone) {
+  const style = {};
+  for (const [theme, prefix] of [["light", "--l-"], ["dark", "--d-"]]) {
+    for (const [key, value] of Object.entries(tone[theme])) style[`${prefix}${key}`] = value;
+  }
+  return style;
+}
+
+// A tool without a preview config still gets a card (an empty stone ground)
+// rather than taking the whole page down.
+const NO_PREVIEW = { tone: TONES.network[2], prints: [] };
+function previewFor(slug) {
+  const preview = PREVIEWS[slug];
+  if (!preview && import.meta.env.DEV) {
+    console.warn(`[landing] no preview config for "${slug}"; add landing/previews/${slug}.js and register it in previews/index.js`);
+  }
+  return preview ?? NO_PREVIEW;
+}
+
+// Mouse parallax: while a mouse moves over a card, its prints drift away from
+// the pointer, the top print the most (landing.css .tc-print `translate`;
+// amounts and depths in ./landing/previews/layout.js). The pointer's offset from
+// the card centre (-1..1 per axis, flipped) rides on the card as --px / --py.
+// Only for a mouse, never under reduced motion; the hover fan runs on
+// `transform`, so the two add up.
+const REDUCED_MOTION =
+  typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: true };
+const clampUnit = (v) => Math.max(-1, Math.min(1, v));
+function useParallax() {
+  const frame = useRef(0);
+  const onPointerMove = useCallback((event) => {
+    if (event.pointerType !== "mouse" || REDUCED_MOTION.matches) return;
+    const card = event.currentTarget;
+    const { clientX, clientY } = event;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      const box = card.getBoundingClientRect();
+      card.style.setProperty("--px", (-clampUnit(((clientX - box.left) / box.width) * 2 - 1)).toFixed(3));
+      card.style.setProperty("--py", (-clampUnit(((clientY - box.top) / box.height) * 2 - 1)).toFixed(3));
+    });
+  }, []);
+  const onPointerLeave = useCallback((event) => {
+    cancelAnimationFrame(frame.current);
+    event.currentTarget.style.removeProperty("--px");
+    event.currentTarget.style.removeProperty("--py");
+  }, []);
+  return { onPointerMove, onPointerLeave };
+}
+
+// The whole card is the link (no separate CTA); its accessible name is the
+// <h3> (name + badge), the description is its description. The disabled
+// Coming-soon card is a plain, unfocusable block. A featured card also carries
+// its wide print set (shown while it spans two columns). `eager`: in the first
+// row, so its prints aren't lazy-loaded; `priority`: the page's first card,
+// whose top print is fetched at high priority.
+function ToolCard({ feature, eager, priority }) {
+  const preview = previewFor(feature.slug);
+  const parallax = useParallax();
+  const nameId = `tool-${feature.slug}-name`;
+  const descId = `tool-${feature.slug}-desc`;
+  // The badge rides on the name's last word, so a wrapped name never strands it.
+  const words = feature.name.split(" ");
+  const last = words.pop();
+  const body = (
+    <>
+      <div className="tc-text">
+        <h3 id={nameId} className="tc-name font-display">
+          {words.length > 0 && `${words.join(" ")} `}
+          <span className="tc-nowrap">
+            {last}
+            {feature.badge && (
+              <>
+                {" "}
+                <span className="tc-badge font-mono">{feature.badge}</span>
+              </>
+            )}
+          </span>
+        </h3>
+        <p id={descId} className="tc-desc font-sans">
+          {feature.description}
+        </p>
       </div>
-      <p className={`text-[15px] leading-relaxed flex-1 ${feature.disabled ? "text-content-tertiary" : "text-content-secondary"}`}>
-        {feature.description}
-      </p>
-      {!feature.disabled && (
-        <div className="flex items-center gap-1.5 text-sm font-medium text-accent-text">
-          <span>Open tool</span>
-          <ArrowRightIcon className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
-        </div>
-      )}
-    </Wrapper>
+      <ToolPreview
+        slug={feature.slug}
+        prints={preview.prints}
+        featured={feature.featured ? preview.featured : undefined}
+        eager={eager}
+        priority={priority}
+      />
+    </>
+  );
+  const common = { "data-tool": feature.slug, style: toneStyle(preview.tone) };
+  const featured = feature.featured ? " is-featured" : "";
+  if (feature.disabled) {
+    return (
+      <div {...common} className={`tool-card is-disabled${featured}`}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <a
+      {...common}
+      {...parallax}
+      href={feature.href}
+      className={`tool-card${featured}`}
+      aria-labelledby={nameId}
+      aria-describedby={descId}
+    >
+      {body}
+    </a>
   );
 }
+
+// Every card flows through one grid (.tc-grid in landing.css), so a section
+// can start mid-row. A section is a named region with `display: contents`;
+// each card sits in a two-row cell (heading slot over card) on the grid's
+// shared row tracks, and the first card's cell carries the section heading in
+// its slot. DOM order is reading order: a heading, then its section's cards.
+//
+// A featured card's cell spans two columns wherever the grid has two or more
+// (landing.css). In a row where any section starts, every card's slot draws its
+// section's colored rule (joined across the gap to a neighbour of the same
+// section), and the first card of a section that started in an earlier row also
+// gets a running head: its section's title, muted and aria-hidden
+// (sections.js headingSlots). Rows differ by column count, so each slot carries
+// tc-line-N / tc-join-N / tc-run-N classes and landing.css picks the set for
+// the grid's current width.
+const SLOTS = { 3: headingSlots(3), 2: headingSlots(2), 1: headingSlots(1) };
+function slotClasses(slug) {
+  const classes = [];
+  for (const cols of [3, 2, 1]) {
+    const slot = SLOTS[cols].get(slug);
+    if (!slot) continue;
+    classes.push(`tc-line-${cols}`);
+    if (slot.join) classes.push(`tc-join-${cols}`);
+    if (slot.label === "run") classes.push(`tc-run-${cols}`);
+  }
+  return classes;
+}
+const sectionStyle = (id) =>
+  SECTION_RULES[id] ? { "--rule-l": SECTION_RULES[id].light, "--rule-d": SECTION_RULES[id].dark } : undefined;
+// The first row at the widest layout (3 columns) loads its prints eagerly; the
+// page's first card fetches its top print at high priority.
+const FIRST_ROW = new Set(placeCards(3).filter((card) => card.row === 0).map((card) => card.slug));
+const FIRST_CARD = SECTIONS[0].tools[0].slug;
 
 export default function Landing() {
   return (
     <div className="min-h-screen bg-surface">
-      <Header />
+      <Header maxWidth="max-w-6xl" />
 
-      {/* Hero with dithering shader */}
-      <div className="relative h-[280px] sm:h-[300px] lg:h-[328px] overflow-hidden">
-        <ShaderDithering className="absolute inset-0 w-full h-full" />
-        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-center gap-4 px-4 sm:px-6 lg:px-12">
-          <p className="font-mono text-[13px] font-medium uppercase tracking-[0.08em] text-cyan-300">
+      <main className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 sm:pb-10 lg:px-12">
+        <div className="pb-2 pt-9 sm:pb-3 sm:pt-[50px]">
+          <p className="mb-3.5 font-mono text-[11.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary">
             Open-source operator tools
           </p>
-          <h1 className="font-display text-4xl sm:text-5xl lg:text-[52px] font-bold text-white tracking-[-0.03em] leading-[1.08]">
+          <h1 className="max-w-[16ch] font-display text-[length:clamp(30px,9.4vw,36px)] font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[43px] lg:text-[47px]">
             Keep Helium running&nbsp;smoothly.
           </h1>
-          <p className="text-lg text-white/90 max-w-lg leading-7">
+          <p className="mt-3.5 max-w-[56ch] text-base leading-[1.55] text-content-secondary">
             Monitor escrow balances, claim rewards, map your Hotspot fleet, and
             migrate legacy wallets. Free, open-source, no login required.
           </p>
         </div>
-      </div>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-12 pt-10 pb-16">
-        <div className="space-y-12">
-          {sections.map((section) => (
-            <div key={section.title}>
-              <div className="flex items-baseline gap-3 mb-5">
-                <h2 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-content">
-                  {section.title}
-                </h2>
-                <p className="text-sm text-content-tertiary">{section.description}</p>
-              </div>
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {section.tools.map((feature) => (
-                  <ToolCard key={feature.name} feature={feature} />
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="tc-grid">
+          {SECTIONS.map((section) => {
+            const headId = `section-${section.id}`;
+            const descId = `section-${section.id}-desc`;
+            return (
+              <section
+                key={section.id}
+                className="tc-section"
+                style={sectionStyle(section.id)}
+                aria-labelledby={headId}
+                aria-describedby={descId}
+              >
+                {section.tools.map((feature, i) => {
+                  const slot = slotClasses(feature.slug);
+                  return (
+                    <div key={feature.slug} className={`tc-cell${feature.featured ? " is-featured" : ""}`}>
+                      {i === 0 && (
+                        <div className={["tc-head", ...slot.filter((c) => c.startsWith("tc-join-"))].join(" ")}>
+                          <h2 id={headId} className="font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content">
+                            {section.title}
+                          </h2>
+                          <p id={descId} className="mt-1 text-[13px] leading-[18px] text-content-tertiary">
+                            {section.description}
+                          </p>
+                        </div>
+                      )}
+                      {i > 0 && slot.length > 0 && (
+                        <div aria-hidden="true" className={["tc-slot", ...slot].join(" ")}>
+                          {slot.some((c) => c.startsWith("tc-run-")) && (
+                            <p className="tc-runtext font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary">
+                              {section.title}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <ToolCard feature={feature} eager={FIRST_ROW.has(feature.slug)} priority={feature.slug === FIRST_CARD} />
+                    </div>
+                  );
+                })}
+              </section>
+            );
+          })}
         </div>
       </main>
 
-      <footer className="border-t border-border py-8">
+      <footer className="border-t border-border px-4 py-8 sm:px-6">
         <p className="text-center text-sm text-content-tertiary">&copy; {new Date().getFullYear()} Helium Tools</p>
         <p className="mt-1.5 text-center text-xs text-content-tertiary">
           Agent-ready — every tool exposes <a href="https://webmachinelearning.github.io/webmcp/" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">WebMCP</a> actions to AI agents in supporting browsers.

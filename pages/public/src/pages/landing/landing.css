@@ -1,0 +1,459 @@
+/* Landing tool cards ("paper stack"): a tinted ground, the tool's name and
+   description as real text, and a stage of framed snapshots from the real tool
+   lying at small tilts. Tone tokens arrive per card as --l-* / --d-* custom
+   properties (previews/tones.js). The table (.tc-table) is the size container:
+   everything on the stage is sized in cqw of it, so one composition scales with
+   the card. Docs: ./CLAUDE.md. */
+
+/* ---- Grid ----
+   One grid for every card on the page: as many >= 306px columns as fit (3
+   from a 954px grid, ~1050px viewport; 2 from a 630px grid, ~680px viewport;
+   1 below that; never more than 3 in the 1056px column), so no card is
+   narrower than 306px unless the screen is. A single column stops at 504px.
+   Cards flow in reading order and a section may start mid-row. A featured
+   card (sections.js `featured`) spans two columns wherever there are two.
+
+   Each card sits in a cell that spans two rows of the grid and shares them
+   (subgrid): a heading slot, then the card. A section's first cell holds the
+   section heading in its slot. A row's heading slot is as tall as its tallest
+   heading, so every card in the row starts at the same line; a row with no
+   heading has a zero-height slot. Rows have no gap of their own: the card's
+   margin spaces the card rows, the heading slot's top margin adds the section
+   break. The <section> wrapper is `display: contents`, so the cells are the
+   grid's items; it keeps its region role and name (aria-labelledby), and the
+   section's rule colors (--rule-l / --rule-d, tones.js SECTION_RULES), which
+   its cells inherit. */
+.tc-grid {
+  --tc-gap: 18px; /* between cards, both ways */
+  --tc-break: 28px; /* added above a row with a section heading */
+  /* Its width tells the cells the column count (container queries below). */
+  container: tc-grid / inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 306px), 1fr));
+  column-gap: var(--tc-gap);
+}
+.tc-section {
+  display: contents;
+  --rule: var(--rule-l, rgb(var(--color-border)));
+}
+@media (prefers-color-scheme: dark) {
+  .tc-section {
+    --rule: var(--rule-d, rgb(var(--color-border)));
+  }
+}
+.tc-cell {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  min-width: 0;
+}
+.tc-cell > .tool-card {
+  grid-row: 2;
+  margin-bottom: var(--tc-gap);
+}
+
+/* Heading rows (sections.js headingSlots). In a row where any section starts,
+   every card's slot draws its section's colored rule across the top of the
+   slot; a rule runs on across the gap when the next card in the row is the
+   same section (tc-join-N), so each section's run of cards reads as one group.
+   The section's first card carries its heading (.tc-head: h2 + description);
+   the first card of a section that started in an earlier row carries a running
+   head (.tc-runtext: its section's title, muted), so it doesn't read as part
+   of the next section beside it. The other slots (.tc-slot) are only a rule.
+   Slots stretch to the row's height and set their text on the bottom, so the
+   rules share one line and the running head shares the h2's baseline (its
+   bottom margin stands in for the description: 4px + 18px). Which cards have a
+   slot depends on the column count: tc-line-N / tc-join-N / tc-run-N from
+   Landing.jsx, switched by the grid's width at the thresholds where auto-fill
+   changes the column count (3 x 306 + 2 x 18 = 954, 2 x 306 + 18 = 630). */
+.tc-head,
+.tc-slot {
+  position: relative;
+  grid-row: 1;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin-top: var(--tc-break);
+  padding: 12px 0 16px;
+}
+.tc-slot {
+  display: none;
+}
+/* A hairline in the section's color, softened so it groups the cards without
+   competing with the headings. */
+.tc-head::before,
+.tc-slot::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--rule);
+  opacity: 0.45;
+}
+.tc-runtext {
+  display: none;
+  margin: 0 0 22px;
+}
+@container tc-grid (width >= 954px) {
+  .tc-slot.tc-line-3 {
+    display: flex;
+  }
+  .tc-run-3 .tc-runtext {
+    display: block;
+  }
+  .tc-join-3::before {
+    right: calc(-1 * var(--tc-gap));
+  }
+}
+@container tc-grid (630px <= width < 954px) {
+  .tc-slot.tc-line-2 {
+    display: flex;
+  }
+  .tc-run-2 .tc-runtext {
+    display: block;
+  }
+  .tc-join-2::before {
+    right: calc(-1 * var(--tc-gap));
+  }
+}
+@container tc-grid (width < 630px) {
+  .tc-slot.tc-line-1 {
+    display: flex;
+  }
+  .tc-join-1::before {
+    right: calc(-1 * var(--tc-gap));
+  }
+}
+/* Two or more columns: a featured card's cell spans two of them, and the card
+   shows its featured stage (about twice as wide at roughly the same height)
+   instead of the portrait one. The hidden stage's lazy images never load. */
+@container tc-grid (width >= 630px) {
+  .tc-cell.is-featured {
+    grid-column: span 2;
+  }
+  .is-featured .tc-table.is-portrait {
+    display: none;
+  }
+  .is-featured .tc-table.is-featured {
+    display: block;
+  }
+  /* A wide card keeps its description to a readable measure. */
+  .tool-card.is-featured .tc-desc {
+    max-width: 62ch;
+  }
+}
+/* One column: the card stops at 504px (about the lede's measure),
+   left-aligned under it, instead of a ~600px billboard between 640 and 680px.
+   Phones are narrower than the cap. */
+@container tc-grid (width < 630px) {
+  .tc-cell {
+    max-width: 504px;
+  }
+}
+/* Without subgrid, each cell lays out on its own: headings don't line up
+   across a row, but every card still sits under its heading. */
+@supports not (grid-template-rows: subgrid) {
+  .tc-cell {
+    display: flex;
+    flex-direction: column;
+  }
+  .tc-cell > .tool-card {
+    flex: 1 0 auto;
+  }
+}
+@media (max-width: 639px) {
+  .tc-grid {
+    --tc-gap: 16px;
+    --tc-break: 24px;
+  }
+}
+
+.tool-card {
+  --g1: var(--l-g1);
+  --g2: var(--l-g2);
+  --glow: var(--l-glow);
+  --ink: var(--l-ink);
+  --shade: var(--l-shade);
+  /* Photo paper: white in light, graphite in dark. */
+  --paper: #fff;
+  --paper-edge: rgb(28 25 23 / 0.06);
+  --photo-edge: rgb(28 25 23 / 0.07);
+  --grain: 0.14;
+  --grain-blend: multiply;
+  --desc: 80%; /* description ink strength (tones.js checks it at >= 4.5:1) */
+  --radius: 25px;
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-decoration: none;
+  background:
+    radial-gradient(115% 70% at 58% 100%, var(--glow) 0%, transparent 62%),
+    linear-gradient(172deg, var(--g1) 18%, var(--g2) 100%);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.5s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tool-card {
+    --g1: var(--d-g1);
+    --g2: var(--d-g2);
+    --glow: var(--d-glow); /* already 70% alpha, so the field stays a field */
+    --ink: var(--d-ink);
+    --shade: var(--d-shade);
+    /* Lighter than the dark captures' own surfaces, so the mat reads as a rim. */
+    --paper: #2a2a2f;
+    --paper-edge: rgb(255 255 255 / 0.1);
+    --photo-edge: rgb(255 255 255 / 0.06);
+    --grain: 0.22;
+    --grain-blend: soft-light;
+    --desc: 94%;
+  }
+}
+
+/* Film grain: one ~500-byte SVG turbulence tile shared by every card. */
+.tool-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px;
+  opacity: var(--grain);
+  mix-blend-mode: var(--grain-blend);
+}
+
+/* The global `a` rule dims links on hover; the card answers with its stack instead. */
+a.tool-card,
+a.tool-card:hover {
+  color: var(--ink);
+  opacity: 1;
+}
+a.tool-card:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* ---- Text ---- */
+.tc-text {
+  position: relative;
+  z-index: 6;
+  padding: 23px 23px 7px;
+}
+/* A step under the section's h2 (20px / 600), so the section still leads. */
+.tc-name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+/* The name's last word and the badge never part, so a long name wraps with
+   the badge still right after it. */
+.tc-nowrap {
+  white-space: nowrap;
+}
+/* Badge: the same straight paper pill right after the name on every card. */
+.tc-badge {
+  display: inline-block;
+  margin-left: 3.5px; /* + the word space before it */
+  vertical-align: 2.5px;
+  padding: 4.5px 8px 3.5px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 0.5px var(--paper-edge),
+    0 1px 1px rgb(var(--shade) / 0.14),
+    0 4px 10px -4px rgb(var(--shade) / 0.35);
+}
+.tc-desc {
+  margin: 9px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) var(--desc), transparent);
+  text-wrap: pretty;
+}
+
+/* ---- Stage ----
+   The table takes whatever height the row gives the card; the stage (100 x 80
+   cqw) sits on its bottom edge, so a longer description adds tabletop above
+   the stack and never moves it. */
+.tc-table {
+  position: relative;
+  z-index: 1;
+  flex: 1 0 auto;
+  container-type: inline-size;
+}
+.tc-table::before {
+  content: "";
+  display: block;
+  padding-top: 80%; /* the stage's height: layout.js STAGE_RATIO */
+}
+.tc-stage {
+  position: absolute;
+  inset: auto 0 0;
+  height: 80cqw;
+}
+/* A featured card's wide stage (100 x 45 cqw: layout.js FEATURED_RATIO),
+   shown only while the card spans two columns (grid rules above). */
+.tc-table.is-featured {
+  display: none;
+}
+.tc-table.is-featured::before {
+  padding-top: 45%;
+}
+.tc-table.is-featured .tc-stage {
+  height: 45cqw;
+}
+
+/* A print: the snapshot in a thick paper frame with a hue-tinted shadow. */
+.tc-print {
+  --frame: clamp(4px, 1.7cqw, 7px);
+  --pr: clamp(12px, 4.2cqw, 17px);
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  z-index: var(--z);
+  width: var(--w);
+  margin: 0;
+  padding: var(--frame);
+  border-radius: var(--pr);
+  background: var(--paper);
+  transform: translate(-50%, -50%) rotate(var(--r));
+  /* Mouse parallax (Landing.jsx useParallax): the card's --px / --py (-1..1)
+     times this print's depth --d, up to layout.js PARALLAX (1.6 / 1.1 cqw at
+     depth 1). Separate from `transform`, so it adds to the hover fan. */
+  translate: calc(var(--px, 0) * var(--d, 1) * 1.6cqw) calc(var(--py, 0) * var(--d, 1) * 1.1cqw);
+  box-shadow:
+    0 0 0 0.5px var(--paper-edge),
+    0 1px 1.5px rgb(var(--shade) / 0.16),
+    0 8px 18px -6px rgb(var(--shade) / 0.3),
+    0 26px 44px -18px rgb(var(--shade) / 0.48);
+  transition:
+    transform 0.6s cubic-bezier(0.2, 0.85, 0.25, 1.06),
+    translate 0.45s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.6s ease;
+}
+.tc-print::after {
+  content: "";
+  position: absolute;
+  inset: var(--frame);
+  border-radius: calc(var(--pr) - var(--frame));
+  box-shadow: inset 0 0 0 1px var(--photo-edge);
+  pointer-events: none;
+}
+.tc-print img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: calc(var(--pr) - var(--frame));
+}
+
+/* ---- Hover / focus ----
+   Only a link card answers (the disabled card is a plain <div>). Pointer hover
+   is limited to devices that can hover, so a tap on a phone doesn't leave a
+   sticky fanned stack behind; keyboard focus works everywhere. */
+.tool-card {
+  --print-shadow-hover:
+    0 0 0 0.5px var(--paper-edge),
+    0 2px 3px rgb(var(--shade) / 0.14),
+    0 14px 26px -8px rgb(var(--shade) / 0.32),
+    0 36px 60px -22px rgb(var(--shade) / 0.52);
+}
+a.tool-card:focus-visible {
+  box-shadow: var(--shadow-card-lg);
+}
+a.tool-card:focus-visible .tc-print {
+  transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--fr)) scale(var(--fs));
+  box-shadow: var(--print-shadow-hover);
+}
+@media (hover: hover) {
+  a.tool-card:hover {
+    box-shadow: var(--shadow-card-lg);
+  }
+  a.tool-card:hover .tc-print {
+    transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--fr)) scale(var(--fs));
+    box-shadow: var(--print-shadow-hover);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .tool-card {
+    --print-shadow-hover:
+      0 0 0 1px var(--paper-edge),
+      0 2px 3px rgb(var(--shade) / 0.5),
+      0 16px 30px -8px rgb(var(--shade) / 0.6),
+      0 40px 64px -20px rgb(var(--shade) / 0.75);
+  }
+  .tc-print {
+    box-shadow:
+      0 0 0 1px var(--paper-edge),
+      0 1px 2px rgb(var(--shade) / 0.5),
+      0 10px 22px -6px rgb(var(--shade) / 0.55),
+      0 28px 48px -16px rgb(var(--shade) / 0.7);
+  }
+  .tc-badge {
+    box-shadow:
+      0 0 0 1px var(--paper-edge),
+      0 4px 10px -4px rgb(var(--shade) / 0.6);
+  }
+}
+
+/* Coming soon: not a link, drained of color. Only the (large, bold) name is
+   dimmed; the description keeps full contrast. */
+.tool-card.is-disabled {
+  cursor: default;
+}
+.tool-card.is-disabled .tc-name {
+  opacity: 0.72;
+}
+.tool-card.is-disabled .tc-print img {
+  filter: saturate(0.2);
+}
+
+/* Phones keep a slightly larger card text: the card is the screen's width. */
+@media (max-width: 639px) {
+  .tool-card {
+    --radius: 24px;
+  }
+  .tc-text {
+    padding: 22px 22px 6px;
+  }
+  .tc-desc {
+    font-size: 15px;
+  }
+}
+
+/* Reduced motion: the stack stays at rest (no fan, no parallax); only the
+   shadow deepens. */
+@media (prefers-reduced-motion: reduce) {
+  .tc-print {
+    translate: none;
+    transition: box-shadow 0.3s ease;
+  }
+  a.tool-card:focus-visible .tc-print {
+    transform: translate(-50%, -50%) rotate(var(--r));
+  }
+}
+@media (prefers-reduced-motion: reduce) and (hover: hover) {
+  a.tool-card:hover .tc-print {
+    transform: translate(-50%, -50%) rotate(var(--r));
+  }
+}
