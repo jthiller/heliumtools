@@ -987,7 +987,8 @@ function MobileSection({ row, mobile }) {
                 <span className="text-content-tertiary">None {st.long}</span>
               ) : (
                 <>
-                  {fmtMbps(speed.down)} down, {fmtMbps(speed.up)} up · {Math.round(speed.latency)} ms ·{" "}
+                  {fmtMbps(speed.down)} down, {fmtMbps(speed.up)} up ·{" "}
+                  {speed.latency == null ? "—" : `${Math.round(speed.latency)} ms`} ·{" "}
                   <span className={speed.multiplier < 1 ? MOBILE_ISSUES.lowSpeedtest.textClass : ""}>
                     ×{fmtMultiplier(speed.multiplier)}
                   </span>

@@ -344,7 +344,11 @@ export function createByteCache() {
     let received = 0;
     try {
       arm();
-      const persist = opts.persist !== false && writable();
+      // Only a file Cache Storage will take skips the HTTP cache: one over
+      // the per-file share of the budget (store() turns it down) keeps the
+      // browser's copy instead of being cached nowhere.
+      const persist =
+        opts.persist !== false && writable() && (opts.size == null || opts.size <= (await budget()) / 4);
       const res = await fetch(url, {
         // Cache Storage keeps the copy; the HTTP cache would only duplicate it.
         cache: persist ? "no-store" : "default",

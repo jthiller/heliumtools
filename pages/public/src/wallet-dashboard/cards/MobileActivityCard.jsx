@@ -280,6 +280,10 @@ function Earnings({ mobile, tables, flashes }) {
     );
   } else if (failed.rewards) {
     headline = <p className="text-sm text-content-tertiary">Couldn&apos;t load earnings. {errorOf(tables.rewards)}</p>;
+  } else if (latest?.state === "missing") {
+    headline = (
+      <p className="text-sm text-content-tertiary">No earnings data published for {fmtDataDay(latest.day)} (UTC).</p>
+    );
   } else {
     headline = (
       <div className="min-w-0 flex-1 basis-[170px]">
@@ -325,7 +329,7 @@ function Earnings({ mobile, tables, flashes }) {
           <MiniStat label="Rewarded data" flash={flashes.tables.rewards}>
             <CountUp value={latest.bytes} trigger={flashes.tables.rewards} format={fmtBytes} />
           </MiniStat>
-        ) : failed.rewards ? null : (
+        ) : failed.rewards || latest?.state === "missing" ? null : (
           <Skeleton className="h-14" />
         )}
         {usage ? (
@@ -335,7 +339,12 @@ function Earnings({ mobile, tables, flashes }) {
             flash={flashes.tables.usage}
             sub={usageNote}
           >
-            <CountUp value={usage.users} trigger={flashes.tables.usage} format={fmtWhole} />
+            {usage.hotspots > 0 ? (
+              <CountUp value={usage.users} trigger={flashes.tables.usage} format={fmtWhole} />
+            ) : (
+              // No row for any of your Hotspots that day: unknown, never 0.
+              <span className="text-sm font-normal text-content-tertiary">Not reported</span>
+            )}
           </MiniStat>
         ) : failed.usage ? (
           <p className="self-center px-1 text-xs text-content-tertiary">Couldn&apos;t load usage. {errorOf(tables.usage)}</p>
