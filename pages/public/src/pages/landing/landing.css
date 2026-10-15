@@ -91,7 +91,7 @@
   right: 0;
   height: 1px;
   background: var(--rule);
-  opacity: 0.5;
+  opacity: 0.45;
 }
 .tc-runtext {
   display: none;

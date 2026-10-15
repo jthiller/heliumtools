@@ -146,7 +146,7 @@ const BRAND = [
 // representative hue of the section's family at a mid tone (light: OKLCH L .60,
 // C .15; dark: L .74, C .13, both gamut-mapped by chroma), >= 3:1 against the
 // page background in its theme at full strength; landing.css draws it as a
-// 1px hairline at 50% opacity.
+// 1px hairline at 45% opacity.
 export const SECTION_RULES = {
   wallet: { hue: 8, light: "#C8536F", dark: "#EF869B" },
   "network-operators": { hue: 210, light: "#0590A2", dark: "#00C0D7" },

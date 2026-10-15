@@ -89,7 +89,7 @@ breaks).
 
 **Section rules and running heads.** A row where any section starts is a
 heading row. Every card in it gets a slot with its section's colored rule
-across the top (a 1px hairline at 50% opacity, so it groups the cards without
+across the top (a 1px hairline at 45% opacity, so it groups the cards without
 competing with the headings; `SECTION_RULES` in `tones.js`: one mid-tone of
 the section's hue family per theme), and the rule runs on
 across the gap when the next card in the row is the same section, so each
