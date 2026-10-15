@@ -22,6 +22,11 @@ import {
   onboardedAtOf,
 } from "./format.js";
 import { REWARDS_BATCH_SIZE, eligibleRewardHotspots } from "./useFleetRewards.js";
+import { MOBILE_ISSUE_ORDER, aggregateMobile, isMobileHotspot, mobileActionRank } from "./mobileFormat.js";
+import { checkMobileOnce } from "./mobile/mobileClient.js";
+import { mobileFleetOf } from "./mobile/useMobileActivity.js";
+import { FRESH_MS, windowLength } from "./mobile/tableMeta.js";
+import { sleep } from "../lib/utils.js";
 
 const ADDRESS_SCHEMA = {
   ...SOLANA_ADDRESS_SCHEMA,
@@ -39,6 +44,16 @@ const ONBOARDED_HOTSPOT_CAP = FLEET_RESULT_CAP;
  * Kept equal to FLEET_RESULT_CAP so a scanned list never also hits the list
  * cap — the two `truncated` notes can't collide. */
 const IOT_SCAN_HOTSPOT_CAP = FLEET_RESULT_CAP;
+/** Mobile Hotspots listed by default: WiFi keys run 366 chars, so rows are
+ * large. The agent can raise it to FLEET_RESULT_CAP. */
+const MOBILE_LIST_DEFAULT = 50;
+/** How long the tool waits for the page's first Mobile check (wallet on screen). */
+const MOBILE_PAGE_WAIT_MS = 45_000;
+const MOBILE_PAGE_POLL_MS = 500;
+/** An off-screen check's time limit; a slower one returns what it has. */
+const MOBILE_CHECK_TIMEOUT_MS = 60_000;
+/** Reported positions listed per WiFi Hotspot. */
+const MOBILE_POSITIONS_SHOWN = 5;
 
 /** Format a base-unit BigInt as a decimal token string, trimming zeros. */
 function formatBaseUnits(amount, decimals) {
@@ -72,6 +87,323 @@ function iotRows(hotspots, agg) {
     }));
 }
 
+const isoOf = (ms) => (ms ? new Date(ms).toISOString() : null);
+const roundTo = (x, digits) => (x == null ? null : Number(x.toFixed(digits)));
+
+/**
+ * Whether the page's Mobile state for its wallet is ready to read: a check
+ * has finished on the page (`checked`) and, while the page is visible, its
+ * data isn't stale (the next check is already running); or the worker
+ * failed, or the fleet has nothing to check.
+ */
+function pageSettled(activity, mobile) {
+  if (mobile.mobileTotal === 0 || activity.phase === "error") return true;
+  return activity.checked && (activity.paused || !activity.stale);
+}
+
+// Off-screen checks by wallet: { promise, doneAt } (doneAt null while running).
+const offScreenChecks = new Map();
+const OFF_SCREEN_REUSE_MS = 30_000;
+
+/**
+ * One check of a wallet that isn't on screen: its fleet, then one check in a
+ * worker of its own (same engine and caches as the page). Per wallet, a
+ * running call is shared and a finished one is reused for 30 s after it
+ * finishes; a timed-out or failed one never is. Sharing is safe because every
+ * call settles: the fleet fetch and the check both have time limits.
+ */
+function checkWalletMobile(wallet) {
+  const now = Date.now();
+  for (const [w, e] of offScreenChecks) {
+    if (e.doneAt != null && now - e.doneAt >= OFF_SCREEN_REUSE_MS) offScreenChecks.delete(w);
+  }
+  const hit = offScreenChecks.get(wallet);
+  if (hit) return hit.promise;
+  const entry = { promise: runWalletMobile(wallet), doneAt: null };
+  offScreenChecks.set(wallet, entry);
+  const drop = () => offScreenChecks.get(wallet) === entry && offScreenChecks.delete(wallet);
+  entry.promise.then(({ timedOut }) => {
+    if (timedOut) drop();
+    else entry.doneAt = Date.now();
+  }, drop);
+  return entry.promise;
+}
+
+async function runWalletMobile(wallet) {
+  const hotspots = (await fetchFleet(wallet))?.hotspots || [];
+  const fleet = mobileFleetOf(hotspots);
+  if (fleet.mobileTotal === 0) return { hotspots, activity: null, timedOut: false };
+  const { state, timedOut } = await checkMobileOnce(
+    { wallet, keys: fleet.keys, wifi: fleet.wifiTotal > 0 },
+    { timeoutMs: MOBILE_CHECK_TIMEOUT_MS },
+  );
+  return { hotspots, activity: state, timedOut };
+}
+
+/** One Mobile Hotspot's row for the agent, from `aggregateMobile`'s row. */
+function mobileRow(hotspot, row) {
+  const out = {
+    entityKey: hotspot.entityKey,
+    name: hotspot.name || null,
+    wifi: row.wifi,
+    issues: row.issues,
+    hntLatestDay: roundTo(row.hntLatestDay, 8),
+    rewardedBytesLatestDay: row.bytesLatestDay,
+    usersServed: row.users,
+    banned: row.banned,
+  };
+  if (row.ban) out.ban = { reason: row.ban.reason, message: row.ban.message, at: isoOf(row.ban.at) };
+  if (!row.wifi) return out;
+  const st = row.speedtest;
+  return {
+    ...out,
+    heartbeats60m: row.heartbeats,
+    lastHeartbeatAt: isoOf(row.lastHeartbeatAt),
+    locationTrust: row.trust,
+    distanceFromAssertedM: row.distance,
+    locationSource: row.locationSource,
+    assertedCell: row.assertedCell,
+    reportedPositions:
+      row.heartbeats == null
+        ? null
+        : row.points.slice(0, MOBILE_POSITIONS_SHOWN).map((p) => ({
+            lat: p.lat,
+            lon: p.lon,
+            heartbeats: p.n,
+            lastAt: isoOf(p.lastAt),
+            distanceFromAssertedM: p.distance,
+          })),
+    rejectedHeartbeats60m: row.rejectedHeartbeats,
+    ...(row.rejectedReasons ? { rejectedReasons: row.rejectedReasons } : {}),
+    speedtest24h: st
+      ? {
+          downloadBps: st.down,
+          uploadBps: st.up,
+          latencyMs: st.latency,
+          multiplier: st.multiplier,
+          samples: st.samples,
+          at: isoOf(st.at),
+        }
+      : null,
+  };
+}
+
+const TABLE_NOTE_LABEL = {
+  rewards: "Data-transfer HNT",
+  usage: "Usage",
+  bans: "Ban status",
+  heartbeats: "Heartbeats",
+  invalidHeartbeats: "Rejected heartbeats",
+  speedtests: "Speedtest averages",
+};
+
+// Each sliding section's window, from `aggregateMobile`'s `windows`: its
+// length, its end, and whether it still ends at about now (the UI's "in the
+// last 60 min"). One that doesn't is frozen at its table's last successful
+// check (a failed or overdue check, a hidden tab, a saved check) and is named
+// by its end. `current` is null while the section isn't loaded.
+function windowsOf(agg) {
+  return Object.fromEntries(
+    Object.entries(agg.windows).map(([s, w]) => [
+      s,
+      { ...windowLength(s), end: isoOf(w.until), current: w.until == null ? null : w.current },
+    ]),
+  );
+}
+
+// "the last 60 minutes", or "the 60 minutes ending 2026-10-14T15:42:00.000Z".
+function windowPhrase(w) {
+  const length = w.minutes ? `${w.minutes} minutes` : `${w.hours} hours`;
+  return w.current === false ? `the ${length} ending ${w.end}` : `the last ${length}`;
+}
+
+/**
+ * The agent's view of a wallet's Mobile activity: fleet-wide figures, issue
+ * counts over every Mobile Hotspot, and per-Hotspot rows most actionable
+ * first (mobileActionRank, the table's Status order, then latest-day HNT,
+ * then name), filtered by `issue` and capped at `limit`. A count whose data
+ * isn't in is null, never 0. `hiddenAt`: the last check of a hidden dashboard
+ * tab this fresh check stands in for.
+ */
+function mobileActivityResult({ wallet, hotspots, activity, agg, page, timedOut, hiddenAt, issue, limit }) {
+  const notes = [];
+  // Mobile rows with ecc_compact keys (CBRS radios) never appear in the data.
+  const uncovered = (hotspots || []).filter((h) => (h.networks || []).includes("mobile") && !isMobileHotspot(h)).length;
+  const uncoveredNote = uncovered
+    ? `${uncovered === 1 ? "1 Mobile Hotspot has" : `${uncovered} Mobile Hotspots have`} an ecc_compact key (starting 11, e.g. a CBRS radio) and ${uncovered === 1 ? "isn't" : "aren't"} covered: only WiFi Hotspots appear in this data.`
+    : null;
+  if (agg.mobileTotal === 0) {
+    return {
+      wallet,
+      mobileHotspots: 0,
+      hotspots: [],
+      notes: [uncoveredNote ?? "This wallet has no Mobile Hotspots."],
+    };
+  }
+
+  // Each table's state with when it was last checked (ok or not) and last
+  // succeeded, so the agent can tell how old each section is.
+  const tables = Object.fromEntries(
+    Object.entries(activity?.tables || {}).map(([name, t]) => [
+      name,
+      {
+        state: t.state,
+        ...(t.checkedAt ? { checkedAt: isoOf(t.checkedAt) } : {}),
+        ...(t.okAt ? { okAt: isoOf(t.okAt) } : {}),
+        ...(t.error ? { error: t.error } : {}),
+      },
+    ]),
+  );
+  const rows = (hotspots || [])
+    .map((hotspot) => ({ hotspot, row: agg.rows.get(hotspot.entityKey) }))
+    .filter((e) => e.row && (!issue || e.row.issues.includes(issue)))
+    .sort(
+      (a, b) =>
+        mobileActionRank(a.row) - mobileActionRank(b.row) ||
+        (b.row.hntLatestDay ?? -1) - (a.row.hntLatestDay ?? -1) ||
+        (a.hotspot.name || "").localeCompare(b.hotspot.name || ""),
+    )
+    .map(({ hotspot, row }) => mobileRow(hotspot, row));
+
+  const r = agg.rewards;
+  const latest = r?.latest?.state === "ok" ? r.latest : null;
+  const rewards = r && {
+    latestDay: latest?.day ?? null,
+    latestDayHnt: latest ? roundTo(latest.hnt, 8) : null,
+    latestDayUsd: roundTo(r.latestUsd, 2),
+    latestDayRewardedBytes: latest ? latest.bytes : null,
+    hotspotsRewardedLatestDay: latest?.hotspots ?? null,
+    hntOverLoadedDays: roundTo(r.weekHnt, 8),
+    daysLoaded: r.daysLoaded,
+    days: r.days.map((d) => {
+      const ok = d.state === "ok";
+      return {
+        day: d.day,
+        state: d.state,
+        hnt: ok ? roundTo(d.hnt, 8) : null,
+        rewardedBytes: ok ? d.bytes : null,
+        hntPriceUsd: d.priceUsd,
+        hotspotsRewarded: ok ? d.hotspots : null,
+      };
+    }),
+  };
+  const u = agg.usage;
+  const usage = u && {
+    day: u.day,
+    usersServedSummedAcrossHotspots: u.hotspots ? u.users : null,
+    hotspotsReported: u.hotspots,
+    ...(u.coverage ? { rewardedHotspots: u.coverage.rewarded, rewardedHotspotsReported: u.coverage.reported } : {}),
+  };
+
+  // A count is null while the table behind it isn't in (still loading, or
+  // failed with nothing to show); a WiFi issue is a real 0 without WiFi
+  // Hotspots (`agg.known`).
+  const { counts, loaded, known } = agg;
+  const wifi = agg.wifiTotal > 0;
+  const windows = wifi ? windowsOf(agg) : null;
+
+  if (windows) {
+    const { heartbeats: hb, invalidHeartbeats: inv, speedtests: st } = windows;
+    notes.push(
+      `Windows: heartbeats60m, lastHeartbeatAt, locationTrust and reportedPositions cover ${windowPhrase(hb)} by received time (a heartbeat in that window, not online now); rejectedHeartbeats60m covers ${windowPhrase(inv)}; speedtest24h is the latest average in ${windowPhrase(st)}.`,
+    );
+    if (Object.values(windows).some((w) => w.current === false)) {
+      notes.push(
+        "A window with current: false ended at its end time, its table's last successful check (a later check failed or is overdue, the dashboard tab is hidden, or it's a saved check): its counts describe that window, not the present.",
+      );
+    }
+  }
+  notes.push(
+    "HNT is data-transfer rewards per UTC day (rewards.days, newest first; latestDay is the newest day published), paid per rewarded byte: rewardedBytes are the bytes that day's HNT paid for. usage covers one UTC day (usage.day), which can differ from latestDay.",
+    "Heartbeats, location trust and the speedtest multiplier don't change data-transfer HNT: they are WiFi health signals, sent only by WiFi indoor/outdoor Hotspots (wifi: true). banned is the most serious issue.",
+    "usage.usersServedSummedAcrossHotspots adds up each Hotspot's usersServed, so a user served by two Hotspots counts twice; each Hotspot's usersServed is its own count for usage.day, and with usage loaded a null one means that day's report has no row for it (not reported, not zero).",
+    "A null field or count means its data hasn't loaded or couldn't be checked (see tables), never zero. With its data in, a null speedtest24h means no average in its window, and a null lastHeartbeatAt no heartbeat in its window.",
+  );
+  if (u?.coverage && u.coverage.reported < u.coverage.rewarded) {
+    notes.push(
+      `usage.day's report covers ${u.coverage.reported} of the ${u.coverage.rewarded} Hotspots rewarded that day, so usersServedSummedAcrossHotspots leaves the others out.`,
+    );
+  }
+  if (rewards?.days.some((d) => d.state === "missing")) {
+    notes.push("A rewards day with state missing has no published data (not zero).");
+  }
+  if (rewards?.days.some((d) => d.state === "failed")) {
+    notes.push("A rewards day with state failed couldn't be read in the latest check (unknown, not zero).");
+  }
+  // Worded by what the section actually holds: nothing, the dashboard's saved
+  // check, or this table's last successful check. A saved sliding section is
+  // dated by its own window end (a failed table's copy can predate the rest).
+  const saved = new Set(activity?.cachedSections || []);
+  const savedAt = (name) => isoOf(activity.tables?.[name]?.until ?? activity.cachedAt);
+  for (const [name, t] of Object.entries(activity?.tables || {})) {
+    if (t.state === "ok") continue;
+    const label = TABLE_NOTE_LABEL[name] || name;
+    const why = t.state === "error" ? `latest check failed (${t.error || "error"})` : "check is still running";
+    if (activity[name] == null) notes.push(`${label}: ${why}; those fields and counts are null.`);
+    else if (saved.has(name)) notes.push(`${label}: ${why}; its fields are the dashboard's saved check from ${savedAt(name)}.`);
+    else {
+      notes.push(
+        `${label}: ${why}; ${t.okAt ? `its fields are from its last successful check at ${isoOf(t.okAt)}` : "its fields are partial"}.`,
+      );
+    }
+  }
+  const notReplaced = new Map(); // saved check time → labels
+  for (const name of saved) {
+    const state = activity.tables?.[name]?.state;
+    if (state === "error" || state === "loading") continue;
+    const at = savedAt(name);
+    notReplaced.set(at, [...(notReplaced.get(at) || []), TABLE_NOTE_LABEL[name] || name]);
+  }
+  if (notReplaced.size) {
+    const parts = [...notReplaced].map(([at, labels]) => `${labels.join(", ")} (${at})`);
+    notes.push(`From the dashboard's saved check, not yet replaced by its live check: ${parts.join("; ")}.`);
+  }
+  if (page) {
+    if (!page.settled) notes.push("The dashboard's first check hadn't finished; call again shortly for the rest.");
+    if (activity.phase === "error") notes.push("The dashboard's latest check failed (see tables); data here is what it had before.");
+    if (activity.paused && activity.phase !== "error") {
+      notes.push(`The dashboard tab is hidden, so it isn't checking; its last check was at ${isoOf(activity.checkedAt)}.`);
+    }
+  } else {
+    if (hiddenAt) {
+      notes.push(
+        `The dashboard tab showing this wallet is hidden and last checked at ${isoOf(hiddenAt)}, so this is a fresh check of its own.`,
+      );
+    }
+    if (timedOut) {
+      notes.push(
+        `The check didn't finish within ${MOBILE_CHECK_TIMEOUT_MS / 1000} s. Downloaded files stay cached, so calling again continues from there.`,
+      );
+    }
+  }
+  if (issue) notes.push(`hotspots lists only Hotspots with issue ${issue}; counts cover every Mobile Hotspot.`);
+  if (uncoveredNote) notes.push(uncoveredNote);
+
+  return capListField(
+    {
+      wallet,
+      source: page ? "dashboard" : "check",
+      mobileHotspots: agg.mobileTotal,
+      wifiHotspots: agg.wifiTotal,
+      checkedAt: isoOf(activity?.checkedAt),
+      tables,
+      ...(saved.size ? { savedCheck: { sections: [...saved], checkedAt: isoOf(activity.cachedAt) } } : {}),
+      ...(windows ? { windows } : {}),
+      rewards,
+      usage,
+      counts: {
+        withIssues: MOBILE_ISSUE_ORDER.every((k) => known[k]) ? counts.withIssues : null,
+        ...Object.fromEntries(MOBILE_ISSUE_ORDER.map((k) => [k, known[k] ? counts[k] : null])),
+        ...(wifi ? { heartbeatIn60m: loaded.heartbeats ? counts.heartbeating : null } : {}),
+      },
+      hotspots: rows,
+      notes,
+    },
+    "hotspots",
+    limit,
+  );
+}
+
 /**
  * WebMCP tools for /wallet-dashboard. The URL is the page's source of
  * truth, so open-wallet-dashboard just navigates and the page does the
@@ -79,12 +411,16 @@ function iotRows(hotspots, agg) {
  * endpoints the UI uses (KV-cached server-side), and the IoT tools from
  * api-iot.heliumtools.org through the page's own cached clients.
  *
- * `getWallet` returns the wallet currently shown (or null), and
- * `getIotState` that wallet's IoT scan (`{ wallet, hotspots, iotStatus, done }`
- * — `iotStatus` being the page's `aggregateIotStatus` — or null). Both are
- * live getters, so tools registered once stay correct across navigation.
+ * `getWallet` returns the wallet currently shown (or null), `getIotState`
+ * that wallet's IoT scan (`{ wallet, hotspots, iotStatus, done }`
+ * — `iotStatus` being the page's `aggregateIotStatus` — or null), and
+ * `getMobileState` its Mobile activity (`{ wallet, hotspots, activity, mobile }`
+ * — `activity` the `useMobileActivity` contract, `mobile` the page's
+ * `aggregateMobile` — or `{ wallet, fleetError }` when that wallet's fleet
+ * failed to load, or null). All are live getters, so tools registered once
+ * stay correct across navigation.
  */
-export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
+export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMobileState) {
   // The explicit address argument, or the wallet the page is showing.
   const requireWallet = (address) => {
     const wallet = address || getWallet();
@@ -92,12 +428,29 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
     return wallet;
   };
 
+  // The page's Mobile state for `wallet` once it's ready (pageSettled), or
+  // when the wait runs out whatever the page has (`settled: false`). null if
+  // the wallet isn't on screen or stops being, or at once if the page's fleet
+  // failed to load: the tool then checks on its own (retrying the fleet).
+  async function pageMobileState(wallet) {
+    const deadline = Date.now() + MOBILE_PAGE_WAIT_MS;
+    for (;;) {
+      if (getWallet() !== wallet) return null;
+      const page = getMobileState?.();
+      const ours = page?.wallet === wallet ? page : null;
+      if (ours?.fleetError) return null;
+      const settled = ours ? pageSettled(ours.activity, ours.mobile) : false;
+      if (settled || Date.now() >= deadline) return ours && { ...ours, settled };
+      await sleep(MOBILE_PAGE_POLL_MS);
+    }
+  }
+
   return [
     {
       name: "open-wallet-dashboard",
       title: "Open a wallet in the dashboard",
       description:
-        "Show a wallet in the dashboard UI: balances, fleet map, rewards, IoT connectivity and traffic (per-Hotspot health, and each Hotspot's daily delivered messages per operator), governance, and activity all load for the user to see. Use the get-* tools to read the underlying data.",
+        "Show a wallet in the dashboard UI: balances, fleet map, rewards, IoT connectivity and traffic (per-Hotspot health, and each Hotspot's daily delivered messages per operator), Mobile activity (daily data-transfer HNT, users served, heartbeats, speedtests, bans; kept live while the page is visible), governance, and activity all load for the user to see. Use the get-* tools to read the underlying data.",
       inputSchema: {
         type: "object",
         properties: { address: { ...SOLANA_ADDRESS_SCHEMA, description: "Solana wallet address (base58) to display." } },
@@ -128,7 +481,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
       name: "get-wallet-fleet",
       title: "Get wallet Hotspot fleet",
       description:
-        `Full per-Hotspot list for a wallet plus fleet stats (counts by network/device type, asserted locations, regions, onboarding DC). Each row: name, entityKey, assetId, network(s), deviceType, location (H3 cell) with city/state/country, elevation (m), gain (tenths of a dBi), and dcOnboardingFeePaid. On-chain metadata only — for onboard dates use get-wallet-onboarding; for IoT connectivity and traffic, get-wallet-iot-status; for rewards, get-wallet-rewards. Large fleets are truncated to ${FLEET_RESULT_CAP} Hotspots in the result (the UI shows all).`,
+        `Full per-Hotspot list for a wallet plus fleet stats (counts by network/device type, asserted locations, regions, onboarding DC). Each row: name, entityKey, assetId, network(s), deviceType, location (H3 cell) with city/state/country, elevation (m), gain (tenths of a dBi), and dcOnboardingFeePaid. On-chain metadata only — for onboard dates use get-wallet-onboarding; for IoT connectivity and traffic, get-wallet-iot-status; for Mobile activity, get-wallet-mobile-activity; for rewards, get-wallet-rewards. Large fleets are truncated to ${FLEET_RESULT_CAP} Hotspots in the result (the UI shows all).`,
       inputSchema: {
         type: "object",
         properties: { address: ADDRESS_SCHEMA },
@@ -471,6 +824,66 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState) {
           daily,
           notes,
         };
+      },
+    },
+    {
+      name: "get-wallet-mobile-activity",
+      title: "Get wallet Mobile activity",
+      description:
+        `Recent Mobile network activity for a wallet's Mobile Hotspots: data-transfer HNT per UTC day for the last 7 days published (with that day's HNT price and the rewarded bytes it paid for), users served on the latest usage day, ban status, and for WiFi indoor/outdoor Hotspots the heartbeats and rejected heartbeats in a 60-minute window (location trust, distance from the asserted location, reported positions) and the latest speedtest average in a 24-hour window. A window ends now while its data is fresh, otherwise at its last successful check (windows gives each end). Per-Hotspot issues, most actionable first: banned (latest ban record is a ban; the most serious), then WiFi health signals that don't change data-transfer HNT: noHeartbeat (none in the heartbeat window), lowTrust (latest location trust below 1), lowSpeedtest (latest speedtest multiplier below 1), rejectedHeartbeats (any in the window). counts cover every Mobile Hotspot (null while their data isn't in); hotspots lists the most actionable ${MOBILE_LIST_DEFAULT} by default (raise limit up to ${FLEET_RESULT_CAP}, or filter by issue). When the wallet is on screen, reads the dashboard's own data with no extra downloads (waiting up to ${MOBILE_PAGE_WAIT_MS / 1000} s for its first check), unless that tab is hidden and last checked over ${FRESH_MS / 60_000} minutes ago. Otherwise runs one check itself (up to ${MOBILE_CHECK_TIMEOUT_MS / 1000} s, then returns what it has), reading Helium's public Mobile network data files whole: roughly 25 MB for a fleet of data-only Hotspots and 55 MB with WiFi Hotspots when this browser hasn't read them recently, and little once it has, since the files serve every wallet and share the dashboard's cache. Mobile Hotspots with ecc_compact keys (CBRS radios) aren't covered. For IoT Hotspots use get-wallet-iot-status.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          address: ADDRESS_SCHEMA,
+          issue: {
+            type: "string",
+            enum: MOBILE_ISSUE_ORDER,
+            description: "List only Mobile Hotspots with this issue. counts still cover every Mobile Hotspot.",
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: FLEET_RESULT_CAP,
+            default: MOBILE_LIST_DEFAULT,
+            description: "Max Hotspots listed, most actionable first.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true },
+      validate({ address }) {
+        if (!address && !getWallet()) return "no wallet given and none loaded in the dashboard; pass `address`";
+        return null;
+      },
+      async execute({ address, issue, limit }) {
+        const wallet = requireWallet(address);
+        // The page's own state when this wallet is on screen (no second
+        // download of the same files), else a one-off check of our own. A
+        // hidden tab doesn't check, so once its data is past fresh a check of
+        // our own stands in (through the shared caches, mostly only what's
+        // new since downloads).
+        let page = await pageMobileState(wallet);
+        let hiddenAt = null;
+        if (
+          page?.settled &&
+          page.activity.paused &&
+          page.activity.phase !== "error" &&
+          Date.now() - (page.activity.checkedAt ?? 0) > FRESH_MS
+        ) {
+          hiddenAt = page.activity.checkedAt;
+          page = null;
+        }
+        let hotspots;
+        let activity;
+        let agg;
+        let timedOut = false;
+        if (page) {
+          ({ hotspots, activity, mobile: agg } = page);
+        } else {
+          ({ hotspots, activity, timedOut } = await checkWalletMobile(wallet));
+          agg = aggregateMobile(hotspots, activity, Date.now());
+        }
+        return mobileActivityResult({ wallet, hotspots, activity, agg, page, timedOut, hiddenAt, issue, limit });
       },
     },
     {

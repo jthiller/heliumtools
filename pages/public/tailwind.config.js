@@ -64,9 +64,16 @@ export default {
           "0%": { transform: "translateY(100%)", opacity: "0" },
           "100%": { transform: "translateY(0)", opacity: "1" },
         },
+        "bar-grow": {
+          "0%": { transform: "scaleY(0)" },
+          "100%": { transform: "scaleY(1)" },
+        },
       },
       animation: {
         "pulse-once": "pulse-once 1.5s ease-out forwards",
+        // Tailwind's `ping` keyframes, played once (a live dot's arrival cue).
+        "ping-once": "ping 1s cubic-bezier(0, 0, 0.2, 1) 1 forwards",
+        "bar-grow": "bar-grow 0.6s cubic-bezier(0.16, 1, 0.3, 1) both",
       },
     },
   },

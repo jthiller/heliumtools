@@ -1,13 +1,16 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import MapGL, { NavigationControl } from "react-map-gl/maplibre";
 import { DeckGL } from "@deck.gl/react";
-import { ScatterplotLayer, PolygonLayer } from "@deck.gl/layers";
+import { WebMercatorViewport } from "@deck.gl/core";
+import { ScatterplotLayer, PolygonLayer, LineLayer } from "@deck.gl/layers";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { cellToLatLng, cellToBoundary, cellToParent } from "h3-js";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import useDarkMode from "../lib/useDarkMode.js";
+import useReducedMotion, { prefersReducedMotion } from "../lib/useReducedMotion.js";
+import { readTokenRgb } from "../lib/chartColors.js";
 import CopyButton from "../components/CopyButton.jsx";
-import { Dot } from "./cards/primitives.jsx";
+import { Dot, TimeAgo } from "./cards/primitives.jsx";
 import IotTrafficDetail from "./IotTrafficDetail.jsx";
 import { useHotspotCoverage } from "./useIotLookups.js";
 import {
@@ -29,7 +32,13 @@ import {
   IOT_STATUS_COLOR,
   NETWORK_COLOR,
   accountUrl,
+  fmtAgo,
+  fmtBytes,
+  fmtCount,
+  fmtDate,
 } from "./format.js";
+import { MOBILE_ISSUES, fmtLocationSource, fmtMbps, fmtMeters, fmtMultiplier, fmtReason } from "./mobileFormat.js";
+import { metersBetween } from "./mobile/tableMeta.js";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -87,6 +96,19 @@ const TOOLTIP_STYLE = {
 };
 
 const INITIAL_VIEW = { longitude: -98.5, latitude: 39.8, zoom: 3.2, pitch: 0, bearing: 0 };
+
+// The selected WiFi Hotspot's heartbeats (last 60 min): its asserted cell,
+// its reported positions, and lines out to positions farther than this from
+// the asserted centre (closer ones sit on the cell).
+const FAR_M = 25;
+const POSITION_FILL = { light: [255, 255, 255], dark: [30, 30, 34] };
+// Arrival pulse: two rings per new position, the second trailing.
+const PULSE_RING_MS = 900;
+const PULSE_STAGGER_MS = 350;
+const PULSE_MS = PULSE_RING_MS + PULSE_STAGGER_MS;
+// Camera eases, instant under reduced motion (read when the ease starts).
+const EASE_MS = 800;
+const easeMs = () => (prefersReducedMotion() ? 0 : EASE_MS);
 
 /** Decode an H3 hex cell index to [lat, lng]; null on failure. */
 function h3HexToLatLng(hex) {
@@ -146,17 +168,45 @@ function dotEncoding(traffic) {
   return { radius, hollow: false, known: true };
 }
 
-/** One-line hover summary for a fleet dot, from its IoT row (null if non-IoT). */
-function dotTooltip(hotspot, row) {
+/** One-line hover summary for a fleet dot, from its IoT row (null if
+ * non-IoT) and its Mobile row (null if not on Mobile). `noHeartbeat`: the
+ * no-heartbeat wording for the current window (aggregateMobile's issueText). */
+function dotTooltip(hotspot, row, mobileRow, noHeartbeat) {
   const name = hotspot.name || "Unnamed Hotspot";
-  if (!row) return `${name} · ${deviceLabel(hotspot.deviceType)}`;
-  if (row.status === "pending") return `${name} · Checking IoT status…`;
+  // WiFi Hotspots: the heartbeat verdict, once heartbeats are in.
+  const heartbeat =
+    mobileRow?.heartbeating == null
+      ? null
+      : mobileRow.heartbeating
+        ? `Heartbeat ${fmtAgo(mobileRow.lastHeartbeatAt)}`
+        : noHeartbeat;
+  if (!row) return [name, deviceLabel(hotspot.deviceType), heartbeat].filter(Boolean).join(" · ");
+  if (row.status === "pending") return [name, "Checking IoT status…", heartbeat].filter(Boolean).join(" · ");
   const day = livenessDay(row.anchor);
   return [
     name,
     day ? `${IOT_STATUS_LABEL[row.status]} (${fmtDataDay(day)})` : IOT_STATUS_LABEL[row.status],
     row.messages != null ? `${plural(row.messages, "message")} (30d)` : "traffic unavailable",
-  ].join(" · ");
+    heartbeat,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Hover summary for one reported heartbeat position, in its window
+ * (`window`: windowText for the heartbeats). The distance is the table's,
+ * the same figure the panel shows. */
+function positionTooltip(p, window) {
+  return [
+    `Reported position · ${plural(p.n, "heartbeat")} ${window.long}`,
+    `${fmtMeters(p.away)} from asserted`,
+    [p.source && fmtLocationSource(p.source), p.trust != null && `trust ${fmtMultiplier(p.trust)}`]
+      .filter(Boolean)
+      .join(", "),
+    p.lastAt ? `last heard ${fmtAgo(p.lastAt)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /**
@@ -184,13 +234,23 @@ function deriveFootprint(cells, assertedHex) {
   };
 }
 
-export default function FleetMap({
-  hotspots = [],
-  rewardsByKey = {},
-  iotStatus = null,
-  wallet = null,
+/**
+ * memo: its props are the shell's state, memoized aggregates and the hook's
+ * `arrivals` (new only with an arrival), so a shell render that changes none
+ * of them (another card's data landing) skips the map.
+ */
+export default memo(function FleetMap({
+  hotspots,
+  rewardsByKey,
+  iotStatus,
+  mobile,
+  mobileArrivals,
+  heartbeatsLive,
+  wallet,
 }) {
   const dark = useDarkMode();
+  const reducedMotion = useReducedMotion();
+  const containerRef = useRef(null);
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   // The selected Hotspot (entityKey) and whether its modeled coverage is
   // shown — one state so a new selection always starts with coverage off.
@@ -199,8 +259,10 @@ export default function FleetMap({
   const fittedRef = useRef(null);
   const easedRef = useRef(null);
   const hoverDotRef = useRef(false);
-  // Per-row IoT verdicts, derived once per scan flush by the shell.
-  const iotRows = iotStatus?.rows;
+  // Per-row IoT verdicts, derived once per scan flush by the shell; per-row
+  // Mobile verdicts likewise, once per Mobile update.
+  const iotRows = iotStatus.rows;
+  const mobileRows = mobile.rows;
 
   const select = useCallback(
     (key) => setSelection((s) => (s.key === key ? s : { key, coverage: false })),
@@ -226,7 +288,7 @@ export default function FleetMap({
   // selection needs updateTriggers below.
   const dots = useMemo(() => {
     const out = mappable.map((h) => {
-      const row = iotRows?.get(h.entityKey);
+      const row = iotRows.get(h.entityKey);
       return {
         hotspot: h,
         color:
@@ -271,7 +333,7 @@ export default function FleetMap({
       maxLng = Math.max(maxLng, lng);
     }
     if (mappable.length === 1) {
-      setViewState((p) => ({ ...p, latitude: minLat, longitude: minLng, zoom: 12, transitionDuration: 800 }));
+      setViewState((p) => ({ ...p, latitude: minLat, longitude: minLng, zoom: 12, transitionDuration: easeMs() }));
     } else {
       const span = Math.max(maxLat - minLat, maxLng - minLng) || 0.1;
       const zoom = Math.max(1, Math.min(15, Math.log2(360 / (span * 1.6))));
@@ -280,7 +342,7 @@ export default function FleetMap({
         latitude: (minLat + maxLat) / 2,
         longitude: (minLng + maxLng) / 2,
         zoom,
-        transitionDuration: 800,
+        transitionDuration: easeMs(),
       }));
     }
   }, [mappable, wallet]);
@@ -289,7 +351,139 @@ export default function FleetMap({
     () => (selected ? mappable.find((h) => h.entityKey === selected) : null),
     [selected, mappable],
   );
-  const selectedRow = selectedHotspot ? iotRows?.get(selectedHotspot.entityKey) ?? null : null;
+  const selectedRow = selectedHotspot ? iotRows.get(selectedHotspot.entityKey) ?? null : null;
+  const selectedMobileRow = selectedHotspot ? mobileRows.get(selectedHotspot.entityKey) ?? null : null;
+  const hbWindow = mobile.windows.heartbeats;
+  const noHeartbeatLabel = mobile.issueText.noHeartbeat.label;
+
+  // The selected WiFi Hotspot's heartbeats in the window, as drawn: asserted
+  // cell (the heartbeats' own, else the fleet row's), reported positions and
+  // the far ones. `away` is the table's distance from asserted (the panel's
+  // and the agent tool's figure, between res-12 cell centres), measured here
+  // only when the table has none (an unasserted Hotspot); lines and the
+  // camera still draw to each position's own coordinates.
+  const heartbeatOverlay = useMemo(() => {
+    if (!selectedMobileRow?.wifi || !selectedMobileRow.points.length) return null;
+    const cell = selectedMobileRow.assertedCell || selectedHotspot.location;
+    const center = cell ? h3HexToLatLng(cell) : null;
+    if (!center) return null;
+    const points = selectedMobileRow.points.map((p) => ({
+      ...p,
+      away: p.distance ?? metersBetween(center[0], center[1], p.lat, p.lon),
+    }));
+    return {
+      center,
+      polygon: h3Boundary(cell),
+      points,
+      far: points.filter((p) => p.away > FAR_M),
+    };
+  }, [selectedMobileRow, selectedHotspot]);
+  // Mobile violet: the dots' own in light mode, the --color-mobile token's
+  // lighter value on the dark basemap.
+  const overlayColor = useMemo(() => (dark && readTokenRgb("--color-mobile")) || MOBILE_COLOR, [dark]);
+
+  // New heartbeat positions for the selected Hotspot pulse once on a live
+  // arrival (never on the first load, a reselection, or the window sliding).
+  // Positions are grouped fixes (see mobile/tables.js): one is new when its
+  // latest fix is newer than the last snapshot's.
+  const [pulse, setPulse] = useState(null); // { key, points, start }
+  const [pulseT, setPulseT] = useState(0);
+  const positionsSeenRef = useRef({ key: null, seq: 0, lastAt: new Map() });
+  useEffect(() => {
+    const seen = positionsSeenRef.current;
+    const points = heartbeatOverlay?.points ?? [];
+    const seq = mobileArrivals?.seq ?? 0;
+    const at = (p) => `${p.lat},${p.lon}`;
+    if (
+      !reducedMotion &&
+      selected &&
+      seen.key === selected &&
+      seq > seen.seq &&
+      mobileArrivals.byTable.heartbeats?.includes(selected)
+    ) {
+      const fresh = points.filter((p) => (seen.lastAt.get(at(p)) ?? 0) < p.lastAt);
+      if (fresh.length) {
+        setPulseT(0);
+        setPulse({ key: selected, points: fresh, start: performance.now() });
+      }
+    }
+    positionsSeenRef.current = { key: selected, seq, lastAt: new Map(points.map((p) => [at(p), p.lastAt])) };
+  }, [selected, heartbeatOverlay, mobileArrivals, reducedMotion]);
+  // ~30 fps while a pulse plays, then stops; a separate layer, so the static
+  // ones aren't rebuilt per frame.
+  useEffect(() => {
+    if (!pulse) return undefined;
+    const id = setInterval(() => {
+      const t = performance.now() - pulse.start;
+      if (t >= PULSE_MS) setPulse(null);
+      else setPulseT(t);
+    }, 33);
+    return () => clearInterval(id);
+  }, [pulse]);
+
+  // Bring reported positions into view, only when some are more than FAR_M
+  // from the asserted cell and aren't already visibly apart on screen. Decided
+  // once per selection, as soon as its live heartbeats are in (never on the
+  // saved paint), and a pan or zoom first uses the decision up (see
+  // onViewStateChange): a far fix arriving later never moves the camera.
+  const easedPositionsRef = useRef(null);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const selectedWifi = Boolean(selectedMobileRow?.wifi);
+  useEffect(() => {
+    if (!selected) {
+      easedPositionsRef.current = null;
+      return;
+    }
+    if (easedPositionsRef.current === selected || !heartbeatsLive || !selectedWifi) return;
+    easedPositionsRef.current = selected;
+    if (!heartbeatOverlay?.far.length) return;
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!box?.width || !box?.height) return;
+    const { width, height } = box;
+    const spots = [heartbeatOverlay.center, ...heartbeatOverlay.far.map((p) => [p.lat, p.lon])];
+    const lats = spots.map((p) => p[0]);
+    const lngs = spots.map((p) => p[1]);
+    const bounds = [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ];
+    const base = Math.round(Math.min(80, width / 4, height / 4));
+    const padding = { top: base, right: base, bottom: base, left: base };
+    // Keep clear of the detail panel: beside it on a wide map, above it on
+    // a narrow one.
+    const panel = containerRef.current.querySelector("[data-map-panel]")?.getBoundingClientRect();
+    if (panel?.width) {
+      if (panel.width < width * 0.6) padding.left = Math.max(base, Math.round(panel.right - box.left + 16));
+      else padding.bottom = Math.max(base, Math.round(box.bottom - panel.top + 16));
+    }
+    if (padding.left + padding.right >= width - 40 || padding.top + padding.bottom >= height - 40) {
+      Object.assign(padding, { top: base, right: base, bottom: base, left: base });
+    }
+    setViewState((vs) => {
+      const viewport = new WebMercatorViewport({ ...vs, width, height });
+      const px = spots.map(([lat, lng]) => viewport.project([lng, lat]));
+      const inside = px.every(
+        ([x, y]) =>
+          x >= padding.left && x <= width - padding.right && y >= padding.top && y <= height - padding.bottom,
+      );
+      const xs = px.map((p) => p[0]);
+      const ys = px.map((p) => p[1]);
+      const apart = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) >= 40;
+      if (inside && apart) return vs;
+      const fit = viewport.fitBounds(bounds, { padding, maxZoom: 18 });
+      // fitBounds offsets for uneven padding at its unclamped zoom, so at
+      // maxZoom (positions a few meters apart) the offset shrinks and a
+      // position can land under the panel: centre the bounds in the padded
+      // area at the final zoom.
+      const at = new WebMercatorViewport({ ...vs, width, height, ...fit });
+      const [mx, my] = at.project([(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]);
+      const tx = padding.left + (width - padding.left - padding.right) / 2;
+      const ty = padding.top + (height - padding.top - padding.bottom) / 2;
+      const [longitude, latitude] = at.unproject([width / 2 + mx - tx, height / 2 + my - ty]);
+      return { ...vs, longitude, latitude, zoom: fit.zoom, transitionDuration: easeMs() };
+    });
+  }, [selected, heartbeatOverlay, heartbeatsLive, selectedWifi]);
 
   // Only active Hotspots with an asserted location (per the service's own
   // record) are modeled; anything else is guaranteed `[]`, so no toggle.
@@ -322,7 +516,7 @@ export default function FleetMap({
     setViewState((p) =>
       p.zoom >= FOOTPRINT_MIN_ZOOM
         ? p
-        : { ...p, latitude: lat, longitude: lng, zoom: FOOTPRINT_ZOOM, transitionDuration: 800 },
+        : { ...p, latitude: lat, longitude: lng, zoom: FOOTPRINT_ZOOM, transitionDuration: easeMs() },
     );
   }, [footprint, selectedHotspot]);
 
@@ -342,6 +536,40 @@ export default function FleetMap({
           updateTriggers: { getFillColor: [dark] },
         }),
       );
+    }
+    // The selected Hotspot's asserted cell and lines out to far positions,
+    // under the dots.
+    if (heartbeatOverlay) {
+      if (heartbeatOverlay.polygon) {
+        out.push(
+          new PolygonLayer({
+            id: "asserted-cell",
+            data: [heartbeatOverlay.polygon],
+            getPolygon: (d) => d,
+            getFillColor: [...overlayColor, 40],
+            getLineColor: [...overlayColor, 220],
+            getLineWidth: 1.5,
+            lineWidthUnits: "pixels",
+            filled: true,
+            stroked: true,
+            updateTriggers: { getFillColor: [dark], getLineColor: [dark] },
+          }),
+        );
+      }
+      if (heartbeatOverlay.far.length) {
+        out.push(
+          new LineLayer({
+            id: "position-lines",
+            data: heartbeatOverlay.far,
+            getSourcePosition: () => [heartbeatOverlay.center[1], heartbeatOverlay.center[0]],
+            getTargetPosition: (p) => [p.lon, p.lat],
+            getColor: [...overlayColor, 170],
+            getWidth: 1.5,
+            widthUnits: "pixels",
+            updateTriggers: { getColor: [dark] },
+          }),
+        );
+      }
     }
     out.push(
       new ScatterplotLayer({
@@ -369,20 +597,69 @@ export default function FleetMap({
         },
       }),
     );
+    // Reported positions above the dots: they cluster on the selected one.
+    if (heartbeatOverlay) {
+      out.push(
+        new ScatterplotLayer({
+          id: "positions",
+          data: heartbeatOverlay.points,
+          getPosition: (p) => [p.lon, p.lat],
+          getFillColor: dark ? POSITION_FILL.dark : POSITION_FILL.light,
+          getLineColor: overlayColor,
+          getRadius: 4,
+          getLineWidth: 2,
+          radiusUnits: "pixels",
+          lineWidthUnits: "pixels",
+          stroked: true,
+          filled: true,
+          pickable: true,
+          updateTriggers: { getFillColor: [dark], getLineColor: [dark] },
+        }),
+      );
+    }
     return out;
-  }, [dots, selected, footprint, footprintDrawn, dark]);
+  }, [dots, selected, footprint, footprintDrawn, dark, heartbeatOverlay, overlayColor]);
+
+  // The arrival pulse, rebuilt per frame while it plays.
+  const pulseLayer = useMemo(() => {
+    if (!pulse || pulse.key !== selected) return null;
+    const rings = [];
+    for (const delay of [0, PULSE_STAGGER_MS]) {
+      const t = (pulseT - delay) / PULSE_RING_MS;
+      if (t <= 0 || t >= 1) continue;
+      const eased = 1 - (1 - t) ** 2;
+      for (const p of pulse.points) rings.push({ p, radius: 5 + 20 * eased, alpha: Math.round(200 * (1 - eased)) });
+    }
+    return new ScatterplotLayer({
+      id: "position-pulse",
+      data: rings,
+      getPosition: (d) => [d.p.lon, d.p.lat],
+      getRadius: (d) => d.radius,
+      getLineColor: (d) => [...overlayColor, d.alpha],
+      getLineWidth: 2,
+      radiusUnits: "pixels",
+      lineWidthUnits: "pixels",
+      stroked: true,
+      filled: false,
+    });
+  }, [pulse, pulseT, selected, overlayColor]);
+  const allLayers = useMemo(() => (pulseLayer ? [...layers, pulseLayer] : layers), [layers, pulseLayer]);
 
   const getTooltip = useCallback(
     ({ layer, object }) => {
       if (!object) return null;
       if (layer?.id === "fleet") {
         const h = object.hotspot;
-        return { text: dotTooltip(h, iotRows?.get(h.entityKey)), style: TOOLTIP_STYLE };
+        return {
+          text: dotTooltip(h, iotRows.get(h.entityKey), mobileRows.get(h.entityKey), noHeartbeatLabel),
+          style: TOOLTIP_STYLE,
+        };
       }
       if (layer?.id === "footprint") return { text: `${fmtDbm(object.rssi)} (modeled)`, style: TOOLTIP_STYLE };
+      if (layer?.id === "positions") return { text: positionTooltip(object, hbWindow), style: TOOLTIP_STYLE };
       return null;
     },
-    [iotRows],
+    [iotRows, mobileRows, noHeartbeatLabel, hbWindow],
   );
 
   // A dot selects; empty map deselects; the footprint is read-only.
@@ -398,11 +675,18 @@ export default function FleetMap({
   );
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-xl bg-surface-inset">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden rounded-xl bg-surface-inset">
       <DeckGL
         viewState={viewState}
-        onViewStateChange={({ viewState: vs }) => setViewState(vs)}
-        layers={layers}
+        onViewStateChange={({ viewState: vs, interactionState: i }) => {
+          // A pan or zoom uses up the selection's one positions ease (deck's
+          // own eased transitions report `inTransition` instead).
+          if (i?.isDragging || i?.isPanning || i?.isZooming || i?.isRotating) {
+            easedPositionsRef.current = selectedRef.current;
+          }
+          setViewState(vs);
+        }}
+        layers={allLayers}
         controller={true}
         getTooltip={getTooltip}
         onClick={onMapClick}
@@ -462,6 +746,27 @@ export default function FleetMap({
               )}
             </div>
           )}
+          {heartbeatOverlay && (
+            <div className="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-content-secondary">
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-sm border-[1.5px]"
+                  style={{
+                    borderColor: `rgb(${overlayColor.join(",")})`,
+                    background: `rgba(${overlayColor.join(",")}, 0.16)`,
+                  }}
+                />
+                Asserted cell
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full border-2 bg-surface-raised"
+                  style={{ borderColor: `rgb(${overlayColor.join(",")})` }}
+                />
+                Reported positions ({hbWindow.short})
+              </span>
+            </div>
+          )}
           {footprintDrawn && (
             <span className="mt-0.5 flex items-center gap-1.5 border-t border-border pt-1.5 text-content-secondary">
               <span className="h-2 w-5 shrink-0 rounded-sm" style={{ background: rampCss }} />
@@ -475,6 +780,8 @@ export default function FleetMap({
             hotspot={selectedHotspot}
             rewards={rewardsByKey[selectedHotspot.entityKey]}
             row={selectedRow}
+            mobileRow={selectedMobileRow}
+            mobile={mobile}
             coverage={coverageProps}
             onClose={deselect}
           />
@@ -482,7 +789,7 @@ export default function FleetMap({
       </div>
     </div>
   );
-}
+});
 
 function LegendRow({ color, label }) {
   return (
@@ -495,10 +802,18 @@ function LegendRow({ color, label }) {
 
 /**
  * The selected Hotspot's panel. Memoized with stable props (its IoT `row`
- * changes only on scan flushes), so the map's pan/zoom frames skip it and the
- * traffic chart inside.
+ * changes only on scan flushes, `mobile` and its `mobileRow` only on Mobile
+ * updates), so the map's pan/zoom frames skip it and the traffic chart inside.
  */
-const FleetMapDetail = memo(function FleetMapDetail({ hotspot, rewards, row, coverage, onClose }) {
+const FleetMapDetail = memo(function FleetMapDetail({
+  hotspot,
+  rewards,
+  row,
+  mobileRow,
+  mobile,
+  coverage,
+  onClose,
+}) {
   const earning = isEarning(rewards);
   // Resolved verdicts only — "pending" (scan running) and null (non-IoT) have
   // no label and stay quiet.
@@ -506,7 +821,10 @@ const FleetMapDetail = memo(function FleetMapDetail({ hotspot, rewards, row, cov
   const showStatus = status in IOT_STATUS_LABEL;
   const statusDay = livenessDay(row?.anchor);
   return (
-    <div className="pointer-events-auto min-h-0 w-full max-w-[360px] self-start overflow-auto overscroll-contain rounded-xl bg-surface-raised/95 p-3 text-sm shadow-soft-lg backdrop-blur">
+    <div
+      data-map-panel
+      className="pointer-events-auto min-h-0 w-full max-w-[360px] self-start overflow-auto overscroll-contain rounded-xl bg-surface-raised/95 p-3 text-sm shadow-soft-lg backdrop-blur"
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate font-medium text-content">{hotspot.name || "Unnamed Hotspot"}</div>
@@ -564,6 +882,8 @@ const FleetMapDetail = memo(function FleetMapDetail({ hotspot, rewards, row, cov
 
       {coverage && <CoverageSection hotspot={hotspot} {...coverage} />}
 
+      {mobileRow && <MobileSection row={mobileRow} mobile={mobile} />}
+
       <div className="mt-3 flex items-center gap-2 text-xs text-content-tertiary">
         <span className="truncate font-mono">{hotspot.entityKey}</span>
         <CopyButton text={hotspot.entityKey} />
@@ -581,6 +901,122 @@ const FleetMapDetail = memo(function FleetMapDetail({ hotspot, rewards, row, cov
     </div>
   );
 });
+
+/** "…" while a value's table loads. */
+const LOADING = <span className="text-content-tertiary">…</span>;
+
+function DetailRow({ label, children }) {
+  return (
+    <>
+      {/* Wraps only past a frozen window's longer label. */}
+      <dt className="max-w-[9.5rem] text-content-tertiary">{label}</dt>
+      <dd className="min-w-0 text-content-secondary">{children}</dd>
+    </>
+  );
+}
+
+/**
+ * The selected Mobile Hotspot's network data: the latest UTC day's HNT and the
+ * data it was rewarded for, the usage day's users served, then (WiFi
+ * Hotspots) its last heartbeat and location in the 60-min window and its
+ * speedtest average (24 h), and any ban. Windows are named as the card names
+ * them (frozen ones by their end); a table whose check failed with nothing to
+ * show reads "Couldn't load", never a perpetual "…".
+ */
+function MobileSection({ row, mobile }) {
+  const day = (d) => (d ? ` ${fmtDataDay(d)} (UTC)` : "");
+  const { loaded, failed, rewards, usage } = mobile;
+  const { heartbeats: hb, invalidHeartbeats: inv, speedtests: st } = mobile.windows;
+  const rewardsDay = rewards?.latest?.state === "ok" ? rewards.latest.day : null;
+  const pending = (table) =>
+    failed[table] ? <span className="text-content-tertiary">Couldn&apos;t load</span> : LOADING;
+  const speed = row.speedtest;
+  const rejectedTop = row.rejectedReasons
+    ? Object.entries(row.rejectedReasons).sort((a, b) => b[1] - a[1])[0]?.[0]
+    : null;
+  return (
+    <div className="mt-3 border-t border-border pt-2.5">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">Mobile</div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs tabular-nums">
+        <DetailRow label={`Earned${day(rewardsDay)}`}>
+          {row.hntLatestDay == null ? (
+            pending("rewards")
+          ) : (
+            <>
+              <span className="font-medium text-content">{fmtToken(row.hntLatestDay, { max: 4 })} HNT</span>
+              {/* The rewards table's own bytes: what the HNT was paid for. */}
+              {row.bytesLatestDay > 0 && ` · ${fmtBytes(row.bytesLatestDay)} rewarded`}
+            </>
+          )}
+        </DetailRow>
+        <DetailRow label={`Users${day(usage?.day)}`}>
+          {row.usageReported == null ? (
+            pending("usage")
+          ) : row.users == null ? (
+            <span className="text-content-tertiary">Not reported</span>
+          ) : (
+            fmtCount(row.users)
+          )}
+        </DetailRow>
+        {row.wifi && (
+          <>
+            <DetailRow label="Last heartbeat">
+              {row.heartbeating == null ? (
+                pending("heartbeats")
+              ) : row.heartbeating ? (
+                <>
+                  <TimeAgo at={row.lastHeartbeatAt} /> · {plural(row.heartbeats, "heartbeat")} {hb.long}
+                </>
+              ) : (
+                <span className={MOBILE_ISSUES.noHeartbeat.textClass}>None {hb.long}</span>
+              )}
+            </DetailRow>
+            {row.heartbeating && (
+              <DetailRow label="Location">
+                <span className={row.trust != null && row.trust < 1 ? MOBILE_ISSUES.lowTrust.textClass : ""}>
+                  Trust {fmtMultiplier(row.trust)}
+                </span>
+                {row.distance != null && ` · ${fmtMeters(row.distance)} from asserted`}
+                {row.locationSource && ` · ${fmtLocationSource(row.locationSource)}`}
+              </DetailRow>
+            )}
+            <DetailRow label={`Speedtest (${st.short})`}>
+              {!loaded.speedtests ? (
+                pending("speedtests")
+              ) : !speed ? (
+                <span className="text-content-tertiary">None {st.long}</span>
+              ) : (
+                <>
+                  {fmtMbps(speed.down)} down, {fmtMbps(speed.up)} up ·{" "}
+                  {speed.latency == null ? "—" : `${Math.round(speed.latency)} ms`} ·{" "}
+                  <span className={speed.multiplier < 1 ? MOBILE_ISSUES.lowSpeedtest.textClass : ""}>
+                    ×{fmtMultiplier(speed.multiplier)}
+                  </span>
+                </>
+              )}
+            </DetailRow>
+            {row.rejectedHeartbeats > 0 && (
+              <DetailRow label={`Rejected (${inv.short})`}>
+                <span className={MOBILE_ISSUES.rejectedHeartbeats.textClass}>
+                  {fmtCount(row.rejectedHeartbeats)}
+                  {rejectedTop && ` · ${fmtReason(rejectedTop)}`}
+                </span>
+              </DetailRow>
+            )}
+          </>
+        )}
+        {row.ban && (
+          <DetailRow label="Ban">
+            <span className={MOBILE_ISSUES.banned.textClass}>Banned</span>
+            {row.ban.reason && row.ban.reason !== "ban_reason_unknown" && ` · ${fmtReason(row.ban.reason)}`}
+            {row.ban.at ? ` · ${fmtDate(row.ban.at)}` : ""}
+            {row.ban.message && <span className="mt-0.5 line-clamp-2 block text-content-tertiary">{row.ban.message}</span>}
+          </DetailRow>
+        )}
+      </dl>
+    </div>
+  );
+}
 
 /** Opt-in modeled-coverage toggle for the selected (active) Hotspot, with the
  * footprint's caveats while it's shown. */

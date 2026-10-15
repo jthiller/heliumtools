@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { createPortal } from "react-dom";
 import { InformationCircleIcon } from "@heroicons/react/24/outline";
 import { classNames } from "../../lib/utils.js";
+import { fmtAgo, fmtCount } from "../format.js";
 
 /** Small outlined action button (table actions, Retry). */
 export const ACTION_BTN =
@@ -259,6 +260,81 @@ export function InfoTip({ text, label = "More info" }) {
       )}
     </>
   );
+}
+
+/**
+ * A one-shot accent wash over its `relative` parent, replayed whenever
+ * `flashKey` changes (0/absent: none). The parent stays mounted, so focus
+ * and hover survive the replay. Reduced motion: none (`motion-safe:`).
+ */
+export function ArrivalFlash({ flashKey }) {
+  if (!flashKey) return null;
+  return (
+    <span
+      key={flashKey}
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 rounded-[inherit] motion-safe:animate-pulse-once"
+    />
+  );
+}
+
+/**
+ * One "● label … count" row; a full-width button (filtering the Hotspot table)
+ * when `onClick` is given. `flash`: an arrival key that replays a one-shot
+ * highlight (see ArrivalFlash).
+ */
+export function CountRow({ color, label, count, valueClass = "text-content", hint, onClick, flash }) {
+  const rowClass = "relative flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm";
+  const body = (
+    <>
+      <ArrivalFlash flashKey={flash} />
+      <span className="flex min-w-0 items-center gap-2">
+        <Dot color={color} />
+        <span className="text-balance leading-snug text-content-secondary">{label}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        {onClick && (
+          <span
+            aria-hidden="true"
+            className="text-xs font-medium text-accent-text opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            Show →
+          </span>
+        )}
+        <span className={`font-medium tabular-nums ${valueClass}`}>{fmtCount(count)}</span>
+      </span>
+    </>
+  );
+  if (!onClick) {
+    return (
+      <div className={rowClass} title={hint}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={hint}
+      aria-label={`${label}: ${fmtCount(count)}. Show them in the Hotspot table.`}
+      className={`group ${rowClass} text-left transition hover:bg-surface-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+    >
+      {body}
+    </button>
+  );
+}
+
+/** "4m ago" for a ms timestamp (fmtAgo), re-rendering only itself as time passes. */
+export function TimeAgo({ at, fallback = "—" }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!at) return undefined;
+    const id = setInterval(() => setTick((n) => n + 1), 15_000);
+    return () => clearInterval(id);
+  }, [at]);
+  if (!at) return fallback;
+  return <span className="tabular-nums">{fmtAgo(at)}</span>;
 }
 
 /** Centered empty/placeholder text for a card body. */

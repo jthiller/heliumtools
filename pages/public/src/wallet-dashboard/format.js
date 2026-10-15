@@ -53,15 +53,28 @@ const dateFmtUtc = new Intl.DateTimeFormat(undefined, {
   timeZone: "UTC",
 });
 
-/** Relative time from unix seconds (transactions) → "3h ago", "2d ago". */
-export function fmtAgoSeconds(sec) {
-  if (!sec) return "—";
-  const diff = Math.floor(Date.now() / 1000 - sec);
+/** Whole seconds elapsed → "45s ago", "4m ago", "3h ago", "2d ago"; null from
+ * 30 days on (callers show the date then). */
+function agoText(diff) {
   if (diff < 60) return `${Math.max(diff, 0)}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
-  return fmtDate(sec * 1000);
+  return null;
+}
+
+/** Relative time from unix seconds (transactions) → "3h ago", "2d ago". */
+export function fmtAgoSeconds(sec) {
+  if (!sec) return "—";
+  return agoText(Math.floor(Date.now() / 1000 - sec)) ?? fmtDate(sec * 1000);
+}
+
+/** Relative time from a ms timestamp, minute-grained for live data (a check,
+ * a heartbeat) → "just now", "4m ago", "3h ago", "2d ago". */
+export function fmtAgo(ms, now = Date.now()) {
+  if (!ms) return "—";
+  const diff = Math.floor((now - ms) / 1000);
+  return diff < 60 ? "just now" : (agoText(diff) ?? fmtDate(ms));
 }
 
 // Solana explorer (Solscan) links.
@@ -270,6 +283,21 @@ const compactFmt = new Intl.NumberFormat(undefined, { notation: "compact", maxim
 export function fmtCompact(n) {
   if (n == null || Number.isNaN(n)) return "—";
   return n < 1000 ? fmtCount(n) : compactFmt.format(n);
+}
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
+
+/** Decimal (SI) byte sizes: "950 B", "1.25 GB", "34.8 GB", "412 TB". */
+export function fmtBytes(n) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  let v = Math.abs(n);
+  let i = 0;
+  while (v >= 1000 && i < BYTE_UNITS.length - 1) {
+    v /= 1000;
+    i++;
+  }
+  const digits = i === 0 ? 0 : v < 10 ? 2 : v < 100 ? 1 : 0;
+  return `${n < 0 ? "-" : ""}${v.toLocaleString(undefined, { maximumFractionDigits: digits })} ${BYTE_UNITS[i]}`;
 }
 
 /** The partial-window caveat: totals over fewer than `days` reported days. */

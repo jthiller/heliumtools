@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { fmtCount, fmtCompact, fmtDataDay, plural } from "./format.js";
+import useDayCursor from "./useDayCursor.js";
 
 // Per-OUI categorical slots, in fixed order (slot = the OUI's rank within the
 // Hotspot, see deriveTrafficDetail). Validated against this site's raised
@@ -82,9 +83,6 @@ export default function IotTrafficChart({ view, height = 160, compact = false })
   const dark = useDarkMode();
   const wrapRef = useRef(null);
   const [width, setWidth] = useState(0);
-  const [active, setActive] = useState(null); // day index | null
-  // Announce days only when navigating by keyboard (hover would chatter).
-  const [keyboard, setKeyboard] = useState(false);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -97,6 +95,7 @@ export default function IotTrafficChart({ view, height = 160, compact = false })
 
   const { days, series } = view;
   const n = days.length;
+  const { active, keyboard, point, clear, onKeyDown } = useDayCursor(n);
   const outerHeight = trafficChartHeight(height);
   const baseY = TOP_PAD + height;
 
@@ -143,26 +142,7 @@ export default function IotTrafficChart({ view, height = 160, compact = false })
   const pickDay = (e) => {
     if (!band) return;
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
-    setKeyboard(false);
-    setActive(Math.min(n - 1, Math.max(0, Math.floor((x - plotLeft) / band))));
-  };
-
-  const onKeyDown = (e) => {
-    let next;
-    if (e.key === "ArrowLeft") next = active == null ? n - 1 : Math.max(0, active - 1);
-    else if (e.key === "ArrowRight") next = active == null ? n - 1 : Math.min(n - 1, active + 1);
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = n - 1;
-    else if (e.key === "Escape" && active != null) {
-      // Consume it so an enclosing panel doesn't close on the same press.
-      e.preventDefault();
-      e.stopPropagation();
-      setActive(null);
-      return;
-    } else return;
-    e.preventDefault();
-    setKeyboard(true);
-    setActive(next);
+    point(Math.min(n - 1, Math.max(0, Math.floor((x - plotLeft) / band))));
   };
 
   const first = days[0]?.day;
@@ -195,7 +175,7 @@ export default function IotTrafficChart({ view, height = 160, compact = false })
       role="group"
       aria-label={ariaLabel}
       onKeyDown={onKeyDown}
-      onBlur={() => setActive(null)}
+      onBlur={clear}
       className="relative rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
       style={{ height: outerHeight }}
     >
@@ -210,7 +190,7 @@ export default function IotTrafficChart({ view, height = 160, compact = false })
           onPointerMove={pickDay}
           onPointerLeave={(e) => {
             // A tap ends with pointerleave; keep its readout until blur.
-            if (e.pointerType === "mouse") setActive(null);
+            if (e.pointerType === "mouse") clear();
           }}
         >
           {/* Hover band behind the active column (the whole column is the target). */}

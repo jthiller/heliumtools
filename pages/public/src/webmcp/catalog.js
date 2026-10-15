@@ -26,7 +26,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Wallet Dashboard",
     summary:
-      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and on-chain onboard dates, IoT connectivity (latest reported day) and 30-day delivered messages per Hotspot and per operator (OUI), unclaimed rewards, governance positions, and recent transactions. No wallet connection needed.",
+      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and on-chain onboard dates, IoT connectivity (latest reported day) and 30-day delivered messages per Hotspot and per operator (OUI), Mobile Hotspot activity (daily data-transfer HNT, users served, bans, and WiFi health: heartbeats in the last 60 minutes, speedtests; live while the tab is visible), unclaimed rewards, governance positions, and recent transactions. No wallet connection needed.",
     tools: [
       "open-wallet-dashboard",
       "get-wallet-summary",
@@ -35,6 +35,7 @@ export const TOOL_CATALOG = [
       "get-wallet-onboarding",
       "get-wallet-iot-status",
       "get-iot-hotspot-traffic",
+      "get-wallet-mobile-activity",
       "get-wallet-transactions",
     ],
   },
