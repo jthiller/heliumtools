@@ -23,7 +23,7 @@ const round = (n) => Math.round(n * 100) / 100;
 
 // Mouse parallax: while a mouse moves over a card, each print drifts away from
 // the pointer by up to these amounts (cqw, at depth 1) times its depth
-// (landing.css .tc-drift `translate`; keep the two in sync). The pointer's
+// (landing.css .tc-print `transform`; keep the two in sync). The pointer's
 // offset from the card centre runs -1..1 on each axis.
 export const PARALLAX = { x: 1.6, y: 1.1 };
 

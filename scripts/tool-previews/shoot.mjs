@@ -7,7 +7,7 @@
 // desktop viewport by default, a 390px phone viewport with --mobile, or both
 // with --both. --vp picks any of desktop (1440), laptop (1024), tablet (700) and
 // phone (390). --hover also shoots the hover state, by moving the mouse onto the
-// card (the real :hover, so the disabled card stays still). `page` shoots the
+// card (a real mouse hover, which runs the card's fan; the disabled card stays still). `page` shoots the
 // full landing page in light/dark x desktop/phone (or --vp). Output: ./out/
 // (git-ignored). BASE defaults to http://localhost:5174 (see the README).
 import path from "node:path";
