@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import StatusBanner from "../components/StatusBanner.jsx";
 import { fetchSummary, fetchFleet } from "../lib/walletDashboardApi.js";
 import { fetchPositions } from "../lib/veHntApi.js";
@@ -9,7 +9,8 @@ import useFleetIotStatus from "./useFleetIotStatus.js";
 import useFleetOnboarded from "./useFleetOnboarded.js";
 import { useUtilizationIndex } from "./useIotLookups.js";
 import useMobileActivity from "./mobile/useMobileActivity.js";
-import { aggregateRewards, aggregateIotStatus, onboardingStats } from "./format.js";
+import { aggregateRewards, aggregateIotStatus, onboardingStats, plural, truncateString } from "./format.js";
+import { readRecentWallets, rememberWallet, forgetWallet, clearRecentWallets, isRecentWalletsKey } from "./recentWallets.js";
 import { aggregateMobile } from "./mobileFormat.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
@@ -24,7 +25,7 @@ import TransactionsCard from "./cards/TransactionsCard.jsx";
 import FleetTableCard from "./cards/FleetTableCard.jsx";
 import IotStatusCard from "./cards/IotStatusCard.jsx";
 import MobileActivityCard from "./cards/MobileActivityCard.jsx";
-import { SEARCH_INPUT_CLASS } from "./cards/primitives.jsx";
+import { SEARCH_INPUT_CLASS, TimeAgo } from "./cards/primitives.jsx";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeWalletDashboardTools } from "./webmcpTools.js";
 import { prefersReducedMotion } from "../lib/useReducedMotion.js";
@@ -36,7 +37,7 @@ const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const EMPTY_FLEET = [];
 const isValidWallet = (a) => typeof a === "string" && a.length >= 32 && a.length <= 44 && BASE58_RE.test(a);
 
-function AddressForm({ initial = "", onSubmit, autoFocus, className = "" }) {
+function AddressForm({ initial = "", onSubmit, autoFocus, inputRef, className = "" }) {
   const [value, setValue] = useState(initial);
   useEffect(() => setValue(initial), [initial]);
   return (
@@ -51,6 +52,7 @@ function AddressForm({ initial = "", onSubmit, autoFocus, className = "" }) {
       <div className="relative flex-1">
         <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-content-tertiary" />
         <input
+          ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoFocus={autoFocus}
@@ -89,7 +91,99 @@ function DashboardHeader({ wallet, onSubmit }) {
   );
 }
 
+/** Wallets this browser looked up before, newest first (see recentWallets.js). */
+function RecentWallets({ onEmptied }) {
+  const [list, setList] = useState(readRecentWallets);
+  const [announcement, setAnnouncement] = useState("");
+  const removeButtons = useRef(new Map());
+  // Another tab viewing or removing a wallet updates this list too.
+  useEffect(() => {
+    const onStorage = (e) => isRecentWalletsKey(e.key) && setList(readRecentWallets());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // The removed row's button goes away with it, so focus moves to the row that
+  // takes its place (or the one above), or to the address input once nothing
+  // is left. The neighbour's button is already in the DOM.
+  const remove = (address, short) => {
+    const index = list.findIndex((e) => e.address === address);
+    const rest = forgetWallet(address);
+    setList(rest);
+    setAnnouncement(`Removed ${short} from recent wallets.`);
+    const next = rest[index] ?? rest[index - 1];
+    if (next) removeButtons.current.get(next.address)?.focus();
+    else onEmptied?.();
+  };
+  const clear = () => {
+    clearRecentWallets();
+    setList([]);
+    setAnnouncement("Cleared recent wallets.");
+    onEmptied?.();
+  };
+
+  return (
+    <>
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
+      {list.length > 0 && (
+        <section aria-labelledby="wd-recent-heading" className="mt-10">
+          <div className="flex items-baseline justify-between">
+            <h2
+              id="wd-recent-heading"
+              className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-content-secondary"
+            >
+              Recent wallets
+            </h2>
+            <button
+              type="button"
+              onClick={clear}
+              className="-mr-2 rounded px-2 py-1 text-xs font-medium text-accent-text hover:underline"
+            >
+              Clear all
+            </button>
+          </div>
+          <ul className="mt-2 divide-y divide-border overflow-hidden rounded-xl bg-surface-raised shadow-soft">
+            {list.map(({ address, viewedAt, hotspots }) => {
+              const short = truncateString(address, 6, 6);
+              return (
+                <li key={address} className="flex items-center">
+                  <Link
+                    to={`/wallet-dashboard/${address}`}
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 px-4 py-3 transition hover:bg-surface-inset/60 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-text"
+                  >
+                    <span className="truncate font-mono text-sm text-content">{short}</span>
+                    <span className="text-xs text-content-secondary">
+                      {hotspots != null && `${plural(hotspots, "Hotspot")} · `}
+                      Viewed <TimeAgo at={viewedAt} />
+                    </span>
+                  </Link>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      if (el) removeButtons.current.set(address, el);
+                      else removeButtons.current.delete(address);
+                    }}
+                    onClick={() => remove(address, short)}
+                    aria-label={`Remove ${short} from recent wallets`}
+                    className="mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-content-secondary transition hover:bg-surface-inset hover:text-content"
+                  >
+                    <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-xs text-content-secondary">Saved in this browser only.</p>
+        </section>
+      )}
+    </>
+  );
+}
+
 function EmptyState({ onSubmit }) {
+  const inputRef = useRef(null);
   return (
     <div className="flex min-h-screen flex-col bg-surface">
       <DashboardHeader wallet={null} onSubmit={onSubmit} />
@@ -105,8 +199,9 @@ function EmptyState({ onSubmit }) {
           exportable Hotspot list. Paste a wallet address to begin.
         </p>
         <div className="mt-6">
-          <AddressForm onSubmit={onSubmit} autoFocus />
+          <AddressForm onSubmit={onSubmit} autoFocus inputRef={inputRef} />
         </div>
+        <RecentWallets onEmptied={() => inputRef.current?.focus()} />
       </div>
     </div>
   );
@@ -214,6 +309,13 @@ export default function WalletDashboard() {
       cancelled = true;
     };
   }, [wallet, valid]);
+
+  // Remember the wallet for the lookup screen's Recent wallets once its own
+  // summary loads: a well-formed string that isn't a real address never gets
+  // one, so it can't push a real wallet off the list.
+  useEffect(() => {
+    if (valid && summary?.wallet === wallet) rememberWallet(wallet, { hotspots: summary.fleet?.count });
+  }, [wallet, valid, summary]);
 
   // The fleet once it's this wallet's: right after a wallet switch the
   // previous wallet's fleet lingers for a render. A fleet that failed to load
