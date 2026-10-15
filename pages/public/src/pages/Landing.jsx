@@ -31,75 +31,128 @@ function previewFor(slug) {
   return preview ?? NO_PREVIEW;
 }
 
-// Mouse parallax: while a mouse moves over a card, its prints drift away from
-// the pointer, the top print the most (landing.css .tc-drift `translate`;
-// amounts and depths in ./landing/previews/layout.js). The pointer's offset from
-// the card centre (-1..1 per axis, flipped) is the target; one animation-frame
-// loop per card eases --px / --py toward it (exponential, DRIFT_MS time
-// constant) and stops once settled, back at 0 after the mouse leaves. Easing
-// here, not with a CSS transition, keeps the motion smooth: a transition
-// restarted on every mouse move stutters, most of all while the hover fan
-// (a `transform` transition on the print inside) is still running. Only for a
-// mouse, never under reduced motion.
+// Card motion: the hover fan and the mouse drift are one JS-driven animation.
+// Each card has two springs: the fan's progress h (0 at rest, 1 fanned;
+// slightly underdamped, so it settles with a hint of overshoot) and the drift
+// (the pointer's offset from the card centre, -1..1 per axis, flipped, so the
+// prints drift away from it; critically damped). One animation-frame loop per
+// card steps them and writes --h, --px and --py on the card; landing.css turns
+// those into each print's transform (rest pose, plus h times the fan pose from
+// previews/layout.js fan(), plus h times the drift for the print's depth). Each
+// spring chases a goal that itself eases toward the target (a short
+// exponential low-pass), so acceleration builds from zero and never steps: a
+// hover starts gently, and leaving, coming back or a sudden mouse move
+// mid-motion bends the path instead of kicking it. Mouse hover and keyboard
+// focus fan the stack; only a mouse drifts it; reduced motion leaves it at rest
+// (CSS still deepens the shadow).
 const REDUCED_MOTION =
   typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: true };
-const DRIFT_MS = 140;
+// Natural frequency (rad/s), damping ratio, and the goal's low-pass time
+// constant (s).
+const FAN_SPRING = { w: 12, z: 0.82, lag: 0.07 };
+const DRIFT_SPRING = { w: 10, z: 1, lag: 0.06 };
 const clampUnit = (v) => Math.max(-1, Math.min(1, v));
-function useParallax() {
-  const drift = useRef({ card: null, x: 0, y: 0, tx: 0, ty: 0, frame: 0, last: 0 });
-  useEffect(() => () => cancelAnimationFrame(drift.current.frame), []);
+// One step: the goal eases toward `target`, then a semi-implicit Euler step of
+// the damped spring toward the goal.
+function springStep(s, target, { w, z, lag }, dt) {
+  s.g += (target - s.g) * (1 - Math.exp(-dt / lag));
+  s.v += (w * w * (s.g - s.x) - 2 * z * w * s.v) * dt;
+  s.x += s.v * dt;
+}
+const settledAt = (s, target) => Math.abs(s.x - target) < 0.001 && Math.abs(s.g - target) < 0.001 && Math.abs(s.v) < 0.01;
+const at = (x) => ({ x, v: 0, g: x });
+
+function useCardMotion() {
+  const motion = useRef({
+    card: null,
+    hover: false,
+    focus: false,
+    tx: 0,
+    ty: 0,
+    h: at(0),
+    px: at(0),
+    py: at(0),
+    frame: 0,
+    last: 0,
+  });
+  useEffect(() => () => cancelAnimationFrame(motion.current.frame), []);
   const step = useCallback((now) => {
-    const d = drift.current;
-    const dt = d.last ? Math.min(64, now - d.last) : 16;
-    d.last = now;
-    const k = 1 - Math.exp(-dt / DRIFT_MS);
-    d.x += (d.tx - d.x) * k;
-    d.y += (d.ty - d.y) * k;
-    const settled = Math.abs(d.tx - d.x) < 0.002 && Math.abs(d.ty - d.y) < 0.002;
-    if (settled) {
-      d.x = d.tx;
-      d.y = d.ty;
+    const m = motion.current;
+    const dt = Math.min(0.032, m.last ? (now - m.last) / 1000 : 1 / 60);
+    m.last = now;
+    const fanned = m.hover || m.focus ? 1 : 0;
+    const tx = m.hover ? m.tx : 0;
+    const ty = m.hover ? m.ty : 0;
+    for (let i = 0; i < 2; i++) {
+      springStep(m.h, fanned, FAN_SPRING, dt / 2);
+      springStep(m.px, tx, DRIFT_SPRING, dt / 2);
+      springStep(m.py, ty, DRIFT_SPRING, dt / 2);
     }
-    const { style, classList } = d.card;
-    if (settled && d.x === 0 && d.y === 0) {
+    const settled = settledAt(m.h, fanned) && settledAt(m.px, tx) && settledAt(m.py, ty);
+    if (settled) {
+      m.h = at(fanned);
+      m.px = at(tx);
+      m.py = at(ty);
+    }
+    const { style } = m.card;
+    if (settled && fanned === 0) {
+      style.removeProperty("--h");
       style.removeProperty("--px");
       style.removeProperty("--py");
     } else {
-      style.setProperty("--px", d.x.toFixed(4));
-      style.setProperty("--py", d.y.toFixed(4));
+      style.setProperty("--h", m.h.x.toFixed(4));
+      style.setProperty("--px", m.px.x.toFixed(4));
+      style.setProperty("--py", m.py.x.toFixed(4));
     }
     if (settled) {
-      classList.remove("is-drifting");
-      d.frame = 0;
-      d.last = 0;
+      m.frame = 0;
+      m.last = 0;
       return;
     }
-    d.frame = requestAnimationFrame(step);
+    m.frame = requestAnimationFrame(step);
   }, []);
-  const steer = useCallback((card, tx, ty) => {
-    const d = drift.current;
-    d.card = card;
-    d.tx = tx;
-    d.ty = ty;
-    if (!d.frame) {
-      card.classList.add("is-drifting");
-      d.frame = requestAnimationFrame(step);
-    }
+  const run = useCallback((card) => {
+    const m = motion.current;
+    m.card = card;
+    if (!m.frame) m.frame = requestAnimationFrame(step);
   }, [step]);
+  const aim = (m, event) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    m.tx = -clampUnit(((event.clientX - box.left) / box.width) * 2 - 1);
+    m.ty = -clampUnit(((event.clientY - box.top) / box.height) * 2 - 1);
+  };
+  const onPointerEnter = useCallback((event) => {
+    if (event.pointerType !== "mouse" || REDUCED_MOTION.matches) return;
+    const m = motion.current;
+    m.hover = true;
+    aim(m, event);
+    run(event.currentTarget);
+  }, [run]);
   const onPointerMove = useCallback((event) => {
     if (event.pointerType !== "mouse" || REDUCED_MOTION.matches) return;
-    const card = event.currentTarget;
-    const box = card.getBoundingClientRect();
-    steer(
-      card,
-      -clampUnit(((event.clientX - box.left) / box.width) * 2 - 1),
-      -clampUnit(((event.clientY - box.top) / box.height) * 2 - 1),
-    );
-  }, [steer]);
+    const m = motion.current;
+    m.hover = true;
+    aim(m, event);
+    run(event.currentTarget);
+  }, [run]);
   const onPointerLeave = useCallback((event) => {
-    if (drift.current.card) steer(event.currentTarget, 0, 0);
-  }, [steer]);
-  return { onPointerMove, onPointerLeave };
+    const m = motion.current;
+    if (!m.hover) return;
+    m.hover = false;
+    run(event.currentTarget);
+  }, [run]);
+  const onFocus = useCallback((event) => {
+    if (REDUCED_MOTION.matches || !event.currentTarget.matches(":focus-visible")) return;
+    motion.current.focus = true;
+    run(event.currentTarget);
+  }, [run]);
+  const onBlur = useCallback((event) => {
+    const m = motion.current;
+    if (!m.focus) return;
+    m.focus = false;
+    run(event.currentTarget);
+  }, [run]);
+  return { onPointerEnter, onPointerMove, onPointerLeave, onFocus, onBlur };
 }
 
 // The whole card is the link (no separate CTA); its accessible name is the
@@ -110,7 +163,7 @@ function useParallax() {
 // whose top print is fetched at high priority.
 function ToolCard({ feature, eager, priority }) {
   const preview = previewFor(feature.slug);
-  const parallax = useParallax();
+  const motion = useCardMotion();
   const nameId = `tool-${feature.slug}-name`;
   const descId = `tool-${feature.slug}-desc`;
   // The badge rides on the name's last word, so a wrapped name never strands it.
@@ -156,7 +209,7 @@ function ToolCard({ feature, eager, priority }) {
   return (
     <a
       {...common}
-      {...parallax}
+      {...motion}
       href={feature.href}
       className={`tool-card${featured}`}
       aria-labelledby={nameId}

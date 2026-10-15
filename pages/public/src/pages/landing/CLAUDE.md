@@ -183,30 +183,38 @@ checks it. Generate tones from OKLCH values, not hand-picked hex.
 - `<picture>` with a `(prefers-color-scheme: dark)` `<source>`: Tailwind's
   `darkMode` is `media`, so a visitor downloads one theme.
 - Hover/focus fans the stack (`fan()` in `layout.js`): the top print straightens,
-  lifts and scales up, the others splay out. Only `a.tool-card` answers;
-  pointer `:hover` is inside `@media (hover: hover)` so taps don't leave a sticky
-  fan; `:focus-visible` works everywhere and also draws the outline.
-- Mouse parallax: while a mouse moves over a link card, its prints drift away
-  from the pointer, the top print the most (`depthOf()`: 1 for the top print
-  down to 0.35 for the bottom one; up to `PARALLAX` 1.6 / 1.1 cqw sideways /
-  vertically at depth 1). Landing.jsx `useParallax` takes the pointer's offset
-  from the card centre (-1..1, flipped) as a target and eases `--px` / `--py`
-  on the card toward it in an animation-frame loop (exponential, `DRIFT_MS`
-  140ms; back to 0 after the mouse leaves; the loop stops once settled). Each
-  print sits in a stage-sized `.tc-drift` wrapper that carries the drift
-  (`translate`) and the stacking order, while the hover fan animates the
-  figure inside it: two elements, so the motions never interfere. Don't move
-  the drift onto the figure or back into a CSS transition: Chrome composites
-  an element's transform-type animations as a group, so a drift transition
-  restarted on every mouse move restarted the running fan and made it stutter.
-  While the drift moves the card has `is-drifting`, which gives the wrappers
-  their own compositor layers. Mouse only (not touch or pen), never under
-  reduced motion. `fan()` keeps room for the drift: a derived lift
-  leaves the top edge `TOP_MARGIN` clear even at the largest drift, and the
-  bake lints the hover pose with it (`hoverTop()`). Keep `PARALLAX` and the
-  `.tc-drift` `translate` amounts in `landing.css` in sync.
-- `prefers-reduced-motion`: transforms stay at rest (no fan, no drift); only
-  the shadow deepens.
+  lifts and scales up, the others splay out. While a mouse moves over the card,
+  the prints also drift away from the pointer, the top print the most
+  (`depthOf()`: 1 for the top print down to 0.35 for the bottom one; up to
+  `PARALLAX` 1.6 / 1.1 cqw sideways / vertically at depth 1).
+- Both are one JS-driven animation, Landing.jsx `useCardMotion`. Each card has
+  two springs: the fan's progress `h` (0 at rest, 1 fanned; slightly
+  underdamped, overshoot ~0.2%) and the drift (the pointer's offset from the
+  card centre, -1..1 per axis, flipped; critically damped). Each spring chases
+  a goal that first eases toward its target (a short exponential low-pass), so
+  acceleration builds from zero and never steps. One animation-frame loop per
+  card steps them while anything moves and writes `--h`, `--px` and `--py` on
+  the card. `.tc-print`'s `transform` in `landing.css` turns those into the
+  pose: rest, plus `h` times the fan pose, plus `h` times the drift for the
+  print's depth, so the drift fades in and out with the fan instead of taking
+  over from it. Keep it that way. A CSS transition on `transform` restarts from
+  a standstill whenever its target changes. Running the fan and drift as two
+  animations (two transitions on one element, or a transition plus a
+  JS-eased drift) stuttered and handed off visibly where they met. Keep
+  `PARALLAX` and the drift amounts in that `transform` in sync.
+- Mouse hover (pointer type mouse) and keyboard focus (`:focus-visible`) fan
+  the stack; only a mouse drifts it; touch does neither. Only `a.tool-card`
+  answers. The shadows still deepen with CSS on `:hover` / `:focus-visible`
+  (pointer `:hover` inside `@media (hover: hover)` so taps don't leave a
+  sticky shadow), and `:focus-visible` draws the outline.
+- Where a mouse can hover (`(hover: hover) and (pointer: fine)`), every print
+  keeps its own compositor layer (`will-change: transform`), so nothing pops as
+  motion starts or stops; touch screens skip the layers' memory.
+- `fan()` keeps room for the drift: a derived lift leaves the top edge
+  `TOP_MARGIN` clear even at the largest drift, and the bake lints the hover
+  pose with it (`hoverTop()`).
+- `prefers-reduced-motion`: the stack stays at rest (no fan, no drift;
+  `--h` is pinned to 0 in CSS too); only the shadow deepens.
 
 ## Hidden and disabled cards
 

@@ -323,43 +323,50 @@ a.tool-card:focus-visible {
   height: 45cqw;
 }
 
-/* Each print sits in a drift wrapper the size of the stage, which carries its
-   stacking order and the mouse parallax (Landing.jsx useParallax eases the
-   card's --px / --py, -1..1, every frame; times the print's depth --d, up to
-   layout.js PARALLAX: 1.6 / 1.1 cqw at depth 1). The hover fan animates the
-   figure inside, so the two motions never touch the same element. While the
-   drift moves (.is-drifting) the wrappers get their own compositor layers. */
-.tc-drift {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z);
-  translate: calc(var(--px, 0) * var(--d, 1) * 1.6cqw) calc(var(--py, 0) * var(--d, 1) * 1.1cqw);
-}
-.tool-card.is-drifting .tc-drift {
-  will-change: translate;
-}
+/* A print: the snapshot in a thick paper frame with a hue-tinted shadow.
 
-/* A print: the snapshot in a thick paper frame with a hue-tinted shadow. */
+   Its pose is one transform, driven from Landing.jsx (useCardMotion) through
+   three numbers on the card: --h, the fan's progress (0 at rest, 1 fanned;
+   a spring, so it can pass 1 by ~1% on the way in), and --px / --py, the
+   mouse drift (-1..1 per axis). The fan pose is --fx/--fy/--fr/--fs
+   (layout.js fan()); the drift moves the print by up to layout.js PARALLAX
+   (1.6 / 1.1 cqw) times its depth --d, scaled by --h so it fades in and out
+   with the fan rather than taking over from it. No CSS transition on
+   `transform`: one animation, so nothing restarts or hands off. */
 .tc-print {
   --frame: clamp(4px, 1.7cqw, 7px);
   --pr: clamp(12px, 4.2cqw, 17px);
   position: absolute;
   left: var(--x);
   top: var(--y);
+  z-index: var(--z);
   width: var(--w);
   margin: 0;
   padding: var(--frame);
   border-radius: var(--pr);
   background: var(--paper);
-  transform: translate(-50%, -50%) rotate(var(--r));
+  transform:
+    translate(
+      calc(-50% + var(--h, 0) * (var(--fx) + var(--px, 0) * var(--d, 1) * 1.6cqw)),
+      calc(-50% + var(--h, 0) * (var(--fy) + var(--py, 0) * var(--d, 1) * 1.1cqw))
+    )
+    rotate(calc(var(--r) + var(--h, 0) * (var(--fr) - var(--r))))
+    scale(calc(1 + var(--h, 0) * (var(--fs) - 1)));
   box-shadow:
     0 0 0 0.5px var(--paper-edge),
     0 1px 1.5px rgb(var(--shade) / 0.16),
     0 8px 18px -6px rgb(var(--shade) / 0.3),
     0 26px 44px -18px rgb(var(--shade) / 0.48);
-  transition:
-    transform 0.6s cubic-bezier(0.2, 0.85, 0.25, 1.06),
-    box-shadow 0.6s ease;
+  transition: box-shadow 0.6s ease;
+}
+/* Where a mouse can hover, every print keeps its own compositor layer, so it
+   never switches between layer and page rendering (a visible pop) as motion
+   starts or stops. Touch screens never animate the stack, so they skip the
+   layers' memory. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .tc-print {
+    will-change: transform;
+  }
 }
 .tc-print::after {
   content: "";
@@ -377,9 +384,10 @@ a.tool-card:focus-visible {
 }
 
 /* ---- Hover / focus ----
-   Only a link card answers (the disabled card is a plain <div>). Pointer hover
-   is limited to devices that can hover, so a tap on a phone doesn't leave a
-   sticky fanned stack behind; keyboard focus works everywhere. */
+   Only a link card answers (the disabled card is a plain <div>). The fan and
+   drift come from Landing.jsx (mouse hover and keyboard focus); here only the
+   shadows deepen. Pointer hover is limited to devices that can hover, so a tap
+   on a phone doesn't leave a sticky deep shadow behind. */
 .tool-card {
   --print-shadow-hover:
     0 0 0 0.5px var(--paper-edge),
@@ -391,7 +399,6 @@ a.tool-card:focus-visible {
   box-shadow: var(--shadow-card-lg);
 }
 a.tool-card:focus-visible .tc-print {
-  transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--fr)) scale(var(--fs));
   box-shadow: var(--print-shadow-hover);
 }
 @media (hover: hover) {
@@ -399,7 +406,6 @@ a.tool-card:focus-visible .tc-print {
     box-shadow: var(--shadow-card-lg);
   }
   a.tool-card:hover .tc-print {
-    transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--fr)) scale(var(--fs));
     box-shadow: var(--print-shadow-hover);
   }
 }
@@ -451,21 +457,12 @@ a.tool-card:focus-visible .tc-print {
   }
 }
 
-/* Reduced motion: the stack stays at rest (no fan, no parallax); only the
+/* Reduced motion: the stack stays at rest (Landing.jsx doesn't animate it, and
+   --h is pinned to 0 here in case the setting changes mid-motion); only the
    shadow deepens. */
 @media (prefers-reduced-motion: reduce) {
-  .tc-drift {
-    translate: none;
-  }
   .tc-print {
+    --h: 0;
     transition: box-shadow 0.3s ease;
-  }
-  a.tool-card:focus-visible .tc-print {
-    transform: translate(-50%, -50%) rotate(var(--r));
-  }
-}
-@media (prefers-reduced-motion: reduce) and (hover: hover) {
-  a.tool-card:hover .tc-print {
-    transform: translate(-50%, -50%) rotate(var(--r));
   }
 }
