@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import Header from "../components/Header.jsx";
 import ToolPreview from "./landing/ToolPreview.jsx";
 import { SECTIONS, placeCards, headingSlots } from "./landing/sections.js";
@@ -32,32 +32,73 @@ function previewFor(slug) {
 }
 
 // Mouse parallax: while a mouse moves over a card, its prints drift away from
-// the pointer, the top print the most (landing.css .tc-print `translate`;
+// the pointer, the top print the most (landing.css .tc-drift `translate`;
 // amounts and depths in ./landing/previews/layout.js). The pointer's offset from
-// the card centre (-1..1 per axis, flipped) rides on the card as --px / --py.
-// Only for a mouse, never under reduced motion; the hover fan runs on
-// `transform`, so the two add up.
+// the card centre (-1..1 per axis, flipped) is the target; one animation-frame
+// loop per card eases --px / --py toward it (exponential, DRIFT_MS time
+// constant) and stops once settled, back at 0 after the mouse leaves. Easing
+// here, not with a CSS transition, keeps the motion smooth: a transition
+// restarted on every mouse move stutters, most of all while the hover fan
+// (a `transform` transition on the print inside) is still running. Only for a
+// mouse, never under reduced motion.
 const REDUCED_MOTION =
   typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: true };
+const DRIFT_MS = 140;
 const clampUnit = (v) => Math.max(-1, Math.min(1, v));
 function useParallax() {
-  const frame = useRef(0);
+  const drift = useRef({ card: null, x: 0, y: 0, tx: 0, ty: 0, frame: 0, last: 0 });
+  useEffect(() => () => cancelAnimationFrame(drift.current.frame), []);
+  const step = useCallback((now) => {
+    const d = drift.current;
+    const dt = d.last ? Math.min(64, now - d.last) : 16;
+    d.last = now;
+    const k = 1 - Math.exp(-dt / DRIFT_MS);
+    d.x += (d.tx - d.x) * k;
+    d.y += (d.ty - d.y) * k;
+    const settled = Math.abs(d.tx - d.x) < 0.002 && Math.abs(d.ty - d.y) < 0.002;
+    if (settled) {
+      d.x = d.tx;
+      d.y = d.ty;
+    }
+    const { style, classList } = d.card;
+    if (settled && d.x === 0 && d.y === 0) {
+      style.removeProperty("--px");
+      style.removeProperty("--py");
+    } else {
+      style.setProperty("--px", d.x.toFixed(4));
+      style.setProperty("--py", d.y.toFixed(4));
+    }
+    if (settled) {
+      classList.remove("is-drifting");
+      d.frame = 0;
+      d.last = 0;
+      return;
+    }
+    d.frame = requestAnimationFrame(step);
+  }, []);
+  const steer = useCallback((card, tx, ty) => {
+    const d = drift.current;
+    d.card = card;
+    d.tx = tx;
+    d.ty = ty;
+    if (!d.frame) {
+      card.classList.add("is-drifting");
+      d.frame = requestAnimationFrame(step);
+    }
+  }, [step]);
   const onPointerMove = useCallback((event) => {
     if (event.pointerType !== "mouse" || REDUCED_MOTION.matches) return;
     const card = event.currentTarget;
-    const { clientX, clientY } = event;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
-      const box = card.getBoundingClientRect();
-      card.style.setProperty("--px", (-clampUnit(((clientX - box.left) / box.width) * 2 - 1)).toFixed(3));
-      card.style.setProperty("--py", (-clampUnit(((clientY - box.top) / box.height) * 2 - 1)).toFixed(3));
-    });
-  }, []);
+    const box = card.getBoundingClientRect();
+    steer(
+      card,
+      -clampUnit(((event.clientX - box.left) / box.width) * 2 - 1),
+      -clampUnit(((event.clientY - box.top) / box.height) * 2 - 1),
+    );
+  }, [steer]);
   const onPointerLeave = useCallback((event) => {
-    cancelAnimationFrame(frame.current);
-    event.currentTarget.style.removeProperty("--px");
-    event.currentTarget.style.removeProperty("--py");
-  }, []);
+    if (drift.current.card) steer(event.currentTarget, 0, 0);
+  }, [steer]);
   return { onPointerMove, onPointerLeave };
 }
 

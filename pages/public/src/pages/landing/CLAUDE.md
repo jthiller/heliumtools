@@ -189,14 +189,22 @@ checks it. Generate tones from OKLCH values, not hand-picked hex.
 - Mouse parallax: while a mouse moves over a link card, its prints drift away
   from the pointer, the top print the most (`depthOf()`: 1 for the top print
   down to 0.35 for the bottom one; up to `PARALLAX` 1.6 / 1.1 cqw sideways /
-  vertically at depth 1). Landing.jsx `useParallax` sets the pointer's offset
-  from the card centre as `--px` / `--py` (-1..1, flipped, one rAF per move,
-  cleared on leave), and `.tc-print`'s `translate` (a separate property, so it
-  adds to the fan's `transform`) eases after it. Mouse only (not touch or pen),
-  never under reduced motion. `fan()` keeps room for the drift: a derived lift
+  vertically at depth 1). Landing.jsx `useParallax` takes the pointer's offset
+  from the card centre (-1..1, flipped) as a target and eases `--px` / `--py`
+  on the card toward it in an animation-frame loop (exponential, `DRIFT_MS`
+  140ms; back to 0 after the mouse leaves; the loop stops once settled). Each
+  print sits in a stage-sized `.tc-drift` wrapper that carries the drift
+  (`translate`) and the stacking order, while the hover fan animates the
+  figure inside it: two elements, so the motions never interfere. Don't move
+  the drift onto the figure or back into a CSS transition: Chrome composites
+  an element's transform-type animations as a group, so a drift transition
+  restarted on every mouse move restarted the running fan and made it stutter.
+  While the drift moves the card has `is-drifting`, which gives the wrappers
+  their own compositor layers. Mouse only (not touch or pen), never under
+  reduced motion. `fan()` keeps room for the drift: a derived lift
   leaves the top edge `TOP_MARGIN` clear even at the largest drift, and the
   bake lints the hover pose with it (`hoverTop()`). Keep `PARALLAX` and the
-  `translate` amounts in `landing.css` in sync.
+  `.tc-drift` `translate` amounts in `landing.css` in sync.
 - `prefers-reduced-motion`: transforms stay at rest (no fan, no drift); only
   the shadow deepens.
 
