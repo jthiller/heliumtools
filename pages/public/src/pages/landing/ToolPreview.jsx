@@ -2,7 +2,7 @@
 // tilted and overlapping. Config + composition rules: ./previews/index.js;
 // geometry (hover fan): ./previews/layout.js; styles: ./landing.css. Purely
 // decorative (aria-hidden) — the card's link text comes from its <h3>.
-import { fan, STAGE_RATIO, FEATURED_RATIO } from "./previews/layout.js";
+import { fan, depthOf, STAGE_RATIO, FEATURED_RATIO } from "./previews/layout.js";
 
 // Baked prints (scripts/tool-previews/bake.mjs). Eager URL imports: the files
 // are fingerprinted by Vite, and only <img>/<source> fetch them, lazily.
@@ -30,7 +30,8 @@ function Stage({ slug, prints, variant, eagerIds, priority }) {
         {ready.map((p) => {
           const isTop = p.z === topZ;
           const eager = eagerIds.has(p.id);
-          const { fx, fy, fr, fs } = fan(p, isTop, ratio);
+          const depth = depthOf(p, ready);
+          const { fx, fy, fr, fs } = fan(p, isTop, ratio, depth);
           const { w, h } = p.src.rect;
           return (
             <figure
@@ -46,6 +47,7 @@ function Stage({ slug, prints, variant, eagerIds, priority }) {
                 "--fy": `${fy}cqw`,
                 "--fr": `${fr}deg`,
                 "--fs": fs,
+                "--d": depth,
               }}
             >
               <picture>

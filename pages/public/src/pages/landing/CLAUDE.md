@@ -18,15 +18,18 @@ October 2026 and set these rules; don't revert them without asking:
 - Sizes sit about 10% under the first compact version (the owner found the page
   looked better zoomed out to 90%); keep the scale below when adding to it.
 - Buy Data Credits is hidden until it works (below).
+- Heading rows carry section-colored rules (from exploration D) so wrapped
+  sections read as groups, and a mouse moving over a card nudges its prints
+  (parallax) on top of the hover fan.
 
 | File | Role |
 |---|---|
-| `sections.js` | The tool list as plain data (section `id`, title, description → `tools`, each with `slug`, name, description, href, badge, `featured`, `disabled`, `hidden`). `SECTIONS` is the visible list (hidden tools dropped); its order is the card order. Also `placeCards(cols)`, where every card lands, and `runningHeads(cols)`, the cards that get a running head. Read by the page and by the bake's palette and layout checks. |
+| `sections.js` | The tool list as plain data (section `id`, title, description → `tools`, each with `slug`, name, description, href, badge, `featured`, `disabled`, `hidden`). `SECTIONS` is the visible list (hidden tools dropped); its order is the card order. Also `placeCards(cols)`, where every card lands, `headingSlots(cols)`, the heading-row slots (rule, join, label), and `runningHeads(cols)`, the cards that get a running head. Read by the page and by the bake's palette and layout checks. |
 | `../Landing.jsx` | The page: the compact header, the card grid, `ToolCard`. |
 | `previews/<slug>.js` | One tool's composition: `tone` + `prints` (+ `featured` for a featured card). Schema in `previews/index.js`. |
 | `previews/index.js` | slug → config registry, and the schema/composition rules. |
-| `previews/tones.js` | The ground palette (OKLCH-derived, each tone with its `hue`, `null` for the neutral stone) and `DESC_INK`. |
-| `previews/layout.js` | Stage geometry: `STAGE_RATIO`, `FEATURED_RATIO`, `TOP_MARGIN`, `fan()` (hover pose), `topEdge()`. Shared with the bake lint. |
+| `previews/tones.js` | The ground palette (OKLCH-derived, each tone with its `hue`, `null` for the neutral stone), `SECTION_RULES` (each section's rule color) and `DESC_INK`. |
+| `previews/layout.js` | Stage geometry: `STAGE_RATIO`, `FEATURED_RATIO`, `TOP_MARGIN`, `fan()` (hover pose), `topEdge()`, and the mouse parallax (`PARALLAX`, `depthOf()`, `hoverTop()`). Shared with the bake lint. |
 | `ToolPreview.jsx` | Renders the stage and prints as `<figure><picture>`; a featured card gets its wide stage too. |
 | `landing.css` | Grid, card, frames, hover, dark mode, reduced motion. |
 | `../../assets/previews/<slug>/<id>-<light\|dark>.webp` | Baked prints (committed; Vite fingerprints them). |
@@ -84,21 +87,33 @@ last row doesn't add space above the footer. Without subgrid support each
 cell lays out on its own (headings don't line up across a row; nothing
 breaks).
 
-**Running heads.** When a section wraps into a new row and the next section
-starts in that row, the outgoing section's card in that row would sit under
-an empty slot beside the next section's heading and read as part of it. Such
-a "stranded" card gets a running head in its slot: its own section's title in
-the h2's type and tertiary ink, no description, `aria-hidden` (the region
-already has its name), on the same baseline as the real h2 beside it.
-Only the first such card of its section in that row gets one. Positions are
-fixed per column count, so `runningHeads(cols)` in `sections.js` works them out
-from `placeCards(cols)`, Landing.jsx marks each cell `tc-run-3` and/or
-`tc-run-2`, and `landing.css` shows them by the grid's width (a named size
-container, `tc-grid`, at the same 954px / 630px thresholds as the column
-count); one column never shows one. Today: Mint Data Credits, Reward Claimer
-and veHNT Positions at 3 columns, Hotspot Map at 2. The bake lists them. The
-order is set by where the featured cards fit and by the palette, so don't
-reorder just to dodge a running head.
+**Section rules and running heads.** A row where any section starts is a
+heading row. Every card in it gets a slot with its section's colored rule
+across the top (2px, `SECTION_RULES` in `tones.js`: one mid-tone of the
+section's hue family per theme, >= 3:1 on the page), and the rule runs on
+across the gap when the next card in the row is the same section, so each
+section's run of cards in that row reads as one group (the hairline above
+each section in exploration D, colored). A section's first card carries the
+heading under its rule. When a section wraps into a new row and the next
+section starts in that row, the outgoing section's first card there would sit
+beside the next section's heading and read as part of it, so it gets a
+running head under its rule: its own section's title in the h2's type and
+tertiary ink, no description, `aria-hidden` (the region already has its
+name), on the same baseline as the real h2 beside it. The section's other
+cards in that row get only the rule. Rows with no section start have no
+slots. The slots stretch to the row's height and set their text on the
+bottom, so all the rules in a row share one line.
+
+Positions are fixed per column count, so `headingSlots(cols)` in `sections.js`
+works the slots out from `placeCards(cols)`; Landing.jsx marks each slot
+`tc-line-N`, `tc-join-N` and `tc-run-N` per column count, and `landing.css`
+picks the set for the grid's width (a named size container, `tc-grid`, at the
+same 954px / 630px thresholds as the column count). Today the running heads
+are Mint Data Credits, Reward Claimer and veHNT Positions at 3 columns and
+Hotspot Map at 2; the bake lists them. The order is set by where the featured
+cards fit and by the palette, so don't reorder just to dodge a running head.
+A new section needs a `SECTION_RULES` entry keyed by its `id` (without one its
+rule falls back to the border color).
 
 Semantics: each section is a `<section aria-labelledby aria-describedby>`
 region named by its h2 and described by the description under it, with
@@ -170,7 +185,19 @@ checks it. Generate tones from OKLCH values, not hand-picked hex.
   lifts and scales up, the others splay out. Only `a.tool-card` answers;
   pointer `:hover` is inside `@media (hover: hover)` so taps don't leave a sticky
   fan; `:focus-visible` works everywhere and also draws the outline.
-- `prefers-reduced-motion`: transforms stay at rest; only the shadow deepens.
+- Mouse parallax: while a mouse moves over a link card, its prints drift away
+  from the pointer, the top print the most (`depthOf()`: 1 for the top print
+  down to 0.35 for the bottom one; up to `PARALLAX` 1.6 / 1.1 cqw sideways /
+  vertically at depth 1). Landing.jsx `useParallax` sets the pointer's offset
+  from the card centre as `--px` / `--py` (-1..1, flipped, one rAF per move,
+  cleared on leave), and `.tc-print`'s `translate` (a separate property, so it
+  adds to the fan's `transform`) eases after it. Mouse only (not touch or pen),
+  never under reduced motion. `fan()` keeps room for the drift: a derived lift
+  leaves the top edge `TOP_MARGIN` clear even at the largest drift, and the
+  bake lints the hover pose with it (`hoverTop()`). Keep `PARALLAX` and the
+  `translate` amounts in `landing.css` in sync.
+- `prefers-reduced-motion`: transforms stay at rest (no fan, no drift); only
+  the shadow deepens.
 
 ## Hidden and disabled cards
 

@@ -141,6 +141,19 @@ const BRAND = [
   },
 ];
 
+// Section rules: the colored line drawn across each heading row of the card
+// grid, one per section, keyed by the section's `id` in ../sections.js. One
+// representative hue of the section's family at a mid tone (light: OKLCH L .60,
+// C .15; dark: L .74, C .13, both gamut-mapped by chroma), >= 3:1 against the
+// page background in its theme.
+export const SECTION_RULES = {
+  wallet: { hue: 8, light: "#C8536F", dark: "#EF869B" },
+  "network-operators": { hue: 210, light: "#0590A2", dark: "#00C0D7" },
+  "hotspot-operators": { hue: 62, light: "#B96A00", dark: "#E5974C" },
+  "hnt-holders": { hue: 275, light: "#6875D8", dark: "#93A3FC" },
+  brand: { hue: 342, light: "#BA5799", dark: "#E288C2" },
+};
+
 // The description's ink strength per theme; must match landing.css --desc.
 export const DESC_INK = { light: 0.8, dark: 0.94 };
 

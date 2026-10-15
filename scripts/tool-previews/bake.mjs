@@ -15,8 +15,8 @@
 // its committed file is left alone. Files in a tool's folder that no print in
 // its config names are deleted.
 //
-// Also checks, and exits 1 on: the byte budgets, a print's top edge (at rest and
-// on hover) reaching into the card text, a rect running past its capture, an
+// Also checks, and exits 1 on: the byte budgets, a print's top edge (at rest, and
+// on hover with the mouse parallax's drift) reaching into the card text, a rect running past its capture, an
 // `out` wider than its crop, a capture missing from its manifest (unknown dpr),
 // tone contrast (description ink >= 4.5:1 on both ground stops), a tone whose
 // declared `hue` its grounds don't measure (or a neutral, `hue: null`, whose
@@ -49,7 +49,7 @@ const STAGE_WIDTHS = { desktop: 340, phone: 358 };
 const FEATURED_WIDTHS = { desktop: 698 };
 const frameAt = (stageW) => Math.min(7, Math.max(4, stageW * 0.017));
 
-const { fan, topEdge, STAGE_RATIO, FEATURED_RATIO, TOP_MARGIN } = await import(pathToFileURL(path.join(CONFIG_DIR, "layout.js")).href);
+const { fan, topEdge, hoverTop, depthOf, STAGE_RATIO, FEATURED_RATIO, TOP_MARGIN } = await import(pathToFileURL(path.join(CONFIG_DIR, "layout.js")).href);
 const { TONES, DESC_INK } = await import(pathToFileURL(path.join(CONFIG_DIR, "tones.js")).href);
 const { PREVIEWS } = await import(pathToFileURL(path.join(CONFIG_DIR, "index.js")).href);
 const { SECTIONS, placeCards, runningHeads } = await import(pathToFileURL(path.join(LANDING_DIR, "sections.js")).href);
@@ -99,12 +99,14 @@ for (const slug of slugs) {
   console.log(`\n${slug}${prints.length ? "" : "  (no prints)"}`);
 
   // Lint: every print's on-card top edge stays TOP_MARGIN below the text, at
-  // rest and in its hover pose (tilt and scale included), on each stage.
+  // rest and in its hover pose (tilt and scale included, plus the mouse
+  // parallax's largest drift for its depth), on each stage.
   for (const [stage, set, ratio] of [["", prints, STAGE_RATIO], ["featured ", featured, FEATURED_RATIO]]) {
     const topZ = Math.max(...set.map((p) => p.z));
     for (const p of set) {
+      const depth = depthOf(p, set);
       const rest = topEdge(p, ratio);
-      const hover = topEdge(p, ratio, fan(p, p.z === topZ, ratio));
+      const hover = hoverTop(p, ratio, fan(p, p.z === topZ, ratio, depth), depth);
       for (const [state, top] of [["rest", rest], ["hover", hover]]) {
         if (top < TOP_MARGIN - 0.05) warnings.push(`${slug}/${stage}${p.id}: ${state} top edge at ${top.toFixed(1)}% of the stage, above the ${TOP_MARGIN}% keep-out; lower y, shrink w or ease the tilt`);
       }

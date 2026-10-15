@@ -1,8 +1,9 @@
+import { useCallback, useRef } from "react";
 import Header from "../components/Header.jsx";
 import ToolPreview from "./landing/ToolPreview.jsx";
-import { SECTIONS, placeCards, runningHeads } from "./landing/sections.js";
+import { SECTIONS, placeCards, headingSlots } from "./landing/sections.js";
 import { PREVIEWS } from "./landing/previews/index.js";
-import { TONES } from "./landing/previews/tones.js";
+import { TONES, SECTION_RULES } from "./landing/previews/tones.js";
 import "./landing/landing.css";
 
 // The tool list itself lives in ./landing/sections.js (plain data, so the
@@ -30,6 +31,36 @@ function previewFor(slug) {
   return preview ?? NO_PREVIEW;
 }
 
+// Mouse parallax: while a mouse moves over a card, its prints drift away from
+// the pointer, the top print the most (landing.css .tc-print `translate`;
+// amounts and depths in ./landing/previews/layout.js). The pointer's offset from
+// the card centre (-1..1 per axis, flipped) rides on the card as --px / --py.
+// Only for a mouse, never under reduced motion; the hover fan runs on
+// `transform`, so the two add up.
+const REDUCED_MOTION =
+  typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: true };
+const clampUnit = (v) => Math.max(-1, Math.min(1, v));
+function useParallax() {
+  const frame = useRef(0);
+  const onPointerMove = useCallback((event) => {
+    if (event.pointerType !== "mouse" || REDUCED_MOTION.matches) return;
+    const card = event.currentTarget;
+    const { clientX, clientY } = event;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      const box = card.getBoundingClientRect();
+      card.style.setProperty("--px", (-clampUnit(((clientX - box.left) / box.width) * 2 - 1)).toFixed(3));
+      card.style.setProperty("--py", (-clampUnit(((clientY - box.top) / box.height) * 2 - 1)).toFixed(3));
+    });
+  }, []);
+  const onPointerLeave = useCallback((event) => {
+    cancelAnimationFrame(frame.current);
+    event.currentTarget.style.removeProperty("--px");
+    event.currentTarget.style.removeProperty("--py");
+  }, []);
+  return { onPointerMove, onPointerLeave };
+}
+
 // The whole card is the link (no separate CTA); its accessible name is the
 // <h3> (name + badge), the description is its description. The disabled
 // Coming-soon card is a plain, unfocusable block. A featured card also carries
@@ -38,6 +69,7 @@ function previewFor(slug) {
 // whose top print is fetched at high priority.
 function ToolCard({ feature, eager, priority }) {
   const preview = previewFor(feature.slug);
+  const parallax = useParallax();
   const nameId = `tool-${feature.slug}-name`;
   const descId = `tool-${feature.slug}-desc`;
   // The badge rides on the name's last word, so a wrapped name never strands it.
@@ -81,7 +113,14 @@ function ToolCard({ feature, eager, priority }) {
     );
   }
   return (
-    <a {...common} href={feature.href} className={`tool-card${featured}`} aria-labelledby={nameId} aria-describedby={descId}>
+    <a
+      {...common}
+      {...parallax}
+      href={feature.href}
+      className={`tool-card${featured}`}
+      aria-labelledby={nameId}
+      aria-describedby={descId}
+    >
       {body}
     </a>
   );
@@ -94,11 +133,27 @@ function ToolCard({ feature, eager, priority }) {
 // its slot. DOM order is reading order: a heading, then its section's cards.
 //
 // A featured card's cell spans two columns wherever the grid has two or more
-// (landing.css). A card left in a row where the next section's heading starts
-// (its own heading a row up) gets a running head in its slot: its section's
-// title, muted and aria-hidden, shown only at the column count where it is
-// stranded (landing.css switches tc-run-3 / tc-run-2 by the grid's width).
-const STRANDED = { 3: runningHeads(3), 2: runningHeads(2) };
+// (landing.css). In a row where any section starts, every card's slot draws its
+// section's colored rule (joined across the gap to a neighbour of the same
+// section), and the first card of a section that started in an earlier row also
+// gets a running head: its section's title, muted and aria-hidden
+// (sections.js headingSlots). Rows differ by column count, so each slot carries
+// tc-line-N / tc-join-N / tc-run-N classes and landing.css picks the set for
+// the grid's current width.
+const SLOTS = { 3: headingSlots(3), 2: headingSlots(2), 1: headingSlots(1) };
+function slotClasses(slug) {
+  const classes = [];
+  for (const cols of [3, 2, 1]) {
+    const slot = SLOTS[cols].get(slug);
+    if (!slot) continue;
+    classes.push(`tc-line-${cols}`);
+    if (slot.join) classes.push(`tc-join-${cols}`);
+    if (slot.label === "run") classes.push(`tc-run-${cols}`);
+  }
+  return classes;
+}
+const sectionStyle = (id) =>
+  SECTION_RULES[id] ? { "--rule-l": SECTION_RULES[id].light, "--rule-d": SECTION_RULES[id].dark } : undefined;
 // The first row at the widest layout (3 columns) loads its prints eagerly; the
 // page's first card fetches its top print at high priority.
 const FIRST_ROW = new Set(placeCards(3).filter((card) => card.row === 0).map((card) => card.slug));
@@ -128,13 +183,19 @@ export default function Landing() {
             const headId = `section-${section.id}`;
             const descId = `section-${section.id}-desc`;
             return (
-              <section key={section.id} className="tc-section" aria-labelledby={headId} aria-describedby={descId}>
+              <section
+                key={section.id}
+                className="tc-section"
+                style={sectionStyle(section.id)}
+                aria-labelledby={headId}
+                aria-describedby={descId}
+              >
                 {section.tools.map((feature, i) => {
-                  const runs = [3, 2].filter((cols) => STRANDED[cols].has(feature.slug));
+                  const slot = slotClasses(feature.slug);
                   return (
                     <div key={feature.slug} className={`tc-cell${feature.featured ? " is-featured" : ""}`}>
                       {i === 0 && (
-                        <div className="tc-head">
+                        <div className={["tc-head", ...slot.filter((c) => c.startsWith("tc-join-"))].join(" ")}>
                           <h2 id={headId} className="font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content">
                             {section.title}
                           </h2>
@@ -143,13 +204,14 @@ export default function Landing() {
                           </p>
                         </div>
                       )}
-                      {runs.length > 0 && (
-                        <p
-                          aria-hidden="true"
-                          className={`tc-runhead ${runs.map((cols) => `tc-run-${cols}`).join(" ")} font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary`}
-                        >
-                          {section.title}
-                        </p>
+                      {i > 0 && slot.length > 0 && (
+                        <div aria-hidden="true" className={["tc-slot", ...slot].join(" ")}>
+                          {slot.some((c) => c.startsWith("tc-run-")) && (
+                            <p className="tc-runtext font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary">
+                              {section.title}
+                            </p>
+                          )}
+                        </div>
                       )}
                       <ToolCard feature={feature} eager={FIRST_ROW.has(feature.slug)} priority={feature.slug === FIRST_CARD} />
                     </div>

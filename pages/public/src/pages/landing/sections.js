@@ -206,24 +206,34 @@ export function placeCards(cols, sections = SECTIONS) {
   return cards;
 }
 
-// A card is "stranded" at `cols` columns when it lands in a row where a later
-// section's heading starts while its own section's heading sits in an earlier
-// row: its heading slot would be empty beside the next section's heading.
-// ../Landing.jsx gives the first such card of its section in that row a running
-// head (its own section's title) at that column count, and the bake lists them.
-// Returns those tools' slugs.
-export function runningHeads(cols, sections = SECTIONS) {
+// The heading row slots at `cols` columns. A row where any section starts is a
+// heading row: every card in it gets a slot carrying its section's colored rule
+// (landing.css), and the rules of a section's neighbouring cards join across the
+// gap, so each section's run of cards in that row reads as one group. The first
+// card of a section in the row is labelled: with the section heading if the
+// section starts there ("head"), otherwise with a running head ("run": its own
+// section's title, since the section started in an earlier row and the card
+// would read as part of the next section beside it). Rows without a section
+// start have no slots. Returns Map slug -> { label: "head" | "run" | null,
+// join: whether its rule runs on into the next card's }.
+export function headingSlots(cols, sections = SECTIONS) {
   const cards = placeCards(cols, sections);
-  const startRow = new Map(cards.filter((c) => c.first).map((c) => [c.section, c.row]));
-  const headRows = new Set(startRow.values());
-  const labelled = new Set();
-  const slugs = new Set();
-  for (const c of cards) {
-    const key = `${c.section}:${c.row}`;
-    if (c.row > startRow.get(c.section) && headRows.has(c.row) && !labelled.has(key)) {
-      labelled.add(key);
-      slugs.add(c.slug);
-    }
-  }
-  return slugs;
+  const headRows = new Set(cards.filter((c) => c.first).map((c) => c.row));
+  const slots = new Map();
+  cards.forEach((card, i) => {
+    if (!headRows.has(card.row)) return;
+    const prev = cards[i - 1];
+    const next = cards[i + 1];
+    const opensRun = !prev || prev.row !== card.row || prev.section !== card.section;
+    slots.set(card.slug, {
+      label: card.first ? "head" : opensRun ? "run" : null,
+      join: !!next && next.row === card.row && next.section === card.section,
+    });
+  });
+  return slots;
+}
+
+// The cards that get a running head at `cols` columns (headingSlots "run").
+export function runningHeads(cols, sections = SECTIONS) {
+  return new Set([...headingSlots(cols, sections)].filter(([, slot]) => slot.label === "run").map(([slug]) => slug));
 }

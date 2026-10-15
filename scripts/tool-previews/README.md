@@ -93,7 +93,7 @@ It warns, and exits 1, when:
 - a rect runs past its capture, or a capture is missing,
 - a print's `out` is wider than its crop (it is kept at the crop width),
 - a capture has no entry in its `manifest.json`, so its dpr is unknown (it is baked at dpr 2),
-- a print's top edge comes within 3% of the stage top (into the card text), at rest or in its hover pose. It measures the tilted, scaled outline over the part on the card only (what bleeds off a side can't reach the text), with the same `layout.js` code the page uses,
+- a print's top edge comes within 3% of the stage top (into the card text), at rest or in its hover pose with the mouse parallax's largest drift. It measures the tilted, scaled outline over the part on the card only (what bleeds off a side can't reach the text), with the same `layout.js` code the page uses,
 - a tone's description ink is under 4.5:1 on either gradient stop,
 - a hued tone's ground stops don't measure within 3° of its declared `hue`, or a neutral's (`hue: null`) have chroma of .02 or more,
 - two cards that touch differ by less than 30° of `hue`. Every card flows through one grid in `sections.js` order, so the bake walks that order at 3, 2 and 1 columns (side by side, one above the other) and names the pair. It reports the closest pair at each width. A neutral beside a hued card passes (it differs by chroma); two neutrals touching fail.

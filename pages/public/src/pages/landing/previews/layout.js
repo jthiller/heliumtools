@@ -21,6 +21,20 @@ const HOVER_SCALE = 1.035; // the top print's hover scale
 
 const round = (n) => Math.round(n * 100) / 100;
 
+// Mouse parallax: while a mouse moves over a card, each print drifts away from
+// the pointer by up to these amounts (cqw, at depth 1) times its depth
+// (landing.css .tc-print `translate`; keep the two in sync). The pointer's
+// offset from the card centre runs -1..1 on each axis.
+export const PARALLAX = { x: 1.6, y: 1.1 };
+
+// A print's parallax depth: the top print (highest z) 1, the bottom one 0.35,
+// evenly between; a lone print 1.
+export function depthOf(p, prints) {
+  const order = [...new Set(prints.map((q) => q.z))].sort((a, b) => a - b);
+  if (order.length < 2) return 1;
+  return round(0.35 + (0.65 * order.indexOf(p.z)) / (order.length - 1));
+}
+
 // Print height incl. frame, in stage-width units.
 function printHeight(p) {
   const { w, h } = p.src.rect;
@@ -56,14 +70,24 @@ export function topEdge(p, ratio, { fx = 0, fy = 0, fr = p.r, fs = 1 } = {}) {
   return (top / (100 * ratio)) * 100;
 }
 
+// The highest the print's top edge gets in a hover pose once the parallax drift
+// is added (up to PARALLAX.y * depth upward, and either way sideways), as % of
+// the stage height.
+export function hoverTop(p, ratio, pose, depth) {
+  const dx = PARALLAX.x * depth;
+  const dy = PARALLAX.y * depth;
+  return Math.min(...[-dx, 0, dx].map((ox) => topEdge(p, ratio, { ...pose, fx: (pose.fx ?? 0) + ox, fy: (pose.fy ?? 0) - dy })));
+}
+
 // Hover/focus fan. The top print straightens a little, lifts and scales up; the
 // ones under it splay away from the stage centre with their tilt exaggerated,
 // damped when the print already bleeds off that edge. A derived lift never takes
-// a print's tilted, scaled top edge above TOP_MARGIN: it is cut short, or turned
-// into a drop, by exactly the overshoot. Any value can be overridden per print
-// (fx, fy in cqw; fr in deg; fs scale); overrides are taken as given and checked
-// by the bake lint instead.
-export function fan(p, isTop, ratio) {
+// a print's tilted, scaled top edge above TOP_MARGIN, even with the mouse
+// parallax's drift on top (`depth`, depthOf()): it is cut short, or turned into
+// a drop, by exactly the overshoot. Any value can be overridden per print (fx,
+// fy in cqw; fr in deg; fs scale); overrides are taken as given and checked by
+// the bake lint instead.
+export function fan(p, isTop, ratio, depth = 1) {
   let pose;
   let lift; // the derived fy before the keep-out clamp
   if (isTop) {
@@ -79,7 +103,8 @@ export function fan(p, isTop, ratio) {
     lift = (p.y < 50 ? -2.2 : 1.2) + (p.y - 50) * 0.02;
   }
   if (p.fy !== undefined) return { ...pose, fy: p.fy };
-  // Room above the pose's top edge, in cqw (negative: it already overshoots).
-  const room = ((topEdge(p, ratio, { ...pose, fy: 0 }) - TOP_MARGIN) / 100) * 100 * ratio;
+  // Room above the pose's top edge with the parallax drift, in cqw (negative: it
+  // already overshoots).
+  const room = ((hoverTop(p, ratio, { ...pose, fy: 0 }, depth) - TOP_MARGIN) / 100) * 100 * ratio;
   return { ...pose, fy: round(Math.max(lift, -room)) };
 }

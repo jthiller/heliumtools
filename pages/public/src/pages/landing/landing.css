@@ -18,9 +18,11 @@
    section heading in its slot. A row's heading slot is as tall as its tallest
    heading, so every card in the row starts at the same line; a row with no
    heading has a zero-height slot. Rows have no gap of their own: the card's
-   margin spaces the card rows, the heading's top padding adds the section
+   margin spaces the card rows, the heading slot's top margin adds the section
    break. The <section> wrapper is `display: contents`, so the cells are the
-   grid's items; it keeps its region role and name (aria-labelledby). */
+   grid's items; it keeps its region role and name (aria-labelledby), and the
+   section's rule colors (--rule-l / --rule-d, tones.js SECTION_RULES), which
+   its cells inherit. */
 .tc-grid {
   --tc-gap: 18px; /* between cards, both ways */
   --tc-break: 28px; /* added above a row with a section heading */
@@ -32,6 +34,12 @@
 }
 .tc-section {
   display: contents;
+  --rule: var(--rule-l, rgb(var(--color-border)));
+}
+@media (prefers-color-scheme: dark) {
+  .tc-section {
+    --rule: var(--rule-d, rgb(var(--color-border)));
+  }
 }
 .tc-cell {
   display: grid;
@@ -39,38 +47,82 @@
   grid-template-rows: subgrid;
   min-width: 0;
 }
-.tc-head {
-  grid-row: 1;
-  align-self: end; /* a short heading sits on its card, not on the row's top */
-  padding: var(--tc-break) 0 16px;
-}
 .tc-cell > .tool-card {
   grid-row: 2;
   margin-bottom: var(--tc-gap);
 }
-/* Running head: a card stranded in a row where the next section's heading
-   starts (its own heading a row up; sections.js strandedSlugs) shows its own
-   section's title in its slot, muted, so it doesn't read as part of the next
-   section. Only at the column count where it is stranded: tc-run-3 / tc-run-2
-   from Landing.jsx, switched by the grid's width at the thresholds where
-   auto-fill changes the column count (3 x 306 + 2 x 18 = 954, 2 x 306 + 18 =
-   630). It sits on the h2's line: the heading's top padding, and a bottom
-   padding that adds the description's line (4px margin + 18px). */
-.tc-runhead {
-  display: none;
+
+/* Heading rows (sections.js headingSlots). In a row where any section starts,
+   every card's slot draws its section's colored rule across the top of the
+   slot; a rule runs on across the gap when the next card in the row is the
+   same section (tc-join-N), so each section's run of cards reads as one group.
+   The section's first card carries its heading (.tc-head: h2 + description);
+   the first card of a section that started in an earlier row carries a running
+   head (.tc-runtext: its section's title, muted), so it doesn't read as part
+   of the next section beside it. The other slots (.tc-slot) are only a rule.
+   Slots stretch to the row's height and set their text on the bottom, so the
+   rules share one line and the running head shares the h2's baseline (its
+   bottom margin stands in for the description: 4px + 18px). Which cards have a
+   slot depends on the column count: tc-line-N / tc-join-N / tc-run-N from
+   Landing.jsx, switched by the grid's width at the thresholds where auto-fill
+   changes the column count (3 x 306 + 2 x 18 = 954, 2 x 306 + 18 = 630). */
+.tc-head,
+.tc-slot {
+  position: relative;
   grid-row: 1;
-  align-self: end;
-  margin: 0;
-  padding: var(--tc-break) 0 calc(16px + 22px);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin-top: var(--tc-break);
+  padding: 12px 0 16px;
+}
+.tc-slot {
+  display: none;
+}
+.tc-head::before,
+.tc-slot::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--rule);
+}
+.tc-runtext {
+  display: none;
+  margin: 0 0 22px;
 }
 @container tc-grid (width >= 954px) {
-  .tc-run-3 {
+  .tc-slot.tc-line-3 {
+    display: flex;
+  }
+  .tc-run-3 .tc-runtext {
     display: block;
+  }
+  .tc-join-3::before {
+    right: calc(-1 * var(--tc-gap));
   }
 }
 @container tc-grid (630px <= width < 954px) {
-  .tc-run-2 {
+  .tc-slot.tc-line-2 {
+    display: flex;
+  }
+  .tc-run-2 .tc-runtext {
     display: block;
+  }
+  .tc-join-2::before {
+    right: calc(-1 * var(--tc-gap));
+  }
+}
+@container tc-grid (width < 630px) {
+  .tc-slot.tc-line-1 {
+    display: flex;
+  }
+  .tc-join-1::before {
+    right: calc(-1 * var(--tc-gap));
   }
 }
 /* Two or more columns: a featured card's cell spans two of them, and the card
@@ -283,6 +335,10 @@ a.tool-card:focus-visible {
   border-radius: var(--pr);
   background: var(--paper);
   transform: translate(-50%, -50%) rotate(var(--r));
+  /* Mouse parallax (Landing.jsx useParallax): the card's --px / --py (-1..1)
+     times this print's depth --d, up to layout.js PARALLAX (1.6 / 1.1 cqw at
+     depth 1). Separate from `transform`, so it adds to the hover fan. */
+  translate: calc(var(--px, 0) * var(--d, 1) * 1.6cqw) calc(var(--py, 0) * var(--d, 1) * 1.1cqw);
   box-shadow:
     0 0 0 0.5px var(--paper-edge),
     0 1px 1.5px rgb(var(--shade) / 0.16),
@@ -290,6 +346,7 @@ a.tool-card:focus-visible {
     0 26px 44px -18px rgb(var(--shade) / 0.48);
   transition:
     transform 0.6s cubic-bezier(0.2, 0.85, 0.25, 1.06),
+    translate 0.45s cubic-bezier(0.2, 0.7, 0.2, 1),
     box-shadow 0.6s ease;
 }
 .tc-print::after {
@@ -382,9 +439,11 @@ a.tool-card:focus-visible .tc-print {
   }
 }
 
-/* Reduced motion: the stack stays at rest; only the shadow deepens. */
+/* Reduced motion: the stack stays at rest (no fan, no parallax); only the
+   shadow deepens. */
 @media (prefers-reduced-motion: reduce) {
   .tc-print {
+    translate: none;
     transition: box-shadow 0.3s ease;
   }
   a.tool-card:focus-visible .tc-print {
