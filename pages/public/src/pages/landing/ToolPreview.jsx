@@ -34,35 +34,37 @@ function Stage({ slug, prints, variant, eagerIds, priority }) {
           const { fx, fy, fr, fs } = fan(p, isTop, ratio, depth);
           const { w, h } = p.src.rect;
           return (
-            <figure
-              key={p.id}
-              className="tc-print"
-              style={{
-                "--x": `${p.x}%`,
-                "--y": `${p.y}%`,
-                "--w": `${p.w}%`,
-                "--r": `${p.r}deg`,
-                "--z": p.z,
-                "--fx": `${fx}cqw`,
-                "--fy": `${fy}cqw`,
-                "--fr": `${fr}deg`,
-                "--fs": fs,
-                "--d": depth,
-              }}
-            >
-              <picture>
-                <source media="(prefers-color-scheme: dark)" srcSet={assetUrl(slug, p.id, "dark")} />
-                <img
-                  src={assetUrl(slug, p.id, "light")}
-                  width={p.out}
-                  height={Math.round((p.out * h) / w)}
-                  alt=""
-                  loading={eager ? "eager" : "lazy"}
-                  fetchpriority={priority && eager && isTop ? "high" : undefined}
-                  decoding="async"
-                />
-              </picture>
-            </figure>
+            // The drift wrapper carries the mouse parallax (landing.css .tc-drift)
+            // and the stacking order; the figure inside carries the hover fan, so
+            // the two never animate the same element.
+            <div key={p.id} className="tc-drift" style={{ "--d": depth, "--z": p.z }}>
+              <figure
+                className="tc-print"
+                style={{
+                  "--x": `${p.x}%`,
+                  "--y": `${p.y}%`,
+                  "--w": `${p.w}%`,
+                  "--r": `${p.r}deg`,
+                  "--fx": `${fx}cqw`,
+                  "--fy": `${fy}cqw`,
+                  "--fr": `${fr}deg`,
+                  "--fs": fs,
+                }}
+              >
+                <picture>
+                  <source media="(prefers-color-scheme: dark)" srcSet={assetUrl(slug, p.id, "dark")} />
+                  <img
+                    src={assetUrl(slug, p.id, "light")}
+                    width={p.out}
+                    height={Math.round((p.out * h) / w)}
+                    alt=""
+                    loading={eager ? "eager" : "lazy"}
+                    fetchpriority={priority && eager && isTop ? "high" : undefined}
+                    decoding="async"
+                  />
+                </picture>
+              </figure>
+            </div>
           );
         })}
       </div>
