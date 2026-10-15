@@ -198,8 +198,8 @@
   background:
     radial-gradient(115% 70% at 58% 100%, var(--glow) 0%, transparent 62%),
     linear-gradient(172deg, var(--g1) 18%, var(--g2) 100%);
+  /* Fixed, hover included: see Hover / focus below. */
   box-shadow: var(--shadow-card);
-  transition: box-shadow 0.5s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -332,7 +332,12 @@ a.tool-card:focus-visible {
    (layout.js fan()); the drift moves the print by up to layout.js PARALLAX
    (1.6 / 1.1 cqw) times its depth --d, scaled by --h so it fades in and out
    with the fan rather than taking over from it. No CSS transition on
-   `transform`: one animation, so nothing restarts or hands off. */
+   `transform`: one animation, so nothing restarts or hands off.
+
+   Its shadow lies on two layers of its own that crossfade on hover and
+   focus: ::before at rest, ::after lifted (deeper and longer). Each is
+   painted once, so the motion only ever changes transform and opacity;
+   animating box-shadow instead repaints every print on every frame. */
 .tc-print {
   --frame: clamp(4px, 1.7cqw, 7px);
   --pr: clamp(12px, 4.2cqw, 17px);
@@ -352,78 +357,93 @@ a.tool-card:focus-visible {
     )
     rotate(calc(var(--r) + var(--h, 0) * (var(--fr) - var(--r))))
     scale(calc(1 + var(--h, 0) * (var(--fs) - 1)));
-  box-shadow:
-    0 0 0 0.5px var(--paper-edge),
-    0 1px 1.5px rgb(var(--shade) / 0.16),
-    0 8px 18px -6px rgb(var(--shade) / 0.3),
-    0 26px 44px -18px rgb(var(--shade) / 0.48);
-  transition: box-shadow 0.6s ease;
 }
-/* Where a mouse can hover, every print keeps its own compositor layer, so it
-   never switches between layer and page rendering (a visible pop) as motion
-   starts or stops. Touch screens never animate the stack, so they skip the
-   layers' memory. */
+.tc-print::before,
+.tc-print::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+.tc-print::before {
+  box-shadow: var(--print-shadow);
+}
+.tc-print::after {
+  box-shadow: var(--print-shadow-hover);
+  opacity: 0;
+}
+/* Where a mouse can hover, every print and both its shadow layers keep their
+   own compositor layers, so nothing is repainted as motion starts or stops,
+   and nothing switches between layer and page rendering (a visible pop).
+   Touch screens never animate the stack, so they skip the layers' memory. */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .tc-print {
     will-change: transform;
   }
+  .tc-print::before,
+  .tc-print::after {
+    will-change: opacity;
+  }
 }
-.tc-print::after {
-  content: "";
-  position: absolute;
-  inset: var(--frame);
-  border-radius: calc(var(--pr) - var(--frame));
-  box-shadow: inset 0 0 0 1px var(--photo-edge);
-  pointer-events: none;
-}
+/* The outline is the photo's hairline edge, just inside its rounded corners. */
 .tc-print img {
   display: block;
   width: 100%;
   height: auto;
   border-radius: calc(var(--pr) - var(--frame));
+  outline: 1px solid var(--photo-edge);
+  outline-offset: -1px;
 }
 
 /* ---- Hover / focus ----
    Only a link card answers (the disabled card is a plain <div>). The fan and
-   drift come from Landing.jsx (mouse hover and keyboard focus); here only the
-   shadows deepen. Pointer hover is limited to devices that can hover, so a tap
-   on a phone doesn't leave a sticky deep shadow behind. */
+   drift come from Landing.jsx (mouse hover and keyboard focus); here each
+   print's shadow crossfades from its rest layer to its lifted one. The card's
+   own shadow stays put: a transition on it repaints the whole card every
+   frame, and WebKit re-renders the SVG grain on each repaint (in Safari that
+   alone held the fan near 40fps). Pointer hover is limited to devices that
+   can hover, so a tap on a phone doesn't leave a sticky deep shadow behind. */
 .tool-card {
+  --print-shadow:
+    0 0 0 0.5px var(--paper-edge),
+    0 1px 1.5px rgb(var(--shade) / 0.16),
+    0 8px 18px -6px rgb(var(--shade) / 0.3),
+    0 26px 44px -18px rgb(var(--shade) / 0.48);
   --print-shadow-hover:
     0 0 0 0.5px var(--paper-edge),
     0 2px 3px rgb(var(--shade) / 0.14),
     0 14px 26px -8px rgb(var(--shade) / 0.32),
     0 36px 60px -22px rgb(var(--shade) / 0.52);
 }
-a.tool-card:focus-visible {
-  box-shadow: var(--shadow-card-lg);
+a.tool-card:focus-visible .tc-print::before {
+  opacity: 0;
 }
-a.tool-card:focus-visible .tc-print {
-  box-shadow: var(--print-shadow-hover);
+a.tool-card:focus-visible .tc-print::after {
+  opacity: 1;
 }
 @media (hover: hover) {
-  a.tool-card:hover {
-    box-shadow: var(--shadow-card-lg);
+  a.tool-card:hover .tc-print::before {
+    opacity: 0;
   }
-  a.tool-card:hover .tc-print {
-    box-shadow: var(--print-shadow-hover);
+  a.tool-card:hover .tc-print::after {
+    opacity: 1;
   }
 }
 
 @media (prefers-color-scheme: dark) {
   .tool-card {
+    --print-shadow:
+      0 0 0 1px var(--paper-edge),
+      0 1px 2px rgb(var(--shade) / 0.5),
+      0 10px 22px -6px rgb(var(--shade) / 0.55),
+      0 28px 48px -16px rgb(var(--shade) / 0.7);
     --print-shadow-hover:
       0 0 0 1px var(--paper-edge),
       0 2px 3px rgb(var(--shade) / 0.5),
       0 16px 30px -8px rgb(var(--shade) / 0.6),
       0 40px 64px -20px rgb(var(--shade) / 0.75);
-  }
-  .tc-print {
-    box-shadow:
-      0 0 0 1px var(--paper-edge),
-      0 1px 2px rgb(var(--shade) / 0.5),
-      0 10px 22px -6px rgb(var(--shade) / 0.55),
-      0 28px 48px -16px rgb(var(--shade) / 0.7);
   }
   .tc-badge {
     box-shadow:
@@ -463,6 +483,9 @@ a.tool-card:focus-visible .tc-print {
 @media (prefers-reduced-motion: reduce) {
   .tc-print {
     --h: 0;
-    transition: box-shadow 0.3s ease;
+  }
+  .tc-print::before,
+  .tc-print::after {
+    transition-duration: 0.3s;
   }
 }

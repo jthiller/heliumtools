@@ -204,17 +204,36 @@ checks it. Generate tones from OKLCH values, not hand-picked hex.
   `PARALLAX` and the drift amounts in that `transform` in sync.
 - Mouse hover (pointer type mouse) and keyboard focus (`:focus-visible`) fan
   the stack; only a mouse drifts it; touch does neither. Only `a.tool-card`
-  answers. The shadows still deepen with CSS on `:hover` / `:focus-visible`
-  (pointer `:hover` inside `@media (hover: hover)` so taps don't leave a
-  sticky shadow), and `:focus-visible` draws the outline.
+  answers. Each print's shadow still deepens with CSS on `:hover` /
+  `:focus-visible` (pointer `:hover` inside `@media (hover: hover)` so taps
+  don't leave a sticky shadow), and `:focus-visible` draws the outline. The
+  deepening is a crossfade between two shadow layers painted once: the print's
+  `::before` carries the rest shadow and its `::after` the lifted one
+  (`--print-shadow` / `--print-shadow-hover`, set on the card per theme), and
+  only their opacity changes. The photo's hairline edge is the `<img>`'s
+  outline, since both pseudo-elements carry shadows. The card's own shadow
+  doesn't change on hover.
+- **Animate only `transform` and `opacity`.** Nothing on the card or its prints
+  may transition `box-shadow`, `background`, `filter` or another painted
+  property. Each frame of such a transition repaints, and repainting a card
+  also re-renders its SVG grain, because WebKit re-rasterizes an SVG background
+  image on every paint. Measured in WebKit (Safari's engine) on a MacBook Air in
+  October 2026: transitioning the card's and the prints' shadows held the hover
+  fan at 38–42fps with about half its frames late, mostly from the card's
+  shadow; with the crossfade and a fixed card shadow it runs at 60fps. A card
+  hover shadow would need its own layer outside the card (the card clips its
+  children), and any layer there forces the cards painted over it into layers
+  too, so it was dropped.
 - Where a mouse can hover (`(hover: hover) and (pointer: fine)`), every print
-  keeps its own compositor layer (`will-change: transform`), so nothing pops as
+  and both its shadow layers keep their own compositor layers
+  (`will-change: transform` / `opacity`), so nothing is repainted or pops as
   motion starts or stops; touch screens skip the layers' memory.
 - `fan()` keeps room for the drift: a derived lift leaves the top edge
   `TOP_MARGIN` clear even at the largest drift, and the bake lints the hover
   pose with it (`hoverTop()`).
 - `prefers-reduced-motion`: the stack stays at rest (no fan, no drift;
-  `--h` is pinned to 0 in CSS too); only the shadow deepens.
+  `--h` is pinned to 0 in CSS too); only the shadow deepens (the same
+  crossfade, in 0.3s).
 
 ## Hidden and disabled cards
 
