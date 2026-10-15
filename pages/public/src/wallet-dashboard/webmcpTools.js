@@ -450,7 +450,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
       name: "open-wallet-dashboard",
       title: "Open a wallet in the dashboard",
       description:
-        "Show a wallet in the dashboard UI: balances, fleet map, rewards, IoT connectivity and traffic (per-Hotspot health, and each Hotspot's daily delivered messages per operator), Mobile activity (daily data-transfer HNT, users served, heartbeats, speedtests, bans; kept live while the page is visible), governance, and activity all load for the user to see. Use the get-* tools to read the underlying data.",
+        "Show a wallet in the dashboard UI: balances, fleet map, rewards, IoT connectivity and traffic (per-Hotspot health, and each Hotspot's daily delivered messages per operator), Mobile activity (daily data-transfer HNT, users served, heartbeats, speedtests, bans; kept live while the page is visible), governance, and activity all load for the user to see. Like any view, the wallet is added to this browser's Recent wallets on the dashboard's lookup screen. Use the get-* tools to read the underlying data.",
       inputSchema: {
         type: "object",
         properties: { address: { ...SOLANA_ADDRESS_SCHEMA, description: "Solana wallet address (base58) to display." } },
