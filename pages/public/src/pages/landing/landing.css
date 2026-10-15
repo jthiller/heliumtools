@@ -80,6 +80,8 @@
 .tc-slot {
   display: none;
 }
+/* A hairline in the section's color, softened so it groups the cards without
+   competing with the headings. */
 .tc-head::before,
 .tc-slot::before {
   content: "";
@@ -87,9 +89,9 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  border-radius: 1px;
+  height: 1px;
   background: var(--rule);
+  opacity: 0.5;
 }
 .tc-runtext {
   display: none;
