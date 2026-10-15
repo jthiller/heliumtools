@@ -461,3 +461,7 @@ WebMCP agents get `get-hnt-price` (the cached `/current` snapshot) site-wide via
   documented rather than held open inside a tool invocation.
 
 Framework: `pages/public/src/webmcp/CLAUDE.md`.
+
+## Landing preview
+
+The `/` card (`pages/public/src/pages/landing/previews/hnt-price.js`) lays the live ticker's market-price column (`LiveTicker` in `pages/public/src/hnt-price/HntPriceTool.jsx`: Live pill, "Last frame 3s ago" and the big market price, the anchor) on the lower-right corner of the `/current` `EndpointCard` (curl line, Try /current button and the real JSON response in its `TryItPanel`). `scripts/tool-previews/capture/hnt-price.mjs` loads `/hnt-price` with no wallet and no mocked responses: an init script freezes `EventSource` on one real SSE frame and pins `Date.now`, the Try /current and Try /instant buttons (plain GETs) are clicked once, and it shoots the endpoint card as a transparent dpr-2 crop and the ticker column as a dpr-3 macro from a second load. Re-capture and re-bake when the ticker's layout or labels, the endpoint card or Try-it panel, the `/current` snapshot's JSON shape, or what the script locates and clicks (the ticker `section`, the `/hnt-price/current` path label, the Try buttons) change (`pages/public/src/pages/landing/CLAUDE.md`).

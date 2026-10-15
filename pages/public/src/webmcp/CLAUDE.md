@@ -112,6 +112,9 @@ iot-onboard's `/lookup` (its inputs come from mid-BLE-flow reads).
    doesn't list.
 4. Add a `## WebMCP` section to the tool's own CLAUDE.md.
 
+A page listed on `/` also needs its landing card in the same commit (see
+`../pages/landing/CLAUDE.md`, "Keeping cards current").
+
 **Changing an existing tool** (endpoints, params, response shape, flows):
 - Update its `webmcpTools.js` in the same commit — the descriptions and
   `inputSchema` are the agent's API docs, so a stale schema is a bug, not

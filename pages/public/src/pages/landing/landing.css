@@ -1,0 +1,318 @@
+/* Landing tool cards ("paper stack"): a tinted ground, the tool's name and
+   description as real text, and a stage of framed snapshots from the real tool
+   lying at small tilts. Tone tokens arrive per card as --l-* / --d-* custom
+   properties (previews/tones.js). The table (.tc-table) is the size container:
+   everything on the stage is sized in cqw of it, so one composition scales from
+   a 340px card to a 700px one. Docs: ./CLAUDE.md. */
+
+/* Section grid: as many >= 340px columns as fit (3 at desktop, 2 from ~750px,
+   1 on phones), so no card is ever narrower than 340px unless the screen is. */
+.tc-grid {
+  container: tc-grid / inline-size;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+}
+
+.tool-card {
+  --g1: var(--l-g1);
+  --g2: var(--l-g2);
+  --glow: var(--l-glow);
+  --ink: var(--l-ink);
+  --shade: var(--l-shade);
+  /* Photo paper: white in light, graphite in dark. */
+  --paper: #fff;
+  --paper-edge: rgb(28 25 23 / 0.06);
+  --photo-edge: rgb(28 25 23 / 0.07);
+  --grain: 0.14;
+  --grain-blend: multiply;
+  --desc: 80%; /* description ink strength (tones.js checks it at >= 4.5:1) */
+  --radius: 28px;
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-decoration: none;
+  background:
+    radial-gradient(115% 70% at 58% 100%, var(--glow) 0%, transparent 62%),
+    linear-gradient(172deg, var(--g1) 18%, var(--g2) 100%);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.5s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tool-card {
+    --g1: var(--d-g1);
+    --g2: var(--d-g2);
+    --glow: var(--d-glow); /* already 70% alpha, so the field stays a field */
+    --ink: var(--d-ink);
+    --shade: var(--d-shade);
+    /* Lighter than the dark captures' own surfaces, so the mat reads as a rim. */
+    --paper: #2a2a2f;
+    --paper-edge: rgb(255 255 255 / 0.1);
+    --photo-edge: rgb(255 255 255 / 0.06);
+    --grain: 0.22;
+    --grain-blend: soft-light;
+    --desc: 94%;
+  }
+}
+
+/* Film grain: one ~500-byte SVG turbulence tile shared by every card. */
+.tool-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px;
+  opacity: var(--grain);
+  mix-blend-mode: var(--grain-blend);
+}
+
+/* The global `a` rule dims links on hover; the card answers with its stack instead. */
+a.tool-card,
+a.tool-card:hover {
+  color: var(--ink);
+  opacity: 1;
+}
+a.tool-card:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* ---- Text ---- */
+.tc-text {
+  position: relative;
+  z-index: 6;
+  padding: 26px 26px 8px;
+}
+/* A step under the section's h2 (22px / 600), so the section still leads. */
+.tc-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+/* The name's last word and the badge never part, so a long name wraps with
+   the badge still right after it. */
+.tc-nowrap {
+  white-space: nowrap;
+}
+/* Badge: the same straight paper pill right after the name on every card. */
+.tc-badge {
+  display: inline-block;
+  margin-left: 4px; /* + the word space before it */
+  vertical-align: 3px;
+  padding: 5px 9px 4px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 0.5px var(--paper-edge),
+    0 1px 1px rgb(var(--shade) / 0.14),
+    0 4px 10px -4px rgb(var(--shade) / 0.35);
+}
+.tc-desc {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) var(--desc), transparent);
+  text-wrap: pretty;
+}
+
+/* ---- Stage ----
+   The table takes whatever height the row gives the card; the stage (100 x 80
+   cqw) sits on its bottom edge, so a longer description adds tabletop above
+   the stack and never moves it. */
+.tc-table {
+  position: relative;
+  z-index: 1;
+  flex: 1 0 auto;
+  container-type: inline-size;
+}
+.tc-table::before {
+  content: "";
+  display: block;
+  padding-top: 80%; /* the stage's height: layout.js STAGE_RATIO.portrait */
+}
+.tc-stage {
+  position: absolute;
+  inset: auto 0 0;
+  height: 80cqw;
+}
+.tc-stage.is-wide {
+  display: none;
+}
+
+/* ---- Wide card ----
+   A section with a single tool gives its card the whole row. Once the row fits
+   two columns, the card turns landscape: the text in a fixed left column, the
+   wide stage (100 x 55 cqw, STAGE_RATIO.wide) filling the rest, about as tall
+   as a standard card. Narrower, it is the standard portrait card. */
+.tool-card.is-wide {
+  grid-column: 1 / -1;
+}
+@container tc-grid (min-width: 700px) {
+  .tool-card.is-wide {
+    flex-direction: row;
+  }
+  .tool-card.is-wide .tc-text {
+    flex: 0 0 clamp(280px, 30cqw, 340px);
+    padding-bottom: 26px;
+  }
+  .tool-card.is-wide .tc-table {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .tool-card.is-wide .tc-table::before {
+    padding-top: 55%;
+  }
+  .tool-card.is-wide .tc-stage.is-portrait {
+    display: none;
+  }
+  .tool-card.is-wide .tc-stage.is-wide {
+    display: block;
+    height: 55cqw;
+  }
+}
+
+/* A print: the snapshot in a thick paper frame with a hue-tinted shadow. */
+.tc-print {
+  --frame: clamp(4px, 1.7cqw, 7px);
+  --pr: clamp(12px, 4.2cqw, 17px);
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  z-index: var(--z);
+  width: var(--w);
+  margin: 0;
+  padding: var(--frame);
+  border-radius: var(--pr);
+  background: var(--paper);
+  transform: translate(-50%, -50%) rotate(var(--r));
+  box-shadow:
+    0 0 0 0.5px var(--paper-edge),
+    0 1px 1.5px rgb(var(--shade) / 0.16),
+    0 8px 18px -6px rgb(var(--shade) / 0.3),
+    0 26px 44px -18px rgb(var(--shade) / 0.48);
+  transition:
+    transform 0.6s cubic-bezier(0.2, 0.85, 0.25, 1.06),
+    box-shadow 0.6s ease;
+}
+.tc-print::after {
+  content: "";
+  position: absolute;
+  inset: var(--frame);
+  border-radius: calc(var(--pr) - var(--frame));
+  box-shadow: inset 0 0 0 1px var(--photo-edge);
+  pointer-events: none;
+}
+.tc-print img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: calc(var(--pr) - var(--frame));
+}
+
+/* ---- Hover / focus ----
+   Only a link card answers (the disabled card is a plain <div>). Pointer hover
+   is limited to devices that can hover, so a tap on a phone doesn't leave a
+   sticky fanned stack behind; keyboard focus works everywhere. */
+.tool-card {
+  --print-shadow-hover:
+    0 0 0 0.5px var(--paper-edge),
+    0 2px 3px rgb(var(--shade) / 0.14),
+    0 14px 26px -8px rgb(var(--shade) / 0.32),
+    0 36px 60px -22px rgb(var(--shade) / 0.52);
+}
+a.tool-card:focus-visible {
+  box-shadow: var(--shadow-card-lg);
+}
+a.tool-card:focus-visible .tc-print {
+  transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--fr)) scale(var(--fs));
+  box-shadow: var(--print-shadow-hover);
+}
+@media (hover: hover) {
+  a.tool-card:hover {
+    box-shadow: var(--shadow-card-lg);
+  }
+  a.tool-card:hover .tc-print {
+    transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--fr)) scale(var(--fs));
+    box-shadow: var(--print-shadow-hover);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .tool-card {
+    --print-shadow-hover:
+      0 0 0 1px var(--paper-edge),
+      0 2px 3px rgb(var(--shade) / 0.5),
+      0 16px 30px -8px rgb(var(--shade) / 0.6),
+      0 40px 64px -20px rgb(var(--shade) / 0.75);
+  }
+  .tc-print {
+    box-shadow:
+      0 0 0 1px var(--paper-edge),
+      0 1px 2px rgb(var(--shade) / 0.5),
+      0 10px 22px -6px rgb(var(--shade) / 0.55),
+      0 28px 48px -16px rgb(var(--shade) / 0.7);
+  }
+  .tc-badge {
+    box-shadow:
+      0 0 0 1px var(--paper-edge),
+      0 4px 10px -4px rgb(var(--shade) / 0.6);
+  }
+}
+
+/* Coming soon: not a link, drained of color. Only the (large, bold) name is
+   dimmed; the description keeps full contrast. */
+.tool-card.is-disabled {
+  cursor: default;
+}
+.tool-card.is-disabled .tc-name {
+  opacity: 0.72;
+}
+.tool-card.is-disabled .tc-print img {
+  filter: saturate(0.2);
+}
+
+@media (max-width: 639px) {
+  .tool-card {
+    --radius: 24px;
+  }
+  .tc-text {
+    padding: 22px 22px 6px;
+  }
+  .tc-name {
+    font-size: 19px;
+  }
+}
+
+/* Reduced motion: the stack stays at rest; only the shadow deepens. */
+@media (prefers-reduced-motion: reduce) {
+  .tc-print {
+    transition: box-shadow 0.3s ease;
+  }
+  a.tool-card:focus-visible .tc-print {
+    transform: translate(-50%, -50%) rotate(var(--r));
+  }
+}
+@media (prefers-reduced-motion: reduce) and (hover: hover) {
+  a.tool-card:hover .tc-print {
+    transform: translate(-50%, -50%) rotate(var(--r));
+  }
+}
