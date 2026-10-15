@@ -94,7 +94,7 @@ and both oui-notifier entry pages register them locally.
 
 Pages with deliberately no page tools: `/` (landing), `/oui-notifier/
 verify/` (terminal confirmation page), and `/dc-purchase` + its order
-page (tool is disabled "Coming Soon" — add tools when it ships).
+page (the tool is hidden from the landing page until it works — add tools when it ships).
 
 Intentionally not exposed: BLE flows (iot-onboard scanning/connecting —
 Web Bluetooth requires a user gesture), every wallet-signing action, and
@@ -111,6 +111,9 @@ iot-onboard's `/lookup` (its inputs come from mid-BLE-flow reads).
    names). The DEV drift warning flags registered names the catalog
    doesn't list.
 4. Add a `## WebMCP` section to the tool's own CLAUDE.md.
+
+A page listed on `/` also needs its landing card in the same commit (see
+`../pages/landing/CLAUDE.md`, "Keeping cards current").
 
 **Changing an existing tool** (endpoints, params, response shape, flows):
 - Update its `webmcpTools.js` in the same commit — the descriptions and

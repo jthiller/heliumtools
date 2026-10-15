@@ -41,6 +41,9 @@ export default defineConfig({
     },
   },
   build: {
+    // Landing tool-card prints stay real files even when tiny: inlined, both
+    // themes would ride in the JS bundle instead of the <picture> fetching one.
+    assetsInlineLimit: (filePath) => (filePath.includes("/src/assets/previews/") ? false : undefined),
     rollupOptions: {
       input: {
         main: path.resolve(root, "index.html"),
