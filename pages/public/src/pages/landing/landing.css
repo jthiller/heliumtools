@@ -2,16 +2,100 @@
    description as real text, and a stage of framed snapshots from the real tool
    lying at small tilts. Tone tokens arrive per card as --l-* / --d-* custom
    properties (previews/tones.js). The table (.tc-table) is the size container:
-   everything on the stage is sized in cqw of it, so one composition scales from
-   a 340px card to a 700px one. Docs: ./CLAUDE.md. */
+   everything on the stage is sized in cqw of it, so one composition scales with
+   the card. Docs: ./CLAUDE.md. */
 
-/* Section grid: as many >= 340px columns as fit (3 at desktop, 2 from ~750px,
-   1 on phones), so no card is ever narrower than 340px unless the screen is. */
+/* ---- Grid ----
+   One grid for every card on the page: as many >= 340px columns as fit (3
+   from a 1060px grid, ~1150px viewport; 2 from a 700px grid, ~750px viewport;
+   1 below that; never more than 3 in the 1184px column), so no card is
+   narrower than 340px unless the screen is. A single column stops at 560px.
+   Cards flow in reading order and a section may start mid-row.
+
+   Each card sits in a cell that spans two rows of the grid and shares them
+   (subgrid): a heading slot, then the card. A section's first cell holds the
+   section heading in its slot. A row's heading slot is as tall as its tallest
+   heading, so every card in the row starts at the same line; a row with no
+   heading has a zero-height slot. Rows have no gap of their own: the card's
+   margin spaces the card rows, the heading's top padding adds the section
+   break. The <section> wrapper is `display: contents`, so the cells are the
+   grid's items; it keeps its region role and name (aria-labelledby). */
 .tc-grid {
+  --tc-gap: 20px; /* between cards, both ways */
+  --tc-break: 32px; /* added above a row with a section heading */
+  /* Its width tells the cells the column count (container queries below). */
   container: tc-grid / inline-size;
   display: grid;
-  gap: 20px;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  column-gap: var(--tc-gap);
+}
+.tc-section {
+  display: contents;
+}
+.tc-cell {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  min-width: 0;
+}
+.tc-head {
+  grid-row: 1;
+  align-self: end; /* a short heading sits on its card, not on the row's top */
+  padding: var(--tc-break) 0 18px;
+}
+.tc-cell > .tool-card {
+  grid-row: 2;
+  margin-bottom: var(--tc-gap);
+}
+/* Running head: a card stranded in a row where the next section's heading
+   starts (its own heading a row up; sections.js strandedSlugs) shows its own
+   section's title in its slot, muted, so it doesn't read as part of the next
+   section. Only at the column count where it is stranded: tc-run-3 / tc-run-2
+   from Landing.jsx, switched by the grid's width at the thresholds where
+   auto-fill changes the column count (3 x 340 + 2 x 20 = 1060, 2 x 340 + 20 =
+   700). It sits on the h2's line: the heading's top padding, and a bottom
+   padding that adds the description's line (4px margin + 20px). */
+.tc-runhead {
+  display: none;
+  grid-row: 1;
+  align-self: end;
+  margin: 0;
+  padding: var(--tc-break) 0 calc(18px + 24px);
+}
+@container tc-grid (width >= 1060px) {
+  .tc-run-3 {
+    display: block;
+  }
+}
+@container tc-grid (700px <= width < 1060px) {
+  .tc-run-2 {
+    display: block;
+  }
+}
+/* One column: the card stops at 560px (about the lede's measure),
+   left-aligned under it, instead of a ~650px billboard between 640 and 750px.
+   Phones are narrower than the cap. */
+@container tc-grid (width < 700px) {
+  .tc-cell {
+    max-width: 560px;
+  }
+}
+/* Without subgrid, each cell lays out on its own: headings don't line up
+   across a row, but every card still sits under its heading. */
+@supports not (grid-template-rows: subgrid) {
+  .tc-cell {
+    display: flex;
+    flex-direction: column;
+  }
+  .tc-cell > .tool-card {
+    flex: 1 0 auto;
+  }
+}
+@media (max-width: 639px) {
+  .tc-grid {
+    --tc-gap: 16px;
+    --tc-break: 24px;
+  }
 }
 
 .tool-card {
@@ -147,47 +231,12 @@ a.tool-card:focus-visible {
 .tc-table::before {
   content: "";
   display: block;
-  padding-top: 80%; /* the stage's height: layout.js STAGE_RATIO.portrait */
+  padding-top: 80%; /* the stage's height: layout.js STAGE_RATIO */
 }
 .tc-stage {
   position: absolute;
   inset: auto 0 0;
   height: 80cqw;
-}
-.tc-stage.is-wide {
-  display: none;
-}
-
-/* ---- Wide card ----
-   A section with a single tool gives its card the whole row. Once the row fits
-   two columns, the card turns landscape: the text in a fixed left column, the
-   wide stage (100 x 55 cqw, STAGE_RATIO.wide) filling the rest, about as tall
-   as a standard card. Narrower, it is the standard portrait card. */
-.tool-card.is-wide {
-  grid-column: 1 / -1;
-}
-@container tc-grid (min-width: 700px) {
-  .tool-card.is-wide {
-    flex-direction: row;
-  }
-  .tool-card.is-wide .tc-text {
-    flex: 0 0 clamp(280px, 30cqw, 340px);
-    padding-bottom: 26px;
-  }
-  .tool-card.is-wide .tc-table {
-    flex: 1 1 0;
-    min-width: 0;
-  }
-  .tool-card.is-wide .tc-table::before {
-    padding-top: 55%;
-  }
-  .tool-card.is-wide .tc-stage.is-portrait {
-    display: none;
-  }
-  .tool-card.is-wide .tc-stage.is-wide {
-    display: block;
-    height: 55cqw;
-  }
 }
 
 /* A print: the snapshot in a thick paper frame with a hue-tinted shadow. */

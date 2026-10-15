@@ -12,16 +12,19 @@ October 2026 and set these rules; don't revert them without asking:
   every card. Recurring elements stay in one place card to card.
 - No meta labels on the page (direction names, counts, designer notes).
 - Dark grounds are clearly colored mid-tone fields, not near-black tints.
+- The page opens on a compact header on the page background (no shader or
+  image band), and the sections flow together through one card grid (below).
 
 | File | Role |
 |---|---|
-| `../Landing.jsx` | The `sections` array (section → `tools`, each with `slug`, name, description, href, badge, `disabled`). Renders `ToolCard`. |
-| `previews/<slug>.js` | One tool's composition: `tone` + `prints` (+ `wide`). Schema in `previews/index.js`. |
+| `sections.js` | `SECTIONS`, the tool list as plain data (section `id`, title, description → `tools`, each with `slug`, name, description, href, badge, `disabled`). Its order is the card order. Also `strandedSlugs(cols)`, the cards that get a running head. Read by the page and by the bake's palette check. |
+| `../Landing.jsx` | The page: the compact header, the card grid, `ToolCard`. |
+| `previews/<slug>.js` | One tool's composition: `tone` + `prints`. Schema in `previews/index.js`. |
 | `previews/index.js` | slug → config registry, and the schema/composition rules. |
-| `previews/tones.js` | The ground palette (OKLCH-derived) and `DESC_INK`. |
+| `previews/tones.js` | The ground palette (OKLCH-derived, each tone with its `hue`, `null` for the neutral stone) and `DESC_INK`. |
 | `previews/layout.js` | Stage geometry: `STAGE_RATIO`, `TOP_MARGIN`, `fan()` (hover pose), `topEdge()`. Shared with the bake lint. |
-| `ToolPreview.jsx` | Renders the stage(s) and prints as `<figure><picture>`. |
-| `landing.css` | Card, grid, wide variant, frames, hover, dark mode, reduced motion. |
+| `ToolPreview.jsx` | Renders the stage and prints as `<figure><picture>`. |
+| `landing.css` | Grid, card, frames, hover, dark mode, reduced motion. |
 | `../../assets/previews/<slug>/<id>-<light\|dark>.webp` | Baked prints (committed; Vite fingerprints them). |
 | `scripts/tool-previews/` | The capture → bake → shoot kit. Its README covers the workflow. |
 
@@ -41,30 +44,80 @@ October 2026 and set these rules; don't revert them without asking:
   edge keeps `TOP_MARGIN` (3% of the stage) at rest and on hover.
 - No meta labels on the page (direction names, counts, notes).
 
-## Grid and the wide card
+## Page header and grid
 
-`.tc-grid` is `repeat(auto-fill, minmax(min(100%, 340px), 1fr))`: three columns
-at desktop (381px cards), two from ~750px, one on phones. A card is never
-narrower than 340px unless the screen is.
+Under the site `<Header />`, on the page background: a mono uppercase eyebrow,
+the h1 (`font-display`, line height 1.05 at every width: 52px from 1024px,
+48px from 640px, fluid 30–36px on phones; `max-w-[16ch]`, so it breaks "Keep
+Helium / running smoothly."; the `&nbsp;` keeps the last two words together.
+Use arbitrary sizes such as `sm:text-[48px]`: Tailwind's named sizes like
+`text-5xl` also set a line height and would override `leading-[1.05]`) and
+the lede (16px, 18px from 640px, secondary ink). Theme tokens only, so it
+follows light and dark.
 
-A section with a single tool (Wallet, Brand) gives its card the whole row
-(`is-wide`, when its config has `wide` prints). Once the section's grid is
->= 700px wide (`@container tc-grid`), the card turns landscape: the text in a
-left column (`clamp(280px, 30cqw, 340px)`) and a 100 × 55 cqw stage filling the
-rest, about as tall as a standard card. Narrower, it shows the portrait stage.
-Both stages are rendered; the hidden one's lazy images never load. A wide print
-with no `src` reuses the portrait print of that id (same file), so only the
-wide-only prints cost extra bytes, and only on wide screens.
+All the cards flow through one grid, `.tc-grid`, in `sections.js` order:
+`repeat(auto-fill, minmax(min(100%, 340px), 1fr))`. That is three columns from
+a 1060px grid (a ~1150px viewport; 381px cards at the full 1184px column, never
+more than three), two from a 700px grid (~750px viewport), one below. A card is
+never narrower than 340px unless the screen is. A single column stops at 560px
+(about the lede's measure), left-aligned, so the 640–750px range gets a tidy
+column rather than ~650px billboard cards. A section does not start a new row:
+it starts wherever its first card lands, often mid-row, so cards of different
+sections share rows (the hue families carry the grouping).
+
+Each card sits in a `.tc-cell` that spans two grid rows and shares them
+(`grid-template-rows: subgrid`): a heading slot, then the card. A section's
+first cell puts the section heading (h2 + description) in its slot, 18px above
+the card. The heading row takes the tallest heading in that row, so every card
+in a row starts on the same line; a row with no heading has a zero-height
+slot. The grid has no row gap: the card's margin (20px, 16px on phones) spaces
+card rows and the heading's top padding (32px, 24px on phones) adds the
+section break; `<main>`'s bottom padding is trimmed by the same margin so the
+last row doesn't add space above the footer. Without subgrid support each
+cell lays out on its own (headings don't line up across a row; nothing
+breaks).
+
+**Running heads.** When a section wraps into a new row and the next section
+starts in that row, the outgoing section's card in that row would sit under
+an empty slot beside the next section's heading and read as part of it. Such
+a "stranded" card gets a running head in its slot: its own section's title in
+the h2's type and tertiary ink, no description, `aria-hidden` (the region
+already has its name), on the same baseline as the real h2 beside it.
+Positions are fixed per column count, so `strandedSlugs(cols)` in
+`sections.js` works them out from the order, Landing.jsx marks each cell
+`tc-run-3` and/or `tc-run-2`, and `landing.css` shows them by the grid's width
+(a named size container, `tc-grid`, at the same 1060px / 700px thresholds as
+the column count); one column never shows one. Today: Buy Data Credits,
+Hotspot Map and L1 Migration at 3 columns, L1 Migration at 2. The bake lists
+them. No section order avoids stranding at both 3 and 2 columns for these
+section sizes, so don't reorder to dodge it.
+
+Semantics: each section is a `<section aria-labelledby aria-describedby>`
+region named by its h2 and described by the description under it, with
+`display: contents` so its cells are the grid's items (current browsers keep
+a `display: contents` element's role and name). DOM order is reading order: a
+section's heading, then its cards.
+
+There is no wide or landscape card: every card, a section's only tool
+included, is the same portrait card.
 
 ## Palette
 
 Each section owns a contiguous OKLCH hue arc no other section uses; each tool
-steps it. Neighbours (side by side, above/below, or next in a single column)
-differ by >= 30° of hue at 3, 2 and 1 columns, including across a section
-heading (the last card of one section and the first card of the next). The Hotspot section has six
-tools and four hues; IoT Setup/Reward Claimer and Mobile WiFi/Hotspot Map share
-a hue at two shade steps because those pairs never touch. **Reordering tools
-in `Landing.jsx` can break the neighbour rule**; re-check it.
+steps it. Neighbours (side by side, one above the other, or next in a single
+column) differ by >= 30° of hue at 3, 2 and 1 columns. Since every card flows
+through one grid, that includes cards of different sections that share a row
+or sit above one another. Each tone carries the OKLCH `hue` it was generated
+at, and **the bake checks every adjacency at 3, 2 and 1 columns** on the
+`sections.js` order (and that each hued ground measures its declared hue); it
+exits 1 and names the pair on a violation. The Hotspot section has six tools
+and four hues; IoT Setup/Reward Claimer and Mobile WiFi/Hotspot Map share a hue
+at two shade steps because those pairs never touch. The disabled stone is
+neutral (`hue: null`, chroma under .012): it has no hue to see, so it is
+exempt from the hue step and stands apart from any neighbour by being
+colorless. The bake holds a neutral to that (every ground stop under chroma
+.02) and fails if two neutrals ever touch. Adding, removing or reordering
+tools in `sections.js` moves every later card; run the bake.
 
 Light grounds are pastels with same-hue dark ink. Dark grounds are clearly
 colored mid-dark fields (L .45–.54, C .10–.15), not near-blacks: warm darks stay
@@ -78,9 +131,10 @@ checks it. Generate tones from OKLCH values, not hand-picked hex.
 - The card `<a>` is named by its `<h3>` (`aria-labelledby`, name + badge) and
   described by the description (`aria-describedby`). The preview is
   `aria-hidden`; every `<img>` has `alt=""`, width/height, `decoding="async"`,
-  and `loading="lazy"` except the first section's card (`eager`: in the first
-  viewport; only prints both layouts share go eager, the top one with
-  `fetchpriority="high"`).
+  and `loading="lazy"` except the first row's cards at the widest layout (the
+  first three in flow order, `eager`; in the first viewport at 3 columns).
+  Only the page's first card's top print gets `fetchpriority="high"`, since
+  the other two sit below the fold on phones.
 - `<picture>` with a `(prefers-color-scheme: dark)` `<source>`: Tailwind's
   `darkMode` is `media`, so a visitor downloads one theme.
 - Hover/focus fans the stack (`fan()` in `layout.js`): the top print straightens,
@@ -91,13 +145,13 @@ checks it. Generate tones from OKLCH values, not hand-picked hex.
 
 ## The disabled card
 
-Buy Data Credits is `disabled: true` in `Landing.jsx`: a plain `<div>`, not a
+Buy Data Credits is `disabled: true` in `sections.js`: a plain `<div>`, not a
 link and not focusable. Its prints are desaturated (`saturate(0.2)`, the only
 recolor allowed) on the neutral stone ground, and only its name is dimmed
 (the description keeps full contrast). Enabling the tool means removing
 `disabled` (and the "Coming Soon" badge); the card then fans like any other.
 Stone marks it disabled, so also give it a hued tone that keeps the palette
-rules below (ask the owner which hue), and re-capture if its UI changed.
+rules (ask the owner which hue), and re-capture if its UI changed.
 
 ## Assets and budget
 
@@ -118,13 +172,12 @@ captured; that list is what decides whether a change touches the card. Commands
 run from `scripts/tool-previews/` with the frontend up (kit README).
 
 **Adding a tool page** (all in the same commit):
-1. Add the tool to `sections` in `Landing.jsx` with a `slug`, and add
-   `previews/<slug>.js` with the next tone step of its section (re-check the
-   neighbour rule in `tones.js` at 3, 2 and 1 columns). Register it in
+1. Add the tool to `SECTIONS` in `sections.js` with a `slug`, and add
+   `previews/<slug>.js` with the next tone step of its section. Register it in
    `previews/index.js`. A new section gets its own family in `tones.js` on a
-   hue arc no other section uses. A section's only tool gets the full-row card,
-   so its config also needs a `wide` set; a tool joining Wallet or Brand turns
-   that section's card back to portrait (its `wide` set goes unused).
+   hue arc no other section uses (and an `id` in `sections.js`). A new card
+   shifts every card after it in the grid, so the bake's neighbour check may
+   flag pairs elsewhere; fix them with tone steps generated from OKLCH.
 2. Write `scripts/tool-previews/capture/<slug>.mjs` (copy a similar tool's
    script; follow the capture rules below) and run it.
 3. Compose `prints`, then `node bake.mjs <slug>` and
@@ -157,13 +210,14 @@ same way.
 **Renaming a tool's slug or route**: rename its `previews/<slug>.js`, its
 `src/assets/previews/<slug>/` folder, its capture script and capture folder
 together (the script names its slug, route and default output folder inside),
-and update `previews/index.js`, `Landing.jsx` and the paths in the tool's
+and update `previews/index.js`, `sections.js` and the paths in the tool's
 `## Landing preview` section. **Removing a tool**: delete those same files and
-its registry entry, then re-check the neighbour rule for the cards that close
-the gap.
+its registry entry, then run the bake: the cards after the gap move, and its
+neighbour check covers them.
 
-**Changing `Landing.jsx` order or sections**: re-check the neighbour rule; the
-tone steps are assigned by position in a section.
+**Changing `sections.js` order or sections**: run the bake for its neighbour
+check (the tone steps are assigned by position in a section) and look at the
+running heads it lists at 3 and 2 columns; the page places them by itself.
 
 ## Capture rules
 

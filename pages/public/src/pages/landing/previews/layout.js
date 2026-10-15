@@ -7,9 +7,9 @@
 // width. A stage is 100 wide and 100 * ratio tall in those units.
 
 // Stage height / width (landing.css: .tc-table::before padding and .tc-stage height).
-export const STAGE_RATIO = { portrait: 0.8, wide: 0.55 };
-// % of the stage height a print's top edge keeps clear of the card text (portrait)
-// or the card's top edge (wide), at rest and on hover.
+export const STAGE_RATIO = 0.8;
+// % of the stage height a print's top edge keeps clear of the card text, at rest
+// and on hover.
 export const TOP_MARGIN = 3;
 // Frame thickness, % of the stage width (landing.css clamp(4px, 1.7cqw, 7px) on a
 // ~380px card; on wider stages the clamp makes it thinner, so this is conservative).

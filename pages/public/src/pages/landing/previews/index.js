@@ -1,13 +1,13 @@
 // Landing tool-card previews: slug -> config. One file per tool, named by the
-// tool's slug in Landing.jsx. Every tool on the landing page needs an entry
+// tool's slug in ../sections.js. Every tool on the landing page needs an entry
 // (a missing one renders an empty stone card and warns in dev). Docs, a11y and
 // hover contract: ../CLAUDE.md.
 //
 // Config shape (default export of each <slug>.js):
 //   tone    the card ground, one step of a section family from ./tones.js
-//           ({ light, dark } x { g1, g2, glow, ink, shade })
+//           ({ hue, light, dark }; light/dark x { g1, g2, glow, ink, shade })
 //   prints  0-3 framed snapshots cropped from REAL captures, back to front, on
-//           the portrait stage (100 x 80 cqw, anchored to the card bottom):
+//           the stage (100 x 80 cqw, anchored to the card bottom):
 //     id    file stem of the baked asset:
 //           src/assets/previews/<slug>/<id>-<light|dark>.webp
 //     src   { file, rect: { x, y, w, h }, dpr? }: the capture in
@@ -23,20 +23,14 @@
 //     fx, fy, fr, fs  optional hover overrides (cqw, cqw, deg, scale);
 //           derived from x/y/r by ./layout.js fan() when omitted
 //     q     optional WebP quality (default 78)
-//   wide    optional, only for the single tool of a section: prints for the
-//           landscape stage (100 x 55 cqw, right of a text column) the card
-//           uses once its full-row width allows. Same fields; a wide print with
-//           no `src` reuses the portrait print of that `id` (same baked file,
-//           placed anew), so size its `out` for the larger of the two. Wide
-//           prints may bleed right or bottom, never left into the text; their
-//           top edge keeps TOP_MARGIN like the portrait ones (the bake lints it).
 //
 // Composition rules: one anchor per card (a number, a chart shape or a map
 // swarm) whose text renders >= 14 CSS px on a 358px phone card; 2 big prints
 // beat 3 small ones for dense UIs; tell form-like tools as strips. Nothing is
 // drawn or recolored — crop, scale, tilt and layer only. Bake with
 // `node scripts/tool-previews/bake.mjs <slug>`; it lints the keep-out margin
-// (layout.js) at rest and on hover, the byte budget and the tone contrast.
+// (layout.js) at rest and on hover, the byte budget, the tone contrast and the
+// palette's neighbour rule (on the card order in ../sections.js).
 import walletDashboard from "./wallet-dashboard.js";
 import ouiNotifier from "./oui-notifier.js";
 import dcMint from "./dc-mint.js";

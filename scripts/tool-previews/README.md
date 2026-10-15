@@ -10,11 +10,12 @@ Each card on `/` shows a small tabletop of framed snapshots of the real tool. Th
 
 | Where | What |
 |---|---|
-| `pages/public/src/pages/landing/CLAUDE.md` | How the cards work: the owner's rules, anatomy, wide variant, palette rules, a11y and hover contract, the checklists for adding, changing, renaming or removing a tool, and the capture rules. Read it first. |
-| `pages/public/src/pages/landing/previews/<slug>.js` | A tool's composition: its ground tone plus the prints (crop rect, size, position, tilt), and for a section's only tool, a `wide` landscape set. The schema and composition rules are in `previews/index.js`. |
-| `pages/public/src/pages/landing/previews/tones.js` | The ground palette. Each landing section owns one hue arc, each tool steps it, and neighbours differ by >= 30° at every grid width. |
+| `pages/public/src/pages/landing/CLAUDE.md` | How the cards work: the owner's rules, anatomy, the page header and shared grid, palette rules, a11y and hover contract, the checklists for adding, changing, renaming or removing a tool, and the capture rules. Read it first. |
+| `pages/public/src/pages/landing/sections.js` | The tool list as plain data, in card order, and `strandedSlugs(cols)` (which cards get a running head). The page renders it; the bake checks the palette against it. |
+| `pages/public/src/pages/landing/previews/<slug>.js` | A tool's composition: its ground tone plus the prints (crop rect, size, position, tilt). The schema and composition rules are in `previews/index.js`. |
+| `pages/public/src/pages/landing/previews/tones.js` | The ground palette. Each landing section owns one hue arc, each tool steps it, and neighbours differ by >= 30° at every grid width. Each tone declares its OKLCH `hue` (`null` for a neutral, such as the disabled stone). |
 | `pages/public/src/pages/landing/previews/layout.js` | Stage geometry shared by the page and the bake: the hover fan and the keep-out check. |
-| `pages/public/src/pages/landing/ToolPreview.jsx`, `landing.css` | Renders the stage(s), frames, hover fan and both themes. |
+| `pages/public/src/pages/landing/ToolPreview.jsx`, `landing.css` | Renders the stage, frames, hover fan and both themes, and the page's card grid. |
 | `pages/public/src/assets/previews/<slug>/<id>-<light\|dark>.webp` | Baked prints. These are committed and fingerprinted by Vite. |
 | `scripts/tool-previews/captures/<slug>/{light,dark}/*.png` + `manifest.json` | Source captures. They are git-ignored, local only. Each `manifest.json` lists every shot with its `cssWidth` x `cssHeight`, which is how the bake derives the dpr. |
 | `scripts/tool-previews/capture/<slug>.mjs` | One capture script per tool. It re-shoots that tool's source captures and writes its `manifest.json`. See [Capture](#capture). |
@@ -76,14 +77,14 @@ node bake.mjs                 # every tool (same as: node bake.mjs all)
 node bake.mjs dc-mint brand   # just these
 ```
 
-For every print in a tool's config (portrait `prints`, plus `wide` prints that have their own `src`), the bake:
+For every print in a tool's config, the bake:
 
 1. crops `captures/<slug>/<theme>/<file>` by the print's rect, given in CSS px of the capture,
 2. resizes the crop to `out` px wide (it never upscales),
 3. writes `<id>-<theme>.webp` at quality 78, or the print's own `q`,
 4. deletes files in that tool's folder that its config no longer names. A print whose capture is missing keeps its committed file.
 
-It prints each file's bytes, the totals per theme, and how large the capture shows on a desktop (381 px) and a phone (358 px) card, and on the wide card's 844 px landscape stage. A source glyph of N px shows at N × that scale; the `px` figure is the baked pixels per displayed pixel (aim for ~2).
+It prints each file's bytes, the totals per theme, and how large the capture shows on a desktop (381 px) and a phone (358 px) card. A source glyph of N px shows at N × that scale; the `px` figure is the baked pixels per displayed pixel (aim for ~2).
 
 It warns, and exits 1, when:
 
@@ -93,7 +94,11 @@ It warns, and exits 1, when:
 - a print's `out` is wider than its crop (it is kept at the crop width),
 - a capture has no entry in its `manifest.json`, so its dpr is unknown (it is baked at dpr 2),
 - a print's top edge comes within 3% of the stage top (into the card text), at rest or in its hover pose. It measures the tilted, scaled outline over the part on the card only (what bleeds off a side can't reach the text), with the same `layout.js` code the page uses,
-- a tone's description ink is under 4.5:1 on either gradient stop.
+- a tone's description ink is under 4.5:1 on either gradient stop,
+- a hued tone's ground stops don't measure within 3° of its declared `hue`, or a neutral's (`hue: null`) have chroma of .02 or more,
+- two cards that touch differ by less than 30° of `hue`. Every card flows through one grid in `sections.js` order, so the bake walks that order at 3, 2 and 1 columns (side by side, one above the other) and names the pair. It reports the closest pair at each width. A neutral beside a hued card passes (it differs by chroma); two neutrals touching fail.
+
+The tone and palette checks run on every bake, whichever tools it bakes. The bake also lists the cards that get a running head at 3, 2 and 1 columns (see "Page header and grid" in the landing `CLAUDE.md`).
 
 ## Shoot
 
@@ -117,6 +122,6 @@ Output goes to `out/<slug>-<theme>-<viewport>[-hover].png` and `out/page-<theme>
    - Tell a form-like tool as strips, such as the quote or the address pair, not the whole form.
    - Give each tool its own composition (poster + card, triptych, hero number over sheets, crossing strips) inside the fixed card anatomy.
 3. **Check.** Run `node bake.mjs <slug>` and then `node shoot.mjs <slug> --both --hover`. Look at the light, dark, phone and hover shots.
-4. **New tool.** Give it a `slug` in `pages/public/src/pages/Landing.jsx`. Add `previews/<slug>.js` with the next tone step of its section (check the >= 30° neighbour rule in `tones.js` at 3, 2 and 1 columns), and register it in `previews/index.js`. A section with one tool gets the full-row card: give its config a `wide` set too. Add a `## Landing preview` section to the tool's `CLAUDE.md` naming what the prints show, the capture script, and the state, wallet and mocks it uses; that list is what tells the next change whether it touches the card. The full checklist, including renames and removals, is in `pages/public/src/pages/landing/CLAUDE.md` under "Keeping cards current".
+4. **New tool.** Give it a `slug` in `pages/public/src/pages/landing/sections.js`. Add `previews/<slug>.js` with the next tone step of its section, and register it in `previews/index.js`. The bake's palette check then covers every card the new one shifts. Add a `## Landing preview` section to the tool's `CLAUDE.md` naming what the prints show, the capture script, and the state, wallet and mocks it uses; that list is what tells the next change whether it touches the card. The full checklist, including renames and removals, is in `pages/public/src/pages/landing/CLAUDE.md` under "Keeping cards current".
 
 Don't hand-edit `src/assets/previews/`; change the config and re-bake.

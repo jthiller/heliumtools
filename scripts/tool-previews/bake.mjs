@@ -3,8 +3,7 @@
 //   node bake.mjs [slug...|all]  (default, or all: every tool with a preview config)
 //
 // Reads pages/public/src/pages/landing/previews/<slug>.js (default export), and
-// for every print (portrait `prints` and, for a wide card, `wide` prints with
-// their own `src`) and theme crops captures/<slug>/<theme>/<file> by the print's
+// for every print and theme crops captures/<slug>/<theme>/<file> by the print's
 // rect (CSS px of the capture, scaled by the capture's dpr), resizes it to the
 // print's `out` width and writes
 // pages/public/src/assets/previews/<slug>/<id>-<theme>.webp.
@@ -17,7 +16,13 @@
 // Also checks, and exits 1 on: the byte budgets, a print's top edge (at rest and
 // on hover) reaching into the card text, a rect running past its capture, an
 // `out` wider than its crop, a capture missing from its manifest (unknown dpr),
-// and tone contrast (description ink >= 4.5:1 on both ground stops).
+// tone contrast (description ink >= 4.5:1 on both ground stops), a tone whose
+// declared `hue` its grounds don't measure (or a neutral, `hue: null`, whose
+// grounds have chroma), and the palette's neighbour rule (>= 30° of hue between
+// cards that touch at 3, 2 and 1 columns, in the card order of
+// landing/sections.js; a neutral passes beside a hued card, two neutrals may
+// not touch). The tone and palette checks run on every bake, which also lists
+// the cards that get a running head at each width.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -25,20 +30,23 @@ import sharp from "sharp";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../..");
-const CONFIG_DIR = path.join(REPO, "pages/public/src/pages/landing/previews");
+const LANDING_DIR = path.join(REPO, "pages/public/src/pages/landing");
+const CONFIG_DIR = path.join(LANDING_DIR, "previews");
 const ASSET_DIR = path.join(REPO, "pages/public/src/assets/previews");
 const CAPTURES = path.join(HERE, "captures");
 const THEMES = ["light", "dark"];
 const QUALITY = 78;
 const PRINT_BUDGET = 60 * 1024; // any single print
 const THEME_BUDGET = 500 * 1024; // all tools, one theme (a visitor downloads one)
-// Stage widths the composition is reported at: a desktop 3-column card, a 390px
-// phone card, and the wide card's landscape stage at desktop.
-const STAGE_WIDTHS = { portrait: { desktop: 381, phone: 358 }, wide: { desktop: 844 } };
+// Stage widths the composition is reported at: a desktop 3-column card and a
+// 390px phone card.
+const STAGE_WIDTHS = { desktop: 381, phone: 358 };
 const frameAt = (stageW) => Math.min(7, Math.max(4, stageW * 0.017));
 
 const { fan, topEdge, STAGE_RATIO, TOP_MARGIN } = await import(pathToFileURL(path.join(CONFIG_DIR, "layout.js")).href);
 const { TONES, DESC_INK } = await import(pathToFileURL(path.join(CONFIG_DIR, "tones.js")).href);
+const { PREVIEWS } = await import(pathToFileURL(path.join(CONFIG_DIR, "index.js")).href);
+const { SECTIONS, strandedSlugs } = await import(pathToFileURL(path.join(LANDING_DIR, "sections.js")).href);
 
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const NON_TOOL = new Set(["index.js", "tones.js", "layout.js"]);
@@ -54,17 +62,6 @@ function manifestShot(slug, theme, file) {
   return manifests.get(slug).shots.find((s) => s.file === `${theme}/${file}`);
 }
 
-// Every layout's prints, resolved: a wide print without `src` reuses the
-// portrait print of the same id (and its baked file).
-function layouts(cfg) {
-  const out = { portrait: cfg.prints };
-  if (cfg.wide) {
-    const byId = new Map(cfg.prints.map((p) => [p.id, p]));
-    out.wide = cfg.wide.map((p) => (p.src ? p : { ...byId.get(p.id), ...p }));
-  }
-  return out;
-}
-
 const args = process.argv.slice(2).filter((a) => a !== "all");
 const slugs = args.length ? args : allSlugs();
 const warnings = [];
@@ -78,31 +75,23 @@ for (const slug of slugs) {
   const { default: cfg } = await import(pathToFileURL(cfgPath).href);
   const outDir = path.join(ASSET_DIR, slug);
   const totals = { light: 0, dark: 0 };
-  const all = layouts(cfg);
-  // The files this config owns: one per print with its own src, per theme.
-  const toBake = [...cfg.prints, ...(cfg.wide ?? []).filter((p) => p.src)];
-  const expected = new Set(toBake.flatMap((p) => THEMES.map((t) => `${p.id}-${t}.webp`)));
-  console.log(`\n${slug}${toBake.length ? "" : "  (no prints)"}`);
+  const prints = cfg.prints;
+  // The files this config owns: one per print, per theme.
+  const expected = new Set(prints.flatMap((p) => THEMES.map((t) => `${p.id}-${t}.webp`)));
+  console.log(`\n${slug}${prints.length ? "" : "  (no prints)"}`);
 
   // Lint: every print's on-card top edge stays TOP_MARGIN below the text, at
   // rest and in its hover pose (tilt and scale included).
-  for (const [layout, prints] of Object.entries(all)) {
-    const ratio = STAGE_RATIO[layout];
-    const topZ = Math.max(...prints.map((p) => p.z));
-    for (const p of prints) {
-      if (!p?.src) {
-        warnings.push(`${slug}/${layout}: a wide print names id "${p?.id}", which no portrait print has; give it a src`);
-        continue;
-      }
-      const rest = topEdge(p, ratio);
-      const hover = topEdge(p, ratio, fan(p, p.z === topZ, ratio));
-      for (const [state, top] of [["rest", rest], ["hover", hover]]) {
-        if (top < TOP_MARGIN - 0.05) warnings.push(`${slug}/${layout}/${p.id}: ${state} top edge at ${top.toFixed(1)}% of the stage, above the ${TOP_MARGIN}% keep-out; lower y, shrink w or ease the tilt`);
-      }
+  const topZ = Math.max(...prints.map((p) => p.z));
+  for (const p of prints) {
+    const rest = topEdge(p, STAGE_RATIO);
+    const hover = topEdge(p, STAGE_RATIO, fan(p, p.z === topZ, STAGE_RATIO));
+    for (const [state, top] of [["rest", rest], ["hover", hover]]) {
+      if (top < TOP_MARGIN - 0.05) warnings.push(`${slug}/${p.id}: ${state} top edge at ${top.toFixed(1)}% of the stage, above the ${TOP_MARGIN}% keep-out; lower y, shrink w or ease the tilt`);
     }
   }
 
-  for (const p of toBake) {
+  for (const p of prints) {
     const { file, rect } = p.src;
     for (const theme of THEMES) {
       const src = path.join(CAPTURES, slug, theme, file);
@@ -137,13 +126,9 @@ for (const slug of slugs) {
       if (info.size > PRINT_BUDGET) warnings.push(`${slug}/${name}: ${kb(info.size)} is over the ${kb(PRINT_BUDGET)} per-print budget`);
       if (theme === "light") {
         // How big the capture renders: a source glyph of N px shows at N * scale.
-        const uses = Object.entries(all).flatMap(([layout, prints]) => {
-          const q = prints.find((x) => x.id === p.id);
-          if (!q) return [];
-          return Object.entries(STAGE_WIDTHS[layout]).map(([k, sw]) => {
-            const shown = (q.w / 100) * sw - 2 * frameAt(sw);
-            return `${layout === "wide" ? "wide " : ""}${k} ${(shown / rect.w).toFixed(2)}x (${(p.out / shown).toFixed(1)}x px)`;
-          });
+        const uses = Object.entries(STAGE_WIDTHS).map(([k, sw]) => {
+          const shown = (p.w / 100) * sw - 2 * frameAt(sw);
+          return `${k} ${(shown / rect.w).toFixed(2)}x (${(p.out / shown).toFixed(1)}x px)`;
         });
         console.log(`  ${p.id.padEnd(12)} ${String(info.width).padStart(4)}x${String(info.height).padEnd(4)}  shows at ${uses.join(", ")}`);
       }
@@ -161,14 +146,15 @@ for (const slug of slugs) {
     }
     if (!fs.readdirSync(outDir).length) fs.rmdirSync(outDir);
   }
-  if (toBake.length) console.log(`  total  light ${kb(totals.light)}  dark ${kb(totals.dark)}`);
+  if (prints.length) console.log(`  total  light ${kb(totals.light)}  dark ${kb(totals.dark)}`);
 }
 
 // Tone contrast: the description (ink at DESC_INK alpha over the ground) must
 // reach 4.5:1 on both gradient stops of every tone, in both themes.
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+const toLinear = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 const lum = (c) => {
-  const [r, g, b] = c.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  const [r, g, b] = c.map(toLinear);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
@@ -188,6 +174,75 @@ for (const [family, tones] of Object.entries(TONES)) {
   });
 }
 
+// Tone hue: each tone declares the OKLCH hue it was generated at (`hue`), which
+// the neighbour rule below reads, or `hue: null` for a neutral (the disabled
+// stone). Every stop of a hued ground with visible chroma (>= NEUTRAL_C) must
+// measure within 3° of its hue, so the declared hue can't drift from the
+// colors; every stop of a neutral must stay under NEUTRAL_C, so a tone can't
+// dodge the neighbour rule by being called neutral.
+const NEUTRAL_C = 0.02;
+function oklch(hex) {
+  const [r, g, b] = rgb(hex).map(toLinear);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return { c: Math.hypot(A, B), h: ((Math.atan2(B, A) * 180) / Math.PI + 360) % 360 };
+}
+const hueGap = (a, b) => {
+  const d = Math.abs(a - b) % 360;
+  return Math.min(d, 360 - d);
+};
+for (const [family, tones] of Object.entries(TONES)) {
+  tones.forEach((tone, i) => {
+    const neutral = tone.hue === null;
+    if (!neutral && typeof tone.hue !== "number") {
+      warnings.push(`tones ${family}[${i}]: \`hue\` must be a number, or null for a neutral`);
+      return;
+    }
+    for (const theme of THEMES) {
+      for (const stop of ["g1", "g2"]) {
+        const { c, h } = oklch(tone[theme][stop]);
+        if (neutral && c >= NEUTRAL_C) warnings.push(`tones ${family}[${i}] ${theme} ${stop}: declared neutral (hue null) but has chroma ${c.toFixed(3)}, at or over ${NEUTRAL_C}; give it a hue`);
+        if (!neutral && c >= NEUTRAL_C && hueGap(h, tone.hue) > 3) warnings.push(`tones ${family}[${i}] ${theme} ${stop}: measures h${h.toFixed(0)}, not its declared hue ${tone.hue}`);
+      }
+    }
+  });
+}
+
+// Palette neighbour rule. Every card flows through one grid in sections.js
+// order (landing.css .tc-grid: 3 columns from a ~1150px viewport and never
+// more, 2 from ~750px, 1 below; a section may start mid-row), so cards of
+// different sections share rows. At each column count, cards side by side and
+// cards above/below each other (at 1 column, the next card) differ by >= 30°
+// of hue. A neutral (hue null) differs from a hued card by chroma, so that pair
+// passes; two neutrals touching would be indistinguishable, so that fails.
+const MIN_HUE_STEP = 30;
+const flow = SECTIONS.flatMap((section) => section.tools.map((t) => t.slug));
+for (const slug of flow) if (!PREVIEWS[slug]) warnings.push(`${slug}: in landing/sections.js but has no preview config in previews/index.js`);
+const hueOf = (slug) => PREVIEWS[slug]?.tone?.hue;
+const closest = {};
+for (const cols of [3, 2, 1]) {
+  closest[cols] = Infinity;
+  flow.forEach((slug, i) => {
+    const touching = [];
+    if (cols > 1 && i % cols < cols - 1 && i + 1 < flow.length) touching.push([i + 1, "left of"]);
+    if (i + cols < flow.length) touching.push([i + cols, "above"]);
+    for (const [j, where] of touching) {
+      const [a, b] = [hueOf(slug), hueOf(flow[j])];
+      if (a === null && b === null) {
+        warnings.push(`palette at ${cols} column${cols > 1 ? "s" : ""}: ${slug} is ${where} ${flow[j]}, and both are neutral; give one a hue`);
+        continue;
+      }
+      if (typeof a !== "number" || typeof b !== "number") continue;
+      const gap = hueGap(a, b);
+      closest[cols] = Math.min(closest[cols], gap);
+      if (gap < MIN_HUE_STEP) warnings.push(`palette at ${cols} column${cols > 1 ? "s" : ""}: ${slug} (h${a}) is ${where} ${flow[j]} (h${b}), ${gap}° apart; neighbours need >= ${MIN_HUE_STEP}°`);
+    }
+  });
+}
+
 // Budget across every tool's committed assets (baked now or earlier).
 const sums = { light: 0, dark: 0 };
 if (fs.existsSync(ASSET_DIR)) {
@@ -202,6 +257,8 @@ if (fs.existsSync(ASSET_DIR)) {
 }
 console.log(`\nAll tools  light ${kb(sums.light)}  dark ${kb(sums.dark)}  (budget ${kb(THEME_BUDGET)} per theme)`);
 console.log(`Tones      lowest description contrast ${worst.toFixed(2)}:1`);
+console.log(`Palette    closest neighbours: ${[3, 2, 1].map((c) => `${closest[c]}° at ${c} col`).join(", ")} (need >= ${MIN_HUE_STEP}°)`);
+console.log(`Run heads  ${[3, 2, 1].map((c) => `${c} col: ${[...strandedSlugs(c)].join(", ") || "none"}`).join("; ")}`);
 for (const t of THEMES) if (sums[t] > THEME_BUDGET) warnings.push(`all tools: ${t} totals ${kb(sums[t])}, over the ${kb(THEME_BUDGET)} budget`);
 if (warnings.length) {
   console.log("\nWarnings:");

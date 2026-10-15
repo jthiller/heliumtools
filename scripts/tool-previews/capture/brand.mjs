@@ -3,8 +3,8 @@
 //   node capture/brand.mjs      (from scripts/tool-previews; frontend on BASE)
 //
 // Writes captures/brand/{light,dark}/*.png and manifest.json (OUT_DIR overrides
-// the directory). The landing card uses hero.png and detail.png, plus mark.png on its
-// wide layout (previews/brand.js).
+// the directory). The landing card uses hero.png and detail.png (previews/brand.js);
+// the other shots are spare source material.
 //
 // Static, frontend-only page: no wallet, no API. One page load; light and dark
 // from the same load via emulateMedia (Tailwind darkMode "media"; every logo

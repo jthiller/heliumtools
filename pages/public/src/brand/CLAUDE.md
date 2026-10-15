@@ -151,15 +151,13 @@ Logo family matrix (the Helium, Helium Roundel and HeliumOS cards, each with its
 colorway `Stage`s and swatch + hex labels; the capture's temporary CSS hides the family
 descriptions and file buttons), and on top lies the anchor, a dpr-3 macro of the Helium
 Roundel family's Purple column (swatch, `#5F26FC`, and its SVG and PNG `FileButton` rows
-with dimensions, byte size and copy-link icons). On the wide card (Brand has the whole
-row) the page's "The mark" card (`MarkFigure`, the purple roundel with its dashed 45°
-axis, beside the text that explains it) is a third sheet at the back.
+with dimensions, byte size and copy-link icons).
 `scripts/tool-previews/capture/brand.mjs` loads the static `/brand` page (no wallet, no
 API, no mocks, nothing clicked), waits for every logo image to decode, and shoots light
 and dark from one load via `emulateMedia`, plus a second dpr-3 load for the file rows.
 Re-capture and re-bake when a change touches the Logo family cards (`FAMILIES`,
-`COLORWAYS` or `ROWS` order and labels, the pills, `Stage`, `FileButton`), `MarkFigure`
-or the mark card's text, the hosted logo files, or the structure the script relies on (it
+`COLORWAYS` or `ROWS` order and labels, the pills, `Stage`, `FileButton`), the hosted
+logo files, or the structure the script relies on (it
 names the `main > div.space-y-12 > section` sections by position, so adding or
 reordering a top-level section shifts every crop); see
 `../pages/landing/CLAUDE.md`.

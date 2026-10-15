@@ -361,7 +361,7 @@ Entry: `index.js` (rate limit + dispatch; re-exports `runVoteSnapshots`) →
   index (entity-stable); `choiceHex(name, index, dark)` for chart strokes,
   `choiceTone` for Tailwind text/bar classes.
 - Routes `/vote`, `/vote/:proposalId`, and `/votes` in `main.jsx` —
-  **deliberately absent from `Landing.jsx`** (blind pages).
+  **deliberately absent from the landing tool list** (`pages/landing/sections.js`; blind pages).
 - `pages/public/src/lib/voteApi.js` — API client (`fetchProposals`/
   `fetchProposal`/`fetchVotes`/`fetchActivity`/`fetchHistory`/`fetchVoterHistory`).
 

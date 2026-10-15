@@ -4,7 +4,7 @@
  * `open-helium-tool` navigation targets.
  *
  * This is deliberately separate from the landing page's marketing copy
- * (`pages/Landing.jsx`): summaries here are written for agents (inputs,
+ * (`pages/landing/sections.js`): summaries here are written for agents (inputs,
  * capabilities, wallet requirements), and the catalog includes pages the
  * landing page doesn't link (the /vote pages, which are public but
  * unlisted). `tools` names the WebMCP tools each page registers once open —
