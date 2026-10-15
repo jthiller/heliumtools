@@ -5,8 +5,9 @@
 //   (from scripts/tool-previews; frontend on BASE)
 //
 // Writes captures/wallet-dashboard/{light,dark}/*.png and manifest.json (OUT_DIR
-// overrides the directory). The landing card uses hero.png and mobile-activity.png
-// (previews/wallet-dashboard.js); the other shots are spare source material.
+// overrides the directory). The landing card uses hero.png and mobile-activity.png,
+// plus fleet-map.png on its featured (two-column) stage (previews/wallet-dashboard.js);
+// the other shots are spare source material.
 //
 // BASE must serve the Mobile activity engine: the reference capture was taken from
 // https://heliumtools.org because the local dev server's node_modules lacked its deps

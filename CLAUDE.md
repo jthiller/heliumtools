@@ -78,7 +78,7 @@ or removing a tool updates or removes its card. Follow the checklists in
 | Wallet Dashboard | `worker/src/tools/wallet-dashboard/CLAUDE.md` | Read-only aggregation over other tools; Mobile activity read browser-side from Helium's public Iceberg tables |
 | OUI Notifier | `worker/src/tools/oui-notifier/CLAUDE.md` | + `README.md` (full endpoint/API reference) |
 | DC Mint | `worker/src/tools/dc-mint/CLAUDE.md` | HNT→DC burn; `DcMintModal` reused by other tools |
-| Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **disabled / Coming Soon** |
+| Buy Data Credits | `worker/src/tools/dc-purchase/CLAUDE.md` | Fiat→DC; **hidden from the landing page** (not fully working) |
 | IoT Hotspot Onboarding | `worker/src/tools/iot-onboard/CLAUDE.md` | Web Bluetooth + dewi.org onboarding proxy |
 | Mobile WiFi Onboarding | `worker/src/tools/mobile-onboard/CLAUDE.md` | Self-serve converted WiFi networks → Mobile data-only Hotspots; locally-built txns + RadSec cert proxy |
 | Update Hotspot Location | `worker/src/tools/update-location/CLAUDE.md` | Wallet-driven re-assert of `update_iot_info_v0` (location/elevation/gain) on onboarded IoT Hotspots |

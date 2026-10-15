@@ -1,6 +1,6 @@
 import Header from "../components/Header.jsx";
 import ToolPreview from "./landing/ToolPreview.jsx";
-import { SECTIONS, strandedSlugs } from "./landing/sections.js";
+import { SECTIONS, placeCards, runningHeads } from "./landing/sections.js";
 import { PREVIEWS } from "./landing/previews/index.js";
 import { TONES } from "./landing/previews/tones.js";
 import "./landing/landing.css";
@@ -32,9 +32,10 @@ function previewFor(slug) {
 
 // The whole card is the link (no separate CTA); its accessible name is the
 // <h3> (name + badge), the description is its description. The disabled
-// Coming-soon card is a plain, unfocusable block. `eager`: in the first row,
-// so its prints aren't lazy-loaded; `priority`: the page's first card, whose
-// top print is fetched at high priority.
+// Coming-soon card is a plain, unfocusable block. A featured card also carries
+// its wide print set (shown while it spans two columns). `eager`: in the first
+// row, so its prints aren't lazy-loaded; `priority`: the page's first card,
+// whose top print is fetched at high priority.
 function ToolCard({ feature, eager, priority }) {
   const preview = previewFor(feature.slug);
   const nameId = `tool-${feature.slug}-name`;
@@ -61,19 +62,26 @@ function ToolCard({ feature, eager, priority }) {
           {feature.description}
         </p>
       </div>
-      <ToolPreview slug={feature.slug} prints={preview.prints} eager={eager} priority={priority} />
+      <ToolPreview
+        slug={feature.slug}
+        prints={preview.prints}
+        featured={feature.featured ? preview.featured : undefined}
+        eager={eager}
+        priority={priority}
+      />
     </>
   );
   const common = { "data-tool": feature.slug, style: toneStyle(preview.tone) };
+  const featured = feature.featured ? " is-featured" : "";
   if (feature.disabled) {
     return (
-      <div {...common} className="tool-card is-disabled">
+      <div {...common} className={`tool-card is-disabled${featured}`}>
         {body}
       </div>
     );
   }
   return (
-    <a {...common} href={feature.href} className="tool-card" aria-labelledby={nameId} aria-describedby={descId}>
+    <a {...common} href={feature.href} className={`tool-card${featured}`} aria-labelledby={nameId} aria-describedby={descId}>
       {body}
     </a>
   );
@@ -85,30 +93,31 @@ function ToolCard({ feature, eager, priority }) {
 // shared row tracks, and the first card's cell carries the section heading in
 // its slot. DOM order is reading order: a heading, then its section's cards.
 //
-// A card left in a row where the next section's heading starts (its own
-// heading a row up) gets a running head in its slot: its section's title,
-// muted and aria-hidden, shown only at the column count where it is stranded
-// (landing.css switches tc-run-3 / tc-run-2 by the grid's width).
-const STRANDED = { 3: strandedSlugs(3), 2: strandedSlugs(2) };
-// Each card's place in the flow. The first row at the widest layout (3
-// columns) loads its prints eagerly.
-const FLOW_INDEX = new Map(SECTIONS.flatMap((section) => section.tools).map((tool, i) => [tool.slug, i]));
-const EAGER_CARDS = 3;
+// A featured card's cell spans two columns wherever the grid has two or more
+// (landing.css). A card left in a row where the next section's heading starts
+// (its own heading a row up) gets a running head in its slot: its section's
+// title, muted and aria-hidden, shown only at the column count where it is
+// stranded (landing.css switches tc-run-3 / tc-run-2 by the grid's width).
+const STRANDED = { 3: runningHeads(3), 2: runningHeads(2) };
+// The first row at the widest layout (3 columns) loads its prints eagerly; the
+// page's first card fetches its top print at high priority.
+const FIRST_ROW = new Set(placeCards(3).filter((card) => card.row === 0).map((card) => card.slug));
+const FIRST_CARD = SECTIONS[0].tools[0].slug;
 
 export default function Landing() {
   return (
     <div className="min-h-screen bg-surface">
-      <Header />
+      <Header maxWidth="max-w-6xl" />
 
-      <main className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 sm:pb-11 lg:px-12">
-        <div className="pb-2 pt-9 sm:pb-3 sm:pt-14">
-          <p className="mb-4 font-mono text-[12.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary">
+      <main className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 sm:pb-10 lg:px-12">
+        <div className="pb-2 pt-9 sm:pb-3 sm:pt-[50px]">
+          <p className="mb-3.5 font-mono text-[11.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary">
             Open-source operator tools
           </p>
-          <h1 className="max-w-[16ch] font-display text-[length:clamp(30px,9.4vw,36px)] font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[48px] lg:text-[52px]">
+          <h1 className="max-w-[16ch] font-display text-[length:clamp(30px,9.4vw,36px)] font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[43px] lg:text-[47px]">
             Keep Helium running&nbsp;smoothly.
           </h1>
-          <p className="mt-4 max-w-[56ch] text-base leading-[1.55] text-content-secondary sm:text-lg">
+          <p className="mt-3.5 max-w-[56ch] text-base leading-[1.55] text-content-secondary">
             Monitor escrow balances, claim rewards, map your Hotspot fleet, and
             migrate legacy wallets. Free, open-source, no login required.
           </p>
@@ -121,16 +130,15 @@ export default function Landing() {
             return (
               <section key={section.id} className="tc-section" aria-labelledby={headId} aria-describedby={descId}>
                 {section.tools.map((feature, i) => {
-                  const index = FLOW_INDEX.get(feature.slug);
                   const runs = [3, 2].filter((cols) => STRANDED[cols].has(feature.slug));
                   return (
-                    <div key={feature.slug} className="tc-cell">
+                    <div key={feature.slug} className={`tc-cell${feature.featured ? " is-featured" : ""}`}>
                       {i === 0 && (
                         <div className="tc-head">
-                          <h2 id={headId} className="font-display text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] text-content">
+                          <h2 id={headId} className="font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content">
                             {section.title}
                           </h2>
-                          <p id={descId} className="mt-1 text-sm text-content-tertiary">
+                          <p id={descId} className="mt-1 text-[13px] leading-[18px] text-content-tertiary">
                             {section.description}
                           </p>
                         </div>
@@ -138,12 +146,12 @@ export default function Landing() {
                       {runs.length > 0 && (
                         <p
                           aria-hidden="true"
-                          className={`tc-runhead ${runs.map((cols) => `tc-run-${cols}`).join(" ")} font-display text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary`}
+                          className={`tc-runhead ${runs.map((cols) => `tc-run-${cols}`).join(" ")} font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary`}
                         >
                           {section.title}
                         </p>
                       )}
-                      <ToolCard feature={feature} eager={index < EAGER_CARDS} priority={index === 0} />
+                      <ToolCard feature={feature} eager={FIRST_ROW.has(feature.slug)} priority={feature.slug === FIRST_CARD} />
                     </div>
                   );
                 })}

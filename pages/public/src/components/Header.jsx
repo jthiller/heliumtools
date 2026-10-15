@@ -1,7 +1,9 @@
-export default function Header({ breadcrumb }) {
+// `maxWidth`: the container width class, so the logo lines up with the page's
+// own column (the landing page's is narrower than the tool pages').
+export default function Header({ breadcrumb, maxWidth = "max-w-7xl" }) {
   return (
     <header className="border-b border-border bg-surface-raised">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6 lg:px-12">
+      <div className={`mx-auto flex ${maxWidth} items-center justify-between px-4 py-5 sm:px-6 lg:px-12`}>
         <a href="/" className="flex items-center gap-3 text-content hover:opacity-80">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-sm font-semibold text-white">
             HT

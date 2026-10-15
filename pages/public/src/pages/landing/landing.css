@@ -6,11 +6,12 @@
    the card. Docs: ./CLAUDE.md. */
 
 /* ---- Grid ----
-   One grid for every card on the page: as many >= 340px columns as fit (3
-   from a 1060px grid, ~1150px viewport; 2 from a 700px grid, ~750px viewport;
-   1 below that; never more than 3 in the 1184px column), so no card is
-   narrower than 340px unless the screen is. A single column stops at 560px.
-   Cards flow in reading order and a section may start mid-row.
+   One grid for every card on the page: as many >= 306px columns as fit (3
+   from a 954px grid, ~1050px viewport; 2 from a 630px grid, ~680px viewport;
+   1 below that; never more than 3 in the 1056px column), so no card is
+   narrower than 306px unless the screen is. A single column stops at 504px.
+   Cards flow in reading order and a section may start mid-row. A featured
+   card (sections.js `featured`) spans two columns wherever there are two.
 
    Each card sits in a cell that spans two rows of the grid and shares them
    (subgrid): a heading slot, then the card. A section's first cell holds the
@@ -21,12 +22,12 @@
    break. The <section> wrapper is `display: contents`, so the cells are the
    grid's items; it keeps its region role and name (aria-labelledby). */
 .tc-grid {
-  --tc-gap: 20px; /* between cards, both ways */
-  --tc-break: 32px; /* added above a row with a section heading */
+  --tc-gap: 18px; /* between cards, both ways */
+  --tc-break: 28px; /* added above a row with a section heading */
   /* Its width tells the cells the column count (container queries below). */
   container: tc-grid / inline-size;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 306px), 1fr));
   column-gap: var(--tc-gap);
 }
 .tc-section {
@@ -41,7 +42,7 @@
 .tc-head {
   grid-row: 1;
   align-self: end; /* a short heading sits on its card, not on the row's top */
-  padding: var(--tc-break) 0 18px;
+  padding: var(--tc-break) 0 16px;
 }
 .tc-cell > .tool-card {
   grid-row: 2;
@@ -52,32 +53,50 @@
    section's title in its slot, muted, so it doesn't read as part of the next
    section. Only at the column count where it is stranded: tc-run-3 / tc-run-2
    from Landing.jsx, switched by the grid's width at the thresholds where
-   auto-fill changes the column count (3 x 340 + 2 x 20 = 1060, 2 x 340 + 20 =
-   700). It sits on the h2's line: the heading's top padding, and a bottom
-   padding that adds the description's line (4px margin + 20px). */
+   auto-fill changes the column count (3 x 306 + 2 x 18 = 954, 2 x 306 + 18 =
+   630). It sits on the h2's line: the heading's top padding, and a bottom
+   padding that adds the description's line (4px margin + 18px). */
 .tc-runhead {
   display: none;
   grid-row: 1;
   align-self: end;
   margin: 0;
-  padding: var(--tc-break) 0 calc(18px + 24px);
+  padding: var(--tc-break) 0 calc(16px + 22px);
 }
-@container tc-grid (width >= 1060px) {
+@container tc-grid (width >= 954px) {
   .tc-run-3 {
     display: block;
   }
 }
-@container tc-grid (700px <= width < 1060px) {
+@container tc-grid (630px <= width < 954px) {
   .tc-run-2 {
     display: block;
   }
 }
-/* One column: the card stops at 560px (about the lede's measure),
-   left-aligned under it, instead of a ~650px billboard between 640 and 750px.
+/* Two or more columns: a featured card's cell spans two of them, and the card
+   shows its featured stage (about twice as wide at roughly the same height)
+   instead of the portrait one. The hidden stage's lazy images never load. */
+@container tc-grid (width >= 630px) {
+  .tc-cell.is-featured {
+    grid-column: span 2;
+  }
+  .is-featured .tc-table.is-portrait {
+    display: none;
+  }
+  .is-featured .tc-table.is-featured {
+    display: block;
+  }
+  /* A wide card keeps its description to a readable measure. */
+  .tool-card.is-featured .tc-desc {
+    max-width: 62ch;
+  }
+}
+/* One column: the card stops at 504px (about the lede's measure),
+   left-aligned under it, instead of a ~600px billboard between 640 and 680px.
    Phones are narrower than the cap. */
-@container tc-grid (width < 700px) {
+@container tc-grid (width < 630px) {
   .tc-cell {
-    max-width: 560px;
+    max-width: 504px;
   }
 }
 /* Without subgrid, each cell lays out on its own: headings don't line up
@@ -111,7 +130,7 @@
   --grain: 0.14;
   --grain-blend: multiply;
   --desc: 80%; /* description ink strength (tones.js checks it at >= 4.5:1) */
-  --radius: 28px;
+  --radius: 25px;
 
   position: relative;
   isolation: isolate;
@@ -175,12 +194,12 @@ a.tool-card:focus-visible {
 .tc-text {
   position: relative;
   z-index: 6;
-  padding: 26px 26px 8px;
+  padding: 23px 23px 7px;
 }
-/* A step under the section's h2 (22px / 600), so the section still leads. */
+/* A step under the section's h2 (20px / 600), so the section still leads. */
 .tc-name {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.015em;
@@ -193,13 +212,13 @@ a.tool-card:focus-visible {
 /* Badge: the same straight paper pill right after the name on every card. */
 .tc-badge {
   display: inline-block;
-  margin-left: 4px; /* + the word space before it */
-  vertical-align: 3px;
-  padding: 5px 9px 4px;
+  margin-left: 3.5px; /* + the word space before it */
+  vertical-align: 2.5px;
+  padding: 4.5px 8px 3.5px;
   border-radius: 999px;
   background: var(--paper);
   color: var(--ink);
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.08em;
@@ -211,8 +230,8 @@ a.tool-card:focus-visible {
     0 4px 10px -4px rgb(var(--shade) / 0.35);
 }
 .tc-desc {
-  margin: 10px 0 0;
-  font-size: 15px;
+  margin: 9px 0 0;
+  font-size: 13.5px;
   line-height: 1.5;
   color: color-mix(in srgb, var(--ink) var(--desc), transparent);
   text-wrap: pretty;
@@ -237,6 +256,17 @@ a.tool-card:focus-visible {
   position: absolute;
   inset: auto 0 0;
   height: 80cqw;
+}
+/* A featured card's wide stage (100 x 45 cqw: layout.js FEATURED_RATIO),
+   shown only while the card spans two columns (grid rules above). */
+.tc-table.is-featured {
+  display: none;
+}
+.tc-table.is-featured::before {
+  padding-top: 45%;
+}
+.tc-table.is-featured .tc-stage {
+  height: 45cqw;
 }
 
 /* A print: the snapshot in a thick paper frame with a hue-tinted shadow. */
@@ -339,6 +369,7 @@ a.tool-card:focus-visible .tc-print {
   filter: saturate(0.2);
 }
 
+/* Phones keep a slightly larger card text: the card is the screen's width. */
 @media (max-width: 639px) {
   .tool-card {
     --radius: 24px;
@@ -346,8 +377,8 @@ a.tool-card:focus-visible .tc-print {
   .tc-text {
     padding: 22px 22px 6px;
   }
-  .tc-name {
-    font-size: 19px;
+  .tc-desc {
+    font-size: 15px;
   }
 }
 

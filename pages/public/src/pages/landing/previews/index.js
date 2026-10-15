@@ -23,6 +23,11 @@
 //     fx, fy, fr, fs  optional hover overrides (cqw, cqw, deg, scale);
 //           derived from x/y/r by ./layout.js fan() when omitted
 //     q     optional WebP quality (default 78)
+//   featured  only for a tool with `featured: true` in ../sections.js: the
+//           prints for its wide stage (100 x 45 cqw, layout.js
+//           FEATURED_RATIO), shown while the card spans two grid columns. Same
+//           fields; a print without `src` reuses the portrait print with that
+//           `id` (the same baked file) and only places it anew.
 //
 // Composition rules: one anchor per card (a number, a chart shape or a map
 // swarm) whose text renders >= 14 CSS px on a 358px phone card; 2 big prints

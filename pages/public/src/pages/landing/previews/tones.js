@@ -8,8 +8,9 @@
 //
 // `hue` is the OKLCH hue a tone was generated at; `null` marks a neutral (no
 // visible hue). Every card flows through one grid in ../sections.js order (3
-// columns from a ~1150px viewport, 2 from ~750px, 1 below; a section may start
-// mid-row), so cards of different sections share rows. Neighbours (side by
+// columns from a ~1050px viewport, 2 from ~680px, 1 below; a section may start
+// mid-row; a featured card spans two columns), so cards of different sections
+// share rows. Neighbours (side by
 // side, or one above the other; at 1 column, the next card down) differ by
 // >= 30° of hue at 3, 2 and 1 columns. A neutral passes beside any hued tone
 // (it differs by chroma, not hue), but two neutrals may never touch.
@@ -61,7 +62,7 @@ const NETWORK = [
     dark: { g1: "#02617F", g2: "#027092", glow: "#0090BBB3", ink: "#F4FBFF", shade: "0 18 27" },
   },
   {
-    // neutral stone (Buy Data Credits, disabled): chroma under .012, so it has
+    // neutral stone (Buy Data Credits, hidden for now): chroma under .012, so it has
     // no hue to see and is exempt from the hue-step rule; it stands apart from
     // its neighbours by being colorless.
     hue: null,

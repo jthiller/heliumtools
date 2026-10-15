@@ -11,9 +11,9 @@ Each card on `/` shows a small tabletop of framed snapshots of the real tool. Th
 | Where | What |
 |---|---|
 | `pages/public/src/pages/landing/CLAUDE.md` | How the cards work: the owner's rules, anatomy, the page header and shared grid, palette rules, a11y and hover contract, the checklists for adding, changing, renaming or removing a tool, and the capture rules. Read it first. |
-| `pages/public/src/pages/landing/sections.js` | The tool list as plain data, in card order, and `strandedSlugs(cols)` (which cards get a running head). The page renders it; the bake checks the palette against it. |
+| `pages/public/src/pages/landing/sections.js` | The tool list as plain data, in card order (with `featured` and `hidden` flags), plus `placeCards(cols)` (where every card lands) and `runningHeads(cols)` (which cards get a running head). The page renders it; the bake checks the palette and the layout against it. |
 | `pages/public/src/pages/landing/previews/<slug>.js` | A tool's composition: its ground tone plus the prints (crop rect, size, position, tilt). The schema and composition rules are in `previews/index.js`. |
-| `pages/public/src/pages/landing/previews/tones.js` | The ground palette. Each landing section owns one hue arc, each tool steps it, and neighbours differ by >= 30° at every grid width. Each tone declares its OKLCH `hue` (`null` for a neutral, such as the disabled stone). |
+| `pages/public/src/pages/landing/previews/tones.js` | The ground palette. Each landing section owns one hue arc, each tool steps it, and neighbours differ by >= 30° at every grid width. Each tone declares its OKLCH `hue` (`null` for a neutral, such as the stone of the hidden Buy Data Credits card). |
 | `pages/public/src/pages/landing/previews/layout.js` | Stage geometry shared by the page and the bake: the hover fan and the keep-out check. |
 | `pages/public/src/pages/landing/ToolPreview.jsx`, `landing.css` | Renders the stage, frames, hover fan and both themes, and the page's card grid. |
 | `pages/public/src/assets/previews/<slug>/<id>-<light\|dark>.webp` | Baked prints. These are committed and fingerprinted by Vite. |
@@ -84,7 +84,7 @@ For every print in a tool's config, the bake:
 3. writes `<id>-<theme>.webp` at quality 78, or the print's own `q`,
 4. deletes files in that tool's folder that its config no longer names. A print whose capture is missing keeps its committed file.
 
-It prints each file's bytes, the totals per theme, and how large the capture shows on a desktop (381 px) and a phone (358 px) card. A source glyph of N px shows at N × that scale; the `px` figure is the baked pixels per displayed pixel (aim for ~2).
+It prints each file's bytes, the totals per theme, and how large the capture shows on a desktop (340 px) and a phone (358 px) card, or, for a featured card's wide prints, on its 698 px desktop stage (portrait prints a featured stage reuses are reported there too). A source glyph of N px shows at N × that scale; the `px` figure is the baked pixels per displayed pixel (aim for ~2). A featured card's `featured` prints with their own `src` are baked like the portrait ones.
 
 It warns, and exits 1, when:
 

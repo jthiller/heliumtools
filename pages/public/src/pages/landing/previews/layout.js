@@ -8,6 +8,9 @@
 
 // Stage height / width (landing.css: .tc-table::before padding and .tc-stage height).
 export const STAGE_RATIO = 0.8;
+// A featured card's stage: it spans two grid columns, so its stage is about
+// twice as wide at roughly the same height (landing.css .tc-table.is-featured).
+export const FEATURED_RATIO = 0.45;
 // % of the stage height a print's top edge keeps clear of the card text, at rest
 // and on hover.
 export const TOP_MARGIN = 3;
