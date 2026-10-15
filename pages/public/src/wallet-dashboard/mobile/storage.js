@@ -18,6 +18,7 @@
 // MAX_DOWNLOADS - 1 small ones. A download is abandoned only when no bytes
 // arrive for STALL_MS; one cut short keeps its bytes and resumes with a Range
 // request on the next try.
+import { DAY_MS } from "./tableMeta.js";
 
 const CACHE_NAME = "wd-iceberg-v1";
 // A Cache Storage key needs an http(s) URL; this one never hits the network.
@@ -35,7 +36,7 @@ const IDB_TIMEOUT_MS = 1000;
 const MAX_STORE_FAILURES = 3;
 // Bytes not tied to a time window (manifests, the bans table) stay this long
 // past their last use.
-export const IDLE_RETAIN_MS = 2 * 86_400_000;
+const IDLE_RETAIN_MS = 2 * DAY_MS;
 
 const LARGE_FILE_BYTES = 2_000_000;
 const MAX_DOWNLOADS = 5;
@@ -61,8 +62,8 @@ export class HttpError extends Error {
   }
 }
 
-/** The abort reason for a request that took too long (`describeError` reads its name). */
-export const timeoutError = (message) => new DOMException(message, "TimeoutError");
+/** The abort reason for a request that took too long (the engine's `describeError` reads its name). */
+const timeoutError = (message) => new DOMException(message, "TimeoutError");
 
 /** The abort reason for a check that was cancelled (wallet switch, stop). */
 export const cancelledError = () => new DOMException("The check was cancelled.", "AbortError");
@@ -155,7 +156,7 @@ function concat(chunks, length) {
 
 /**
  * Whole-file byte cache. `get(url, opts)` resolves an ArrayBuffer:
- *   opts.table     index label (eviction stats)
+ *   opts.table     index label (the table a file belongs to)
  *   opts.persist   write to Cache Storage on a network read (default true)
  *   opts.expireAt  ms after which the file is no longer useful (default:
  *                  IDLE_RETAIN_MS past last use)
@@ -164,9 +165,8 @@ function concat(chunks, length) {
  *                  only once no caller is waiting for it
  * `flush(now, keep)` evicts and persists the index; call it after a check.
  * `idle()` settles once pending Cache Storage writes have.
- * `stats` counts network/memory/Cache Storage reads for diagnostics.
  */
-export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudgetBytes = MEMORY_BUDGET_BYTES } = {}) {
+export function createByteCache() {
   const memory = new Map(); // url → ArrayBuffer, oldest first
   let memoryBytes = 0;
   const inflight = new Map(); // url → download job shared by its callers
@@ -174,15 +174,6 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
   let partialBytes = 0;
   const gate = createGate();
   const pendingStores = new Set();
-  const stats = {
-    netRequests: 0,
-    netBytes: 0,
-    resumed: 0,
-    memoryHits: 0,
-    cacheHits: 0,
-    cacheBytes: 0,
-    cacheErrors: 0,
-  };
 
   // Cache Storage + its index (url → { url, bytes, table, expireAt, lastUsed }).
   let readFailures = 0;
@@ -199,7 +190,6 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
   function noteFailure(kind) {
     if (kind === "read") readFailures++;
     else writeFailures++;
-    stats.cacheErrors++;
   }
 
   function openCache() {
@@ -276,7 +266,7 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
     memory.set(url, buf);
     memoryBytes += buf.byteLength;
     for (const [u, b] of memory) {
-      if (memoryBytes <= memoryBudgetBytes) break;
+      if (memoryBytes <= MEMORY_BUDGET_BYTES) break;
       memory.delete(u);
       memoryBytes -= b.byteLength;
     }
@@ -304,8 +294,6 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
       readFailures = 0; // a clean miss is a working store too
       if (!res) return null;
       const buf = await withTimeout(res.arrayBuffer(), CACHE_OP_TIMEOUT_MS, "cache read");
-      stats.cacheHits++;
-      stats.cacheBytes += buf.byteLength;
       touch(url, buf.byteLength, opts);
       return buf;
     } catch {
@@ -357,24 +345,22 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
     try {
       arm();
       const persist = opts.persist !== false && writable();
-      const res = await fetchImpl(url, {
+      const res = await fetch(url, {
         // Cache Storage keeps the copy; the HTTP cache would only duplicate it.
         cache: persist ? "no-store" : "default",
         headers: partial ? { range: `bytes=${partial.received}-` } : undefined,
         signal: ctl.signal,
       });
-      stats.netRequests++;
       if (!res.ok) {
-        res.body?.cancel?.().catch?.(() => {});
+        res.body?.cancel().catch(() => {});
         throw new HttpError(res.status);
       }
       const range = res.status === 206 ? contentRange(res) : null;
       if (partial && range && range.start === partial.received && range.total === partial.buf.byteLength) {
         ({ buf, received } = partial);
-        stats.resumed++;
       } else if (res.status === 206) {
         partial = null; // not resumable: the next try starts over
-        res.body?.cancel?.().catch?.(() => {});
+        res.body?.cancel().catch(() => {});
         throw new Error("Unexpected partial response.");
       } else {
         const length = Number(res.headers.get("content-length")) || 0;
@@ -382,36 +368,24 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
         else chunks = [];
       }
       partial = null;
-      if (!res.body) {
-        // No stream to read: the whole body at once, under the same timers.
-        const all = new Uint8Array(await res.arrayBuffer());
-        stats.netBytes += all.byteLength;
-        if (received === 0) return persistAndReturn(url, all.buffer, opts, persist);
-        if (received + all.byteLength !== buf.byteLength) {
-          buf = null; // not resumable: the next try starts over
-          throw new Error("Unexpected partial response.");
+      const reader = res.body.getReader();
+      for (;;) {
+        arm();
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (buf && received + value.byteLength > buf.byteLength) {
+          // Longer than announced: collect instead.
+          chunks = [buf.slice(0, received)];
+          buf = null;
         }
-        buf.set(all, received);
-        received += all.byteLength;
-      } else {
-        const reader = res.body.getReader();
-        for (;;) {
-          arm();
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (buf && received + value.byteLength > buf.byteLength) {
-            // Longer than announced: collect instead.
-            chunks = [buf.slice(0, received)];
-            buf = null;
-          }
-          if (buf) buf.set(value, received);
-          else chunks.push(value);
-          received += value.byteLength;
-          stats.netBytes += value.byteLength;
-        }
+        if (buf) buf.set(value, received);
+        else chunks.push(value);
+        received += value.byteLength;
       }
       if (buf && received < buf.byteLength) throw new TypeError("The download ended early.");
-      return persistAndReturn(url, buf ? buf.buffer : concat(chunks, received), opts, persist);
+      const out = buf ? buf.buffer : concat(chunks, received);
+      if (persist) store(url, out, opts);
+      return out;
     } catch (err) {
       // Failed before the resume began (no answer, an HTTP error): keep the old bytes.
       if (partial) stashPartial(url, partial.buf, partial.received);
@@ -423,11 +397,6 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
       signal?.removeEventListener("abort", onCancel);
       release();
     }
-  }
-
-  function persistAndReturn(url, buf, opts, persist) {
-    if (persist) store(url, buf, opts);
-    return buf;
   }
 
   // Fire-and-forget (tracked for `idle()` / `flush()`): a failed write only
@@ -511,7 +480,6 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
     if (hit) {
       memory.delete(url);
       memory.set(url, hit);
-      stats.memoryHits++;
       if (index.has(url)) touch(url, hit.byteLength, opts);
       return Promise.resolve(hit);
     }
@@ -574,21 +542,7 @@ export function createByteCache({ fetchImpl = (...a) => fetch(...a), memoryBudge
 
   const idle = () => Promise.allSettled([...pendingStores]);
 
-  /** Cache Storage use, for diagnostics. */
-  function usage() {
-    let bytes = 0;
-    for (const e of index.values()) bytes += e.bytes;
-    return {
-      files: index.size,
-      bytes,
-      memoryFiles: memory.size,
-      memoryBytes,
-      partialFiles: partials.size,
-      available: readable() && writable(),
-    };
-  }
-
-  return { get, flush, idle, stats, usage };
+  return { get, flush, idle };
 }
 
 // ── Extracts (IndexedDB) ─────────────────────────────────────────────────────
@@ -608,14 +562,8 @@ const STORE = "extracts";
 export function createExtractCache() {
   let failures = 0;
   let dbPromise = null;
-  const stats = { hits: 0, writes: 0, errors: 0 };
 
   const usable = () => typeof indexedDB !== "undefined" && failures < MAX_STORE_FAILURES;
-
-  function fail() {
-    failures++;
-    stats.errors++;
-  }
 
   function openDb() {
     if (dbPromise) return dbPromise;
@@ -671,7 +619,7 @@ export function createExtractCache() {
       failures = 0;
       return result;
     } catch {
-      fail();
+      failures++;
       return null;
     }
   }
@@ -689,12 +637,10 @@ export function createExtractCache() {
         };
       }
     });
-    stats.hits += found.size;
     return found;
   }
 
   function put(key, url, value, expireAt) {
-    stats.writes++;
     return run("write", "readwrite", (store) => {
       store.put({ id: [key, url], rows: value.rows, meta: value.meta, expireAt });
     });
@@ -720,5 +666,5 @@ export function createExtractCache() {
     });
   }
 
-  return { getMany, put, remove, purge, stats };
+  return { getMany, put, remove, purge };
 }

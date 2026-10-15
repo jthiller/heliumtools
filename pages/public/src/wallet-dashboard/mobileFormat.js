@@ -7,7 +7,7 @@
 // Hotspots earn HNT: rewards lead with HNT. Data-transfer HNT is paid per
 // rewarded byte, so location trust, the speedtest multiplier and heartbeats
 // don't change it: they are WiFi health signals, never earnings problems.
-import { FRESH_MS, isWindowCurrent } from "./mobile/tables.js";
+import { FRESH_MS, SLIDING_TABLES, isWindowCurrent, windowLength } from "./mobile/tableMeta.js";
 
 /**
  * A fleet row that earns on the Mobile network, addressable by entity key.
@@ -32,8 +32,11 @@ export function isHeartbeatEligible(hotspot) {
 
 // ── Sliding windows ─────────────────────────────────────────────────────────
 
-const WINDOW_LENGTH = { heartbeats: "60 min", invalidHeartbeats: "60 min", speedtests: "24 h" };
-export const SLIDING_SECTIONS = Object.keys(WINDOW_LENGTH);
+/** A sliding table's window length as the labels say it: "60 min", "24 h". */
+function lengthText(name) {
+  const { minutes, hours } = windowLength(name);
+  return minutes ? `${minutes} min` : `${hours} h`;
+}
 
 const clockFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const dayClockFmt = new Intl.DateTimeFormat(undefined, {
@@ -52,8 +55,8 @@ const sameLocalDay = (a, b) => new Date(a).toDateString() === new Date(b).toDate
  * time with the date when not today, `long` "in the 60 min to 3:42 PM",
  * `span` and `short` "60 min to 3:42 PM". A section not loaded reads current.
  */
-export function windowText(name, until, now = Date.now()) {
-  const len = WINDOW_LENGTH[name];
+export function windowText(name, until, now) {
+  const len = lengthText(name);
   if (until == null || isWindowCurrent(until, now)) {
     return { current: true, until: until ?? null, long: `in the last ${len}`, span: `last ${len}`, short: len };
   }
@@ -65,12 +68,12 @@ export function windowText(name, until, now = Date.now()) {
 /**
  * When a window label next changes with no new data (a current window goes
  * stale, or a frozen one's end needs its date after midnight), in ms; null if
- * never. The shell re-derives then, since no post announces it.
+ * never. useMobileActivity moves its `asOf` then, since no post announces it.
  */
-export function nextWindowFlip(activity, now = Date.now()) {
+export function nextWindowFlip(activity, now) {
   let next = null;
-  for (const name of SLIDING_SECTIONS) {
-    const until = activity?.[name]?.until;
+  for (const name of SLIDING_TABLES) {
+    const until = activity?.tables?.[name]?.until;
     if (until == null) continue;
     let at;
     if (isWindowCurrent(until, now)) at = until + FRESH_MS + 1;
@@ -83,14 +86,25 @@ export function nextWindowFlip(activity, now = Date.now()) {
 
 // ── Issues ──────────────────────────────────────────────────────────────────
 
-// Per-Hotspot issues, most actionable first. `color` is the dot color,
-// `textClass` the text tone, `tone` the NameCallout tone. `wifi`: applies only
-// to WiFi indoor/outdoor Hotspots. `table`: the table behind it. `window`: the
-// sliding section it's named by; `text(w)` words it for that window (see
-// windowText): `label` for the card's rows and callouts, `chip` for the table's
-// filter chips and status cells, `hint` for their tooltips. Only a ban is
-// serious; the WiFi signals don't change HNT from data transfer.
-const ISSUES = {
+// The amber issues' styling: WiFi health signals, not earnings problems.
+const CAUTION = {
+  color: "#d97706", // amber-600
+  textClass: "text-amber-600 dark:text-amber-400",
+  tone: "caution",
+};
+
+/**
+ * Per-Hotspot issues, most actionable first. `color` is the dot color,
+ * `textClass` the text tone, `tone` the NameCallout tone ("warn" for the one
+ * serious issue, "caution" for the WiFi signals, which don't change HNT from
+ * data transfer). `wifi`: applies only to WiFi indoor/outdoor Hotspots.
+ * `table`: the table behind it. `window`: the sliding section it's named by;
+ * `text(w)` words it for that window (see windowText): `label` for the card's
+ * rows and callouts, `chip` for the table's filter chips and status cells,
+ * `hint` for their tooltips. Surfaces read the wording from
+ * `aggregateMobile(...).issueText`, which names the windows as they stand.
+ */
+export const MOBILE_ISSUES = {
   banned: {
     color: "#e11d48", // rose-600
     textClass: "text-rose-600 dark:text-rose-400",
@@ -105,9 +119,7 @@ const ISSUES = {
     }),
   },
   noHeartbeat: {
-    color: "#d97706", // amber-600
-    textClass: "text-amber-600 dark:text-amber-400",
-    tone: "caution",
+    ...CAUTION,
     wifi: true,
     table: "heartbeats",
     window: "heartbeats",
@@ -118,9 +130,7 @@ const ISSUES = {
     }),
   },
   lowTrust: {
-    color: "#d97706",
-    textClass: "text-amber-600 dark:text-amber-400",
-    tone: "caution",
+    ...CAUTION,
     wifi: true,
     table: "heartbeats",
     window: "heartbeats",
@@ -131,9 +141,7 @@ const ISSUES = {
     }),
   },
   lowSpeedtest: {
-    color: "#d97706",
-    textClass: "text-amber-600 dark:text-amber-400",
-    tone: "caution",
+    ...CAUTION,
     wifi: true,
     table: "speedtests",
     window: "speedtests",
@@ -145,9 +153,7 @@ const ISSUES = {
     }),
   },
   rejectedHeartbeats: {
-    color: "#d97706",
-    textClass: "text-amber-600 dark:text-amber-400",
-    tone: "caution",
+    ...CAUTION,
     wifi: true,
     table: "invalidHeartbeats",
     window: "invalidHeartbeats",
@@ -159,14 +165,6 @@ const ISSUES = {
     }),
   },
 };
-
-const CURRENT = Object.fromEntries(SLIDING_SECTIONS.map((s) => [s, windowText(s, null)]));
-
-/** The issues with their current-window wording (`label`, `chip`, `hint`);
- * a frozen window's wording comes from `aggregateMobile(...).issueText`. */
-export const MOBILE_ISSUES = Object.fromEntries(
-  Object.entries(ISSUES).map(([k, v]) => [k, { ...v, ...v.text(CURRENT[v.window] ?? null) }]),
-);
 export const MOBILE_ISSUE_ORDER = Object.keys(MOBILE_ISSUES);
 
 // One object per distinct wording, so memoized rows see the same object until
@@ -177,7 +175,7 @@ function issueTextFor(key, w) {
   let t = textCache.get(id);
   if (!t) {
     if (textCache.size > 200) textCache.clear();
-    t = ISSUES[key].text(w);
+    t = MOBILE_ISSUES[key].text(w);
     textCache.set(id, t);
   }
   return t;
@@ -193,8 +191,11 @@ export function mobileActionRank(row) {
   return row.issue ? MOBILE_ISSUE_ORDER.indexOf(row.issue) : MOBILE_ISSUE_ORDER.length;
 }
 
-/** Where a heartbeat's position came from (`location_source`). */
-export const LOCATION_SOURCE_LABEL = { asserted: "Asserted", gps: "GPS", skyhook: "Skyhook" };
+const LOCATION_SOURCE_LABEL = { asserted: "Asserted", gps: "GPS", skyhook: "Skyhook" };
+
+/** Where a heartbeat's position came from (`location_source`): "GPS"; an
+ * unknown source as given. */
+export const fmtLocationSource = (source) => LOCATION_SOURCE_LABEL[source] || source;
 
 /** "Unsupported location" for a snake_case reason ("unsupported_location",
  * "ban_reason_data_farming" → "Data farming"). */
@@ -243,7 +244,7 @@ function failedTables(activity, loaded) {
  * One derivation of the whole Mobile picture per activity update (like
  * `aggregateIotStatus`): every surface (card, table filter, map panel, agent
  * tool) reads this object rather than re-deriving per row. `now` names the
- * sliding windows (see windowText).
+ * sliding windows (see windowText): the hook's `asOf` for the page.
  *
  * `rows`: Map entityKey → row, for every Mobile Hotspot. Fields are null while
  *   their table hasn't loaded (unknown, never "no"), or don't apply:
@@ -251,17 +252,17 @@ function failedTables(activity, loaded) {
  *   heartbeating         WiFi: any heartbeat in the 60-min window
  *   heartbeats           WiFi: count in the window
  *   lastHeartbeatAt, trust, distance (m), locationSource, assertedCell,
- *   validatedAt, points  from the latest heartbeat / reported positions
+ *   points               from the latest heartbeat / reported positions
  *   speedtest            latest 24-h average {down, up, latency, multiplier,
- *                        samples, at, tests}; speedtestMultiplier
- *   banned, ban          latest ban record ({at, reason, message, serial})
+ *                        samples, at}; speedtestMultiplier
+ *   banned, ban          latest ban record ({at, reason, message})
  *   rejectedHeartbeats, rejectedReasons   WiFi: rejected in the window
  *   hntLatestDay, bytesLatestDay          rewards (HNT, rewarded bytes) on the
  *                                         newest UTC day (0 = none)
  *   usageReported        the usage day has a row for this Hotspot (null:
  *                        usage not loaded)
- *   users, rewardedBytes, unrewardedBytes usage on the usage day; null without
- *                        a row (not reported is unknown, never 0)
+ *   users                users served on the usage day; null without a row
+ *                        (not reported is unknown, never 0)
  *   issues, issue        MOBILE_ISSUE_ORDER keys that apply / the first
  * `groups`: {issue: [{hotspot, row}]} in fleet order.
  * `counts`: per issue, plus heartbeating, heartbeatChecked (WiFi rows with the
@@ -269,19 +270,20 @@ function failedTables(activity, loaded) {
  * `rewards`: { days, latest, latestUsd (latest HNT at that day's price),
  *   weekHnt (over loaded days), daysLoaded } | null. "Rewarded data" is
  *   `latest.bytes`: the bytes behind the HNT, from the same table and day.
- * `usage`: { day, hotspots (with a row), users, rewardedBytes, unrewardedBytes,
- *   coverage } | null. Users are summed across Hotspots: a user served by two
- *   counts twice. Its bytes are as the usage report gives them and can differ
- *   from the rewards table's. `coverage`: { reported, rewarded }, the Hotspots
- *   rewarded on the usage day and how many of them it has a row for; null
- *   when that day's rewards per Hotspot aren't known.
+ * `usage`: { day, hotspots (with a row), users, coverage } | null. Users are
+ *   summed across Hotspots: a user served by two counts twice. `coverage`:
+ *   { reported, rewarded }, the Hotspots rewarded on the usage day and how
+ *   many of them it has a row for; null when that day's rewards per Hotspot
+ *   aren't known.
  * `windows`: { heartbeats, invalidHeartbeats, speedtests } → windowText.
  * `issueText`: { [issue]: { label, chip, hint } } worded for those windows.
  * `loaded`: per table, whether its data is in (so a missing row is a real
  *   "none", not "not loaded yet"); `failed`: per table, its check failed
  *   with no data in.
+ * `known`: per issue, whether its count is real: every table behind it is
+ *   in, or it's a WiFi issue and the fleet has no WiFi Hotspots (a real 0).
  */
-export function aggregateMobile(hotspots, activity, now = Date.now()) {
+export function aggregateMobile(hotspots, activity, now) {
   const rows = new Map();
   const groups = Object.fromEntries(MOBILE_ISSUE_ORDER.map((k) => [k, []]));
   const counts = {
@@ -316,8 +318,6 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
       day: activity.usage.day,
       hotspots: 0,
       users: 0,
-      rewardedBytes: 0,
-      unrewardedBytes: 0,
       coverage: usageDayKeyed ? { reported: 0, rewarded: 0 } : null,
     };
   }
@@ -343,7 +343,6 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
       distance: beat?.distance ?? null,
       locationSource: beat?.source ?? null,
       assertedCell: beat?.assertedCell ?? null,
-      validatedAt: beat?.validatedAt ?? null,
       points: beat?.points ?? [],
       speedtest: wifi ? speed : null,
       speedtestMultiplier: wifi ? (speed?.multiplier ?? null) : null,
@@ -355,8 +354,6 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
       bytesLatestDay: rewardsByKey ? (earned?.bytes ?? 0) : null,
       usageReported: usageByKey ? Boolean(used) : null,
       users: used ? used.users : null,
-      rewardedBytes: used ? used.rewardedBytes : null,
-      unrewardedBytes: used ? used.unrewardedBytes : null,
       issues: [],
       issue: null,
     };
@@ -377,8 +374,6 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
     if (usage && used) {
       usage.hotspots++;
       usage.users += used.users;
-      usage.rewardedBytes += used.rewardedBytes;
-      usage.unrewardedBytes += used.unrewardedBytes;
     }
     if (usage?.coverage && allByKey?.[key]?.[usage.day]) {
       usage.coverage.rewarded++;
@@ -400,10 +395,10 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
   }
 
   const windows = Object.fromEntries(
-    SLIDING_SECTIONS.map((s) => [s, windowText(s, activity?.[s]?.until ?? null, now)]),
+    SLIDING_TABLES.map((s) => [s, windowText(s, activity?.tables?.[s]?.until ?? null, now)]),
   );
   const issueText = Object.fromEntries(
-    MOBILE_ISSUE_ORDER.map((k) => [k, issueTextFor(k, windows[ISSUES[k].window] ?? null)]),
+    MOBILE_ISSUE_ORDER.map((k) => [k, issueTextFor(k, windows[MOBILE_ISSUES[k].window] ?? null)]),
   );
 
   const loaded = {
@@ -414,6 +409,12 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
     invalidHeartbeats: Boolean(inv),
     speedtests: Boolean(st),
   };
+  const known = Object.fromEntries(
+    MOBILE_ISSUE_ORDER.map((k) => {
+      const { wifi, table } = MOBILE_ISSUES[k];
+      return [k, (wifi && wifiTotal === 0) || loaded[table]];
+    }),
+  );
   return {
     mobileTotal,
     wifiTotal,
@@ -426,5 +427,6 @@ export function aggregateMobile(hotspots, activity, now = Date.now()) {
     issueText,
     loaded,
     failed: failedTables(activity, loaded),
+    known,
   };
 }

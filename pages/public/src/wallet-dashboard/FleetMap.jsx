@@ -8,6 +8,7 @@ import { cellToLatLng, cellToBoundary, cellToParent } from "h3-js";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import useDarkMode from "../lib/useDarkMode.js";
 import useReducedMotion, { prefersReducedMotion } from "../lib/useReducedMotion.js";
+import { readTokenRgb } from "../lib/chartColors.js";
 import CopyButton from "../components/CopyButton.jsx";
 import { Dot, TimeAgo } from "./cards/primitives.jsx";
 import IotTrafficDetail from "./IotTrafficDetail.jsx";
@@ -36,15 +37,8 @@ import {
   fmtCount,
   fmtDate,
 } from "./format.js";
-import {
-  LOCATION_SOURCE_LABEL,
-  MOBILE_ISSUES,
-  fmtMbps,
-  fmtMeters,
-  fmtMultiplier,
-  fmtReason,
-  windowText,
-} from "./mobileFormat.js";
+import { MOBILE_ISSUES, fmtLocationSource, fmtMbps, fmtMeters, fmtMultiplier, fmtReason } from "./mobileFormat.js";
+import { metersBetween } from "./mobile/tableMeta.js";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -107,8 +101,6 @@ const INITIAL_VIEW = { longitude: -98.5, latitude: 39.8, zoom: 3.2, pitch: 0, be
 // its reported positions, and lines out to positions farther than this from
 // the asserted centre (closer ones sit on the cell).
 const FAR_M = 25;
-// Mobile violet, light/dark (the --color-mobile token's two values).
-const MOBILE_OVERLAY = { light: [124, 58, 237], dark: [167, 139, 250] };
 const POSITION_FILL = { light: [255, 255, 255], dark: [30, 30, 34] };
 // Arrival pulse: two rings per new position, the second trailing.
 const PULSE_RING_MS = 900;
@@ -117,17 +109,6 @@ const PULSE_MS = PULSE_RING_MS + PULSE_STAGGER_MS;
 // Camera eases, instant under reduced motion (read when the ease starts).
 const EASE_MS = 800;
 const easeMs = () => (prefersReducedMotion() ? 0 : EASE_MS);
-// The heartbeat window's wording before any Mobile data is in.
-const HEARTBEAT_WINDOW_DEFAULT = windowText("heartbeats", null);
-
-/** Great-circle distance in meters between two [lat, lng] points. */
-function metersBetween([lat1, lng1], [lat2, lng2]) {
-  const rad = Math.PI / 180;
-  const a =
-    Math.sin(((lat2 - lat1) * rad) / 2) ** 2 +
-    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lng2 - lng1) * rad) / 2) ** 2;
-  return 2 * 6_371_000 * Math.asin(Math.min(1, Math.sqrt(a)));
-}
 
 /** Decode an H3 hex cell index to [lat, lng]; null on failure. */
 function h3HexToLatLng(hex) {
@@ -219,7 +200,7 @@ function positionTooltip(p, window) {
   return [
     `Reported position · ${plural(p.n, "heartbeat")} ${window.long}`,
     `${fmtMeters(p.away)} from asserted`,
-    [p.source && (LOCATION_SOURCE_LABEL[p.source] || p.source), p.trust != null && `trust ${fmtMultiplier(p.trust)}`]
+    [p.source && fmtLocationSource(p.source), p.trust != null && `trust ${fmtMultiplier(p.trust)}`]
       .filter(Boolean)
       .join(", "),
     p.lastAt ? `last heard ${fmtAgo(p.lastAt)}` : null,
@@ -253,14 +234,19 @@ function deriveFootprint(cells, assertedHex) {
   };
 }
 
-export default function FleetMap({
-  hotspots = [],
-  rewardsByKey = {},
-  iotStatus = null,
-  mobile = null,
-  mobileArrivals = null,
-  heartbeatsLive = false,
-  wallet = null,
+/**
+ * memo: its props are the shell's state, memoized aggregates and the hook's
+ * `arrivals` (new only with an arrival), so a shell render that changes none
+ * of them (another card's data landing) skips the map.
+ */
+export default memo(function FleetMap({
+  hotspots,
+  rewardsByKey,
+  iotStatus,
+  mobile,
+  mobileArrivals,
+  heartbeatsLive,
+  wallet,
 }) {
   const dark = useDarkMode();
   const reducedMotion = useReducedMotion();
@@ -275,8 +261,8 @@ export default function FleetMap({
   const hoverDotRef = useRef(false);
   // Per-row IoT verdicts, derived once per scan flush by the shell; per-row
   // Mobile verdicts likewise, once per Mobile update.
-  const iotRows = iotStatus?.rows;
-  const mobileRows = mobile?.rows;
+  const iotRows = iotStatus.rows;
+  const mobileRows = mobile.rows;
 
   const select = useCallback(
     (key) => setSelection((s) => (s.key === key ? s : { key, coverage: false })),
@@ -302,7 +288,7 @@ export default function FleetMap({
   // selection needs updateTriggers below.
   const dots = useMemo(() => {
     const out = mappable.map((h) => {
-      const row = iotRows?.get(h.entityKey);
+      const row = iotRows.get(h.entityKey);
       return {
         hotspot: h,
         color:
@@ -365,20 +351,10 @@ export default function FleetMap({
     () => (selected ? mappable.find((h) => h.entityKey === selected) : null),
     [selected, mappable],
   );
-  const selectedRow = selectedHotspot ? iotRows?.get(selectedHotspot.entityKey) ?? null : null;
-  const selectedMobileRow = selectedHotspot ? mobileRows?.get(selectedHotspot.entityKey) ?? null : null;
-  const mobileDays = useMemo(
-    () => ({
-      rewards: mobile?.rewards?.latest?.state === "ok" ? mobile.rewards.latest.day : null,
-      usage: mobile?.usage?.day ?? null,
-      loaded: mobile?.loaded ?? null,
-      failed: mobile?.failed ?? null,
-      windows: mobile?.windows ?? null,
-    }),
-    [mobile?.rewards, mobile?.usage, mobile?.loaded, mobile?.failed, mobile?.windows],
-  );
-  const hbWindow = mobile?.windows?.heartbeats ?? HEARTBEAT_WINDOW_DEFAULT;
-  const noHeartbeatLabel = mobile?.issueText?.noHeartbeat.label ?? MOBILE_ISSUES.noHeartbeat.label;
+  const selectedRow = selectedHotspot ? iotRows.get(selectedHotspot.entityKey) ?? null : null;
+  const selectedMobileRow = selectedHotspot ? mobileRows.get(selectedHotspot.entityKey) ?? null : null;
+  const hbWindow = mobile.windows.heartbeats;
+  const noHeartbeatLabel = mobile.issueText.noHeartbeat.label;
 
   // The selected WiFi Hotspot's heartbeats in the window, as drawn: asserted
   // cell (the heartbeats' own, else the fleet row's), reported positions and
@@ -393,7 +369,7 @@ export default function FleetMap({
     if (!center) return null;
     const points = selectedMobileRow.points.map((p) => ({
       ...p,
-      away: p.distance ?? metersBetween(center, [p.lat, p.lon]),
+      away: p.distance ?? metersBetween(center[0], center[1], p.lat, p.lon),
     }));
     return {
       center,
@@ -402,7 +378,9 @@ export default function FleetMap({
       far: points.filter((p) => p.away > FAR_M),
     };
   }, [selectedMobileRow, selectedHotspot]);
-  const overlayColor = dark ? MOBILE_OVERLAY.dark : MOBILE_OVERLAY.light;
+  // Mobile violet: the dots' own in light mode, the --color-mobile token's
+  // lighter value on the dark basemap.
+  const overlayColor = useMemo(() => (dark && readTokenRgb("--color-mobile")) || MOBILE_COLOR, [dark]);
 
   // New heartbeat positions for the selected Hotspot pulse once on a live
   // arrival (never on the first load, a reselection, or the window sliding).
@@ -673,7 +651,7 @@ export default function FleetMap({
       if (layer?.id === "fleet") {
         const h = object.hotspot;
         return {
-          text: dotTooltip(h, iotRows?.get(h.entityKey), mobileRows?.get(h.entityKey), noHeartbeatLabel),
+          text: dotTooltip(h, iotRows.get(h.entityKey), mobileRows.get(h.entityKey), noHeartbeatLabel),
           style: TOOLTIP_STYLE,
         };
       }
@@ -803,7 +781,7 @@ export default function FleetMap({
             rewards={rewardsByKey[selectedHotspot.entityKey]}
             row={selectedRow}
             mobileRow={selectedMobileRow}
-            mobileDays={mobileDays}
+            mobile={mobile}
             coverage={coverageProps}
             onClose={deselect}
           />
@@ -811,7 +789,7 @@ export default function FleetMap({
       </div>
     </div>
   );
-}
+});
 
 function LegendRow({ color, label }) {
   return (
@@ -824,15 +802,15 @@ function LegendRow({ color, label }) {
 
 /**
  * The selected Hotspot's panel. Memoized with stable props (its IoT `row`
- * changes only on scan flushes, its `mobileRow` only on Mobile updates), so
- * the map's pan/zoom frames skip it and the traffic chart inside.
+ * changes only on scan flushes, `mobile` and its `mobileRow` only on Mobile
+ * updates), so the map's pan/zoom frames skip it and the traffic chart inside.
  */
 const FleetMapDetail = memo(function FleetMapDetail({
   hotspot,
   rewards,
   row,
   mobileRow,
-  mobileDays,
+  mobile,
   coverage,
   onClose,
 }) {
@@ -904,7 +882,7 @@ const FleetMapDetail = memo(function FleetMapDetail({
 
       {coverage && <CoverageSection hotspot={hotspot} {...coverage} />}
 
-      {mobileRow && <MobileSection row={mobileRow} days={mobileDays} />}
+      {mobileRow && <MobileSection row={mobileRow} mobile={mobile} />}
 
       <div className="mt-3 flex items-center gap-2 text-xs text-content-tertiary">
         <span className="truncate font-mono">{hotspot.entityKey}</span>
@@ -937,12 +915,6 @@ function DetailRow({ label, children }) {
   );
 }
 
-const CURRENT_WINDOWS = {
-  heartbeats: HEARTBEAT_WINDOW_DEFAULT,
-  invalidHeartbeats: windowText("invalidHeartbeats", null),
-  speedtests: windowText("speedtests", null),
-};
-
 /**
  * The selected Mobile Hotspot's network data: the latest UTC day's HNT and the
  * data it was rewarded for, the usage day's users served, then (WiFi
@@ -951,11 +923,11 @@ const CURRENT_WINDOWS = {
  * them (frozen ones by their end); a table whose check failed with nothing to
  * show reads "Couldn't load", never a perpetual "…".
  */
-function MobileSection({ row, days }) {
+function MobileSection({ row, mobile }) {
   const day = (d) => (d ? ` ${fmtDataDay(d)} (UTC)` : "");
-  const loaded = days.loaded || {};
-  const failed = days.failed || {};
-  const { heartbeats: hb, invalidHeartbeats: inv, speedtests: st } = days.windows || CURRENT_WINDOWS;
+  const { loaded, failed, rewards, usage } = mobile;
+  const { heartbeats: hb, invalidHeartbeats: inv, speedtests: st } = mobile.windows;
+  const rewardsDay = rewards?.latest?.state === "ok" ? rewards.latest.day : null;
   const pending = (table) =>
     failed[table] ? <span className="text-content-tertiary">Couldn&apos;t load</span> : LOADING;
   const speed = row.speedtest;
@@ -966,7 +938,7 @@ function MobileSection({ row, days }) {
     <div className="mt-3 border-t border-border pt-2.5">
       <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">Mobile</div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs tabular-nums">
-        <DetailRow label={`Earned${day(days.rewards)}`}>
+        <DetailRow label={`Earned${day(rewardsDay)}`}>
           {row.hntLatestDay == null ? (
             pending("rewards")
           ) : (
@@ -977,7 +949,7 @@ function MobileSection({ row, days }) {
             </>
           )}
         </DetailRow>
-        <DetailRow label={`Users${day(days.usage)}`}>
+        <DetailRow label={`Users${day(usage?.day)}`}>
           {row.usageReported == null ? (
             pending("usage")
           ) : row.users == null ? (
@@ -1005,7 +977,7 @@ function MobileSection({ row, days }) {
                   Trust {fmtMultiplier(row.trust)}
                 </span>
                 {row.distance != null && ` · ${fmtMeters(row.distance)} from asserted`}
-                {row.locationSource && ` · ${LOCATION_SOURCE_LABEL[row.locationSource] || row.locationSource}`}
+                {row.locationSource && ` · ${fmtLocationSource(row.locationSource)}`}
               </DetailRow>
             )}
             <DetailRow label={`Speedtest (${st.short})`}>

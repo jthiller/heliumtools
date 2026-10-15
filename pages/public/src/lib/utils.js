@@ -55,6 +55,9 @@ export function formatTimeAgo(timestampMs) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
+/** Resolves after `ms`. */
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Safe localStorage helpers to handle private browsing mode
  * where localStorage may throw exceptions

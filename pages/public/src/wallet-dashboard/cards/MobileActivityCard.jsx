@@ -1,8 +1,9 @@
-import { memo, useState } from "react";
-import { Card, Skeleton, NameCallout, InfoTip, CountRow, TimeAgo } from "./primitives.jsx";
+import { memo } from "react";
+import { Card, Skeleton, NameCallout, InfoTip, CountRow, TimeAgo, ArrivalFlash } from "./primitives.jsx";
 import { fmtBytes, fmtCount, fmtDataDay, fmtToken, fmtUsd, plural, truncateString } from "../format.js";
 import { MOBILE_ISSUES, MOBILE_ISSUE_ORDER } from "../mobileFormat.js";
-import { ArrivalFlash, CountUp, useArrivalFlashes } from "../arrivalMotion.jsx";
+import { CountUp, useArrivalFlashes } from "../arrivalMotion.jsx";
+import useDayCursor from "../useDayCursor.js";
 
 const TITLE = "Mobile activity";
 const NAMES_SHOWN = 4;
@@ -34,14 +35,19 @@ const HATCH = {
     "repeating-linear-gradient(135deg, rgb(var(--color-content-tertiary) / 0.55) 0 1px, transparent 1px 5px)",
 };
 
-// The screen-reader table's words for a day without a value.
-const DAY_STATE_TEXT = { missing: "No data", failed: "Couldn't load", loading: "Loading" };
+// A day without a value, in words: the readout, its announcement and the
+// screen-reader table all say it this way. Any other state is still loading.
+const DAY_GAP = { missing: "no data", failed: "couldn't load", loading: "loading" };
+const dayGap = (state) => DAY_GAP[state] ?? DAY_GAP.loading;
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 const nameOf = (hotspot) => hotspot.name || truncateString(hotspot.entityKey);
 // Small earners keep their digits (0.0034, not 0).
 const fmtHnt = (v) => fmtToken(v, { max: v > 0 && v < 0.1 ? 4 : 2 });
 const fmtWhole = (v) => fmtCount(Math.round(v));
+// A table's error from its latest check, if that check failed.
+const errorOf = (table) => (table?.state === "error" ? table.error : null);
 
-/** "Live · checked 1 min ago"; the dot pings once per live arrival. Phones
+/** "Live · checked 1m ago"; the dot pings once per live arrival. Phones
  * show the state alone (the time stays for screen readers), so the title
  * keeps its line. */
 function LiveStatus({ phase, checkedAt, ping }) {
@@ -125,9 +131,7 @@ function DayBar({ day, max, hot, grow, index }) {
 /** A day as one plain sentence, for the screen-reader announcement. */
 function dayText(d) {
   const day = fmtDataDay(d.day, { year: true });
-  if (d.state === "missing") return `${day}: no data`;
-  if (d.state === "failed") return `${day}: couldn't load`;
-  if (d.state !== "ok") return `${day}: loading`;
+  if (d.state !== "ok") return `${day}: ${dayGap(d.state)}`;
   const usd = d.priceUsd != null ? `, ${fmtUsd(d.hnt * d.priceUsd)}` : "";
   return `${day}: ${fmtHnt(d.hnt)} HNT${usd}, ${plural(d.hotspots, "Hotspot")} rewarded`;
 }
@@ -138,36 +142,15 @@ function dayText(d) {
  * keyboard); the screen-reader table carries every value.
  */
 function WeekBars({ days, growKey, weekHnt, daysLoaded }) {
-  const [active, setActive] = useState(null);
-  const [keyboard, setKeyboard] = useState(false);
   const series = [...days].reverse();
   const n = series.length;
+  const { active, keyboard, point, clear, onKeyDown } = useDayCursor(n);
   const max = Math.max(0, ...series.filter((d) => d.state === "ok").map((d) => d.hnt)) || 1;
   const first = series[0]?.day;
   const last = series[n - 1]?.day;
   const loading = series.some((d) => d.state === "loading");
   const failedDays = series.filter((d) => d.state === "failed").length;
   const missing = series.filter((d) => d.state === "missing").length;
-  const point = (i) => {
-    setKeyboard(false);
-    setActive(i);
-  };
-
-  const onKeyDown = (e) => {
-    let next;
-    if (e.key === "ArrowLeft") next = active == null ? n - 1 : Math.max(0, active - 1);
-    else if (e.key === "ArrowRight") next = active == null ? n - 1 : Math.min(n - 1, active + 1);
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = n - 1;
-    else if (e.key === "Escape" && active != null) {
-      e.stopPropagation();
-      setActive(null);
-      return;
-    } else return;
-    e.preventDefault();
-    setKeyboard(true);
-    setActive(next);
-  };
 
   // Two fixed lines, so nothing clips in a narrow column and the bars don't
   // jump between the total and a day.
@@ -175,10 +158,10 @@ function WeekBars({ days, growKey, weekHnt, daysLoaded }) {
   let line1;
   let line2 = null;
   if (a) {
-    if (a.state === "missing") line1 = `${fmtDataDay(a.day)}: no data`;
-    else if (a.state === "failed") line1 = `${fmtDataDay(a.day)}: couldn't load`;
-    else if (a.state !== "ok") line1 = `${fmtDataDay(a.day)}: loading…`;
-    else {
+    if (a.state !== "ok") {
+      const gap = dayGap(a.state);
+      line1 = `${fmtDataDay(a.day)}: ${gap}${gap === DAY_GAP.loading ? "…" : ""}`;
+    } else {
       line1 = (
         <>
           {fmtDataDay(a.day)}: <span className="font-medium text-content">{fmtHnt(a.hnt)} HNT</span>
@@ -197,10 +180,10 @@ function WeekBars({ days, growKey, weekHnt, daysLoaded }) {
       </>
     );
     const gaps = [
-      missing > 0 && `No data for ${plural(missing, "day")}`,
-      failedDays > 0 && `couldn't load ${plural(failedDays, "day")}`,
+      missing > 0 && `${DAY_GAP.missing} for ${plural(missing, "day")}`,
+      failedDays > 0 && `${DAY_GAP.failed} ${plural(failedDays, "day")}`,
     ].filter(Boolean);
-    if (gaps.length) line2 = gaps.join(", ").replace(/^c/, "C");
+    if (gaps.length) line2 = capitalize(gaps.join(", "));
   }
 
   return (
@@ -209,14 +192,14 @@ function WeekBars({ days, growKey, weekHnt, daysLoaded }) {
       role="group"
       aria-label={`HNT earned per day from data transfer, ${fmtDataDay(first)} to ${fmtDataDay(last)} (UTC). Use the left and right arrow keys to read each day.`}
       onKeyDown={onKeyDown}
-      onBlur={() => setActive(null)}
+      onBlur={clear}
       className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
     >
       <div
         aria-hidden="true"
         className="flex items-end gap-0.5 border-b border-border"
         style={{ height: CHART_H, touchAction: "pan-y" }}
-        onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}
+        onPointerLeave={(e) => e.pointerType === "mouse" && clear()}
       >
         {series.map((d, i) => (
           // The whole column (gap included) is the hit target.
@@ -259,7 +242,7 @@ function WeekBars({ days, growKey, weekHnt, daysLoaded }) {
             {series.map((d) => (
               <tr key={d.day}>
                 <th scope="row">{fmtDataDay(d.day, { year: true })}</th>
-                <td>{d.state === "ok" ? fmtHnt(d.hnt) : DAY_STATE_TEXT[d.state] ?? "Loading"}</td>
+                <td>{d.state === "ok" ? fmtHnt(d.hnt) : capitalize(dayGap(d.state))}</td>
                 <td>{d.state === "ok" ? fmtCount(d.hotspots) : ""}</td>
               </tr>
             ))}
@@ -278,10 +261,7 @@ function Earnings({ mobile, tables, flashes }) {
   const latestOk = latest?.state === "ok";
   // A failed check with nothing to show reads as failed, never a skeleton
   // that pulses forever (`mobile.failed` also covers a worker that failed).
-  const rewardsError = tables.rewards?.state === "error" ? tables.rewards.error || "" : null;
-  const usageError = tables.usage?.state === "error" ? tables.usage.error || "" : null;
-  const rewardsFailed = rewardsError != null || mobile.failed.rewards;
-  const usageFailed = usageError != null || mobile.failed.usage;
+  const { failed } = mobile;
 
   let headline;
   if (latestOk) {
@@ -298,8 +278,8 @@ function Earnings({ mobile, tables, flashes }) {
         </div>
       </div>
     );
-  } else if (rewardsFailed) {
-    headline = <p className="text-sm text-content-tertiary">Couldn&apos;t load earnings. {rewardsError}</p>;
+  } else if (failed.rewards) {
+    headline = <p className="text-sm text-content-tertiary">Couldn&apos;t load earnings. {errorOf(tables.rewards)}</p>;
   } else {
     headline = (
       <div className="min-w-0 flex-1 basis-[170px]">
@@ -345,7 +325,7 @@ function Earnings({ mobile, tables, flashes }) {
           <MiniStat label="Rewarded data" flash={flashes.tables.rewards}>
             <CountUp value={latest.bytes} trigger={flashes.tables.rewards} format={fmtBytes} />
           </MiniStat>
-        ) : rewardsFailed ? null : (
+        ) : failed.rewards ? null : (
           <Skeleton className="h-14" />
         )}
         {usage ? (
@@ -357,8 +337,8 @@ function Earnings({ mobile, tables, flashes }) {
           >
             <CountUp value={usage.users} trigger={flashes.tables.usage} format={fmtWhole} />
           </MiniStat>
-        ) : usageFailed ? (
-          <p className="self-center px-1 text-xs text-content-tertiary">Couldn&apos;t load usage. {usageError}</p>
+        ) : failed.usage ? (
+          <p className="self-center px-1 text-xs text-content-tertiary">Couldn&apos;t load usage. {errorOf(tables.usage)}</p>
         ) : (
           <Skeleton className="h-14" />
         )}
@@ -370,15 +350,13 @@ function Earnings({ mobile, tables, flashes }) {
 /** Heartbeats in the window across the WiFi Hotspots, then the issue rows. */
 function Health({ mobile, activity, flashes, onShowIssue }) {
   const { counts, groups, wifiTotal, issueText } = mobile;
-  const issues = MOBILE_ISSUE_ORDER.filter((k) => counts[k] > 0 && (wifiTotal > 0 || !MOBILE_ISSUES[k].wifi));
+  const issues = MOBILE_ISSUE_ORDER.filter((k) => counts[k] > 0);
   const { tables } = activity;
-  const hbError = tables.heartbeats?.state === "error" ? tables.heartbeats.error || "" : null;
-  // "None" is real only once every table behind an issue has loaded; a failed
-  // one contributes no rows, so it can't vouch for "no issues".
+  // "None" is real only once every issue's count is (a failed table
+  // contributes no rows, so it can't vouch for "no issues") and no check runs.
+  const states = Object.values(tables);
   const settled =
-    Object.values(tables).length > 0 &&
-    Object.values(tables).every((t) => t.state !== "loading") &&
-    MOBILE_ISSUE_ORDER.every((k) => (MOBILE_ISSUES[k].wifi && wifiTotal === 0) || mobile.loaded[MOBILE_ISSUES[k].table]);
+    states.length > 0 && states.every((t) => t.state !== "loading") && MOBILE_ISSUE_ORDER.every((k) => mobile.known[k]);
 
   return (
     <div className="min-w-0 flex-1 basis-[260px]">
@@ -397,8 +375,8 @@ function Health({ mobile, activity, flashes, onShowIssue }) {
             {/* "in the last 60 min", or the window's end once it's frozen. */}
             <div className="text-xs text-content-tertiary">{mobile.windows.heartbeats.long}</div>
           </div>
-        ) : hbError != null || mobile.failed.heartbeats ? (
-          <p className="text-sm text-content-tertiary">Couldn&apos;t load heartbeats. {hbError}</p>
+        ) : mobile.failed.heartbeats ? (
+          <p className="text-sm text-content-tertiary">Couldn&apos;t load heartbeats. {errorOf(tables.heartbeats)}</p>
         ) : (
           <div>
             <Skeleton className="h-8 w-24" />

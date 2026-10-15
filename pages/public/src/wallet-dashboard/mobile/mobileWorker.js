@@ -5,18 +5,18 @@
 // Messages in:  { type: "start", session, wallet, keys, wifi, once? }
 //               { type: "refresh" | "assemble" | "stop", session }
 // Messages out: { type: "state", session, final, state }            (full)
-//               { type: "state", session, final, patch: true, state, until }
+//               { type: "state", session, final, patch: true, state }
 //               { type: "settled", session }   (a `once` check's caches are written)
 // `session` increments per start; the client drops replies for an old one,
 // and "stop" cancels that session's check (its downloads too).
 //
 // Only a session's first post is the full state. Later posts are patches
-// (mobileClient.js `applyPost` merges them): the small fields always, plus
-// only the sections whose content changed, and `until` (window end) for the
-// sliding sections that didn't, so a large fleet's unchanged rewards and
-// usage never cross again.
+// (mobileClient.js merges them): the small fields always (`tables` carries
+// the sliding windows' ends), plus only the sections the engine re-assembled
+// (it keeps an unchanged section's identity), so a large fleet's unchanged
+// rewards and usage never cross again.
 import { createEngine } from "./engine.js";
-import { TABLE_NAMES } from "./tables.js";
+import { TABLE_NAMES } from "./tableMeta.js";
 
 // Progress during a wallet's first check is throttled; the final state always
 // posts. Later checks post only their final state, so new rows arrive in the
@@ -27,30 +27,20 @@ const PROGRESS_INTERVAL_MS = 400;
 const engine = createEngine();
 let session = 0;
 let checking = null; // the session whose check is running
-let sent = null; // what the page has for the session: { session, sig, seq }
+let sent = null; // what the page has for the session: { session, state }
 
-function post(mySession, { sig, ...state }, final = false) {
+function post(mySession, state, final = false) {
   if (mySession !== session) return;
   if (sent?.session !== mySession) {
-    sent = { session: mySession, sig, seq: state.arrivals.seq };
+    sent = { session: mySession, state };
     self.postMessage({ type: "state", session: mySession, final, state });
     return;
   }
-  const patch = {
-    wallet: state.wallet,
-    checkedAt: state.checkedAt,
-    tables: state.tables,
-    live: state.live,
-    refreshing: state.refreshing,
-  };
-  const until = {};
-  for (const name of TABLE_NAMES) {
-    if (sig[name] !== sent.sig[name]) patch[name] = state[name];
-    else if (state[name]?.until != null) until[name] = state[name].until;
-  }
-  if (state.arrivals.seq !== sent.seq) patch.arrivals = state.arrivals;
-  sent = { session: mySession, sig, seq: state.arrivals.seq };
-  self.postMessage({ type: "state", session: mySession, final, patch: true, state: patch, until });
+  const patch = { wallet: state.wallet, checkedAt: state.checkedAt, tables: state.tables, live: state.live };
+  for (const name of TABLE_NAMES) if (state[name] !== sent.state[name]) patch[name] = state[name];
+  if (state.arrivals !== sent.state.arrivals) patch.arrivals = state.arrivals;
+  sent = { session: mySession, state };
+  self.postMessage({ type: "state", session: mySession, final, patch: true, state: patch });
 }
 
 async function refresh(mySession, { once = false } = {}) {
@@ -62,12 +52,11 @@ async function refresh(mySession, { once = false } = {}) {
   let state;
   try {
     state = await engine.refresh({
-      onProgress: (s) => {
-        if (s.live) return;
+      onProgress: (getState) => {
         const t = Date.now();
         if (t - last < PROGRESS_INTERVAL_MS) return;
         last = t;
-        post(mySession, s);
+        post(mySession, getState());
       },
     });
   } catch (err) {

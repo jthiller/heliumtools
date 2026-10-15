@@ -10,7 +10,7 @@ import useFleetOnboarded from "./useFleetOnboarded.js";
 import { useUtilizationIndex } from "./useIotLookups.js";
 import useMobileActivity from "./mobile/useMobileActivity.js";
 import { aggregateRewards, aggregateIotStatus, onboardingStats } from "./format.js";
-import { aggregateMobile, nextWindowFlip, windowText, SLIDING_SECTIONS } from "./mobileFormat.js";
+import { aggregateMobile } from "./mobileFormat.js";
 import FleetMap from "./FleetMap.jsx";
 import HeroCard from "./cards/HeroCard.jsx";
 import BalancesCard from "./cards/BalancesCard.jsx";
@@ -30,8 +30,9 @@ import { makeWalletDashboardTools } from "./webmcpTools.js";
 import { prefersReducedMotion } from "../lib/useReducedMotion.js";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
-// Stable stand-in for a fleet that failed to load (a fresh [] per render would
-// restart the onboard scan each time).
+// Stable stand-in for a fleet not loaded or that failed to load (a fresh []
+// per render would restart the onboard scan, and re-render the memoized map
+// and table, each time).
 const EMPTY_FLEET = [];
 const isValidWallet = (a) => typeof a === "string" && a.length >= 32 && a.length <= 44 && BASE58_RE.test(a);
 
@@ -265,39 +266,18 @@ export default function WalletDashboard() {
   // Helium's public Mobile network tables and kept live while the page is
   // visible. Nothing runs for a fleet without Mobile Hotspots.
   const mobileActivity = useMobileActivity(valid ? wallet : null, walletHotspots);
-  // A sliding window's label turns from "in the last 60 min" to "in the 60 min
-  // to 3:42 PM" once its table goes stale, which no update announces (a hidden
-  // tab, a stalled check): re-derive at that moment.
-  // The labels as of this render key the derivation, so any render after the
-  // flip (not only the timer's) picks it up; the timer just forces one.
-  const [, setWindowTick] = useState(0);
-  const windowFlipAt = nextWindowFlip(mobileActivity);
-  const windowSig = SLIDING_SECTIONS.map((s) => windowText(s, mobileActivity[s]?.until ?? null).long).join("|");
-  useEffect(() => {
-    if (windowFlipAt == null) return undefined;
-    // A little late rather than early: an early timer would re-derive the
-    // same label and never re-arm.
-    const id = setTimeout(() => setWindowTick((n) => n + 1), Math.max(0, windowFlipAt - Date.now()) + 50);
-    return () => clearTimeout(id);
-  }, [windowFlipAt]);
-  // The one derivation of every Mobile row's verdicts per activity update;
-  // the card, table, map and agent tools read this. Keyed on the sections
-  // (an update keeps unchanged ones' identity) and the tables' failures, so a
-  // check that changed nothing, and rewards/IoT flushes, don't re-derive it.
-  const { rewards: mRewards, usage: mUsage, heartbeats: mBeats, invalidHeartbeats: mRejected } = mobileActivity;
-  const { speedtests: mSpeed, bans: mBans } = mobileActivity;
-  const mobileFailedSig = `${mobileActivity.phase === "error"}:${Object.entries(mobileActivity.tables)
-    .filter(([, t]) => t.state === "error")
-    .map(([name]) => name)}`;
+  // The one derivation of every Mobile row's verdicts; the card, table, map
+  // and agent tools read this. The hook's state is new only with its own
+  // updates (a post, a window label's flip on its clock `asOf`, the page shown
+  // or hidden), so rewards and IoT flushes don't re-derive it.
   const mobileAgg = useMemo(
-    () => aggregateMobile(walletHotspots, mobileActivity),
-    // mobileActivity is read only through the sections and failures listed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [walletHotspots, mRewards, mUsage, mBeats, mRejected, mSpeed, mBans, mobileFailedSig, windowSig],
+    () => aggregateMobile(walletHotspots, mobileActivity, mobileActivity.asOf),
+    [walletHotspots, mobileActivity],
   );
   // The map decides its one camera ease per selection on live heartbeats, not
   // on the saved paint.
-  const heartbeatsLive = Boolean(mBeats) && !mobileActivity.cachedSections.includes("heartbeats");
+  const heartbeatsLive =
+    Boolean(mobileActivity.heartbeats) && !mobileActivity.cachedSections.includes("heartbeats");
   // A failed fleet is published too, so the agent tool needn't wait for
   // Mobile state that never comes.
   mobileStateRef.current = !valid
@@ -376,7 +356,7 @@ export default function WalletDashboard() {
                 </div>
               ) : (
                 <FleetMap
-                  hotspots={fleet?.hotspots || []}
+                  hotspots={fleet?.hotspots || EMPTY_FLEET}
                   rewardsByKey={rewardsState.rewardsByKey}
                   iotStatus={iotStatusAgg}
                   mobile={mobileAgg}
@@ -405,7 +385,7 @@ export default function WalletDashboard() {
           {/* Fleet — list view, directly under the map (spatial + tabular pair) */}
           <div ref={tableRef} className="scroll-mt-24 lg:col-span-8">
             <FleetTableCard
-              hotspots={fleet?.hotspots || []}
+              hotspots={fleet?.hotspots || EMPTY_FLEET}
               rewardsByKey={rewardsState.rewardsByKey}
               rewardsDone={rewardsState.done}
               onboardedByKey={onboardedByKey}

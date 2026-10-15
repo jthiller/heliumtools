@@ -1,22 +1,14 @@
-// Arrival motion for live Mobile data: what moved at the latest live arrival,
-// a count-up for numbers, and a one-shot flash. Only live arrivals animate
-// (`arrivals.seq` increments, see mobile/engine.js): the first load, a cached
-// paint, a remount and the sliding windows' re-assembles never do. JS motion
-// honors reduced motion via useReducedMotion; the CSS flashes use `motion-safe:`.
+// Arrival motion for live Mobile data: what moved at the latest live arrival
+// (flash keys for ArrivalFlash in cards/primitives.jsx) and a count-up for
+// numbers. Only live arrivals animate (`arrivals.seq` increments, see
+// mobile/engine.js): the first load, a cached paint, a remount and the sliding
+// windows' re-assembles never do. JS motion honors reduced motion via
+// useReducedMotion; the CSS flashes use `motion-safe:`.
 import { useLayoutEffect, useRef, useState } from "react";
 import useReducedMotion from "../lib/useReducedMotion.js";
-import { MOBILE_ISSUE_ORDER } from "./mobileFormat.js";
+import { MOBILE_ISSUES, MOBILE_ISSUE_ORDER } from "./mobileFormat.js";
 
 const COUNT_UP_MS = 800;
-
-// The table whose new rows can move each issue.
-const ISSUE_TABLE = {
-  banned: "bans",
-  noHeartbeat: "heartbeats",
-  lowTrust: "heartbeats",
-  lowSpeedtest: "speedtests",
-  rejectedHeartbeats: "invalidHeartbeats",
-};
 
 /**
  * What the latest live arrivals touched, as flash keys: each is the
@@ -42,7 +34,8 @@ export function useArrivalFlashes(arrivals, mobile) {
     for (const t of Object.keys(arrivals.byTable)) tables[t] = seq;
     const issues = { ...r.flashes.issues };
     for (const issue of MOBILE_ISSUE_ORDER) {
-      const keys = arrivals.byTable[ISSUE_TABLE[issue]];
+      // New rows in the table behind the issue.
+      const keys = arrivals.byTable[MOBILE_ISSUES[issue].table];
       let touched = mobile.counts[issue] !== r.counts[issue];
       if (!touched && keys?.length) {
         const fresh = new Set(keys);
@@ -75,7 +68,7 @@ export function useArrivalFlashes(arrivals, mobile) {
  * `trigger` changes along with it. Any other change snaps. Null and
  * non-finite values never animate.
  */
-export function useCountUp(value, trigger) {
+function useCountUp(value, trigger) {
   const reduced = useReducedMotion();
   const [frame, setFrame] = useState(null);
   const prev = useRef({ value, trigger });
@@ -118,20 +111,4 @@ export function useCountUp(value, trigger) {
 /** A number that counts up on arrival; `format` renders each frame. */
 export function CountUp({ value, trigger, format }) {
   return format(useCountUp(value, trigger));
-}
-
-/**
- * A one-shot accent wash over its `relative` parent, replayed whenever
- * `flashKey` changes (0/absent: none). The parent stays mounted, so focus
- * and hover survive the replay.
- */
-export function ArrivalFlash({ flashKey }) {
-  if (!flashKey) return null;
-  return (
-    <span
-      key={flashKey}
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 rounded-[inherit] motion-safe:animate-pulse-once"
-    />
-  );
 }

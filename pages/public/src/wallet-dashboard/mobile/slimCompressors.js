@@ -9,7 +9,7 @@ import { gunzip } from "hyparquet-compressors/src/gzip.js";
 
 export { gunzip };
 
-/** @type {import('hyparquet').Compressors} */
+/** hyparquet's codec map: name → (input, outputLength) => bytes. */
 export const compressors = {
   ZSTD: (input) => decompressZstd(input),
   GZIP: (input, length) => gunzip(input, new Uint8Array(length)),

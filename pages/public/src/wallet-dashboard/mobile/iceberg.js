@@ -7,7 +7,8 @@ import { fetchManifestEntries, icebergManifestList } from "icebird/src/manifest.
 import { fileMightMatch, manifestMightMatch, partitionMightMatch } from "icebird/src/prune.js";
 import { readDataFile } from "icebird/src/read.js";
 import { HttpError, anySignal } from "./storage.js";
-import { DAY_MS, dayOf } from "./tables.js";
+import { dayOf } from "./tables.js";
+import { DAY_MS } from "./tableMeta.js";
 
 const CATALOG_BASE = "https://catalog.mobile.helium.io/api/catalog/v1/mobile";
 const CATALOG_TIMEOUT_MS = 15_000;
@@ -16,7 +17,7 @@ const CATALOG_TIMEOUT_MS = 15_000;
 const MANIFEST_CONCURRENCY = 6;
 
 /** `s3://mobileoracles-mainnet/<key>` → its public HTTPS URL. */
-export function toHttps(path) {
+function toHttps(path) {
   return path.replace(/^s3a?:\/\/([^/]+)\//, "https://$1.helium.io/");
 }
 
@@ -47,9 +48,9 @@ export async function mapLimit(items, limit, fn) {
 // ── Table heads ─────────────────────────────────────────────────────────────
 
 // `?snapshots=refs` (the current snapshot only, not the whole history) answers
-// HTTP 400 for some tables; those load in full. usage_stats is known to (its
-// full metadata is ~30 KB), so it skips the failing request.
-const refsUnsupported = new Set(["hotspots.usage_stats"]);
+// HTTP 400 for some tables; those load in full. A table known to (its spec's
+// `fullMetadata`) skips the failing request; others are learned here.
+const refsUnsupported = new Set();
 
 function catalogFetch(url, signal) {
   // `no-cache` revalidates with the catalog's ETag: an unchanged table is a
@@ -60,13 +61,14 @@ function catalogFetch(url, signal) {
 /**
  * A table's current metadata. Snapshot ids exceed 2^53, so the JSON is parsed
  * losslessly (BigInt) and ids are compared as strings. `signal` cancels it.
- * @returns {Promise<{ metadata, snapshotId: string|null, committedAt: number }>}
+ * @returns {Promise<{ metadata, snapshotId: string|null }>}
  */
-export async function loadTableHead(ref, { signal } = {}) {
+export async function loadTableHead(spec, { signal } = {}) {
+  const { ref } = spec;
   const dot = ref.lastIndexOf(".");
   const base = `${CATALOG_BASE}/namespaces/${encodeURIComponent(ref.slice(0, dot))}/tables/${encodeURIComponent(ref.slice(dot + 1))}`;
   let res = null;
-  if (!refsUnsupported.has(ref)) {
+  if (!spec.fullMetadata && !refsUnsupported.has(ref)) {
     res = await catalogFetch(`${base}?snapshots=refs`, signal);
     if (res.status === 400) {
       refsUnsupported.add(ref);
@@ -81,10 +83,7 @@ export async function loadTableHead(ref, { signal } = {}) {
   }
   const { metadata } = parseIcebergJson(await res.text());
   const id = metadata["current-snapshot-id"];
-  if (id == null || id < 0) return { metadata, snapshotId: null, committedAt: 0 };
-  const snapshotId = String(id);
-  const snapshot = metadata.snapshots?.find((s) => String(s["snapshot-id"]) === snapshotId);
-  return { metadata, snapshotId, committedAt: Number(snapshot?.["timestamp-ms"] ?? 0) };
+  return { metadata, snapshotId: id == null || id < 0 ? null : String(id) };
 }
 
 // ── Planning ────────────────────────────────────────────────────────────────

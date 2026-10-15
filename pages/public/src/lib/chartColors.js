@@ -1,14 +1,21 @@
 // Reads Tailwind design tokens from CSS custom properties (stored as RGB
-// channels) and converts them to hex — recharts axis/grid/tooltip stroke
-// props take hex strings, not Tailwind classes. Use inside a `useMemo`
-// keyed on the dark-mode flag so values refresh on theme toggle.
+// channels) for props that take colors, not Tailwind classes (recharts
+// axis/grid/tooltip strokes, deck.gl layers). Use inside a `useMemo` keyed on
+// the dark-mode flag so values refresh on theme toggle.
+
+/** A token's current RGB channels, `[r, g, b]`; null when it isn't set. */
+export function readTokenRgb(name) {
+  if (typeof document === "undefined") return null;
+  const parts = getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(/\s+/).map(Number);
+  return parts.length === 3 && !parts.some((n) => Number.isNaN(n)) ? parts : null;
+}
+
 export function readChartColors() {
   if (typeof document === "undefined") return null;
-  const style = getComputedStyle(document.documentElement);
   const hex = (name) => {
-    const parts = style.getPropertyValue(name).trim().split(/\s+/).map(Number);
-    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return "#999999";
-    const [r, g, b] = parts;
+    const rgb = readTokenRgb(name);
+    if (!rgb) return "#999999";
+    const [r, g, b] = rgb;
     return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
   };
   return {

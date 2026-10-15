@@ -2,18 +2,18 @@
 // page, reused across wallet switches), schedules checks, merges its posts
 // into the assembled state, and saves each finished check for instant paint.
 //
-// Schedule: a check every 2 min while the page is visible, and a re-assemble
-// every 30 s between them so the 60-min heartbeat window slides. Hidden
-// pages pause; becoming visible checks right away if the last check is more
-// than 2 min old. (Unchanged tables cost a catalog 304 each.) Stopping (a
-// wallet switch, a cleared wallet, one without Mobile Hotspots) cancels the
-// worker's running check, downloads included.
+// Schedule: a check every 2 min while the page is visible, and for a fleet
+// with WiFi Hotspots a re-assemble every 30 s between them so the 60-min
+// heartbeat window slides. Hidden pages pause; becoming visible checks right
+// away if the last check is more than 2 min old. (Unchanged tables cost a
+// catalog 304 each.) Stopping (a wallet switch, a cleared wallet, one without
+// Mobile Hotspots) cancels the worker's running check, downloads included.
 //
 // `checkMobileOnce` is the one-shot variant for a wallet that isn't on
 // screen (the agent tool), in a worker of its own.
 import MobileWorker from "./mobileWorker.js?worker";
 import { writePaint } from "./paintCache.js";
-import { CHECK_INTERVAL_MS, FRESH_MS } from "./tables.js";
+import { CHECK_INTERVAL_MS } from "./tableMeta.js";
 
 const ASSEMBLE_INTERVAL_MS = 30_000;
 // How long a one-shot worker may keep writing its caches after answering.
@@ -23,32 +23,23 @@ const isVisible = () => typeof document === "undefined" || document.visibilitySt
 
 /**
  * The worker's state after one of its posts (see mobileWorker.js): a full
- * state replaces it; a patch replaces the fields it carries and moves the
- * other sliding sections' `until`. Unchanged sections keep their identity.
+ * state replaces it; a patch replaces the fields it carries, so unchanged
+ * sections keep their identity.
  */
-export function applyPost(prev, msg) {
-  if (!msg.patch || !prev) return msg.state;
-  const next = { ...prev, ...msg.state };
-  for (const [name, until] of Object.entries(msg.until || {})) {
-    const section = next[name];
-    if (section && section.until !== until) next[name] = { ...section, until };
-  }
-  return next;
-}
+const applyPost = (prev, msg) => (msg.patch && prev ? { ...prev, ...msg.state } : msg.state);
 
 /**
  * @returns {{ start(opts, onUpdate): () => void, destroy(): void }}
- *   start({ wallet, keys, wifi, totals }, onUpdate): begins (or switches to)
- *   a wallet; onUpdate receives `{ state, final }` (the assembled state; final
- *   once per finished check), `{ paused }`, `{ stale: true }` (the last
- *   finished check is older than FRESH_MS; the next final clears it) and
- *   `{ failed }` (the worker itself failed). Returns a stop function. Only the
- *   latest start's updates are delivered.
+ *   start({ wallet, keys, wifi }, onUpdate): begins (or switches to) a
+ *   wallet; onUpdate receives `{ state, final }` (the assembled state; final
+ *   once per finished check), `{ paused }` and `{ failed }` (the worker
+ *   itself failed). Returns a stop function. Only the latest start's updates
+ *   are delivered.
  */
 export function createMobileClient() {
   let worker = null;
   let session = 0;
-  // { session, wallet, keys, wifi, totals, onUpdate, lastCheckAt, lastFinalAt, staleNoted, state }
+  // { session, wallet, keys, wifi, onUpdate, lastCheckAt, state }
   let active = null;
   let timer = null;
 
@@ -61,12 +52,8 @@ export function createMobileClient() {
       const msg = e.data;
       if (!active || msg?.type !== "state" || msg.session !== active.session) return;
       active.state = applyPost(active.state, msg);
-      if (msg.final) {
-        active.lastFinalAt = Date.now();
-        active.staleNoted = false;
-      }
       active.onUpdate({ state: active.state, final: Boolean(msg.final) });
-      if (msg.final) writePaint(active.wallet, active.state, active.totals);
+      if (msg.final) writePaint(active.wallet, active.state);
     };
     const fail = (message) => {
       if (worker !== w) return;
@@ -90,17 +77,8 @@ export function createMobileClient() {
     return { type: "start", session: active.session, wallet: active.wallet, keys: active.keys, wifi: active.wifi };
   }
 
-  // The data is older than FRESH_MS (the page was hidden or asleep, or a
-  // check is slow): say so until the next check finishes.
-  function noteStale() {
-    if (!active?.lastFinalAt || active.staleNoted || Date.now() - active.lastFinalAt <= FRESH_MS) return;
-    active.staleNoted = true;
-    active.onUpdate({ stale: true });
-  }
-
   function tick() {
     if (!active || !isVisible()) return;
-    noteStale();
     const due = Date.now() - active.lastCheckAt >= CHECK_INTERVAL_MS;
     if (!worker) {
       if (!due) return;
@@ -110,7 +88,8 @@ export function createMobileClient() {
     } else if (due) {
       active.lastCheckAt = Date.now();
       worker.postMessage({ type: "refresh", session: active.session });
-    } else {
+    } else if (active.wifi) {
+      // Only the WiFi tables have sliding windows.
       worker.postMessage({ type: "assemble", session: active.session });
     }
   }
@@ -135,20 +114,9 @@ export function createMobileClient() {
     document.removeEventListener("visibilitychange", onVisibility);
   }
 
-  function start({ wallet, keys, wifi, totals }, onUpdate) {
+  function start({ wallet, keys, wifi }, onUpdate) {
     const mySession = ++session;
-    active = {
-      session: mySession,
-      wallet,
-      keys,
-      wifi,
-      totals,
-      onUpdate,
-      lastCheckAt: Date.now(),
-      lastFinalAt: 0,
-      staleNoted: false,
-      state: null,
-    };
+    active = { session: mySession, wallet, keys, wifi, onUpdate, lastCheckAt: Date.now(), state: null };
     ensureWorker().postMessage(startMessage());
     startTimers();
     onUpdate({ paused: !isVisible() });
@@ -177,7 +145,7 @@ export function createMobileClient() {
  * extract caches as the page's worker, but no schedule and no saved paint
  * (it never displaces the user's recent wallets). After answering, the
  * worker gets up to SETTLE_MAX_MS to finish writing its caches.
- *
+ * *
  * @returns {Promise<{ state, timedOut: boolean }>} the finished state, or
  *   after `timeoutMs` the latest partial one (tables still "loading"; the
  *   check is then cancelled, keeping the files it finished).

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { InformationCircleIcon } from "@heroicons/react/24/outline";
 import { classNames } from "../../lib/utils.js";
 import { fmtAgo, fmtCount } from "../format.js";
-import { ArrivalFlash } from "../arrivalMotion.jsx";
 
 /** Small outlined action button (table actions, Retry). */
 export const ACTION_BTN =
@@ -264,6 +263,22 @@ export function InfoTip({ text, label = "More info" }) {
 }
 
 /**
+ * A one-shot accent wash over its `relative` parent, replayed whenever
+ * `flashKey` changes (0/absent: none). The parent stays mounted, so focus
+ * and hover survive the replay. Reduced motion: none (`motion-safe:`).
+ */
+export function ArrivalFlash({ flashKey }) {
+  if (!flashKey) return null;
+  return (
+    <span
+      key={flashKey}
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 rounded-[inherit] motion-safe:animate-pulse-once"
+    />
+  );
+}
+
+/**
  * One "● label … count" row; a full-width button (filtering the Hotspot table)
  * when `onClick` is given. `flash`: an arrival key that replays a one-shot
  * highlight (see ArrivalFlash).
@@ -310,7 +325,7 @@ export function CountRow({ color, label, count, valueClass = "text-content", hin
   );
 }
 
-/** "4 min ago" for a ms timestamp, re-rendering only itself as time passes. */
+/** "4m ago" for a ms timestamp (fmtAgo), re-rendering only itself as time passes. */
 export function TimeAgo({ at, fallback = "—" }) {
   const [, setTick] = useState(0);
   useEffect(() => {

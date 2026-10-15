@@ -1,31 +1,38 @@
 // The Mobile activity engine: keeps one wallet's view of Helium's Mobile
-// network tables current. Runs in a Web Worker (mobileWorker.js) and, for
-// checks, in Node (no Cache Storage / IndexedDB there: memory only).
+// network tables current. Runs in a Web Worker (mobileWorker.js).
 //
-// Each check, table by table (failures isolated per table, one retry):
+// Each check loads every table's head up front, in parallel, then reads the
+// tables in REFRESH_STEPS order, the next table planning (metadata only)
+// while the current one's files download (failures isolated per table, one
+// retry):
 //   1. Load the table head. An unchanged snapshot reuses the last plan.
 //   2. Otherwise plan the window's data files from the current snapshot.
 //   3. File-set diff: extract only files not already extracted, drop extracted
 //      files no longer in the plan (aged out of the window, or replaced by the
 //      daily compaction). No lineage walk: the plan is the truth.
 //   4. Extract: whole file (byte cache), wallet's keys by Set, window filter.
-// Then assemble every table's windowed rows into the hook's contract and
-// diff them, as multisets of row ids, against the last check's: keys with
-// rows that weren't there before are this check's arrivals. A compaction
-// rewrites the same rows into a new file, so it never reads as new data.
+// Then every table's windowed rows assemble into the hook's contract; a
+// section is re-assembled only when its rows change, so an unchanged one
+// keeps its identity. At the end of a check, each table whose file set moved
+// diffs its rows, as multisets of row ids, against its last check's: keys
+// with rows that weren't there before are this check's arrivals. A
+// compaction rewrites the same rows into a new file, so it never reads as
+// new data.
 //
 // Each table keeps `checkedAt` (its last check, ok or not) and `okAt` (its
 // last successful one). A sliding window ends at now only while its table is
 // fresh (FRESH_MS); after a failed or overdue check it stays frozen at `okAt`,
-// so it never drains into false "no heartbeat" verdicts. Sections name their
-// window's end as `until`.
+// so it never drains into false "no heartbeat" verdicts. Each sliding table
+// names its window's end as `tables[name].until`.
 //
 // A wallet switch or `stop()` cancels the running check: it returns at its
 // next step and its downloads are aborted (a download another caller still
 // waits for carries on; see storage.js).
+import { sleep } from "../../lib/utils.js";
 import { cancelledError, createByteCache, createExtractCache } from "./storage.js";
 import { extractFile, fileInWindow, loadTableHead, mapLimit, planTable } from "./iceberg.js";
-import { FRESH_MS, REFRESH_STEPS, TABLES, TABLE_NAMES } from "./tables.js";
+import { REFRESH_STEPS, TABLES } from "./tables.js";
+import { FRESH_MS, TABLE_NAMES, WIFI_TABLES } from "./tableMeta.js";
 
 // Files in progress per table (download, then decode). The byte cache
 // schedules the downloads themselves by size.
@@ -33,8 +40,6 @@ const EXTRACT_CONCURRENCY = 5;
 // A plan this large is a malfunction (a normal window is ≤ ~20 MB).
 const TABLE_BYTE_CAP = 80_000_000;
 const RETRY_DELAY_MS = 1500;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A short, user-facing reason for a failed table check. */
 function describeError(err) {
@@ -63,18 +68,9 @@ function cyrb53(str, seed) {
 }
 
 /** A stable id for a set of keys (order-insensitive). */
-export function hashKeys(keys) {
+function hashKeys(keys) {
   const s = [...keys].sort().join("\n");
   return `${cyrb53(s, 1).toString(36)}${cyrb53(s, 2).toString(36)}`;
-}
-
-function countIds(spec, rows) {
-  const ids = new Map();
-  for (const r of rows) {
-    const id = spec.rowId(r);
-    ids.set(id, (ids.get(id) || 0) + 1);
-  }
-  return ids;
 }
 
 const newTable = () => ({
@@ -84,19 +80,59 @@ const newTable = () => ({
   okAt: undefined, // last successful check
   plan: null,
   extracts: new Map(),
-  prevIds: null,
   // Bumped whenever the plan or the extracted file set changes.
   version: 0,
+  // The last assembled section, and the sig it was assembled for.
+  section: null,
+  sig: null,
+  // The arrival baseline: row id → count, taken at version `idsVersion`.
+  ids: null,
+  idsVersion: -1,
 });
 
-/**
- * @param {object} [opts]
- * @param {ReturnType<typeof createByteCache>} [opts.bytes]
- * @param {ReturnType<typeof createExtractCache>} [opts.extracts]
- * @param {() => number} [opts.now]
- */
-export function createEngine({ bytes = createByteCache(), extracts = createExtractCache(), now = () => Date.now() } = {}) {
-  // Plans are wallet-independent: kept across wallet switches.
+// A sliding window ends now while its table is fresh, else at its last good check.
+function windowEnd(t, at) {
+  const fresh = t.status === "ok" && t.okAt != null && at - t.okAt <= FRESH_MS;
+  return fresh ? at : (t.okAt ?? at);
+}
+
+function countSince(t, since) {
+  let n = 0;
+  for (const e of t.extracts.values()) for (const r of e.rows) if (r.at >= since) n++;
+  return n;
+}
+
+// A table's windowed rows: every extracted row, or those at or after `since`.
+function rowsOf(t, since) {
+  const rows = [];
+  for (const e of t.extracts.values()) {
+    for (const r of e.rows) if (since == null || r.at >= since) rows.push(r);
+  }
+  return rows;
+}
+
+function priceByDay(t) {
+  const out = new Map();
+  for (const [url, e] of t.extracts) {
+    const day = t.plan.files.get(url)?.day;
+    if (day && e.meta?.price != null) out.set(day, e.meta.price);
+  }
+  return out;
+}
+
+function dayState(t, day, failed) {
+  if (!t.plan.present.has(day)) return "missing";
+  for (const f of t.plan.files.values()) {
+    if (f.day === day && !t.extracts.has(f.url)) return failed ? "failed" : "loading";
+  }
+  return "ok";
+}
+
+export function createEngine() {
+  const bytes = createByteCache();
+  const extracts = createExtractCache();
+  // Plans are wallet-independent, so they're kept across wallet switches:
+  // per table, its latest snapshot's (see ensurePlan).
   const plans = new Map();
   // Cache writes and cleanup still in flight (`settle()`).
   const pending = new Set();
@@ -104,15 +140,15 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
   let run = new AbortController(); // the current wallet's checks
   let wallet = null;
   let keySet = new Set();
+  let keyIndex = new Map(); // entity key → its index, so row ids stay short
   let keysHash = null;
   let tables = new Map();
-  let arrivals = { seq: 0, at: 0, byTable: {} };
+  let arrivals = { seq: 0, byTable: {} };
   let live = false;
-  let running = null;
-  let lastWindowSig = "";
+  let running = null; // the running check's promise
 
   function activeNames(wifi) {
-    return TABLE_NAMES.filter((name) => wifi || !TABLES[name].wifiOnly);
+    return TABLE_NAMES.filter((name) => wifi || !WIFI_TABLES.includes(name));
   }
 
   function track(p) {
@@ -133,10 +169,10 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
   function reset(nextWallet, keys, names) {
     wallet = nextWallet;
     keySet = new Set(keys);
+    keyIndex = new Map([...keySet].map((k, i) => [k, i]));
     keysHash = nextWallet ? hashKeys(keySet) : null;
     live = false;
-    arrivals = { seq: 0, at: 0, byTable: {} };
-    lastWindowSig = "";
+    arrivals = { seq: 0, byTable: {} };
     tables = new Map(names.map((name) => [name, newTable()]));
   }
 
@@ -158,13 +194,22 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
   // IndexedDB key for this wallet's extracts of a table, in its row format.
   const extractKey = (name) => `${keysHash}:${name}:v${TABLES[name].format}`;
 
-  async function ensurePlan(name, head, signal) {
-    const spec = TABLES[name];
+  // The plan for a table head's snapshot, shared while it loads. One still
+  // loading for a cancelled check isn't shared: it is about to reject with
+  // the cancellation.
+  function ensurePlan(name, head, signal) {
     const prev = plans.get(name);
-    if (prev && prev.snapshotId === head.snapshotId) return prev;
-    const plan = await planTable(spec, head, bytes, now(), { signal });
-    plans.set(name, plan);
-    return plan;
+    if (prev?.snapshotId === head.snapshotId && (prev.settled || !prev.signal.aborted)) return prev.promise;
+    const entry = { snapshotId: head.snapshotId, signal, settled: false };
+    entry.promise = planTable(TABLES[name], head, bytes, Date.now(), { signal });
+    entry.promise.then(
+      () => {
+        entry.settled = true;
+      },
+      () => plans.get(name) === entry && plans.delete(name),
+    );
+    plans.set(name, entry);
+    return entry.promise;
   }
 
   // One attempt at one table. Throws on failure; returns false if superseded.
@@ -175,7 +220,7 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
     const t = tables.get(name);
     const plan = await ensurePlan(name, head, signal);
     if (myEpoch !== epoch) return false;
-    const at = now();
+    const at = Date.now();
     const key = extractKey(name);
     const next = new Map();
     const todo = [];
@@ -200,10 +245,10 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
     // so an attempt that fails partway still leaves its finished files.
     await mapLimit(toRead, EXTRACT_CONCURRENCY, async (f) => {
       if (myEpoch !== epoch) return;
-      const value = await extractFile(spec, plan, f, keySet, bytes, now(), { signal });
+      const value = await extractFile(spec, plan, f, keySet, bytes, Date.now(), { signal });
       if (myEpoch !== epoch) return;
       next.set(f.url, value);
-      track(extracts.put(key, f.url, value, f.expireAt ?? now() + spec.retainMs));
+      track(extracts.put(key, f.url, value, f.expireAt ?? Date.now() + spec.retainMs));
     });
     if (myEpoch !== epoch) return false;
     // Dropped: aged out of the window, or replaced by a compaction.
@@ -218,20 +263,19 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
 
   async function refreshTable(name, headResult, step, myEpoch, signal) {
     const t = tables.get(name);
-    if (!t) return;
     let head = headResult;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         if (attempt > 0) {
           await sleep(RETRY_DELAY_MS);
           if (myEpoch !== epoch) return;
-          head = await loadTableHead(TABLES[name].ref, { signal });
+          head = await loadTableHead(TABLES[name], { signal });
         }
         if (head instanceof Error) throw head;
         if (!(await checkTable(name, head, step, myEpoch, signal))) return;
         t.status = "ok";
         t.error = undefined;
-        t.checkedAt = t.okAt = now();
+        t.checkedAt = t.okAt = Date.now();
         return;
       } catch (err) {
         if (myEpoch !== epoch) return;
@@ -239,26 +283,42 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
           console.warn(`[wallet-dashboard] ${TABLES[name].ref}:`, err);
           t.status = "error";
           t.error = describeError(err);
-          t.checkedAt = now();
+          t.checkedAt = Date.now();
           return;
         }
       }
     }
   }
 
+  // Row ids name the Hotspot by its index, not its 366-char key. `fresh`:
+  // keys with more copies of a row than the baseline `prev` had.
+  function diffRows(spec, rows, prev) {
+    const ids = new Map();
+    const fresh = new Set();
+    for (const r of rows) {
+      const id = `${keyIndex.get(r.k)}|${spec.rowId(r)}`;
+      const n = (ids.get(id) ?? 0) + 1;
+      ids.set(id, n);
+      if (prev && n > (prev.get(id) ?? 0)) fresh.add(r.k);
+    }
+    return { ids, fresh };
+  }
+
   /**
-   * Assemble the contract from every table's windowed rows.
-   * `commit`: record these rows as the baseline the next check diffs against;
-   * `detect`: report keys with new rows as arrivals (live updates only).
-   * `sig` (not part of the contract) changes exactly when a section's
-   * content does, apart from a sliding section's `until`: the worker posts
-   * only the sections whose `sig` moved.
+   * Assemble the contract from every table's windowed rows. A section is
+   * re-assembled only when its sig moves: the table's file set (`version`),
+   * plus for a sliding table the count of its rows in the window (with the
+   * files fixed, the count pins them down: between two assembles the window's
+   * start moves one way). `commit` (a check's end): each ok table whose file
+   * set moved since its baseline takes these rows as the new baseline, and
+   * with `detect` reports keys with rows the old one didn't have as arrivals.
    */
   function assemble({ commit = false, detect = false } = {}) {
-    const at = now();
+    const at = Date.now();
     const out = {
       wallet,
       checkedAt: null,
+      live,
       tables: {},
       rewards: null,
       usage: null,
@@ -266,10 +326,9 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
       invalidHeartbeats: null,
       speedtests: null,
       bans: null,
-      sig: {},
+      arrivals: null,
     };
     const byTable = {};
-    const windowSig = [];
     for (const [name, t] of tables) {
       const spec = TABLES[name];
       const entry = (out.tables[name] = { state: t.status });
@@ -279,66 +338,39 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
         out.checkedAt = Math.max(out.checkedAt ?? 0, t.checkedAt);
       }
       if (t.okAt) entry.okAt = t.okAt;
-      const plan = t.plan;
-      if (!plan) continue;
-      const rows = [];
-      let end = at;
+      if (!t.plan) continue;
+      // Planned files still unread are "failed" once this table's check has
+      // given up on them: at the end of a check (`commit`, while it still
+      // counts as running) or between checks.
+      const failed = t.status === "error" && (commit || !running);
+      let since = null;
+      let sig = `${t.version}:${failed}`;
       if (spec.window.kind === "sliding") {
-        // Fresh: the window ends now. Otherwise it stays at the last good check.
-        const fresh = t.status === "ok" && t.okAt != null && at - t.okAt <= FRESH_MS;
-        if (!fresh) end = t.okAt ?? at;
-        const since = end - spec.window.ms;
-        for (const e of t.extracts.values()) for (const r of e.rows) if (r.at >= since) rows.push(r);
-        // The rows kept are those at or after `since`, so with the file set
-        // fixed their count pins them down exactly.
-        out.sig[name] = `${t.version}:${rows.length}`;
-        windowSig.push(`${name}:${out.sig[name]}`);
-      } else {
-        for (const e of t.extracts.values()) for (const r of e.rows) rows.push(r);
-        out.sig[name] = String(t.version);
+        entry.until = windowEnd(t, at);
+        since = entry.until - spec.window.ms;
+        sig += `:${countSince(t, since)}`;
       }
-      out[name] = spec.assemble(rows, {
-        now: end,
-        days: plan.days,
-        priceByDay: priceByDay(plan, t),
-        // A planned day not yet read is "loading" while a check runs and
-        // "failed" once the table's last check has given up on it.
-        dayState: (day) => dayState(plan, t, day, !running && t.status === "error"),
-      });
-      if (commit && t.status === "ok") {
-        const ids = countIds(spec, rows);
-        if (detect && t.prevIds) {
-          const keys = new Set();
-          for (const r of rows) {
-            const id = spec.rowId(r);
-            if ((ids.get(id) || 0) > (t.prevIds.get(id) || 0)) keys.add(r.k);
-          }
-          if (keys.size) byTable[name] = [...keys];
-        }
-        t.prevIds = ids;
+      let rows = null;
+      if (sig !== t.sig) {
+        rows = rowsOf(t, since);
+        t.section = spec.assemble(rows, {
+          days: t.plan.days,
+          priceByDay: priceByDay(t),
+          dayState: (day) => dayState(t, day, failed),
+        });
+        t.sig = sig;
+      }
+      out[name] = t.section;
+      if (commit && t.status === "ok" && t.idsVersion !== t.version) {
+        const { ids, fresh } = diffRows(spec, rows ?? rowsOf(t, since), detect ? t.ids : null);
+        if (fresh.size) byTable[name] = [...fresh];
+        t.ids = ids;
+        t.idsVersion = t.version;
       }
     }
-    if (Object.keys(byTable).length) arrivals = { seq: arrivals.seq + 1, at, byTable };
+    if (Object.keys(byTable).length) arrivals = { seq: arrivals.seq + 1, byTable };
     out.arrivals = arrivals;
-    out.live = live;
-    out.refreshing = running != null;
-    lastWindowSig = windowSig.join(",");
     return out;
-  }
-
-  function priceByDay(plan, t) {
-    const out = new Map();
-    for (const [url, e] of t.extracts) {
-      const day = plan.files.get(url)?.day;
-      if (day && e.meta?.price != null) out.set(day, e.meta.price);
-    }
-    return out;
-  }
-
-  function dayState(plan, t, day, failed) {
-    if (!plan.present.has(day)) return "missing";
-    for (const f of plan.files.values()) if (f.day === day && !t.extracts.has(f.url)) return failed ? "failed" : "loading";
-    return "ok";
   }
 
   // Files the wallet's tables still show or plan: never evicted for age
@@ -346,7 +378,7 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
   // its expiry). The byte budget still applies.
   function keepSet() {
     const keep = new Set();
-    const at = now();
+    const at = Date.now();
     for (const [name, t] of tables) {
       for (const url of t.extracts.keys()) keep.add(url);
       for (const f of t.plan?.files.values() ?? []) if (fileInWindow(TABLES[name], f, at)) keep.add(f.url);
@@ -355,16 +387,15 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
   }
 
   /**
-   * One check of every table. Concurrent calls share the run; a wallet switch
-   * or stop abandons it at the next step. `onProgress(state)` fires after
-   * each step with a partial assembly (no arrivals).
+   * One check of every table; a wallet switch or stop abandons it at the
+   * next step. During a wallet's first check, `onProgress(getState)` fires
+   * after each step (`getState()` assembles the partial state, no arrivals).
    */
   async function refresh({ onProgress } = {}) {
     const myEpoch = epoch;
-    if (running?.epoch === myEpoch) return running.promise;
     const { signal } = run;
-    // A previous wallet's run was cancelled; let it settle first.
-    const previous = running?.promise;
+    // A previous wallet's check was cancelled; let it settle first.
+    const previous = running;
     const promise = (async () => {
       if (previous) await previous.catch(() => {});
       if (myEpoch !== epoch) return assemble();
@@ -372,59 +403,57 @@ export function createEngine({ bytes = createByteCache(), extracts = createExtra
       // Heads up front, in parallel: unchanged tables are 304s.
       const heads = new Map(
         await Promise.all(
-          names.map((n) => loadTableHead(TABLES[n].ref, { signal }).then((h) => [n, h], (e) => [n, e])),
+          names.map((n) => loadTableHead(TABLES[n], { signal }).then((h) => [n, h], (e) => [n, e])),
         ),
       );
-      for (const step of REFRESH_STEPS) {
+      const plan = (name, head) => (head instanceof Error ? Promise.reject(head) : ensurePlan(name, head, signal));
+      for (const [i, step] of REFRESH_STEPS.entries()) {
         if (myEpoch !== epoch) return assemble();
-        if (!tables.has(step.table)) continue;
+        const t = tables.get(step.table);
+        if (!t || (step.backfill && t.status === "error")) continue;
         // The rewards backfill reuses this check's plan: no second head.
-        const head = step.backfill ? tables.get(step.table).plan ?? heads.get(step.table) : heads.get(step.table);
-        if (step.backfill && tables.get(step.table).status === "error") continue;
+        const head = step.backfill ? (t.plan ?? heads.get(step.table)) : heads.get(step.table);
+        // Once this table is planned, the next one plans (metadata only)
+        // while this one's files download, queued behind them.
+        const next = REFRESH_STEPS[i + 1]?.table;
+        plan(step.table, head)
+          .then(() => myEpoch === epoch && tables.has(next) && plan(next, heads.get(next)))
+          .catch(() => {});
         await refreshTable(step.table, head, step, myEpoch, signal);
-        if (myEpoch === epoch) onProgress?.(assemble());
+        if (myEpoch === epoch && !live) onProgress?.(assemble);
       }
       if (myEpoch !== epoch) return assemble();
       const firstForWallet = !live;
       live = true;
       const state = assemble({ commit: true, detect: !firstForWallet });
       const keep = keepSet();
-      track(bytes.flush(now(), keep));
-      track(extracts.purge(now(), keep));
+      track(bytes.flush(Date.now(), keep));
+      track(extracts.purge(Date.now(), keep));
       return state;
     })();
-    running = { epoch: myEpoch, promise };
+    running = promise;
     try {
       return await promise;
     } finally {
-      if (running?.promise === promise) running = null;
+      if (running === promise) running = null;
     }
   }
 
   /**
    * Slide the windows between checks. Returns the new state, or null when no
-   * windowed row moved (or a check is running; its end assembles anyway).
+   * section changed (or a check is running; its end assembles anyway).
    */
   function reassemble() {
     if (running || !live) return null;
-    const before = lastWindowSig;
-    const state = assemble({ commit: true });
-    return lastWindowSig === before ? null : state;
+    const before = [...tables.values()].map((t) => t.section);
+    const state = assemble();
+    return [...tables.values()].some((t, i) => t.section !== before[i]) ? state : null;
   }
 
   /** Settles once this engine's cache writes and cleanup have (a one-shot check waits on it). */
   function settle() {
-    return Promise.allSettled([...pending, bytes.idle?.()]);
+    return Promise.allSettled([...pending, bytes.idle()]);
   }
 
-  return {
-    setWallet,
-    stop,
-    refresh,
-    reassemble,
-    state: () => assemble(),
-    settle,
-    stats: { bytes: bytes.stats, extracts: extracts.stats },
-    usage: () => bytes.usage(),
-  };
+  return { setWallet, stop, refresh, reassemble, state: () => assemble(), settle };
 }

@@ -53,26 +53,28 @@ const dateFmtUtc = new Intl.DateTimeFormat(undefined, {
   timeZone: "UTC",
 });
 
-/** Relative time from unix seconds (transactions) → "3h ago", "2d ago". */
-export function fmtAgoSeconds(sec) {
-  if (!sec) return "—";
-  const diff = Math.floor(Date.now() / 1000 - sec);
+/** Whole seconds elapsed → "45s ago", "4m ago", "3h ago", "2d ago"; null from
+ * 30 days on (callers show the date then). */
+function agoText(diff) {
   if (diff < 60) return `${Math.max(diff, 0)}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
-  return fmtDate(sec * 1000);
+  return null;
 }
 
-/** Relative time from a ms timestamp, minute-grained for live data →
- * "just now", "4 min ago", "3 h ago", "2 d ago". */
+/** Relative time from unix seconds (transactions) → "3h ago", "2d ago". */
+export function fmtAgoSeconds(sec) {
+  if (!sec) return "—";
+  return agoText(Math.floor(Date.now() / 1000 - sec)) ?? fmtDate(sec * 1000);
+}
+
+/** Relative time from a ms timestamp, minute-grained for live data (a check,
+ * a heartbeat) → "just now", "4m ago", "3h ago", "2d ago". */
 export function fmtAgo(ms, now = Date.now()) {
   if (!ms) return "—";
-  const min = Math.floor((now - ms) / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  if (min < 24 * 60) return `${Math.floor(min / 60)} h ago`;
-  return `${Math.floor(min / (24 * 60))} d ago`;
+  const diff = Math.floor((now - ms) / 1000);
+  return diff < 60 ? "just now" : (agoText(diff) ?? fmtDate(ms));
 }
 
 // Solana explorer (Solscan) links.

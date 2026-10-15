@@ -5,47 +5,27 @@
 //
 // Normalized rows are small plain objects (numbers, ms timestamps, strings):
 // they're cached in IndexedDB, posted to the page, and diffed between checks
-// (`rowId` is a row's identity for the multiset diff that decides what's new;
-// a compaction rewrites the same rows into a new file, so identical ids).
+// (`rowId` is a row's identity among its Hotspot's rows for the multiset diff
+// that decides what's new; a compaction rewrites the same rows into a new
+// file, so identical ids).
 //
 // Keys are each Hotspot's Entity API `entity_key_str`, byte-for-byte the
 // tables' key strings (366-char RSA keys for WiFi indoor/outdoor Hotspots,
 // 51-char ed25519 keys for data-only ones; ecc_compact keys, `11…`, such as
 // CBRS radios, never appear in these tables).
 
-export const MINUTE_MS = 60_000;
-export const HOUR_MS = 60 * MINUTE_MS;
-export const DAY_MS = 24 * HOUR_MS;
+import { DAY_MS, TABLE_META, TABLE_NAMES, metersBetween, windowMs } from "./tableMeta.js";
 
-/** How often a visible page checks every table (mobileClient.js). */
-export const CHECK_INTERVAL_MS = 2 * MINUTE_MS;
-/**
- * A sliding window ends at "now" only while its table is fresh: its last
- * check succeeded within two check intervals plus a minute. Otherwise (a
- * failed or overdue check, a hidden or sleeping page) it stays frozen at the
- * last successful check, and the section's `until` says so.
- */
-export const FRESH_MS = 2 * CHECK_INTERVAL_MS + MINUTE_MS;
-
-/** Whether a sliding section's window (`until`) still ends at about now. */
-export function isWindowCurrent(until, now = Date.now()) {
-  return until != null && now - until <= FRESH_MS;
-}
-
-/** Heartbeat and rejected-heartbeat window, minutes. */
-export const HEARTBEAT_WINDOW_MIN = 60;
-/** Speedtest average window, hours. */
-export const SPEEDTEST_WINDOW_HOURS = 24;
 // A sliding table's file stops being planned once its newest row leaves the
 // window; this much slack (about one upstream commit) keeps it cached past that.
-const SLIDING_SLACK_MS = 20 * MINUTE_MS;
+const SLIDING_SLACK_MS = 20 * 60_000;
 /** Reported positions closer than this are one point on the map, meters. */
 const POINT_GROUP_M = 15;
 /** HNT and HNT/USD prices are stored ×1e8 (bones). */
 const BONES_PER_HNT = 1e8;
 
 /** Timestamp-ish parquet value → ms (null when absent). */
-export function toMs(v) {
+function toMs(v) {
   if (v == null) return null;
   if (v instanceof Date) return v.getTime();
   if (typeof v === "bigint") return Number(v);
@@ -55,23 +35,14 @@ export function toMs(v) {
 }
 
 /** int64 (BigInt) / numeric parquet value → number (null when absent). */
-export function toNum(v) {
+function toNum(v) {
   if (v == null) return null;
-  const n = typeof v === "bigint" ? Number(v) : Number(v);
+  const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
 /** ms → "YYYY-MM-DD" (UTC). */
 export const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
-
-/** Great-circle distance in meters. */
-function metersBetween(lat1, lon1, lat2, lon2) {
-  const toRad = Math.PI / 180;
-  const dLat = (lat2 - lat1) * toRad;
-  const dLon = (lon2 - lon1) * toRad;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) ** 2;
-  return 2 * 6_371_000 * Math.asin(Math.min(1, Math.sqrt(a)));
-}
 
 /** The newest row per key, by `at`. */
 function latestByKey(rows) {
@@ -83,25 +54,35 @@ function latestByKey(rows) {
   return out;
 }
 
+/** The sliding window tableMeta.js gives `name`. */
+function sliding(name) {
+  const length = TABLE_META[name].window;
+  return { kind: "sliding", length, ms: windowMs(length) };
+}
+
 /**
  * Windows:
- *   { kind: "sliding", ms }       rows whose time column is within `ms` of the
+ *   { kind: "sliding", length, ms }
+ *                                 rows whose time column is within `ms` of the
  *                                 window's end: now while the table is fresh
  *                                 (re-filtered on every assemble, so it
- *                                 slides), else its last good check
+ *                                 slides), else its last good check. The
+ *                                 engine reports the end as the table's `until`.
  *   { kind: "days", days, lookbackDays }
  *                                 the `days` UTC partition days ending at the
  *                                 newest one present within `lookbackDays`
  *   { kind: "all" }               the whole table
- * `retainMs`: how long a file stays useful past its newest row (window + slack);
- * cached bytes and extracts older than that are evicted first.
- * `wifiOnly`: only WiFi indoor/outdoor Hotspots appear, so a fleet without
- * any skips the table.
+ * `retainMs`: how long a file stays useful past its newest row; cached bytes
+ * and extracts older than that are evicted first. Sliding tables: their
+ * window plus SLIDING_SLACK_MS.
+ * `fullMetadata`: the catalog answers HTTP 400 to `?snapshots=refs`, so the
+ * table head loads in full (iceberg.js).
  * `format`: the shape of a cached extract (IndexedDB records are keyed by
- * it). Bump it whenever `columns`, `scan`, `normalize` or `rowId` change, so
+ * it). Bump it whenever `columns`, `scan` or `normalize` change, so
  * returning browsers re-extract instead of reading old-shaped rows; old
  * records age out by their expiry.
- * Sliding sections carry `until`, their window's end (see FRESH_MS).
+ * `assemble` never reads the clock: a section depends only on the table's
+ * windowed rows and plan, so the engine reuses it until those change.
  */
 export const TABLES = {
   rewards: {
@@ -123,7 +104,7 @@ export const TABLES = {
       bones: toNum(r.dc_transfer_reward) ?? 0,
       bytes: toNum(r.rewardable_bytes) ?? 0,
     }),
-    rowId: (r) => `${r.k}|${r.day}|${r.bones}|${r.bytes}`,
+    rowId: (r) => `${r.day}|${r.bones}|${r.bytes}`,
     /** ctx: { days (newest first), dayState(day), priceByDay } */
     assemble(rows, ctx) {
       const totals = new Map(ctx.days.map((d) => [d, { bones: 0, bytes: 0, keys: new Set() }]));
@@ -159,57 +140,30 @@ export const TABLES = {
     },
   },
 
+  // Users served per Hotspot. The dashboard's bytes are the rewards table's
+  // (the bytes the HNT paid for), so the report's byte columns aren't read.
   usage: {
     ref: "hotspots.usage_stats",
     keyColumn: "hotspot_pubkey",
     timeColumn: "epoch_start_timestamp",
     window: { kind: "days", days: 1, lookbackDays: 7 },
     retainMs: 3 * DAY_MS,
-    format: 1,
-    columns: [
-      "hotspot_pubkey",
-      "received_timestamp",
-      "epoch_start_timestamp",
-      "user_count_total",
-      "rewarded_bytes_transferred_total",
-      "unrewarded_bytes_transferred_total",
-      "sampling_user_count_total",
-      "sampling_bytes_transferred_total",
-      "carrier_transfer_info",
-    ],
+    fullMetadata: true, // ~30 KB in full
+    format: 2,
+    columns: ["hotspot_pubkey", "received_timestamp", "epoch_start_timestamp", "user_count_total"],
     normalize: (r) => ({
       k: r.hotspot_pubkey,
       day: dayOf(toMs(r.epoch_start_timestamp)),
       at: toMs(r.received_timestamp) ?? 0,
       users: toNum(r.user_count_total) ?? 0,
-      rb: toNum(r.rewarded_bytes_transferred_total) ?? 0,
-      ub: toNum(r.unrewarded_bytes_transferred_total) ?? 0,
-      su: toNum(r.sampling_user_count_total) ?? 0,
-      sb: toNum(r.sampling_bytes_transferred_total) ?? 0,
-      // Carrier ids are anonymized (`carrier_N`); no names exist.
-      carriers: (r.carrier_transfer_info || []).map((c) => ({
-        id: c.carrier_id,
-        users: toNum(c.user_count) ?? 0,
-        rewardedBytes: toNum(c.rewarded_bytes_transferred) ?? 0,
-        unrewardedBytes: toNum(c.unrewarded_bytes_transferred) ?? 0,
-      })),
     }),
-    rowId: (r) => `${r.k}|${r.day}|${r.at}|${r.users}|${r.rb}|${r.ub}`,
+    rowId: (r) => `${r.day}|${r.at}|${r.users}`,
     /** ctx: { days: [day] } */
     assemble(rows, ctx) {
       const day = ctx.days[0];
       if (!day) return null;
       const byKey = {};
-      for (const [k, r] of latestByKey(rows.filter((x) => x.day === day))) {
-        byKey[k] = {
-          users: r.users,
-          rewardedBytes: r.rb,
-          unrewardedBytes: r.ub,
-          samplingUsers: r.su,
-          samplingBytes: r.sb,
-          carriers: r.carriers,
-        };
-      }
+      for (const [k, r] of latestByKey(rows.filter((x) => x.day === day))) byKey[k] = { users: r.users };
       return { day, byKey };
     },
   },
@@ -221,22 +175,21 @@ export const TABLES = {
     timeColumn: "received_timestamp",
     window: { kind: "all" },
     retainMs: 30 * DAY_MS,
-    format: 1,
-    columns: ["pubkey", "received_timestamp", "is_ban", "hotspot_serial", "message", "ban_reason"],
+    format: 2,
+    columns: ["pubkey", "received_timestamp", "is_ban", "message", "ban_reason"],
     normalize: (r) => ({
       k: r.pubkey,
       at: toMs(r.received_timestamp) ?? 0,
       ban: Boolean(r.is_ban),
       reason: r.ban_reason ?? null,
       message: r.message ?? null,
-      serial: r.hotspot_serial ?? null,
     }),
-    rowId: (r) => `${r.k}|${r.at}|${r.ban}`,
+    rowId: (r) => `${r.at}|${r.ban}`,
     // Current status is the newest row per Hotspot; `is_ban: false` is an unban.
     assemble(rows) {
       const byKey = {};
       for (const [k, r] of latestByKey(rows)) {
-        byKey[k] = { banned: r.ban, at: r.at, reason: r.reason, message: r.message, serial: r.serial };
+        byKey[k] = { banned: r.ban, at: r.at, reason: r.reason, message: r.message };
       }
       return { byKey };
     },
@@ -246,16 +199,13 @@ export const TABLES = {
     ref: "hotspots.heartbeats",
     keyColumn: "hotspot_pubkey",
     timeColumn: "received_timestamp",
-    window: { kind: "sliding", ms: HEARTBEAT_WINDOW_MIN * MINUTE_MS },
-    retainMs: HEARTBEAT_WINDOW_MIN * MINUTE_MS + SLIDING_SLACK_MS,
-    format: 1,
-    wifiOnly: true,
+    window: sliding("heartbeats"),
+    format: 2,
     columns: [
       "hotspot_pubkey",
       "received_timestamp",
       "lat",
       "lon",
-      "location_validation_timestamp",
       "distance_to_asserted",
       "asserted_location",
       "location_trust_score_multiplier",
@@ -270,11 +220,9 @@ export const TABLES = {
       dist: toNum(r.distance_to_asserted),
       src: r.location_source ?? null,
       cell: r.asserted_location ?? null,
-      vt: toMs(r.location_validation_timestamp),
     }),
-    rowId: (r) => `${r.k}|${r.at}|${r.lat}|${r.lon}`,
-    /** ctx: { now } (the window's end) */
-    assemble(rows, ctx) {
+    rowId: (r) => `${r.at}|${r.lat}|${r.lon}`,
+    assemble(rows) {
       const byKey = {};
       const sorted = [...rows].sort((a, b) => a.at - b.at);
       for (const r of sorted) {
@@ -287,7 +235,6 @@ export const TABLES = {
         e.distance = r.dist;
         e.source = r.src;
         e.assertedCell = r.cell;
-        e.validatedAt = r.vt;
         if (!Number.isFinite(r.lat) || !Number.isFinite(r.lon)) continue;
         // Group fixes within POINT_GROUP_M of a point's first fix.
         const p = e.points.find((x) => metersBetween(x.lat, x.lon, r.lat, r.lon) <= POINT_GROUP_M);
@@ -301,7 +248,7 @@ export const TABLES = {
           e.points.push({ lat: r.lat, lon: r.lon, n: 1, lastAt: r.at, trust: r.trust, distance: r.dist, source: r.src });
         }
       }
-      return { windowMin: HEARTBEAT_WINDOW_MIN, until: ctx.now, byKey };
+      return { byKey };
     },
   },
 
@@ -309,15 +256,12 @@ export const TABLES = {
     ref: "hotspots.invalid_heartbeats",
     keyColumn: "hotspot_pubkey",
     timeColumn: "received_timestamp",
-    window: { kind: "sliding", ms: HEARTBEAT_WINDOW_MIN * MINUTE_MS },
-    retainMs: HEARTBEAT_WINDOW_MIN * MINUTE_MS + SLIDING_SLACK_MS,
+    window: sliding("invalidHeartbeats"),
     format: 1,
-    wifiOnly: true,
     columns: ["hotspot_pubkey", "received_timestamp", "reason"],
     normalize: (r) => ({ k: r.hotspot_pubkey, at: toMs(r.received_timestamp) ?? 0, reason: r.reason ?? "unknown" }),
-    rowId: (r) => `${r.k}|${r.at}|${r.reason}`,
-    /** ctx: { now } (the window's end) */
-    assemble(rows, ctx) {
+    rowId: (r) => `${r.at}|${r.reason}`,
+    assemble(rows) {
       const byKey = {};
       for (const r of rows) {
         const e = (byKey[r.k] ??= { count: 0, lastAt: 0, reasons: {} });
@@ -325,7 +269,7 @@ export const TABLES = {
         if (r.at > e.lastAt) e.lastAt = r.at;
         e.reasons[r.reason] = (e.reasons[r.reason] || 0) + 1;
       }
-      return { windowMin: HEARTBEAT_WINDOW_MIN, until: ctx.now, byKey };
+      return { byKey };
     },
   },
 
@@ -333,10 +277,8 @@ export const TABLES = {
     ref: "hotspots.speedtest_avgs",
     keyColumn: "hotspot_pubkey",
     timeColumn: "timestamp",
-    window: { kind: "sliding", ms: SPEEDTEST_WINDOW_HOURS * HOUR_MS },
-    retainMs: SPEEDTEST_WINDOW_HOURS * HOUR_MS + SLIDING_SLACK_MS,
-    format: 1,
-    wifiOnly: true,
+    window: sliding("speedtests"),
+    format: 2,
     columns: [
       "hotspot_pubkey",
       "upload_speed_avg_bps",
@@ -345,7 +287,6 @@ export const TABLES = {
       "reward_multiplier",
       "sample_count",
       "timestamp",
-      "speedtests",
     ],
     normalize: (r) => ({
       k: r.hotspot_pubkey,
@@ -355,36 +296,26 @@ export const TABLES = {
       latency: toNum(r.latency_avg_ms),
       mult: toNum(r.reward_multiplier),
       n: toNum(r.sample_count),
-      tests: (r.speedtests || [])
-        .map((t) => ({
-          at: toMs(t.timestamp),
-          down: toNum(t.download_speed_bps),
-          up: toNum(t.upload_speed_bps),
-          latency: toNum(t.latency_ms),
-        }))
-        .sort((a, b) => (b.at ?? 0) - (a.at ?? 0)),
     }),
-    rowId: (r) => `${r.k}|${r.at}|${r.mult}|${r.n}`,
-    // The newest average per Hotspot in the last 24 h. ctx: { now } (the window's end)
-    assemble(rows, ctx) {
+    rowId: (r) => `${r.at}|${r.mult}|${r.n}`,
+    // The newest average per Hotspot in the window.
+    assemble(rows) {
       const byKey = {};
       for (const [k, r] of latestByKey(rows)) {
-        byKey[k] = {
-          down: r.down,
-          up: r.up,
-          latency: r.latency,
-          multiplier: r.mult,
-          samples: r.n,
-          at: r.at,
-          tests: r.tests,
-        };
+        byKey[k] = { down: r.down, up: r.up, latency: r.latency, multiplier: r.mult, samples: r.n, at: r.at };
       }
-      return { windowHours: SPEEDTEST_WINDOW_HOURS, until: ctx.now, byKey };
+      return { byKey };
     },
   },
 };
 
-export const TABLE_NAMES = Object.keys(TABLES);
+// A sliding table's files stay useful one upstream commit past its window.
+for (const spec of Object.values(TABLES)) {
+  if (spec.window.kind === "sliding") spec.retainMs = spec.window.ms + SLIDING_SLACK_MS;
+}
+
+// tableMeta.js names the same tables in the same order for the page.
+if (Object.keys(TABLES).join() !== TABLE_NAMES.join()) throw new Error("tables.js and tableMeta.js disagree");
 
 /**
  * One check's order of work. The newest rewards day paints first; the other

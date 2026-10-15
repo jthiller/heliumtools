@@ -79,9 +79,7 @@ where the page exposes its own loader, route the tool through it so one
 fetch serves both the tool result and the render (ve-hnt's
 `analyzeWallet`); otherwise wrap the read fetcher in
 `lib/requestDedupe.js` `dedupeAsync` (short-TTL in-flight sharing — the
-oui balance and the claimer's lookup/wallet fetchers; `ttlFromSettle` for
-slow bounded work, like the wallet dashboard's off-screen Mobile check,
-shares a running call and starts the TTL once it finishes). Never dedupe
+oui balance and the claimer's lookup/wallet fetchers). Never dedupe
 mutations or reads that must reflect a mutation immediately (the
 claimer's rewards reads and ve-hnt's post-claim positions refresh stay
 live).
