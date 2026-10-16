@@ -144,7 +144,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Brand Guidelines",
     summary:
-      "Official Helium logo files at stable direct-link URLs under https://heliumtools.org/brand/ (Helium lockup, roundel, HeliumOS and Plus product lockups; purple/black/white; SVG and PNG; one ZIP of all 24), plus the usage rules: the symbol is always inside its circle, never rotated, and appears only in the supplied colorways. Also carries a brief palette and type (Figtree) reference from the Helium Design System. heliumtools.org is a third-party mirror; the marks belong to Nova Labs and the Helium Foundation, whose terms govern use. Static page, no wallet.",
+      "Official Helium logo files at stable direct-link URLs under https://heliumtools.org/brand/ (Helium lockup, roundel, HeliumOS and Plus product lockups; purple/black/white; SVG and PNG; one ZIP of all 24), plus the usage rules: the symbol is always inside its circle, never rotated, and appears only in the supplied colorways. Also carries the secondary palette and a brief type (Figtree) reference. heliumtools.org is a third-party mirror; the marks belong to Nova Labs and the Helium Foundation, whose terms govern use. Static page, no wallet.",
     tools: ["list-helium-brand-assets", "get-helium-logo-guidelines"],
   },
   {

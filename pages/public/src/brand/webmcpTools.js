@@ -11,7 +11,7 @@ import {
   LOGO_RULES,
   MIN_SIZE,
   OWNERSHIP,
-  SUPPORTING_COLORS,
+  SECONDARY_COLORS,
   TERMS,
   TYPE,
   ZIP,
@@ -75,7 +75,7 @@ export const brandTools = [
     name: "get-helium-logo-guidelines",
     title: "Get Helium logo usage guidelines",
     description:
-      "The rules for using the Helium marks: the symbol is always used inside its circle (never on its own), it is never rotated (its two outer circles sit on a fixed 45° axis), and it appears only in the supplied purple, black, or white files. Returns the brand purple hex, which colorway belongs on which background, clear space, minimum sizes, and the full do/don't list, plus a brief supporting palette and type summary (Figtree) from the Helium Design System for anyone building something branded. Also states who owns the marks: heliumtools.org is a third-party mirror, and Nova Labs' and the Helium Foundation's terms govern use. Use list-helium-brand-assets for the file URLs.",
+      "The rules for using the Helium marks: the symbol is always used inside its circle (never on its own), it is never rotated (its two outer circles sit on a fixed 45° axis), and it appears only in the supplied purple, black, or white files. Returns the brand purple hex, which colorway belongs on which background, clear space, minimum sizes, and the full do/don't list, plus the secondary palette (names and hex values from the Helium design team's current palette sheet) and a brief type summary (Figtree) from the Helium Design System, for anyone building something branded. Also states who owns the marks: heliumtools.org is a third-party mirror, and Nova Labs' and the Helium Foundation's terms govern use. Use list-helium-brand-assets for the file URLs.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
     execute() {
@@ -90,7 +90,7 @@ export const brandTools = [
         dont: LOGO_RULES.dont.map(({ title, body }) => ({ title, body })),
         clearSpace: CLEAR_SPACE,
         minimumSize: MIN_SIZE,
-        supportingColors: SUPPORTING_COLORS.map(({ label, hex, use }) => ({ label, hex, use })),
+        secondaryColors: SECONDARY_COLORS.map(({ label, hex }) => ({ label, hex })),
         type,
         beyondLogo: BEYOND_LOGO,
         assets: `list-helium-brand-assets returns direct URLs; the guidelines page is ${BRAND_ASSET_ORIGIN}/brand`,

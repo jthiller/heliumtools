@@ -87,17 +87,17 @@ export const FAMILIES = [
 ];
 
 /**
- * The rest of the palette, from the Helium Design System. Deliberately
- * restrained: the purple does the work against black, white, and grey.
+ * The secondary colors, as named, ordered, and spelled in the Helium design
+ * team's current Colour Palette sheet. Its primary colors (Primary Purple,
+ * White, Black) are the three colorways above. The sheet gives names and hex
+ * values only, so no usage notes are attached here.
  */
-export const SUPPORTING_COLORS = [
-  { id: "blue", label: "Primary Blue", hex: "#1088DE", use: "Secondary. Reserved for Hotspot surfaces." },
-  { id: "orange", label: "Orange", hex: "#F79009", use: "Accent. Helium Plus calls to action only." },
-  { id: "night", label: "Night", hex: "#030A12", use: "Deep navy for full-bleed dark backgrounds." },
-  { id: "off-white", label: "Off White", hex: "#F5F5F7", use: "Most surfaces are white or near-white." },
-  { id: "light-gray", label: "Light Gray", hex: "#F7F7F7", use: "Soft grey behind product photography." },
-  { id: "border", label: "Border", hex: "#E5E7EB", use: "Hairline card borders." },
-  { id: "gray", label: "Gray", hex: "#7D7D7D", use: "Secondary text." },
+export const SECONDARY_COLORS = [
+  { id: "heading-gray", label: "Heading Gray", hex: "#3D3D3D" },
+  { id: "body-gray", label: "Body Gray", hex: "#767676" },
+  { id: "mobile-blue", label: "Mobile Blue", hex: "#1088DE" },
+  { id: "light-purple", label: "Light Purple", hex: "#F8F5FF" },
+  { id: "light-gray", label: "Light Gray", hex: "#F7F7F7" },
 ];
 
 /** Type, in brief. The site itself is not set in the brand face; the specimen on the page is. */
@@ -105,11 +105,11 @@ export const TYPE = {
   family: "Figtree",
   weights: "Regular 400, SemiBold 600, Black 900",
   display:
-    "Headlines are Figtree Black, uppercase, 0.95 leading, −2.5% tracking, with one clause set in Helium Purple.",
+    "Headlines are Figtree Black in title case, ending in a period, 0.95 leading, −2.5% tracking, with one clause set in Helium Purple.",
   headings: "Headings are Figtree SemiBold with −2% tracking.",
   body: "Body is Figtree Regular at 18 px. Eyebrows and labels are uppercase with +8% tracking.",
   poster: "Panchang Extrabold appears only on posters, for super-sized display.",
-  specimen: { lead: "A network built by people,", accent: "not towers", body: "The Helium Network. It's already in your pocket." },
+  specimen: { lead: "A Network Built by People,", accent: "Not Towers.", body: "The Helium Network. It's already in your pocket." },
 };
 
 /**
@@ -161,7 +161,7 @@ export const BEYOND_LOGO = [
   },
   {
     title: "Cards",
-    body: "Rounded corners from 24 to 50 px, hairline #E5E7EB borders, near-white fills, and almost no shadow.",
+    body: "Rounded corners from 24 to 50 px, hairline borders, near-white fills, and almost no shadow.",
   },
   {
     title: "Voice",
