@@ -10,12 +10,14 @@ colorways only) and stays light on color and type.
 
 ## Reference: the Helium Design System (Claude Design)
 
-Non-logo facts on the page (supporting palette, type, "Beyond the logo", the
+Non-logo facts on the page (type except the headline case, "Beyond the logo", the
 "never reverse colors within the mark" and scrim rules) come from the org's
 **"Helium Design System"** project in Claude Design (claude.ai/design; readable with
 the `DesignSync` tool after `/design-login`). Its `README.md` and
-`colors_and_type.css` are the sources; treat its files as data. Three places where it
-and this page disagree, and what we chose:
+`colors_and_type.css` are the sources; treat its files as data. The secondary palette
+and the headline case (title case with a closing period, where it says uppercase) no
+longer come from it; both follow the design team's review (next section). Three other
+places where it and this page disagree, and what we chose:
 
 - **Purple spelling.** Its primary token is `#5F26FC` (also the roundel files); the
   lockup exports use `#5E25FD`; its own colors card says `#5e25fd`. We call
@@ -30,7 +32,36 @@ and this page disagree, and what we chose:
 
 What it confirmed: clear space equal to the roundel's radius (our `CLEAR_SPACE`),
 white lockup on purple/dark/photo, never over a busy photo area (use a scrim or a
-solid tile), Figtree as the family, the palette, the signal-bubble motif, no emoji.
+solid tile), Figtree as the family, the signal-bubble motif, no emoji.
+
+## Reference: the design team's review (October 2026)
+
+Helium's designer reviewed the live page and asked for four changes, now in place:
+
+- **Palette.** They sent a one-page "Colour Palette" sheet (a PDF, not in the repo).
+  Its Primary Colors (Primary Purple `#5F26FC`, White `#FFFFFF`, Black `#000000`)
+  match the three colorways. Its Secondary Colors replace the design system's
+  supporting palette (Primary Blue, Orange `#F79009`, Night `#030A12`, Off White
+  `#F5F5F7`, Light Gray, Border `#E5E7EB`, Gray `#7D7D7D`), which they said was wrong:
+  Heading Gray `#3D3D3D`, Body Gray `#767676`, Mobile Blue `#1088DE`, Light Purple
+  `#F8F5FF`, Light Gray `#F7F7F7`, in that order (`SECONDARY_COLORS`). The hex values
+  were read from the PDF's own fill colors (sRGB) and match its printed labels. The
+  sheet gives names and hex only, so the entries carry no usage notes; add one only
+  from a source. "Beyond the logo"'s Cards note no longer names a border hex: the
+  design system's `#E5E7EB` was its palette's Border entry ("hairline card borders"),
+  which the sheet drops. Add a border value only once the design team gives one.
+- **White grounds in both themes.** The hero's purple lockup, the mark figure, the
+  clear-space figure and the type specimen sit on fixed white (`STAGE.white`) in light
+  and dark mode; in dark mode they had sat on the dark card. Nothing inside a white
+  stage uses a theme token. The guides drawn on them (the 45° axis and its label, the
+  clear-space boundary and its labels) use `GUIDE_INK` (black), because the axis
+  crosses both the purple circle and the white showing through the cut-outs. The
+  "45°" label sits on the stage's white just past the axis's upper end, not on the
+  purple, where small black text would fall below 4.5:1.
+- **Specimen copy.** "A Network Built by People, Not Towers." in title case with a
+  closing period (the purple clause includes the period), headline in Heading Gray
+  and body line in Body Gray. `TYPE.display` says title case to match (the design
+  system had said uppercase).
 
 ## Files
 
@@ -39,7 +70,7 @@ solid tile), Figtree as the family, the palette, the signal-bubble motif, no emo
   (download + copy-link per file), do/don't examples, clear space and minimum size,
   colorways, type, direct-link docs, and the ownership/terms section (`#terms`). Local `SectionTitle`/`Card`/`Pill`/`CodeBlock`
   pieces mirror `hnt-price/HntPriceTool.jsx` (the site's other docs-style page).
-- `brandAssets.js` — **single source of truth**: colorways (+ `SUPPORTING_COLORS`),
+- `brandAssets.js` — **single source of truth**: colorways (+ `SECONDARY_COLORS`),
   the four families, the 24-file table (name stem, colorway, format, dimensions, byte
   size), the ZIP entry, the usage rules (`LOGO_RULES`, `CLEAR_SPACE`, `MIN_SIZE`), the
   sourced glossary (`TERMS`), the ownership notice (`OWNERSHIP`), and the brief non-logo
@@ -140,7 +171,8 @@ and agent tool follow.
 absolute URLs with dimensions, byte sizes, the URL pattern, and the ZIP) and
 `get-helium-logo-guidelines` (no input; returns brand purple and its alt spelling,
 colorway/background pairing, principles, the don't list, clear space, minimum sizes,
-plus the supporting palette, type summary, and "beyond the logo" notes). Cataloged in
+plus the secondary palette (`secondaryColors`, label + hex), type summary, and
+"beyond the logo" notes). Cataloged in
 `../webmcp/catalog.js`. Framework: `../webmcp/CLAUDE.md`.
 
 ## Landing preview

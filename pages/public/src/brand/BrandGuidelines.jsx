@@ -15,7 +15,7 @@ import {
   LOGO_RULES,
   MIN_SIZE,
   OWNERSHIP,
-  SUPPORTING_COLORS,
+  SECONDARY_COLORS,
   TERMS,
   TYPE,
   ZIP,
@@ -32,7 +32,8 @@ import {
 
 // Fixed stage colors for logo previews. These are deliberately not theme
 // tokens: a purple logo is previewed on white and a white logo on dark in
-// both light and dark mode, because that is what each file is for.
+// both light and dark mode, because that is what each file is for. The same
+// goes for the figures and the type specimen, which sit on white in both.
 const STAGE = {
   white: "#FFFFFF",
   paper: "#F4F3F0",
@@ -40,6 +41,14 @@ const STAGE = {
   dark: "#0F0F12",
   navy: "#241B5E",
 };
+
+// Ink for the dashed guides drawn on the white stage (the 45° axis, the
+// clear-space boundary). The axis crosses both the purple circle and the
+// white showing through the cut-outs, so it has to be dark to read on both.
+const GUIDE_INK = "#000000";
+
+// The secondary palette by id, for the type specimen's text colors.
+const SECONDARY = Object.fromEntries(SECONDARY_COLORS.map((c) => [c.id, c.hex]));
 
 // The roundel's symbol without its circle, for the "don't" example only. It
 // is the compound path of helium-roundel-purple.svg with the outer-circle
@@ -116,7 +125,7 @@ function CodeBlock({ code }) {
   );
 }
 
-/** A fixed-color stage for previewing a logo file. Recessed, so it keeps a hairline. */
+/** A fixed-color stage for previewing a logo file or figure. Recessed, so it keeps a hairline. */
 function Stage({ color, className = "", children }) {
   return (
     <div
@@ -153,35 +162,36 @@ function FileButton({ asset }) {
 
 // The symbol's two outer circles are centered near (288,131) and (133,290) in
 // the roundel's 421-unit viewBox, point-symmetric about the center, which puts
-// their axis at ~45°. The dashed line runs along that axis to the circle's edge.
+// their axis at ~45°. The dashed line runs along that axis to the circle's edge,
+// and its label sits just past the upper end, on the stage's white.
 function MarkFigure({ roundel }) {
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[280px]">
-      <Logo asset={roundel} alt="The Helium roundel, purple" className="h-full w-full" />
-      <svg viewBox="0 0 421 421" className="absolute inset-0 h-full w-full" aria-hidden="true">
-        <line
-          x1="62.9"
-          y1="359.8"
-          x2="357.3"
-          y2="60.4"
-          stroke="#FFFFFF"
-          strokeOpacity="0.85"
-          strokeWidth="2"
-          strokeDasharray="7 7"
-        />
-        <text
-          x="330"
-          y="118"
-          fill="#FFFFFF"
-          fillOpacity="0.9"
-          fontFamily="JetBrains Mono, ui-monospace, monospace"
-          fontSize="18"
-          fontWeight="500"
-        >
-          45°
-        </text>
-      </svg>
-    </div>
+    <Stage color="white" className="p-6 sm:p-8">
+      <div className="relative aspect-square w-full max-w-[280px]">
+        <Logo asset={roundel} alt="The Helium roundel, purple" className="h-full w-full" />
+        <svg viewBox="0 0 421 421" className="absolute inset-0 h-full w-full" aria-hidden="true">
+          <line
+            x1="62.9"
+            y1="359.8"
+            x2="357.3"
+            y2="60.4"
+            stroke={GUIDE_INK}
+            strokeWidth="2"
+            strokeDasharray="7 7"
+          />
+          <text
+            x="362"
+            y="50"
+            fill={GUIDE_INK}
+            fontFamily="JetBrains Mono, ui-monospace, monospace"
+            fontSize="18"
+            fontWeight="500"
+          >
+            45°
+          </text>
+        </svg>
+      </div>
+    </Stage>
   );
 }
 
@@ -222,27 +232,53 @@ function Example({ ok, title, body, stage, children }) {
 
 // ─── Clear space ──────────────────────────────────────────────────────────────
 
+// The labels sit on the stage's white to break the dashed line behind them.
+const GUIDE_LABEL_STYLE = { backgroundColor: STAGE.white, color: GUIDE_INK };
+
 function ClearSpaceFigure({ roundel }) {
   // The roundel is 80px, so half its diameter is 40px of padding on each side.
   return (
-    <div className="flex justify-center py-2">
-      <div className="relative rounded-[32px] border-2 border-dashed border-content-tertiary/60 p-10">
+    <Stage color="white" className="px-6 py-8">
+      <div className="relative rounded-[32px] border-2 border-dashed p-10" style={{ borderColor: GUIDE_INK }}>
         <Logo asset={roundel} alt="" className="h-20 w-20" />
-        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-surface-raised px-1.5 font-mono text-[10px] text-content-tertiary">
+        <span
+          className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 font-mono text-[10px]"
+          style={GUIDE_LABEL_STYLE}
+        >
           ½ D
         </span>
-        <span className="absolute -left-4 top-1/2 -translate-y-1/2 -rotate-90 whitespace-nowrap bg-surface-raised px-1.5 font-mono text-[10px] text-content-tertiary">
+        <span
+          className="absolute -left-4 top-1/2 -translate-y-1/2 -rotate-90 whitespace-nowrap px-1.5 font-mono text-[10px]"
+          style={GUIDE_LABEL_STYLE}
+        >
           ½ D
         </span>
-        <span className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-surface-raised px-1.5 font-mono text-[10px] text-content-tertiary">
+        <span
+          className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 font-mono text-[10px]"
+          style={GUIDE_LABEL_STYLE}
+        >
           D = diameter
         </span>
       </div>
-    </div>
+    </Stage>
   );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+/** One of the two big lockups at the top: a card holding a fixed-color tile. */
+function HeroTile({ color, children }) {
+  return (
+    <Card className="flex min-h-[200px] items-center justify-center p-10">
+      <div
+        className="flex h-full w-full items-center justify-center rounded-xl px-8 py-10"
+        style={{ backgroundColor: STAGE[color] }}
+      >
+        {children}
+      </div>
+    </Card>
+  );
+}
 
 const stageFor = { purple: "white", black: "white", white: "dark" };
 
@@ -285,17 +321,12 @@ export default function BrandGuidelines() {
           {/* Hero stage */}
           <section>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Card className="flex min-h-[200px] items-center justify-center p-10">
+              <HeroTile color="white">
                 <Logo asset={heliumPurple} alt="Helium logo, purple on white" className="h-14 w-auto sm:h-16" />
-              </Card>
-              <Card className="flex min-h-[200px] items-center justify-center p-10">
-                <div
-                  className="flex h-full w-full items-center justify-center rounded-xl px-8 py-10"
-                  style={{ backgroundColor: STAGE.purple }}
-                >
-                  <Logo asset={heliumWhite} alt="Helium logo, white on Helium Purple" className="h-14 w-auto sm:h-16" />
-                </div>
-              </Card>
+              </HeroTile>
+              <HeroTile color="purple">
+                <Logo asset={heliumWhite} alt="Helium logo, white on Helium Purple" className="h-14 w-auto sm:h-16" />
+              </HeroTile>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <a href={ZIP.path} download={ZIP.filename} className={BUTTON_CLASS}>
@@ -563,10 +594,10 @@ export default function BrandGuidelines() {
             </Card>
             <Card className="mt-4 p-6">
               <p className="mb-4 font-mono text-[10px] uppercase tracking-[0.14em] text-content-tertiary">
-                Supporting palette
+                Secondary colors
               </p>
-              <div className="grid grid-cols-2 gap-5 sm:grid-cols-4 lg:grid-cols-7">
-                {SUPPORTING_COLORS.map((c) => (
+              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
+                {SECONDARY_COLORS.map((c) => (
                   <div key={c.id}>
                     <span
                       className="block h-9 w-full rounded-lg border border-border"
@@ -575,7 +606,6 @@ export default function BrandGuidelines() {
                     />
                     <div className="mt-2 text-[13px] font-medium text-content">{c.label}</div>
                     <div className="font-mono text-[11px] text-content-tertiary">{c.hex}</div>
-                    <p className="mt-1 text-[12px] leading-relaxed text-content-secondary">{c.use}</p>
                   </div>
                 ))}
               </div>
@@ -589,24 +619,28 @@ export default function BrandGuidelines() {
               is.
             </SectionTitle>
             <Card className="p-6 sm:p-8">
-              <p
-                className="text-[34px] text-content sm:text-[48px]"
-                style={{
-                  fontFamily: FIGTREE_STACK,
-                  fontWeight: 900,
-                  lineHeight: 0.95,
-                  letterSpacing: "-0.025em",
-                  textTransform: "uppercase",
-                }}
-              >
-                {TYPE.specimen.lead} <span style={{ color: BRAND_PURPLE }}>{TYPE.specimen.accent}</span>
-              </p>
-              <p
-                className="mt-5 max-w-xl text-[18px] text-content-secondary"
-                style={{ fontFamily: FIGTREE_STACK, fontWeight: 400, lineHeight: 1.2 }}
-              >
-                {TYPE.specimen.body}
-              </p>
+              <Stage color="white" className="p-6 sm:p-8">
+                <div className="w-full">
+                  <p
+                    className="text-[34px] sm:text-[48px]"
+                    style={{
+                      fontFamily: FIGTREE_STACK,
+                      fontWeight: 900,
+                      lineHeight: 0.95,
+                      letterSpacing: "-0.025em",
+                      color: SECONDARY["heading-gray"],
+                    }}
+                  >
+                    {TYPE.specimen.lead} <span style={{ color: BRAND_PURPLE }}>{TYPE.specimen.accent}</span>
+                  </p>
+                  <p
+                    className="mt-5 max-w-xl text-[18px]"
+                    style={{ fontFamily: FIGTREE_STACK, fontWeight: 400, lineHeight: 1.2, color: SECONDARY["body-gray"] }}
+                  >
+                    {TYPE.specimen.body}
+                  </p>
+                </div>
+              </Stage>
               <dl className="mt-7 grid gap-x-8 gap-y-3 border-t border-border-muted pt-5 text-[14px] sm:grid-cols-2">
                 {[
                   ["Family", `${TYPE.family}. ${TYPE.weights}.`],
