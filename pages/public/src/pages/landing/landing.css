@@ -263,12 +263,18 @@ a.tool-card:focus-visible {
 .tc-nowrap {
   white-space: nowrap;
 }
-/* Badge: the same straight paper pill right after the name on every card. */
+/* Badge: the same straight paper pill right after the name on every card.
+   At line-height 1, JetBrains Mono's capitals sit centered in the 9.5px line
+   box (1.31px above, 1.25px below), so equal padding would center them on
+   paper; Safari rounds the text down half a device pixel, though, so the top
+   padding is a quarter pixel less (Chrome rounds to the same place either
+   way). Keep the 17.5px total. vertical-align places the pill against the
+   name and moves with the top padding. */
 .tc-badge {
   display: inline-block;
   margin-left: 3.5px; /* + the word space before it */
-  vertical-align: 2.5px;
-  padding: 4.5px 8px 3.5px;
+  vertical-align: 3.25px;
+  padding: 3.75px 8px 4.25px;
   border-radius: 999px;
   background: var(--paper);
   color: var(--ink);
