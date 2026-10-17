@@ -7,7 +7,9 @@
 //
 // Section: { id, title, description, tools }. `id` names the section's region
 // (its h2's id). Tool: { slug, name, description, href, badge, featured?,
-// disabled? }. `featured`: the card spans two grid columns wherever the grid
+// disabled? }. `badge: "New"` marks the three most recently added tools only
+// (today Mobile WiFi Onboarding, HNT Price API and Brand Guidelines): a new
+// tool takes it from the oldest of the three. `featured`: the card spans two grid columns wherever the grid
 // has two or more (its preview config then needs a `featured` print set).
 // `disabled`: shown as a plain, unfocusable "Coming Soon" card. `hidden`: left
 // off the page entirely (SECTIONS below is the visible list).
@@ -30,7 +32,7 @@ const ALL_SECTIONS = [
         description:
           "Read-only overview for any wallet: fleet map, token balances, unclaimed rewards, governance, recent activity, and an exportable Hotspot list.",
         href: "/wallet-dashboard",
-        badge: "New",
+        badge: null,
         featured: true,
       },
     ],
@@ -105,7 +107,7 @@ const ALL_SECTIONS = [
         description:
           "Connect your Solana wallet to re-assert the location, elevation, or antenna gain of your onboarded IoT Hotspots.",
         href: "/update-location",
-        badge: "New",
+        badge: null,
       },
       {
         slug: "hotspot-claimer",
@@ -144,7 +146,7 @@ const ALL_SECTIONS = [
         description:
           "Analyze staked HNT positions on any wallet: lockup status, landrush bonus, delegation, pending rewards, and voting activity.",
         href: "/ve-hnt",
-        badge: "New",
+        badge: null,
       },
       {
         slug: "l1-migration",

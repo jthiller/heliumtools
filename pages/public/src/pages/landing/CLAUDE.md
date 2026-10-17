@@ -10,6 +10,9 @@ October 2026 and set these rules; don't revert them without asking:
 - No "Open tool" CTA, pill or arrow. The card is the affordance.
 - The "New" badge is straight (never tilted) and sits in the same slot on
   every card. Recurring elements stay in one place card to card.
+- Only the three most recently added tools carry "New" (today Mobile WiFi
+  Onboarding, HNT Price API and Brand Guidelines); a new tool takes it from
+  the oldest of the three.
 - No meta labels on the page (direction names, counts, designer notes).
 - Dark grounds are clearly colored mid-tone fields, not near-black tints.
 - The page opens on a compact header on the page background (no shader or
@@ -271,7 +274,9 @@ captured; that list is what decides whether a change touches the card. Commands
 run from `scripts/tool-previews/` with the frontend up (kit README).
 
 **Adding a tool page** (all in the same commit):
-1. Add the tool to the list in `sections.js` with a `slug`, and add
+1. Add the tool to the list in `sections.js` with a `slug` and
+   `badge: "New"`, and set the oldest of the three tools that carry "New"
+   back to `badge: null`. Add
    `previews/<slug>.js` with the next tone step of its section. Register it in
    `previews/index.js`. A new section gets its own family in `tones.js` on a
    hue arc no other section uses (and an `id` in `sections.js`). A new card
