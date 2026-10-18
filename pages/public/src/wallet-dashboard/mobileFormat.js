@@ -8,6 +8,10 @@
 // rewarded byte, so location trust, the speedtest multiplier and heartbeats
 // don't change it: they are WiFi health signals, never earnings problems.
 import { FRESH_MS, SLIDING_TABLES, isWindowCurrent, windowLength } from "./mobile/tableMeta.js";
+import { stateRank } from "./statusRegistry.js";
+
+// en-US throughout, like format.js (one locale policy).
+const LOCALE = "en-US";
 
 /**
  * A fleet row that earns on the Mobile network, addressable by entity key.
@@ -38,14 +42,21 @@ function lengthText(name) {
   return minutes ? `${minutes} min` : `${hours} h`;
 }
 
-const clockFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-const dayClockFmt = new Intl.DateTimeFormat(undefined, {
+const clockFmt = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
+const dayClockFmt = new Intl.DateTimeFormat(LOCALE, {
   month: "short",
   day: "numeric",
   hour: "numeric",
   minute: "2-digit",
 });
 const sameLocalDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+
+/** A moment as the windows name their end: "3:42 PM", or "Oct 13, 3:42 PM"
+ * when it isn't `now`'s local day. Shared by windowText and mobileFreshness
+ * ("Saved from 3:42 PM", "data from 3:42 PM"). */
+export function fmtClock(ms, now = Date.now()) {
+  return (sameLocalDay(ms, now) ? clockFmt : dayClockFmt).format(new Date(ms));
+}
 
 /**
  * How a sliding section's window is named, from its `until`. While the window
@@ -60,8 +71,7 @@ export function windowText(name, until, now) {
   if (until == null || isWindowCurrent(until, now)) {
     return { current: true, until: until ?? null, long: `in the last ${len}`, span: `last ${len}`, short: len };
   }
-  const end = (sameLocalDay(until, now) ? clockFmt : dayClockFmt).format(new Date(until));
-  const short = `${len} to ${end}`;
+  const short = `${len} to ${fmtClock(until, now)}`;
   return { current: false, until, long: `in the ${short}`, span: short, short };
 }
 
@@ -87,17 +97,20 @@ export function nextWindowFlip(activity, now) {
 // ── Issues ──────────────────────────────────────────────────────────────────
 
 // The amber issues' styling: WiFi health signals, not earnings problems.
+// (`color`, `textClass` and `tone` are deprecated: the old cards read them;
+// the status registry's `tier` replaces them.)
 const CAUTION = {
+  tier: "check",
   color: "#d97706", // amber-600
   textClass: "text-amber-600 dark:text-amber-400",
   tone: "caution",
 };
 
 /**
- * Per-Hotspot issues, most actionable first. `color` is the dot color,
- * `textClass` the text tone, `tone` the NameCallout tone ("warn" for the one
- * serious issue, "caution" for the WiFi signals, which don't change HNT from
- * data transfer). `wifi`: applies only to WiFi indoor/outdoor Hotspots.
+ * Per-Hotspot issues, most actionable first. `tier` is the status
+ * registry's (statusRegistry.js: Banned is Serious, the WiFi signals Check,
+ * since they don't change HNT from data transfer). Deprecated: `color`,
+ * `textClass`, `tone`. `wifi`: applies only to WiFi indoor/outdoor Hotspots.
  * `table`: the table behind it. `window`: the sliding section it's named by;
  * `text(w)` words it for that window (see windowText): `label` for the card's
  * rows and callouts, `chip` for the table's filter chips and status cells,
@@ -106,6 +119,7 @@ const CAUTION = {
  */
 export const MOBILE_ISSUES = {
   banned: {
+    tier: "serious",
     color: "#e11d48", // rose-600
     textClass: "text-rose-600 dark:text-rose-400",
     tone: "warn",
@@ -181,14 +195,36 @@ function issueTextFor(key, w) {
   return t;
 }
 
+const NOT_MOBILE_RANK = 10_000;
+
 /**
- * A Mobile row's place in "most actionable first": its first issue's index in
- * MOBILE_ISSUE_ORDER, then rows with no issue (or not loaded yet); 99 for a
- * Hotspot that isn't on Mobile. The table's Status sort and the agent tool share it.
+ * A Mobile row's place in "most actionable first", on the status registry's
+ * `stateRank`: its first issue's rank (the MOBILE_ISSUE_ORDER order), then
+ * rows with no issue (or not loaded yet) with the OK states; last for a
+ * Hotspot that isn't on Mobile. The agent tool shares it.
  */
 export function mobileActionRank(row) {
-  if (!row) return 99;
-  return row.issue ? MOBILE_ISSUE_ORDER.indexOf(row.issue) : MOBILE_ISSUE_ORDER.length;
+  if (!row) return NOT_MOBILE_RANK;
+  return stateRank(row.issue ?? "heartbeatOk");
+}
+
+/**
+ * A WiFi Mobile row with no issue, every answer in: not banned, a heartbeat
+ * in the window, no rejected heartbeats, its speedtest table in, and no
+ * location trust or speedtest multiplier below 1. The one predicate behind
+ * `aggregateMobile`'s `noIssue` group and the list's `mobileOk` filter, so
+ * Health's "No issues" count and the list can't differ. Data-only rows never
+ * qualify.
+ */
+export function isWifiNoIssue(row) {
+  return (
+    Boolean(row?.wifi) &&
+    row.banned === false &&
+    row.heartbeating === true &&
+    row.rejectedHeartbeats === 0 &&
+    row.speedtestKnown === true &&
+    row.issues.length === 0
+  );
 }
 
 const LOCATION_SOURCE_LABEL = { asserted: "Asserted", gps: "GPS", skyhook: "Skyhook" };
@@ -206,22 +242,22 @@ export function fmtReason(reason) {
 }
 
 /** Bits per second → "13.7 Mbps" / "150 Mbps". */
-export function fmtMbps(bps) {
-  if (bps == null || !Number.isFinite(bps)) return "—";
+export function fmtMbps(bps, { empty = "Not reported" } = {}) {
+  if (bps == null || !Number.isFinite(bps)) return empty;
   const mbps = bps / 1e6;
-  return `${mbps.toLocaleString(undefined, { maximumFractionDigits: mbps < 10 ? 1 : 0 })} Mbps`;
+  return `${mbps.toLocaleString(LOCALE, { maximumFractionDigits: mbps < 10 ? 1 : 0 })} Mbps`;
 }
 
 /** Meters → "31 m" / "1.2 km". */
-export function fmtMeters(m) {
-  if (m == null || !Number.isFinite(m)) return "—";
+export function fmtMeters(m, { empty = "Not reported" } = {}) {
+  if (m == null || !Number.isFinite(m)) return empty;
   if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km`;
+  return `${(m / 1000).toLocaleString(LOCALE, { maximumFractionDigits: 1 })} km`;
 }
 
 /** A 0-1 multiplier (location trust, speedtest) → "1.00", "0.25". */
-export function fmtMultiplier(x) {
-  if (x == null || !Number.isFinite(x)) return "—";
+export function fmtMultiplier(x, { empty = "Not reported" } = {}) {
+  if (x == null || !Number.isFinite(x)) return empty;
   return x.toFixed(2);
 }
 
@@ -263,13 +299,26 @@ function failedTables(activity, loaded) {
  *                        usage not loaded)
  *   users                users served on the usage day; null without a row
  *                        (not reported is unknown, never 0)
+ *   speedtestKnown       WiFi: the speedtest table is in (a row without one
+ *                        in 24 h is then a real "none")
  *   issues, issue        MOBILE_ISSUE_ORDER keys that apply / the first
- * `groups`: {issue: [{hotspot, row}]} in fleet order.
- * `counts`: per issue, plus heartbeating, heartbeatChecked (WiFi rows with the
- *   window loaded), rewarded (Hotspots with HNT on the newest day), withIssues.
+ *   days7                the 7 reward days, oldest first: [{ day, hnt, bytes,
+ *                        state }], state "ok" | "missing" | "failed" |
+ *                        "loading". A row absent from an ok, keyed day earned
+ *                        a real 0; a day the saved paint kept only as a
+ *                        total (no per-Hotspot split) is "loading", never 0
+ *   week                 { hnt, bytes, daysLoaded, daysWithHnt, keyed } over
+ *                        the ok days; keyed false = the paint kept only
+ *                        daily totals
+ * `groups`: {issue: [{hotspot, row}]} in fleet order, plus `noIssue` (WiFi
+ *   rows passing `isWifiNoIssue`).
+ * `counts`: per issue and `noIssue`, plus heartbeating, heartbeatChecked
+ *   (WiFi rows with the window loaded), rewarded (Hotspots with HNT on the
+ *   newest day), withIssues.
  * `rewards`: { days, latest, latestUsd (latest HNT at that day's price),
- *   weekHnt (over loaded days), daysLoaded } | null. "Rewarded data" is
- *   `latest.bytes`: the bytes behind the HNT, from the same table and day.
+ *   weekHnt (over loaded days), daysLoaded, firstDay (the oldest of the 7
+ *   days, YYYY-MM-DD) } | null. "Rewarded data" is `latest.bytes`: the bytes
+ *   behind the HNT, from the same table and day.
  * `usage`: { day, hotspots (with a row), users, coverage } | null. Users are
  *   summed across Hotspots: a user served by two counts twice. `coverage`:
  *   { reported, rewarded }, the Hotspots rewarded on the usage day and how
@@ -285,9 +334,10 @@ function failedTables(activity, loaded) {
  */
 export function aggregateMobile(hotspots, activity, now) {
   const rows = new Map();
-  const groups = Object.fromEntries(MOBILE_ISSUE_ORDER.map((k) => [k, []]));
+  const groups = Object.fromEntries([...MOBILE_ISSUE_ORDER, "noIssue"].map((k) => [k, []]));
   const counts = {
     ...Object.fromEntries(MOBILE_ISSUE_ORDER.map((k) => [k, 0])),
+    noIssue: 0,
     heartbeating: 0,
     heartbeatChecked: 0,
     rewarded: 0,
@@ -308,6 +358,13 @@ export function aggregateMobile(hotspots, activity, now) {
   const keyed = (day) => day?.state === "ok" && (!(day.hotspots > 0) || Object.keys(allByKey || {}).length > 0);
   const rewardsByKey = keyed(latest) ? allByKey || {} : null;
   const usageByKey = activity?.usage?.byKey;
+  // The 7 days oldest first. Without the rewards section yet, 7 placeholder
+  // days in the state the table is in.
+  const rewardsFailed = !activity?.rewards && activity?.tables?.rewards?.state === "error";
+  const weekDays = days.length
+    ? [...days].reverse()
+    : Array.from({ length: 7 }, () => ({ day: null, state: rewardsFailed ? "failed" : "loading" }));
+  const weekKeyed = weekDays.map((d) => keyed(d));
 
   let usage = null;
   let usageDayKeyed = false;
@@ -346,6 +403,7 @@ export function aggregateMobile(hotspots, activity, now) {
       points: beat?.points ?? [],
       speedtest: wifi ? speed : null,
       speedtestMultiplier: wifi ? (speed?.multiplier ?? null) : null,
+      speedtestKnown: wifi && Boolean(st),
       banned: bans ? ban?.banned === true : null,
       ban: ban?.banned ? ban : null,
       rejectedHeartbeats: wifi && inv ? (rejected?.count ?? 0) : null,
@@ -356,7 +414,27 @@ export function aggregateMobile(hotspots, activity, now) {
       users: used ? used.users : null,
       issues: [],
       issue: null,
+      days7: null,
+      week: null,
     };
+    const byDay = allByKey?.[key];
+    const week = { hnt: 0, bytes: 0, daysLoaded: 0, daysWithHnt: 0, keyed: true };
+    row.days7 = weekDays.map((d, i) => {
+      if (d.state !== "ok") return { day: d.day, hnt: null, bytes: null, state: d.state };
+      if (!weekKeyed[i]) {
+        week.keyed = false;
+        return { day: d.day, hnt: null, bytes: null, state: "loading" };
+      }
+      const e = byDay?.[d.day];
+      const hnt = e?.hnt ?? 0;
+      const bytes = e?.bytes ?? 0;
+      week.hnt += hnt;
+      week.bytes += bytes;
+      week.daysLoaded++;
+      if (hnt > 0) week.daysWithHnt++;
+      return { day: d.day, hnt, bytes, state: "ok" };
+    });
+    row.week = week;
     if (row.banned) row.issues.push("banned");
     if (row.heartbeating === false) row.issues.push("noHeartbeat");
     if (row.heartbeating && row.trust != null && row.trust < 1) row.issues.push("lowTrust");
@@ -368,6 +446,10 @@ export function aggregateMobile(hotspots, activity, now) {
       groups[issue].push({ hotspot: h, row });
     }
     if (row.issue) counts.withIssues++;
+    if (isWifiNoIssue(row)) {
+      counts.noIssue++;
+      groups.noIssue.push({ hotspot: h, row });
+    }
     if (row.heartbeating !== null) counts.heartbeatChecked++;
     if (row.heartbeating) counts.heartbeating++;
     if (row.hntLatestDay > 0) counts.rewarded++;
@@ -391,6 +473,7 @@ export function aggregateMobile(hotspots, activity, now) {
       latestUsd: latest?.state === "ok" && latest.priceUsd != null ? latest.hnt * latest.priceUsd : null,
       weekHnt: loaded.reduce((s, d) => s + d.hnt, 0),
       daysLoaded: loaded.length,
+      firstDay: days.length ? days[days.length - 1].day : null,
     };
   }
 

@@ -1,5 +1,8 @@
 import { parseJson, throwIfApiError } from "./api.js";
 import { dedupeAsync } from "./requestDedupe.js";
+import { DATA_DAY_RE } from "./dataDay.js";
+
+export { DATA_DAY_RE };
 
 // Client for api-iot.heliumtools.org (helium-iot-service): per-Hotspot IoT
 // connectivity, delivered-message traffic (utilization) and modeled coverage.
@@ -19,9 +22,6 @@ import { dedupeAsync } from "./requestDedupe.js";
 //     its own `dataThrough` (a YYYY-MM-DD data day — a different field and
 //     format from the liveness anchor).
 const IOT_STATUS_API_BASE = "https://api-iot.heliumtools.org";
-
-/** A utilization data day, "YYYY-MM-DD". */
-export const DATA_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Lookups are cached for the service's own edge-cache window, so remounts
 // (wallet A → B → back to A) cost zero requests; in-flight requests are shared

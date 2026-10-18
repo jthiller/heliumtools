@@ -141,14 +141,23 @@ function nextFlip(activity, finalAt) {
  * finished on this page (the saved paint doesn't count). `paused`: the page
  * is hidden.
  *
+ * `refreshRef` (optional): the hook sets `refreshRef.current` to a function
+ * that checks now (mobileClient's `refresh()`: every Mobile "Retry"). The
+ * returned contract is unchanged.
+ *
  * @returns {{ wallet, phase: "idle"|"loading"|"live"|"paused"|"error", paused, checked, stale, asOf,
  *   cachedAt, cachedSections, checkedAt, tables, rewards, usage, heartbeats, invalidHeartbeats,
  *   speedtests, bans, arrivals }}
  */
-export default function useMobileActivity(wallet, hotspots) {
+export default function useMobileActivity(wallet, hotspots, { refreshRef } = {}) {
   const fleet = useMemo(() => mobileFleetOf(hotspots), [hotspots]);
   const clientRef = useRef(null);
   const [run, setRun] = useState(IDLE_RUN);
+  if (refreshRef) refreshRef.current = refreshNow;
+
+  function refreshNow() {
+    clientRef.current?.refresh();
+  }
 
   // One worker for the page; gone with the page.
   useEffect(

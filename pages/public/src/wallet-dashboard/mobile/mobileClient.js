@@ -29,17 +29,21 @@ const isVisible = () => typeof document === "undefined" || document.visibilitySt
 const applyPost = (prev, msg) => (msg.patch && prev ? { ...prev, ...msg.state } : msg.state);
 
 /**
- * @returns {{ start(opts, onUpdate): () => void, destroy(): void }}
+ * @returns {{ start(opts, onUpdate): () => void, refresh(): void, destroy(): void }}
  *   start({ wallet, keys, wifi }, onUpdate): begins (or switches to) a
  *   wallet; onUpdate receives `{ state, final }` (the assembled state; final
  *   once per finished check), `{ paused }` and `{ failed }` (the worker
  *   itself failed). Returns a stop function. Only the latest start's updates
  *   are delivered.
+ *   refresh(): a check now, for the active wallet (every Mobile "Retry"). A
+ *   live worker gets one `refresh` post (a check already running answers
+ *   it); a crashed or failed worker is replaced or restarted with the start
+ *   message. Nothing happens without an active wallet.
  */
 export function createMobileClient() {
   let worker = null;
   let session = 0;
-  // { session, wallet, keys, wifi, onUpdate, lastCheckAt, state }
+  // { session, wallet, keys, wifi, onUpdate, lastCheckAt, state, failed }
   let active = null;
   let timer = null;
 
@@ -51,6 +55,7 @@ export function createMobileClient() {
       replied = true;
       const msg = e.data;
       if (!active || msg?.type !== "state" || msg.session !== active.session) return;
+      active.failed = false;
       active.state = applyPost(active.state, msg);
       active.onUpdate({ state: active.state, final: Boolean(msg.final) });
       if (msg.final) writePaint(active.wallet, active.state);
@@ -65,6 +70,7 @@ export function createMobileClient() {
         w.terminate();
         worker = null;
       }
+      if (active) active.failed = true;
       active?.onUpdate({ failed: message });
     };
     w.onerror = (e) => fail(e.message || "worker error");
@@ -115,18 +121,33 @@ export function createMobileClient() {
   }
 
   function start({ wallet, keys, wifi }, onUpdate) {
-    const mySession = ++session;
-    active = { session: mySession, wallet, keys, wifi, onUpdate, lastCheckAt: Date.now(), state: null };
+    const run = { session: ++session, wallet, keys, wifi, onUpdate, lastCheckAt: Date.now(), state: null, failed: false };
+    active = run;
     ensureWorker().postMessage(startMessage());
     startTimers();
     onUpdate({ paused: !isVisible() });
     return () => {
-      if (active?.session !== mySession) return;
+      if (active !== run) return;
       // Cancel the check: no downloads for a wallet no longer on screen.
-      worker?.postMessage({ type: "stop", session: mySession });
+      worker?.postMessage({ type: "stop", session: run.session });
       active = null;
       stopTimers();
     };
+  }
+
+  function refresh() {
+    if (!active) return;
+    active.lastCheckAt = Date.now();
+    if (worker && !active.failed) {
+      worker.postMessage({ type: "refresh", session: active.session });
+      return;
+    }
+    // A worker that crashed (or never loaded) is replaced; one that failed
+    // but still runs restarts the wallet under a new session, so its first
+    // post is the full state again rather than a patch.
+    if (worker) active.session = ++session;
+    active.state = null;
+    ensureWorker().postMessage(startMessage());
   }
 
   function destroy() {
@@ -136,7 +157,7 @@ export function createMobileClient() {
     worker = null;
   }
 
-  return { start, destroy };
+  return { start, refresh, destroy };
 }
 
 /**

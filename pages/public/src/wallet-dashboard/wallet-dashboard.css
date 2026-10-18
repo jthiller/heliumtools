@@ -1,0 +1,461 @@
+/* Wallet Dashboard: design tokens and component classes (the design's
+   tokens.css, prefixed). Imported by WalletDashboard.jsx, so it ships in the
+   dashboard's chunk only. Variables live on :root (a <dialog> and portaled
+   InfoTip bubbles must see them) with a --wd- prefix so they never touch
+   another tool. Opaque colors are RGB channel triplets (Tailwind's `wd-*`
+   colors add alpha); translucent ones are full color strings. Dark mode is
+   media based, like the rest of the app. Raised surfaces reuse the app's
+   --color-surface-raised and --shadow-card(-lg) (`bg-surface-raised`,
+   `shadow-soft`). */
+
+:root {
+  --wd-canvas: 250 250 248;
+  --wd-well: 245 245 244;
+  --wd-line: 231 229 228;
+  --wd-line-2: 240 239 237;
+  --wd-control: 143 137 132;
+  --wd-ink: 28 25 23;
+  --wd-ink-2: 87 83 78;
+  --wd-ink-3: 120 113 108;
+  --wd-ink-4: 168 162 158;
+  --wd-accent-line: rgba(14, 116, 144, 0.35);
+  --wd-hnt: 8 145 178;
+  --wd-sol: 148 163 184;
+  --wd-dc: 37 99 235;
+  --wd-iot: 5 150 105;
+  --wd-iot-text: 4 120 87;
+  --wd-iot-soft: #d1fae5;
+  --wd-mobile: 124 58 237;
+  --wd-mobile-text: 109 40 217;
+  --wd-mobile-soft: #ede9fe;
+  --wd-caution: 217 119 6;
+  --wd-caution-text: 180 83 9;
+  --wd-caution-surface: #fffbeb;
+  --wd-critical: 225 29 72;
+  --wd-critical-text: 190 18 60;
+  --wd-critical-surface: #fff1f2;
+  --wd-oui-1: 42 120 214;
+  --wd-oui-2: 235 104 52;
+  --wd-oui-3: 27 175 122;
+  --wd-oui-4: 237 161 0;
+  --wd-oui-5: 232 123 164;
+  --wd-oui-other: 168 162 158;
+  --wd-hatch: repeating-linear-gradient(135deg, rgba(120, 113, 108, 0.5) 0 1px, transparent 1px 5px);
+  --wd-glass: rgba(255, 255, 255, 0.92);
+  --wd-scrim: rgba(28, 25, 23, 0.32);
+  /* The sticky app bar, 64 px at every width (WdHeader). */
+  --wd-appbar-h: 64px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wd-canvas: 17 17 19;
+    --wd-well: 24 24 27;
+    --wd-line: 46 46 51;
+    --wd-line-2: 38 38 43;
+    --wd-control: 118 114 126;
+    --wd-ink: 240 237 234;
+    --wd-ink-2: 201 197 207;
+    --wd-ink-3: 162 158 170;
+    --wd-ink-4: 110 106 117;
+    --wd-accent-line: rgba(34, 211, 238, 0.4);
+    --wd-hnt: 34 211 238;
+    --wd-sol: 100 116 139;
+    --wd-dc: 96 165 250;
+    --wd-iot: 18 166 121;
+    --wd-iot-text: 52 211 153;
+    --wd-iot-soft: rgba(6, 78, 59, 0.45);
+    --wd-mobile: 145 113 248;
+    --wd-mobile-text: 185 166 251;
+    --wd-mobile-soft: rgba(76, 29, 149, 0.45);
+    --wd-caution: 217 119 6;
+    --wd-caution-text: 251 191 36;
+    --wd-caution-surface: rgba(120, 53, 15, 0.32);
+    --wd-critical: 225 29 72;
+    --wd-critical-text: 251 113 133;
+    --wd-critical-surface: rgba(136, 19, 55, 0.32);
+    --wd-oui-1: 57 135 229;
+    --wd-oui-2: 217 89 38;
+    --wd-oui-3: 25 158 112;
+    --wd-oui-4: 201 133 0;
+    --wd-oui-5: 213 81 129;
+    --wd-oui-other: 110 106 117;
+    --wd-hatch: repeating-linear-gradient(135deg, rgba(162, 158, 170, 0.45) 0 1px, transparent 1px 5px);
+    --wd-glass: rgba(30, 30, 34, 0.9);
+    --wd-scrim: rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* The page canvas reaches the window edges while the dashboard is mounted
+   (no lighter body seam on overscroll or short pages in dark mode). */
+html:has(.wd-root),
+html:has(.wd-root) body {
+  background-color: rgb(var(--wd-canvas));
+}
+
+.wd-root {
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--wd-ink));
+  background: rgb(var(--wd-canvas));
+  text-wrap: pretty;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One focus ring for every control. Text links and focus-target headings
+   get the design's rounded ring; controls keep their own shape. */
+.wd-root :focus-visible {
+  outline: 2px solid rgb(var(--color-accent-text));
+  outline-offset: 2px;
+}
+.wd-root :where(a, [tabindex="-1"]):focus-visible {
+  border-radius: 6px;
+}
+
+/* Anchors land below the sticky app bar: sections, the list heading, the
+   detail heading in aside mode, the map panel heading. */
+.wd-root section[id],
+.wd-root [data-wd-anchor] {
+  scroll-margin-top: calc(var(--wd-appbar-h) + 16px);
+}
+
+/* ── Status marks: shape + color, never color alone ──────────────────────
+   critical = filled circle with a bar, caution = triangle, quiet = ring with
+   a bar, info = ring with a hand (setting up), unknown = ring with "?",
+   ok = check (ink, never green), checking / none = dashed ring, x = ring
+   with a cross (couldn't check). Pair every mark with an sr-only tier word. */
+.wd-st {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.wd-st-critical {
+  background: rgb(var(--wd-critical));
+  border-radius: 50%;
+}
+.wd-st-critical::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2.5px;
+  width: 2px;
+  height: 4.5px;
+  background: #fff;
+  border-radius: 1px;
+  box-shadow: 0 5.5px 0 0 #fff;
+}
+.wd-st-caution {
+  background: rgb(var(--wd-caution));
+  clip-path: polygon(50% 6%, 100% 94%, 0 94%);
+}
+.wd-st-ok::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid rgb(var(--wd-ink-2));
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.wd-st-quiet {
+  border: 1.5px solid rgb(var(--wd-ink-3));
+  border-radius: 50%;
+}
+.wd-st-quiet::after {
+  content: "";
+  position: absolute;
+  left: 2.5px;
+  right: 2.5px;
+  top: 4.25px;
+  height: 1.5px;
+  background: rgb(var(--wd-ink-3));
+}
+.wd-st-info {
+  border: 1.5px solid rgb(var(--wd-ink-3));
+  border-radius: 50%;
+}
+.wd-st-info::after {
+  content: "";
+  position: absolute;
+  left: 4.25px;
+  top: 1.5px;
+  width: 3px;
+  height: 3.5px;
+  border: solid rgb(var(--wd-ink-3));
+  border-width: 0 0 1.5px 1.5px;
+}
+.wd-st-unknown {
+  border: 1.5px solid rgb(var(--wd-ink-4));
+  border-radius: 50%;
+}
+.wd-st-unknown::after {
+  content: "?";
+  position: absolute;
+  inset: 0;
+  font: 700 8px/9px Inter, system-ui, sans-serif;
+  text-align: center;
+  color: rgb(var(--wd-ink-3));
+}
+.wd-st-checking,
+.wd-st-none {
+  border: 1.5px dashed rgb(var(--wd-ink-4));
+  border-radius: 50%;
+}
+.wd-st-x {
+  border: 1.5px solid rgb(var(--wd-ink-4));
+  border-radius: 50%;
+}
+.wd-st-x::before,
+.wd-st-x::after {
+  content: "";
+  position: absolute;
+  left: 4.25px;
+  top: 1.5px;
+  width: 1.5px;
+  height: 6px;
+  background: rgb(var(--wd-ink-3));
+  transform: rotate(45deg);
+}
+.wd-st-x::after {
+  transform: rotate(-45deg);
+}
+
+/* ── Live dot (the Mobile chip): live accent, checking / updating amber,
+   paused ink-4, error critical. `.ping` plays the ring once on a live
+   arrival (re-add the class to replay). ── */
+.wd-live {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--color-accent-text));
+}
+.wd-live::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid rgb(var(--color-accent-text));
+  opacity: 0.35;
+}
+.wd-live.checking {
+  background: rgb(var(--wd-caution));
+}
+.wd-live.checking::after {
+  border-color: rgb(var(--wd-caution));
+}
+.wd-live.paused {
+  background: rgb(var(--wd-ink-4));
+}
+.wd-live.paused::after {
+  display: none;
+}
+.wd-live.error {
+  background: rgb(var(--wd-critical));
+}
+.wd-live.error::after {
+  border-color: rgb(var(--wd-critical));
+}
+@keyframes wd-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+@keyframes wd-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wd-live.ping::after {
+    animation: wd-ping 1s cubic-bezier(0, 0, 0.2, 1) 1;
+  }
+  .wd-live.checking.pulse {
+    animation: wd-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+/* Missing data is the hatch everywhere (Mobile bars, IoT chart, timeline). */
+.wd-hatch {
+  background-color: rgb(var(--wd-line));
+  background-image: var(--wd-hatch);
+}
+
+/* Skeletons pulse only when motion is welcome. */
+.wd-skel {
+  display: block;
+  border-radius: 6px;
+  background: rgb(var(--wd-well));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wd-skel {
+    animation: wd-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* ── Entrance: each section rises once on first mount (never on a wallet
+   switch: the root is never re-keyed), 60 ms apart by order
+   (style="--wd-zone-i: n"). ── */
+@keyframes wd-zone-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wd-zone {
+    animation: wd-zone-rise 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--wd-zone-i, 0) * 60ms);
+  }
+}
+
+/* ── Sticky table header under the app bar. The card around the table must
+   not set overflow: hidden (round the first and last cells instead). Set
+   --wd-thead-r1 to the first header row's height when there are two. ── */
+.wd-table thead th {
+  position: sticky;
+  top: var(--wd-appbar-h);
+  z-index: 2;
+}
+.wd-table thead tr + tr th {
+  top: calc(var(--wd-appbar-h) + var(--wd-thead-r1, 37px));
+}
+
+/* ── Dialogs: the detail drawer (768 to 1279, 440 px from the right), the
+   phone filter sheet (bottom, max 85vh), and full-screen dialogs (the phone
+   detail and map). ── */
+dialog.wd-drawer,
+dialog.wd-sheet,
+dialog.wd-full {
+  padding: 0;
+  border: 0;
+  color: rgb(var(--wd-ink));
+  background: rgb(var(--color-surface-raised));
+  box-shadow: var(--shadow-card-lg);
+}
+dialog.wd-drawer::backdrop,
+dialog.wd-sheet::backdrop,
+dialog.wd-full::backdrop {
+  background: var(--wd-scrim);
+}
+dialog.wd-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(440px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  overflow: auto;
+}
+dialog.wd-sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100vw;
+  max-width: 100vw;
+  max-height: 85vh;
+  margin: 0;
+  border-radius: 16px 16px 0 0;
+  overflow: auto;
+}
+dialog.wd-full {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  overflow: auto;
+}
+@keyframes wd-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes wd-sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  dialog.wd-drawer[open] {
+    animation: wd-drawer-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  dialog.wd-sheet[open] {
+    animation: wd-sheet-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+/* A modal dialog locks the page behind it (the full-screen detail on phone). */
+html:has(dialog.wd-full[open], dialog.wd-drawer[open], dialog.wd-sheet[open]) {
+  overflow: hidden;
+}
+
+/* ── Container queries for components that live in hosts of different
+   widths. The detail (aside 440, drawer 440, inline, full screen):
+   `.wd-fold-520` hides at ≤ 520 px (the OUI table's last columns) and
+   `.wd-unfold-520` shows only then (their one-line fold); at < 440 px the
+   detail takes full-screen styling (`.wd-fs-flat` drops its radius,
+   `.wd-fs-only` shows the sticky bar's name). A Health module
+   (`.wd-hmod`): `.wd-hmod-body` becomes 5fr / 7fr columns from 900 px, and
+   `.wd-hmod-row` puts its button under the text at ≤ 520 px. ── */
+.wd-detail {
+  container: wd-detail / inline-size;
+}
+.wd-unfold-520,
+.wd-fs-only {
+  display: none;
+}
+@container wd-detail (max-width: 520px) {
+  .wd-fold-520 {
+    display: none;
+  }
+  .wd-unfold-520 {
+    display: revert;
+  }
+}
+@container wd-detail (max-width: 439.98px) {
+  .wd-fs-flat {
+    border-radius: 0;
+  }
+  .wd-fs-only {
+    display: revert;
+  }
+}
+.wd-hmod {
+  container: wd-hmod / inline-size;
+}
+@container wd-hmod (min-width: 900px) {
+  .wd-hmod-body {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: 40px;
+    align-items: start;
+  }
+}
+@container wd-hmod (max-width: 520px) {
+  .wd-hmod-row {
+    flex-wrap: wrap;
+  }
+  .wd-hmod-row > .wd-hmod-btn {
+    flex-basis: 100%;
+  }
+}
