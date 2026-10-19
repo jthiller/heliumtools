@@ -170,8 +170,9 @@ Alert thresholds fire at **14, 7, and 1 days remaining**. The `last_notified_lev
 ## Multi-Gateway — Key Concepts
 
 ### Architecture
-- Live operator dashboard for a fleet of Hotspots: gateway list (top), per-Hotspot inspector card on selection.
-- Inspector card stacks: header → unified filter row → canvas RSSI scatter chart → SVG events bar (joins/downlinks) → packet table. All four share the same hover state so a chart hover highlights the corresponding row in the table and the matching event marker, and vice versa.
+- Live operator dashboard for a fleet of Hotspots: page header (with the "Add a Hotspot" setup button), fleet totals, gateway list, per-Hotspot inspector card on selection.
+- Inspector card stacks: header (name + region pill) → unified filter row → canvas RSSI scatter chart (with a floating NetID legend whose entries switch NetIDs on and off; the top seven non-Helium NetIDs of the gateway's network batch get distinct colors, busiest first) → SVG events bar (joins/downlinks) → packet table. All four share the same hover state so a chart hover highlights the corresponding row in the table and the matching event marker, and vice versa.
+- The packet table runs full height in the page (no inner scroll box) and is virtualized against the window's scroll.
 - Live packet ingestion via SSE (`worker/src/tools/multi-gateway/`). Each packet gets `_id` (monotonic, parent-assigned) and `_new: true` for SSE-delivered vs `false` for initial fetch.
 
 ### Client-side segmentation (`segmentation.js`)

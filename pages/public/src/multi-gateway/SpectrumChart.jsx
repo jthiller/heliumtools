@@ -118,11 +118,11 @@ function rssiToOpacity(rssi) {
   return OPACITY_FLOOR + (OPACITY_CEIL - OPACITY_FLOOR) * t;
 }
 
-function colorForPkt(pkt, isDark) {
+function colorForPkt(pkt, isDark, families) {
   if (JOIN_FRAME_TYPES.has(pkt.frame_type)) return isDark ? JOIN_COLOR.dark : JOIN_COLOR.light;
   if (DOWNLINK_FRAME_TYPES.has(pkt.frame_type)) return isDark ? DOWN_COLOR.dark : DOWN_COLOR.light;
   const confirmed = pkt.frame_type === "ConfirmedUp";
-  return colorForNetIdShade(pkt._netId ?? null, confirmed, isDark);
+  return colorForNetIdShade(pkt._netId ?? null, confirmed, isDark, families);
 }
 
 // Bucket observed channel center frequencies (one entry per unique channel),
@@ -333,11 +333,13 @@ export default function SpectrumChart({
   packets,
   loading,
   netIdFilter = "all",
+  netIdSwitches,
   trackFilter = "all",
   visibleTypes,
   hover,
   setHover,
   onPickPacket,
+  netIdFamilies,
 }) {
   const isDark = useDarkMode();
   const chartColors = useMemo(readChartColors, [isDark]);
@@ -347,7 +349,7 @@ export default function SpectrumChart({
   const visiblePackets = useMemo(() => {
     const out = [];
     for (const pkt of packets) {
-      if (!packetMatchesFilters(pkt, { visibleTypes, netIdFilter, trackFilter })) continue;
+      if (!packetMatchesFilters(pkt, { visibleTypes, netIdFilter, netIdSwitches, trackFilter })) continue;
       if (!Number.isFinite(pkt.frequency) || !Number.isFinite(pkt.payload_size)) continue;
       const sfbw = parseSpreadingFactor(pkt.spreading_factor);
       if (!sfbw) continue;
@@ -366,7 +368,7 @@ export default function SpectrumChart({
       });
     }
     return out;
-  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+  }, [packets, visibleTypes, netIdFilter, netIdSwitches, trackFilter]);
 
   const channels = useMemo(() => computeChannels(visiblePackets), [visiblePackets]);
   const clusters = useMemo(() => computeClusters(channels), [channels]);
@@ -409,13 +411,13 @@ export default function SpectrumChart({
         airtimeMs: p.airtimeMs,
         x,
         w,
-        color: colorForPkt(p.ref, isDark),
+        color: colorForPkt(p.ref, isDark, netIdFamilies),
         opacity: rssiToOpacity(p.ref.rssi),
         ref: p.ref,
       });
     }
     return out;
-  }, [visiblePackets, clusters, innerW, isDark]);
+  }, [visiblePackets, clusters, innerW, isDark, netIdFamilies]);
 
   const earliestPacketTs = useMemo(() => {
     if (visiblePackets.length === 0) return null;

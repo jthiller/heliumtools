@@ -33,7 +33,6 @@ import {
   ArrowUturnDownIcon,
   ArrowUturnUpIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   PlusIcon,
   CheckCircleIcon,
   QuestionMarkCircleIcon,
@@ -55,12 +54,12 @@ import {
   subscribePackets,
   unsubscribePackets,
 } from "./packetWorkerClient.js";
-import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
+import PacketScatter, { ColoredSelect, assignNetIdFamilies, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeMultiGatewayTools } from "./webmcpTools.js";
 import SpectrumChart from "./SpectrumChart.jsx";
-import { packetMatchesFilters } from "./filters.js";
+import { packetMatchesFilters, switchedOn } from "./filters.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -291,81 +290,98 @@ function LiveTime({ value, formatter }) {
   return <span className="tabular-nums">{formatter(value)}</span>;
 }
 
-function SummaryCard({ title, value }) {
+// Fleet totals, set on the page itself (no cards): big figures split by
+// hairlines, two columns on phones (a rule above the second row), four from lg.
+// The figures size to the row's width (cqi of the <dl>), so an eight-digit
+// uplink count fits its column at every width.
+const STAT_EDGES = [
+  "",
+  "border-l pl-4 sm:pl-6",
+  "border-t pt-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-5",
+  "border-l border-t pl-4 pt-4 sm:pl-6 lg:border-t-0 lg:pt-5",
+];
+
+function FleetStats({ summary }) {
+  const stats = [
+    ["Total Gateways", summary.total],
+    ["Connected", summary.connected],
+    ["Uplinks", summary.totalUplinks.toLocaleString()],
+    ["Downlinks", summary.totalDownlinks.toLocaleString()],
+  ];
   return (
-    <div className="rounded-xl bg-surface-raised p-4 shadow-soft">
-      <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
-        {title}
-      </p>
-      <p className="mt-1 text-2xl font-semibold text-content-primary">
-        {value}
-      </p>
-    </div>
+    <dl className="mt-8 grid grid-cols-2 border-t border-border [container-type:inline-size] lg:grid-cols-4">
+      {stats.map(([label, value], i) => (
+        <div key={label} className={`min-w-0 border-border py-4 pr-4 lg:py-5 ${STAT_EDGES[i]}`}>
+          <dt className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-content-secondary">
+            {label}
+          </dt>
+          <dd className="mt-2 font-display text-[length:min(40px,6.8cqi)] font-semibold leading-none tracking-[-0.02em] tabular-nums text-content lg:text-[length:min(40px,3.6cqi)]">
+            {value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
-function SetupNote() {
-  const [open, setOpen] = useState(false);
+const SETUP_PORTS = [
+  ["US915", 1680],
+  ["EU868", 1681],
+  ["AU915", 1682],
+  ["AS923_1", 1683],
+  ["KR920", 1684],
+  ["IN865", 1685],
+];
+
+// What the header's "Add a Hotspot" button discloses: the aggregator address
+// beside the per-region ports, then a note on what this demo is.
+function SetupPanel({ id, hidden }) {
   return (
-    <div className="mt-6 rounded-xl bg-surface-raised shadow-soft">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-content-secondary hover:text-content-primary"
-      >
-        <span className="inline-flex items-center gap-1.5">
-          <PlusIcon className="h-4 w-4" />
-          Add a Hotspot
-        </span>
-        {open ? (
-          <ChevronUpIcon className="h-4 w-4" />
-        ) : (
-          <ChevronDownIcon className="h-4 w-4" />
-        )}
-      </button>
-      {open && (
-        <div className="border-t border-border px-4 pb-4 pt-3 text-sm text-content-secondary">
-          <p>
+    <div id={id} hidden={hidden} className="mt-6 rounded-xl bg-surface-raised p-5 text-sm shadow-soft sm:p-6">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-10">
+        <div>
+          <p className="text-content">
             Connect a LoRaWAN gateway to the Helium network by pointing its
             packet forwarder at the multi-gateway aggregator:
           </p>
-          <div className="mt-3 rounded-lg bg-surface-inset p-3 font-mono text-xs">
-            <p>
-              <span className="text-content-tertiary">server_address:</span>{" "}
-              hotspot.heliumtools.org
-            </p>
-            <div className="mt-2 font-sans text-content-tertiary">
-              <p>Select the port for your gateway region:</p>
-              <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5">
-                <span>US915 &mdash; <span className="font-mono text-content-secondary">1680</span></span>
-                <span>EU868 &mdash; <span className="font-mono text-content-secondary">1681</span></span>
-                <span>AU915 &mdash; <span className="font-mono text-content-secondary">1682</span></span>
-                <span>AS923_1 &mdash; <span className="font-mono text-content-secondary">1683</span></span>
-                <span>KR920 &mdash; <span className="font-mono text-content-secondary">1684</span></span>
-                <span>IN865 &mdash; <span className="font-mono text-content-secondary">1685</span></span>
-              </div>
-            </div>
-          </div>
-          <p className="mt-3 text-content-tertiary">
+          <p className="mt-3 rounded-lg bg-accent-surface px-3 py-2.5 font-mono text-[13px]">
+            <span className="text-content-secondary">server_address:</span>{" "}
+            <span className="font-medium text-content">hotspot.heliumtools.org</span>
+          </p>
+          <p className="mt-3 leading-relaxed text-content-secondary">
             A keypair is auto-provisioned on first connection. The gateway will
             connect as a new Hotspot on the network. Each gateway must have a
             unique Gateway EUI. Check your packet forwarder config and replace
             any default with your concentrator&apos;s actual EUI.
           </p>
-          <p className="mt-3 text-content-tertiary">
-            This is a public demo of{" "}
-            <a href="https://github.com/jthiller/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">jthiller/multi-gateway</a>,
-            a fork of{" "}
-            <a href="https://github.com/helium/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">helium/multi-gateway</a>,
-            an open-source aggregator that lets a single server manage many
-            LoRaWAN gateways on the Helium network. You can{" "}
-            <a href="https://docs.helium.com/iot/onboard-a-hotspot/server/" target="_blank" rel="noopener noreferrer" className="underline hover:text-content-secondary">self-host your own instance</a>{" "}
-            for private fleet management. Note the live packet stream, packet
-            history, and on-chain onboarding on this page rely on endpoints the
-            fork adds, so a stock upstream build serves the gateway list but not
-            those.
-          </p>
         </div>
-      )}
+        <div>
+          <p className="text-content">Select the port for your gateway region:</p>
+          <dl className="mt-3 grid grid-cols-2 gap-2">
+            {SETUP_PORTS.map(([region, port]) => (
+              <div key={region} className="flex items-center justify-between gap-2 rounded-lg bg-surface-inset px-3 py-2">
+                <dt>
+                  <RegionBadge region={region} />
+                </dt>
+                <dd className="font-mono text-[13px] font-medium tabular-nums text-content">{port}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+      <p className="mt-6 border-t border-border pt-4 text-[13px] leading-relaxed text-content-secondary">
+        This is a public demo of{" "}
+        <a href="https://github.com/jthiller/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">jthiller/multi-gateway</a>,
+        a fork of{" "}
+        <a href="https://github.com/helium/multi-gateway" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">helium/multi-gateway</a>,
+        an open-source aggregator that lets a single server manage many
+        LoRaWAN gateways on the Helium network. You can{" "}
+        <a href="https://docs.helium.com/iot/onboard-a-hotspot/server/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">self-host your own instance</a>{" "}
+        for private fleet management. Note the live packet stream, packet
+        history, and on-chain onboarding on this page rely on endpoints the
+        fork adds, so a stock upstream build serves the gateway list but not
+        those.
+      </p>
     </div>
   );
 }
@@ -566,10 +582,12 @@ function NetIdCell({ devAddr }) {
   if (!result) return <span className="text-content-tertiary">-</span>;
   const operator = netIdToOperator(result.netId);
   return (
-    <Tooltip content={`NetID: ${result.netId}`}>
+    <Tooltip content={operator ? `NetID: ${result.netId} · ${operator}` : `NetID: ${result.netId}`}>
       <span className="text-xs">
         {operator ? (
-          <span className="text-content-primary">{operator}</span>
+          // One line per row (the packet table's rows must be one height):
+          // a long operator name is cut short; the tooltip has the NetID.
+          <span className="inline-block max-w-[11rem] truncate align-bottom text-content-primary">{operator}</span>
         ) : (
           <a
             href={`https://michaeldjeffrey.github.io/bit_looker/?net_id=${result.netId}`}
@@ -609,11 +627,16 @@ const MAX_PACKETS = 10000;
 
 // Virtualized table tunings. Row height is measured from the first rendered
 // row (cell padding + badges make it differ from any fixed value we'd pick),
-// then reused as the slice unit. Viewport caps the table at a screenful so
-// the page-level scroll bar still controls the rest of the dashboard.
+// then reused as the slice unit. The table runs at its full height in the
+// page (no inner scroll box); only the rows the window shows, plus overscan,
+// are mounted.
 const TABLE_ROW_HEIGHT_FALLBACK = 36;
-const TABLE_VIEWPORT_HEIGHT = 600;
-const TABLE_OVERSCAN_ROWS = 8;
+const TABLE_OVERSCAN_ROWS = 12;
+// Where the browser keeps the reading position itself when rows are added
+// above it (CSS scroll anchoring), the table leaves that to it; elsewhere
+// (Safari) it scrolls the window by the inserted rows' height.
+const NATIVE_SCROLL_ANCHORING =
+  typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("overflow-anchor", "auto");
 
 const WELL_KNOWN_REPO = "https://github.com/helium/well-known/";
 
@@ -623,8 +646,8 @@ function OuiCell({ devAddr, ouiLookup }) {
   if (!match) return <span className="text-content-tertiary">-</span>;
   if (match.name) {
     return (
-      <Tooltip content={`OUI ${match.oui}`}>
-        <span className="text-xs text-content-secondary">
+      <Tooltip content={`OUI ${match.oui} · ${match.name}`}>
+        <span className="inline-block max-w-[10rem] truncate align-bottom text-xs text-content-secondary">
           {match.name}
         </span>
       </Tooltip>
@@ -650,12 +673,17 @@ function OuiCell({ devAddr, ouiLookup }) {
 // the Web Worker — see packetWorkerClient.
 // (Kept in this file to avoid exporting GatewayDetail's helper constellation —
 // FRAME_TYPES, FrameTypeBadge, NetIdCell, OuiCell, LiveTime, gatewayName.)
-function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
+function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
   const idRef = useRef(0);
   const [packets, setPackets] = useState([]);
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState(ALL_TYPES_VISIBLE);
+  // This gateway's NetID colours (assignNetIdFamilies). The network batch
+  // builds the map (replacing a provisional one from the IDB replay); after
+  // that each NetID keeps its family for as long as the gateway is open.
+  // Tagged with the mac so a switch starts afresh.
+  const [netIdFamilies, setNetIdFamilies] = useState(() => ({ mac, map: new Map() }));
 
   const toggleType = (type) =>
     setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
@@ -672,22 +700,36 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
     setLoading(true);
     setPackets([]);
     setTracks([]);
+    setNetIdFamilies({ mac, map: new Map() });
+    setNetIdSwitches(null);
 
     const tagPackets = (incoming) =>
       incoming.map((p) => ({ ...p, _id: ++idRef.current }));
+    // Every tracks snapshot also hands colours to NetIDs seen for the first
+    // time. The network batch starts the map over (`fresh`): the IDB replay
+    // before it can be any age, and only paints "Loading...", so its ranking
+    // mustn't decide which NetIDs get the seven families.
+    const applyTracks = (next, fresh = false) => {
+      setTracks(next);
+      setNetIdFamilies((prev) => {
+        const base = prev.mac === mac && !fresh ? prev.map : new Map();
+        const map = assignNetIdFamilies(base, next);
+        return map === base && prev.mac === mac && !fresh ? prev : { mac, map };
+      });
+    };
 
     const off = onWorkerEvent((event) => {
       if (cancelled || event.mac !== mac) return;
       if (event.type === "cached_packets") {
         setPackets(tagPackets(event.packets));
-        setTracks(event.tracks);
+        applyTracks(event.tracks);
       } else if (event.type === "subscribed_packet") {
         const pkt = { ...event.packet, _id: ++idRef.current };
         setPackets((prev) => {
           const next = [...prev, pkt];
           return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
         });
-        setTracks(event.tracks);
+        applyTracks(event.tracks);
       }
     });
 
@@ -695,7 +737,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
       .then((res) => {
         if (cancelled) return;
         setPackets(tagPackets(res.packets));
-        setTracks(res.tracks);
+        applyTracks(res.tracks, true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -719,6 +761,17 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
   const [pinnedPacketId, setPinnedPacketId] = useState(null);
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
+  // The chart legend's NetID switches (`switchedOn` in filters.js; null when
+  // none). Applies everywhere the NetID filter does (scatter, spectrum, table,
+  // Device list). Picking a NetID (or All) in the dropdown starts over from it.
+  // Changing either drops the highlight, which may belong to a NetID that's
+  // now off.
+  const [netIdSwitches, setNetIdSwitches] = useState(null);
+  const pickNetId = useCallback((value) => {
+    setNetIdFilter(value);
+    setNetIdSwitches(null);
+    setHover(null);
+  }, []);
   // Anchors the events bar's right edge to current time. The canvas chart
   // ignores this and reads Date.now() directly per rAF frame — it stays
   // 60fps smooth regardless. The events bar isn't on its own animation
@@ -744,6 +797,29 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
     return [...set].sort();
   }, [tracks]);
 
+  // A legend click flips one NetID, relative to what the chart shows now.
+  // From All, the switches list what's off, so NetIDs first seen later come in
+  // on. From a NetID picked in the dropdown they list what's on (the pick, and
+  // now the clicked one alongside it), so later arrivals stay off; switching
+  // the last NetID off does the same, so "None" stays none. Every NetID back
+  // on is plain All again.
+  const toggleNetId = useCallback((id) => {
+    setHover(null);
+    setNetIdFilter("all");
+    let next;
+    if (netIdFilter !== "all") {
+      next = { only: true, ids: new Set(id === netIdFilter ? [] : [netIdFilter, id]) };
+    } else {
+      const ids = new Set(netIdSwitches?.ids);
+      if (ids.has(id)) ids.delete(id);
+      else ids.add(id);
+      next = { only: netIdSwitches?.only ?? false, ids };
+      if (!next.only && netIdOptions.every((x) => ids.has(x))) next = { only: true, ids: new Set() };
+    }
+    const allOn = netIdOptions.every((x) => switchedOn(next, x));
+    setNetIdSwitches(allOn ? null : next);
+  }, [netIdOptions, netIdFilter, netIdSwitches]);
+
   const isDark = useDarkMode();
 
   // Disambiguate when multiple NetIDs resolve to the same operator name.
@@ -758,19 +834,28 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
       ...netIdOptions.map((id) => {
         const op = netIdToOperator(id) ?? id;
         const label = operatorCounts.get(op) > 1 ? `${op} · ${id}` : op;
-        return { value: id, label, swatch: swatchColorForNetId(id, isDark) };
+        return { value: id, label, swatch: swatchColorForNetId(id, isDark, netIdFamilies.map) };
       }),
     ];
-  }, [netIdOptions, isDark]);
+  }, [netIdOptions, isDark, netIdFamilies]);
+
+  // With legend switches set the filter is "all" but some NetIDs are off; the
+  // dropdown says how many are on, and no option reads as selected.
+  const netIdButtonLabel = useMemo(() => {
+    if (!netIdSwitches) return undefined;
+    const on = netIdOptions.filter((id) => switchedOn(netIdSwitches, id)).length;
+    return on === 0 ? "None" : `${on} of ${netIdOptions.length}`;
+  }, [netIdOptions, netIdSwitches]);
 
   const trackOptions = useMemo(() => {
     const list = tracks.filter((t) => {
       if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
+      if (t.netId && !switchedOn(netIdSwitches, t.netId)) return false;
       return t.count > 0;
     });
     list.sort((a, b) => b.count - a.count);
     return list;
-  }, [tracks, netIdFilter]);
+  }, [tracks, netIdFilter, netIdSwitches]);
 
   const trackSelectOptions = useMemo(
     () => [
@@ -778,10 +863,10 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
       ...trackOptions.map((t) => ({
         value: t.id,
         label: `${t.devAddr} · ${t.id} (n=${t.count}, ~${Math.round(t.rssiMean)} dBm)`,
-        swatch: swatchColorForNetId(t.netId, isDark),
+        swatch: swatchColorForNetId(t.netId, isDark, netIdFamilies.map),
       })),
     ],
-    [trackOptions, isDark],
+    [trackOptions, isDark, netIdFamilies],
   );
 
   // If the selected device disappears (NetID filter changed, or track was evicted), reset.
@@ -794,7 +879,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
   const deviceCount = tracks.filter((t) => t.count > 0).length;
   // Single time-axis domain shared by the scatter and the events bar.
   // Uplinks honor the full filter chain (visibleTypes + netIdFilter +
-  // trackFilter), but joins/downs only honor visibleTypes — they don't have
+  // netIdSwitches + trackFilter), but joins/downs only honor visibleTypes — they don't have
   // a meaningful NetID or track binding. Including them in the domain keeps
   // their markers inside the events bar's plot bounds even when their
   // timestamps fall outside the uplinks' range.
@@ -807,6 +892,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
       if (!isEvent) {
         if (!pkt._trackId) continue;
         if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
+        if (pkt._netId && !switchedOn(netIdSwitches, pkt._netId)) continue;
         if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
       }
       if (pkt.timestamp < xMin) xMin = pkt.timestamp;
@@ -816,7 +902,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
     // as time passes; xMin stays anchored to the earliest visible packet.
     const xMax = Math.max(xMin + 1, nowTick);
     return [xMin, xMax];
-  }, [packets, visibleTypes, netIdFilter, trackFilter, nowTick]);
+  }, [packets, visibleTypes, netIdFilter, netIdSwitches, trackFilter, nowTick]);
 
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
@@ -836,15 +922,17 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
 
   return (
     <div className="-mx-4 mt-4 bg-surface-raised shadow-soft sm:mx-0 sm:rounded-xl">
-      {/* Persistent header — Hotspot identity stays visible across chart + table */}
+      {/* Persistent header — Hotspot identity stays visible across chart + table.
+          The region pill repeats the gateway row's, tying the two together. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-3 sm:px-4">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h3 className="text-sm font-medium text-content-primary">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+          <h3 className="text-base font-semibold text-content">
             {gatewayName(publicKey) || "Recent Packets"}
           </h3>
-          <span className="font-mono text-xs text-content-tertiary">{mac}</span>
+          {region && <RegionBadge region={region} />}
+          <span className="font-mono text-xs text-content-secondary">{mac}</span>
           {deviceCount > 0 && (
-            <span className="text-xs text-content-tertiary">
+            <span className="text-xs text-content-secondary">
               · {deviceCount === 1 ? "1 device" : `${deviceCount} devices`}
               {spanLabel && ` · ${spanLabel}`}
             </span>
@@ -860,19 +948,22 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
 
       {/* Unified filter rows — both apply to BOTH chart and table.
           Dropdowns and checkboxes split across two lines so the checkbox
-          row can sit cleanly without the dropdowns crowding it. */}
+          row can sit cleanly without the dropdowns crowding it. The
+          dropdowns sit in <div>s, not <label>s: a label re-clicks its button
+          when an option is clicked, which reopened the list. */}
       <div className="border-b border-border px-3 py-2 text-xs sm:px-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <label className="flex items-center gap-1.5 text-content-secondary">
+          <div className="flex items-center gap-1.5 text-content-secondary">
             NetID
             <ColoredSelect
               label="NetID filter"
-              value={netIdFilter}
-              onChange={setNetIdFilter}
+              value={netIdSwitches ? null : netIdFilter}
+              onChange={pickNetId}
               options={netIdSelectOptions}
+              buttonLabel={netIdButtonLabel}
             />
-          </label>
-          <label className="flex items-center gap-1.5 text-content-secondary">
+          </div>
+          <div className="flex items-center gap-1.5 text-content-secondary">
             Device
             <ColoredSelect
               label="Device filter"
@@ -880,7 +971,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
               onChange={setTrackFilter}
               options={trackSelectOptions}
             />
-          </label>
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
           {ALL_FRAME_TYPES.map((type, i) => {
@@ -921,12 +1012,15 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
             tracksById={tracksById}
             loading={loading}
             netIdFilter={netIdFilter}
+            netIdSwitches={netIdSwitches}
+            onToggleNetId={toggleNetId}
             trackFilter={trackFilter}
             visibleTypes={visibleTypes}
             xDomain={xDomain}
             hover={hover}
             setHover={setHover}
             onPickPacket={setPinnedPacketId}
+            netIdFamilies={netIdFamilies.map}
           />
           <EventsBar
             key={`events-${mac}`}
@@ -943,11 +1037,13 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
             packets={packets}
             loading={loading}
             netIdFilter={netIdFilter}
+            netIdSwitches={netIdSwitches}
             trackFilter={trackFilter}
             visibleTypes={visibleTypes}
             hover={hover}
             setHover={setHover}
             onPickPacket={setPinnedPacketId}
+            netIdFamilies={netIdFamilies.map}
           />
         </div>
       </div>
@@ -958,6 +1054,7 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
         loading={loading}
         visibleTypes={visibleTypes}
         netIdFilter={netIdFilter}
+        netIdSwitches={netIdSwitches}
         trackFilter={trackFilter}
         hover={hover}
         setHover={setHover}
@@ -973,52 +1070,117 @@ function GatewayInspector({ mac, publicKey, ouiLookup, onClose }) {
 // stable refs across hover updates, hover/setHover are the only churning
 // props, and the visiblePackets useMemo + per-row isPinned check handle the
 // rest.
-const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
+const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, netIdSwitches, trackFilter, hover, setHover, pinnedPacketId }) {
   const visiblePackets = useMemo(() => {
     return [...packets].reverse().filter((pkt) =>
-      packetMatchesFilters(pkt, { visibleTypes, netIdFilter, trackFilter }),
+      packetMatchesFilters(pkt, { visibleTypes, netIdFilter, netIdSwitches, trackFilter }),
     );
-  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+  }, [packets, visibleTypes, netIdFilter, netIdSwitches, trackFilter]);
 
-  // Virtualized rendering: only the rows currently in (or near) the viewport
-  // are mounted. Without this, 10k packets means 10k <tr>s — enough DOM to
-  // visibly stutter on scroll and balloon memory. We measure one rendered
-  // row to get the authoritative height (cell padding + badge sizes make a
-  // fixed constant unreliable), then reuse it as the slice unit.
+  // Virtualized rendering: only the rows currently in (or near) the window's
+  // viewport are mounted. Without this, 10k packets means 10k <tr>s — enough
+  // DOM to visibly stutter on scroll and balloon memory. The table keeps its
+  // full height (spacer rows stand in for the rest), so the page's own scroll
+  // reaches every row; nothing scrolls inside the card.
+  //
+  // The spacers must match the rows they replace exactly: if mounting or
+  // unmounting a row moved the content below it, the browser's scroll
+  // anchoring would scroll to compensate, which moves the window back across
+  // the row boundary, which swaps the row again — a loop. So every row is one
+  // line tall (`whitespace-nowrap`, long names truncated), the row height is
+  // measured from the mounted rows (cell padding and badges vary by
+  // breakpoint), spacer rows opt out of anchoring, and the mounted range only
+  // moves once the viewport leaves its margin (hysteresis).
   const containerRef = useRef(null);
-  const sampleRowRef = useRef(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const tableRef = useRef(null);
+  const theadRef = useRef(null);
+  const tbodyRef = useRef(null);
   const [rowHeight, setRowHeight] = useState(TABLE_ROW_HEIGHT_FALLBACK);
+  const [range, setRange] = useState({ start: 0, end: TABLE_OVERSCAN_ROWS * 2 });
+  // Whether the table fits its card. Then it gets no scroll box of its own,
+  // so its column headers can stick to the top of the window; otherwise it
+  // scrolls sideways in its box (where sticky can't reach the window).
+  const [fits, setFits] = useState(false);
   const total = visiblePackets.length;
 
-  useLayoutEffect(() => {
-    const el = sampleRowRef.current;
-    if (!el) return;
-    const measure = () => {
-      const h = el.getBoundingClientRect().height;
-      if (h && Math.abs(h - rowHeight) > 0.5) setRowHeight(h);
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [rowHeight]);
+  // Viewport y of the first row's top edge (below the column headers).
+  const rowsTop = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return null;
+    return el.getBoundingClientRect().top + (theadRef.current?.getBoundingClientRect().height ?? 0);
+  }, []);
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - TABLE_OVERSCAN_ROWS);
-  const endIndex = Math.min(
-    total,
-    Math.ceil((scrollTop + TABLE_VIEWPORT_HEIGHT) / rowHeight) + TABLE_OVERSCAN_ROWS,
-  );
+  // Measure (row height, fit), then pick which rows the window shows.
+  const updateRange = useCallback(() => {
+    const top = rowsTop();
+    if (top == null) return;
+    const rows = tbodyRef.current?.querySelectorAll("tr[data-row]");
+    let h = rowHeight;
+    if (rows?.length) {
+      const first = rows[0].getBoundingClientRect();
+      const last = rows[rows.length - 1].getBoundingClientRect();
+      const measured = (last.bottom - first.top) / rows.length;
+      if (measured > 0 && Math.abs(measured - rowHeight) > 0.01) {
+        h = measured;
+        setRowHeight(measured);
+      }
+    }
+    const container = containerRef.current;
+    const table = tableRef.current;
+    if (container && table) {
+      const nextFits = table.offsetWidth <= container.clientWidth + 1;
+      setFits((f) => (f === nextFits ? f : nextFits));
+    }
+    const firstVisible = Math.max(0, Math.floor(-top / h));
+    const lastVisible = Math.min(total, Math.ceil((window.innerHeight - top) / h));
+    setRange((r) => {
+      // Still covered with two rows to spare on each side: leave it be.
+      if (r.start <= Math.max(0, firstVisible - 2) && Math.min(r.end, total) >= Math.min(total, lastVisible + 2)) return r;
+      const start = Math.max(0, firstVisible - TABLE_OVERSCAN_ROWS);
+      const end = Math.min(total, Math.max(start + TABLE_OVERSCAN_ROWS * 2, lastVisible + TABLE_OVERSCAN_ROWS));
+      return r.start === start && r.end === end ? r : { start, end };
+    });
+  }, [rowsTop, rowHeight, total]);
+
+  // Recompute on window scroll and resize, and whenever the page's height
+  // changes (content above the table loading or resizing moves it without a
+  // scroll event, and so does the table first appearing after "Loading...").
+  // Coalesced to one measurement per frame.
+  useLayoutEffect(() => {
+    updateRange();
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updateRange();
+      });
+    };
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
+    ro?.observe(document.body);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      ro?.disconnect();
+    };
+  }, [updateRange, loading]);
+
+  const startIndex = Math.min(range.start, total);
+  const endIndex = Math.min(range.end, total);
   const sliceRows = visiblePackets.slice(startIndex, endIndex);
   const topPad = startIndex * rowHeight;
   const bottomPad = Math.max(0, (total - endIndex) * rowHeight);
 
   // Live data prepends new packets at index 0 (visiblePackets is newest-first).
-  // Without anchoring, a user scrolled to row N would see their content shift
-  // up by one row each time a new packet arrives. Find where the previously-
-  // visible top packet sits now and offset scrollTop by that delta — keeping
-  // the same logical row under the user's view.
+  // Without anchoring, a user reading row N would see it shift down by one
+  // row each time a new packet arrives. Browsers with CSS scroll anchoring
+  // keep the row in place themselves; elsewhere, find where the previously-
+  // first packet sits now and scroll the window by that many rows. If the
+  // first row is still on screen (or the table is below the fold), follow
+  // live instead.
   //
   // Trigger off the last packet's _id (changes IFF a new packet arrived),
   // not on length: once the buffer hits MAX_PACKETS the length plateaus but
@@ -1027,6 +1189,10 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
   // so the anchor doesn't fire on those.
   const prevLastPacketIdRef = useRef(packets[packets.length - 1]?._id ?? null);
   const prevFirstVisibleIdRef = useRef(visiblePackets[0]?._id ?? null);
+  // Pin scroll state (below): the last pin scrolled to, and until when its
+  // smooth scroll may still be running.
+  const scrolledPinRef = useRef(null);
+  const pinScrollUntilRef = useRef(0);
   useLayoutEffect(() => {
     const prevLastPacketId = prevLastPacketIdRef.current;
     const prevFirstVisibleId = prevFirstVisibleIdRef.current;
@@ -1034,29 +1200,37 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
     prevLastPacketIdRef.current = nextLastPacketId;
     prevFirstVisibleIdRef.current = visiblePackets[0]?._id ?? null;
 
+    if (NATIVE_SCROLL_ANCHORING) return;
     if (nextLastPacketId === prevLastPacketId) return; // not an arrival
     if (prevFirstVisibleId == null) return; // empty-to-populated transition
-    const el = containerRef.current;
-    if (!el) return;
-    if (el.scrollTop < rowHeight / 2) return; // user is at the top — follow live
+    // A smooth pin scroll is under way: an instant scroll here would cut it
+    // short, so let it land (at most a row or two off centre).
+    if (performance.now() < pinScrollUntilRef.current) return;
+    const top = rowsTop();
+    if (top == null || top > -rowHeight / 2) return; // first row still in view — follow live
 
     const anchorIdx = visiblePackets.findIndex((p) => p._id === prevFirstVisibleId);
     if (anchorIdx <= 0) return; // anchor evicted or already at index 0
-    el.scrollTop += anchorIdx * rowHeight;
-  }, [packets, visiblePackets, rowHeight]);
+    window.scrollBy(0, anchorIdx * rowHeight);
+  }, [packets, visiblePackets, rowHeight, rowsTop]);
 
-  // Pin scroll: when a chart dot is clicked, find that packet's row and
-  // scroll it into the middle of the table viewport. Operates on the inner
-  // scroll container now that the table no longer drives the page scroll.
+  // Pin scroll: when a chart dot is clicked, scroll the window so that
+  // packet's row sits mid-screen. Once per pin, so later arrivals don't pull
+  // the page back to it.
   useEffect(() => {
-    if (pinnedPacketId == null) return;
+    if (pinnedPacketId == null || pinnedPacketId === scrolledPinRef.current) return;
     const idx = visiblePackets.findIndex((p) => p._id === pinnedPacketId);
     if (idx < 0) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const target = idx * rowHeight - (TABLE_VIEWPORT_HEIGHT - rowHeight) / 2;
-    el.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
-  }, [pinnedPacketId, visiblePackets, rowHeight]);
+    const top = rowsTop();
+    if (top == null) return;
+    scrolledPinRef.current = pinnedPacketId;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduced) pinScrollUntilRef.current = performance.now() + 1000;
+    window.scrollTo({
+      top: Math.max(0, window.scrollY + top + idx * rowHeight - (window.innerHeight - rowHeight) / 2),
+      behavior: reduced ? "auto" : "smooth",
+    });
+  }, [pinnedPacketId, visiblePackets, rowHeight, rowsTop]);
 
   if (loading) {
     return (
@@ -1073,15 +1247,17 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
     );
   }
 
+  // Where the table fits its card it has no scroll box, and the column headers
+  // stick to the top of the window while the page scrolls through the rows;
+  // narrower screens scroll it sideways in its own box.
   return (
     <div
       ref={containerRef}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-      style={{ maxHeight: TABLE_VIEWPORT_HEIGHT }}
-      className="overflow-auto border-t border-border mt-3"
+      data-packet-table=""
+      className={`mt-3 border-t border-border ${fits ? "overflow-x-visible" : "overflow-x-auto"}`}
     >
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 z-10">
+      <table ref={tableRef} className="w-full whitespace-nowrap text-sm">
+        <thead ref={theadRef} className="sticky top-0 z-10">
           <tr className="bg-surface-inset text-left text-xs font-medium uppercase tracking-wider text-content-tertiary">
             <th className="px-2 py-1.5 sm:px-4 sm:py-2">Time</th>
             <th className="px-2 py-1.5 sm:px-4 sm:py-2">Type</th>
@@ -1097,19 +1273,19 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
             <th className="px-2 py-1.5 sm:px-4 sm:py-2 text-right">Size</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody ref={tbodyRef}>
           {topPad > 0 && (
-            <tr aria-hidden="true" style={{ height: topPad }}>
+            <tr aria-hidden="true" style={{ height: topPad, overflowAnchor: "none" }}>
               <td colSpan={12} />
             </tr>
           )}
-          {sliceRows.map((pkt, sliceIdx) => {
+          {sliceRows.map((pkt) => {
             const trackAccent = hover?.trackId && pkt._trackId === hover.trackId;
             const isPinned = pinnedPacketId != null && pkt._id === pinnedPacketId;
             return (
               <tr
                 key={pkt._id}
-                ref={sliceIdx === 0 ? sampleRowRef : undefined}
+                data-row=""
                 onMouseEnter={() => {
                   if (!pkt._trackId) return; // joins/downlinks not segmented
                   setHover({
@@ -1160,7 +1336,7 @@ const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading,
             );
           })}
           {bottomPad > 0 && (
-            <tr aria-hidden="true" style={{ height: bottomPad }}>
+            <tr aria-hidden="true" style={{ height: bottomPad, overflowAnchor: "none" }}>
               <td colSpan={12} />
             </tr>
           )}
@@ -1936,6 +2112,7 @@ export default function MultiGateway() {
   const [onchainStatus, setOnchainStatus] = useState({});
   const [onboardMac, setOnboardMac] = useState(null);
   const [onboardInitialStep, setOnboardInitialStep] = useState("issue");
+  const [setupOpen, setSetupOpen] = useState(false);
 
   // Check on-chain status when gateways load
   useEffect(() => {
@@ -2015,7 +2192,7 @@ export default function MultiGateway() {
     <div className="min-h-screen bg-surface">
       <Header breadcrumb="Multi-Gateway" />
 
-      <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6">
+      <main className="mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pt-12">
         {sseStatus === "reconnecting" && (
           <div className="mb-4">
             <StatusBanner
@@ -2033,40 +2210,61 @@ export default function MultiGateway() {
           </div>
         )}
 
-        <SetupNote />
+        <header>
+          <p className="mb-2 font-mono text-[12px] font-medium uppercase tracking-[0.14em] text-accent-text">
+            Hotspot Operators · Multi-Gateway
+          </p>
+          <h1 className="mb-3 font-display text-4xl font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[44px]">
+            Add a Hotspot
+          </h1>
+          <p className="max-w-2xl text-[15px] leading-relaxed text-content-secondary">
+            Add a LoRaWAN gateway to the Helium network and monitor it in real
+            time. View signal quality, packet activity, and connection status.
+          </p>
+          <button
+            type="button"
+            aria-expanded={setupOpen}
+            aria-controls="mg-setup"
+            onClick={() => setSetupOpen((open) => !open)}
+            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-accent pl-4 pr-3.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            <PlusIcon className="h-4 w-4" aria-hidden="true" />
+            Add a Hotspot
+            <ChevronDownIcon
+              className={`h-4 w-4 transition-transform duration-200 ${setupOpen ? "rotate-180" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+        </header>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <SummaryCard title="Total Gateways" value={summary.total} />
-          <SummaryCard title="Connected" value={summary.connected} />
-          <SummaryCard title="Uplinks" value={summary.totalUplinks.toLocaleString()} />
-          <SummaryCard
-            title="Downlinks"
-            value={summary.totalDownlinks.toLocaleString()}
-          />
-        </div>
+        <SetupPanel id="mg-setup" hidden={!setupOpen} />
 
-        <div className="mt-6">
-          <GatewayTable
-            gateways={gateways}
-            selectedMac={selectedMac}
-            onSelect={selectMac}
-            onchainStatus={onchainStatus}
-            onOnboard={(mac) => { setOnboardInitialStep("issue"); setOnboardMac(mac); }}
-            onAssertLocation={(mac) => { setOnboardInitialStep("location"); setOnboardMac(mac); }}
-          />
-        </div>
+        <FleetStats summary={summary} />
+
+        <h2 className="mb-3 mt-10 border-b border-border pb-2 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-content-secondary">
+          Gateways
+        </h2>
+        <GatewayTable
+          gateways={gateways}
+          selectedMac={selectedMac}
+          onSelect={selectMac}
+          onchainStatus={onchainStatus}
+          onOnboard={(mac) => { setOnboardInitialStep("issue"); setOnboardMac(mac); }}
+          onAssertLocation={(mac) => { setOnboardInitialStep("location"); setOnboardMac(mac); }}
+        />
 
         {selectedMac && (
           <div ref={inspectorRef}>
             <GatewayInspector
               mac={selectedMac}
               publicKey={gateways.find((g) => g.mac === selectedMac)?.public_key}
+              region={gateways.find((g) => g.mac === selectedMac)?.region}
               ouiLookup={ouiLookup}
               onClose={() => selectMac(null)}
             />
           </div>
         )}
-      </div>
+      </main>
 
       <p className="mx-auto max-w-6xl px-4 pb-6 sm:px-6 text-[11px] text-content-tertiary">
         Built on{" "}

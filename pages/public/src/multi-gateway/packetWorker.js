@@ -168,7 +168,8 @@ function reconnectSse() {
 
 async function subscribePackets(mac) {
   // Replace any stale state for this mac so a switch can't bleed across.
-  segmenters.set(mac, createSegmenter());
+  const own = createSegmenter();
+  segmenters.set(mac, own);
   subscribedMacs.add(mac);
 
   // Hydrate from IDB cache first so the chart can show something instant
@@ -185,7 +186,13 @@ async function subscribePackets(mac) {
     packets = await fetchGatewayPackets(mac);
   } catch (err) {
     broadcast({ type: "subscribe_error", mac, message: err?.message ?? "fetch failed" });
-    return { packets: [], tracks: summariesFor(mac) };
+    // The page drops the cached packets when the batch resolves, so drop
+    // their tracks too: the replay can be any age, and its tracks would
+    // otherwise rank the NetID colours and the Device list from packets that
+    // are no longer shown. Only while this call still owns the segmenter: a
+    // newer subscribe for the mac (a reopen mid-fetch) holds live state.
+    if (segmenters.get(mac) === own) segmenters.set(mac, createSegmenter());
+    return { packets: [], tracks: [] };
   }
 
   // Reset segmenter again before the authoritative ingest so any SSE packet

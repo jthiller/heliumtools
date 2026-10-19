@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useDarkMode from "../lib/useDarkMode.js";
 import { devAddrToNetId, netIdToOperator } from "../lib/lorawan.js";
 import { readChartColors } from "../lib/chartColors.js";
-import { packetMatchesFilters } from "./filters.js";
+import { packetMatchesFilters, switchedOn } from "./filters.js";
 
 // Per-packet dot colour: NetID picks the hue family, frame type picks the
 // shade (confirmed uplinks darker than unconfirmed). All Helium NetIDs share
 // one emerald family so an operator sees "their traffic" as visually unified.
-// Non-Helium NetIDs map deterministically to the remaining hues via djb2.
+// Non-Helium NetIDs get a family per inspected gateway (assignNetIdFamilies,
+// below), so the NetIDs on one gateway don't share a colour until the
+// families run out; past that, and for any NetID without an assignment, djb2
+// picks one deterministically.
 const HELIUM_NETIDS = new Set(["000024", "00003C", "60002D", "C00053"]);
 
 // [unconfirmed / joins, confirmed] shade pairs, light mode then dark mode.
@@ -32,9 +35,10 @@ const NETID_FAMILIES_DARK = {
   lime:   ["#a3e635", "#84cc16"],   // lime-400  / lime-500
   indigo: ["#818cf8", "#6366f1"],   // indigo-400 / indigo-500
 };
-// First key reserved for Helium; remaining assigned to other NetIDs in
-// insertion order via djb2 hash.
-const NON_HELIUM_FAMILIES = ["sky", "amber", "rose", "cyan", "fuchsia", "lime", "indigo"];
+// The families other NetIDs draw from (Helium keeps its own), in the order a
+// gateway hands them out: the most distinct hues first, lime and cyan last as
+// the nearest to Helium's emerald and to sky.
+const NON_HELIUM_FAMILIES = ["amber", "fuchsia", "sky", "rose", "indigo", "lime", "cyan"];
 
 function djb2(s) {
   let h = 5381;
@@ -42,26 +46,50 @@ function djb2(s) {
   return h;
 }
 
-function familyForNetId(netId) {
+// `families`: the inspected gateway's Map of NetID -> family
+// (assignNetIdFamilies); without one, or for a NetID it doesn't hold, the hash.
+function familyForNetId(netId, families) {
   if (!netId) return "helium";
   if (HELIUM_NETIDS.has(netId)) return "helium";
-  return NON_HELIUM_FAMILIES[djb2(netId) % NON_HELIUM_FAMILIES.length];
+  return families?.get(netId) ?? NON_HELIUM_FAMILIES[djb2(netId) % NON_HELIUM_FAMILIES.length];
 }
 
-export function colorForNetIdShade(netId, confirmed, isDark) {
+// Give each non-Helium NetID in `tracks` that `prev` doesn't hold yet the next
+// unused family, busiest first (so the first batch hands the most distinct
+// colours to the most traffic), and the hash's family once all seven are
+// taken. Never reassigns a NetID `prev` already holds. Returns `prev` itself
+// when there is nothing new.
+export function assignNetIdFamilies(prev, tracks) {
+  const counts = new Map();
+  for (const t of tracks) {
+    if (!t.netId || !(t.count > 0) || HELIUM_NETIDS.has(t.netId) || prev.has(t.netId)) continue;
+    counts.set(t.netId, (counts.get(t.netId) ?? 0) + t.count);
+  }
+  if (counts.size === 0) return prev;
+  const next = new Map(prev);
+  const used = new Set(next.values());
+  for (const [netId] of [...counts].sort((a, b) => b[1] - a[1])) {
+    const family = NON_HELIUM_FAMILIES.find((f) => !used.has(f)) ?? familyForNetId(netId);
+    next.set(netId, family);
+    used.add(family);
+  }
+  return next;
+}
+
+export function colorForNetIdShade(netId, confirmed, isDark, families) {
   const palette = isDark ? NETID_FAMILIES_DARK : NETID_FAMILIES_LIGHT;
-  const [light, dark] = palette[familyForNetId(netId)];
+  const [light, dark] = palette[familyForNetId(netId, families)];
   return confirmed ? dark : light;
 }
 
-function colorForTrack(track, isDark) {
+function colorForTrack(track, isDark, families) {
   // Band uses the light shade so it sits quietly behind dots that may be in
   // either shade.
-  return colorForNetIdShade(track?.netId, false, isDark);
+  return colorForNetIdShade(track?.netId, false, isDark, families);
 }
 
-export function swatchColorForNetId(netId, isDark) {
-  return colorForNetIdShade(netId, false, isDark);
+export function swatchColorForNetId(netId, isDark, families) {
+  return colorForNetIdShade(netId, false, isDark, families);
 }
 
 // Custom <select> replacement so we can render a colour swatch next to each
@@ -69,8 +97,9 @@ export function swatchColorForNetId(netId, isDark) {
 // the WAI-ARIA button+listbox pattern: aria-activedescendant on the trigger,
 // arrow-key navigation, Enter/Space to select, Escape to close. Focus stays
 // on the button throughout so screen readers and keyboard users get a
-// predictable flow.
-export function ColoredSelect({ value, onChange, options, label }) {
+// predictable flow. `buttonLabel` replaces the selected option on the button
+// when the state isn't one of the options (e.g. "3 of 11" NetIDs).
+export function ColoredSelect({ value, onChange, options, label, buttonLabel }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() =>
     Math.max(0, options.findIndex((o) => o.value === value)),
@@ -166,14 +195,14 @@ export function ColoredSelect({ value, onChange, options, label }) {
         onKeyDown={onKeyDown}
         className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-content-primary focus:border-accent focus:outline-none"
       >
-        {selected.swatch && (
+        {!buttonLabel && selected.swatch && (
           <span
             aria-hidden
             className="inline-block h-2.5 w-2.5 rounded-full"
             style={{ backgroundColor: selected.swatch }}
           />
         )}
-        <span>{selected.label}</span>
+        <span>{buttonLabel ?? selected.label}</span>
         <span aria-hidden className="text-content-tertiary">▾</span>
       </button>
       {open && (
@@ -243,6 +272,10 @@ export function plotLeftFor(width) {
   // padding on small screens so the inset comes from the canvas alone.
   return width < 640 ? 68 : 78;
 }
+// NetIDs named in the floating legend before "+N more": fewer on a phone, so
+// it stays a strip across the top of the plot instead of covering it.
+const LEGEND_MAX = 6;
+const LEGEND_MAX_NARROW = 3;
 const HIT_RADIUS = 12;     // px from cursor to consider a dot hovered
 const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
 const DOT_RADIUS = 4;
@@ -624,12 +657,15 @@ export default function PacketScatter({
   tracksById,
   loading,
   netIdFilter = "all",
+  netIdSwitches,
+  onToggleNetId,
   trackFilter = "all",
   visibleTypes,
   xDomain,
   hover,
   setHover,
   onPickPacket,
+  netIdFamilies,
 }) {
   const isDark = useDarkMode();
   const hoveredId = hover?.trackId ?? null;
@@ -642,7 +678,7 @@ export default function PacketScatter({
     for (const pkt of packets) {
       const tid = pkt._trackId;
       if (!tid || tid === "joins" || tid === "downlinks") continue;
-      if (!packetMatchesFilters(pkt, { visibleTypes, netIdFilter, trackFilter })) continue;
+      if (!packetMatchesFilters(pkt, { visibleTypes, netIdFilter, netIdSwitches, trackFilter })) continue;
       const netId = pkt._netId ?? null;
       out.push({
         timestamp: pkt.timestamp,
@@ -657,23 +693,23 @@ export default function PacketScatter({
         netId,
         _id: pkt._id,
         _new: pkt._new === true,
-        fillLight: colorForNetIdShade(netId, false, isDark),
-        fillDark: colorForNetIdShade(netId, true, isDark),
+        fillLight: colorForNetIdShade(netId, false, isDark, netIdFamilies),
+        fillDark: colorForNetIdShade(netId, true, isDark, netIdFamilies),
       });
     }
     return out;
-  }, [packets, isDark, visibleTypes, netIdFilter, trackFilter]);
+  }, [packets, isDark, visibleTypes, netIdFilter, netIdSwitches, trackFilter, netIdFamilies]);
 
   const trackColorById = useMemo(() => {
     const map = new Map();
     for (const p of visiblePoints) {
       if (!map.has(p.trackId)) {
         const dummyTrack = { netId: p.netId };
-        map.set(p.trackId, colorForTrack(dummyTrack, isDark));
+        map.set(p.trackId, colorForTrack(dummyTrack, isDark, netIdFamilies));
       }
     }
     return map;
-  }, [visiblePoints, isDark]);
+  }, [visiblePoints, isDark, netIdFamilies]);
 
   // Per-track point lists, sorted by timestamp. Reused by the hover band
   // (which only needs the active hovered track) and the auto-pulse band
@@ -738,6 +774,33 @@ export default function PacketScatter({
 
   const innerW = size.w;
   const innerH = size.h;
+
+  // NetID legend, floated over the plot's top-left (the spectrum's time
+  // window sits top-right): each NetID with uplinks here, busiest first, in
+  // its dot colour and labelled as in the NetID filter. Past LEGEND_MAX the
+  // rest collapse into "+N more".
+  const legend = useMemo(() => {
+    const counts = new Map();
+    for (const t of tracksById.values()) {
+      if (!t.netId || !(t.count > 0)) continue;
+      counts.set(t.netId, (counts.get(t.netId) ?? 0) + t.count);
+    }
+    const operatorCounts = new Map();
+    for (const id of counts.keys()) {
+      const op = netIdToOperator(id) ?? id;
+      operatorCounts.set(op, (operatorCounts.get(op) ?? 0) + 1);
+    }
+    return [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => {
+        const op = netIdToOperator(id) ?? id;
+        return {
+          id,
+          label: operatorCounts.get(op) > 1 ? `${op} · ${id}` : op,
+          color: swatchColorForNetId(id, isDark, netIdFamilies),
+        };
+      });
+  }, [tracksById, isDark, netIdFamilies]);
 
   const yTicks = useMemo(() => yRange ? niceTicks(yRange.yMin, yRange.yMax, 5) : [], [yRange]);
 
@@ -979,10 +1042,63 @@ export default function PacketScatter({
       // Touch-tap shows the tooltip + dims other tracks but doesn't pin
       // (which would scroll the page to the matching row).
       if (lastPointerTypeRef.current !== "touch") onPickPacket?.(hit._id);
+    } else if (lastPointerTypeRef.current === "touch" && hover?.source === "chart") {
+      // The canvas ignores touch pointerleave (it fires on every lift), so
+      // nothing else clears a tapped highlight, and the legend stays faded
+      // and inert under one: a tap on empty chart dismisses it.
+      setHover(null);
     }
   };
 
   const hasData = visiblePoints.length > 0;
+  const legendMax = innerW < 640 ? LEGEND_MAX_NARROW : LEGEND_MAX;
+  const [legendOpen, setLegendOpen] = useState(false);
+  // Whether a NetID is switched on (the dropdown's pick and the legend's
+  // switches); one that's on can still have no dots after the other filters.
+  const netIdOn = (id) => (netIdFilter === "all" || netIdFilter === id) && switchedOn(netIdSwitches, id);
+  const someOff = netIdFilter !== "all" || !!netIdSwitches;
+  // While the pointer is over the legend's box or keyboard focus is in it,
+  // its order holds still: live re-ranking would otherwise slide another
+  // NetID under the cursor, or drop the focused entry into "+N more" and lose
+  // focus. The box, not the buttons: the gaps between them hit-test to the
+  // canvas, so the pointer half is driven by the host's pointer events.
+  const [legendHold, setLegendHold] = useState(null);
+  const holdRef = useRef({ pointer: false, focus: false });
+  const legendRef = useRef(null);
+  const holdLegend = (key, on) => {
+    if (holdRef.current[key] === on) return;
+    holdRef.current[key] = on;
+    const held = holdRef.current.pointer || holdRef.current.focus;
+    setLegendHold((prev) => (held ? prev ?? legend.map((n) => n.id) : null));
+  };
+  const overLegend = (e) => {
+    const r = legendRef.current?.getBoundingClientRect();
+    return !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  };
+  const legendRendered = !loading && legend.length > 0 && innerW > 0;
+  // A removed node fires no pointerleave or blur, so a hold whose target is
+  // gone (the legend unmounted, or a resize dropped the focused entry into
+  // "+N more") is released here.
+  useLayoutEffect(() => {
+    if (!legendRendered) {
+      if (holdRef.current.pointer || holdRef.current.focus) {
+        holdRef.current = { pointer: false, focus: false };
+        setLegendHold(null);
+      }
+    } else if (holdRef.current.focus && !legendRef.current?.contains(document.activeElement)) {
+      holdLegend("focus", false);
+    }
+  });
+  const legendShown = useMemo(() => {
+    if (!legendHold) return legend;
+    const rank = new Map(legendHold.map((id, i) => [id, i]));
+    return [...legend].sort(
+      (a, b) => (rank.get(a.id) ?? legendHold.length) - (rank.get(b.id) ?? legendHold.length),
+    );
+  }, [legend, legendHold]);
+  // NetIDs with dots on the plot right now, after every filter (NetID,
+  // Device, frame types); the legend dims the rest.
+  const plottedNetIds = useMemo(() => new Set(visiblePoints.map((p) => p.netId)), [visiblePoints]);
 
   return (
     <div
@@ -992,6 +1108,12 @@ export default function PacketScatter({
       onMouseLeave={() => {
         if (hover && hover.source === "chart") setHover(null);
       }}
+      onPointerMove={(e) => {
+        // Not while a track is highlighted: the legend is faded and inert then.
+        if (!overLegend(e)) holdLegend("pointer", false);
+        else if (!hover?.trackId) holdLegend("pointer", true);
+      }}
+      onPointerLeave={() => holdLegend("pointer", false)}
     >
       {loading ? (
         <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
@@ -999,7 +1121,16 @@ export default function PacketScatter({
         </div>
       ) : !hasData ? (
         <div className="flex h-full items-center justify-center text-sm text-content-tertiary">
-          No uplinks to chart yet.
+          {someOff &&
+          packets.some(
+            (pkt) =>
+              pkt._trackId &&
+              pkt._trackId !== "joins" &&
+              pkt._trackId !== "downlinks" &&
+              packetMatchesFilters(pkt, { visibleTypes, trackFilter }),
+          )
+            ? "No uplinks from the NetIDs switched on."
+            : "No uplinks to chart yet."}
         </div>
       ) : (
         <canvas
@@ -1024,6 +1155,72 @@ export default function PacketScatter({
           }}
           onClick={onClick}
         />
+      )}
+      {legendRendered && (
+        // Each entry switches its NetID on or off everywhere (chart, spectrum,
+        // table). Only the buttons take the pointer: the gaps between them
+        // pass through to the dots, and a dot under a button is reached once
+        // a track is highlighted, when the legend fades out (so the band and
+        // its FCnt labels show) and the buttons go inert. Keyboard focus
+        // brings it back. Entries that are on but have no dots after the
+        // other filters dim.
+        <ul
+          ref={legendRef}
+          aria-label="NetIDs on the chart"
+          // Only keyboard focus holds it: a mouse click leaves the clicked
+          // button focused, which shouldn't freeze the ranking until a blur.
+          onFocus={(e) => holdLegend("focus", e.target.matches(":focus-visible"))}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) holdLegend("focus", false);
+          }}
+          className={`pointer-events-none absolute top-3 z-10 flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-raised/85 px-1 py-0.5 text-[11px] font-medium text-content-secondary shadow-soft backdrop-blur transition-opacity duration-150 has-[:focus-visible]:opacity-100 sm:ml-2 ${
+            hover?.trackId ? "opacity-0" : ""
+          }`}
+          style={{
+            left: plotLeftFor(innerW) + 8,
+            maxWidth: Math.max(0, innerW - plotLeftFor(innerW) - PLOT_RIGHT - 16),
+          }}
+        >
+          {(legendOpen ? legendShown : legendShown.slice(0, legendMax)).map((n) => {
+            const on = netIdOn(n.id);
+            // Dim the content, not the button, so its focus ring keeps full contrast.
+            const dim = on && !plottedNetIds.has(n.id) ? "opacity-40" : "";
+            return (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  title={on ? `Hide ${n.label}` : `Show ${n.label}`}
+                  onClick={() => onToggleNetId?.(n.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 transition hover:bg-surface-inset hover:text-content focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                    hover?.trackId ? "pointer-events-none" : "pointer-events-auto"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`h-2 w-2 shrink-0 rounded-full ${dim}`}
+                    style={on ? { backgroundColor: n.color } : { boxShadow: `inset 0 0 0 1.5px ${n.color}` }}
+                  />
+                  <span className={`${on ? "" : "line-through decoration-1"} ${dim}`}>{n.label}</span>
+                </button>
+              </li>
+            );
+          })}
+          {legend.length > legendMax && (
+            <li>
+              <button
+                type="button"
+                aria-expanded={legendOpen}
+                onClick={() => setLegendOpen((open) => !open)}
+                className={`rounded-full px-1.5 py-0.5 font-normal transition hover:bg-surface-inset hover:text-content focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                  hover?.trackId ? "pointer-events-none" : "pointer-events-auto"
+                }`}
+              >
+                {legendOpen ? "Show less" : `+${legend.length - legendMax} more`}
+              </button>
+            </li>
+          )}
+        </ul>
       )}
       {hover && hover.source === "chart" && <HoverTooltip hover={hover} />}
     </div>
