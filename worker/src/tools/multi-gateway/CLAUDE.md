@@ -461,6 +461,19 @@ ECC verification HTTP endpoint: `https://ecc-verifier.web.helium.io`.
   fetch fails the worker resolves with no packets and no tracks (it drops the
   replay's segmenter too), so stale tracks can't rank the colors or the Device
   list.
+- **A superseded subscribe must leave the mac alone.** React StrictMode mounts
+  the inspector twice in dev (subscribe, unsubscribe, subscribe), and a user can
+  close and reopen a gateway while its fetch is pending, so `subscribePackets`
+  can still be awaiting IDB or the fetch when a newer call for the same mac has
+  taken over. Each call owns its segmenter (`own`) and checks `stale()` after
+  every await: a stale call resolves `{ packets: [], tracks: [] }` without
+  touching `segmenters`, broadcasting or writing IDB (nobody awaits it; the
+  page's effect has been cancelled). Without that, its cache replay landed in
+  the newer call's segmenter and its batch replaced the live one, so live
+  packets got track ids that collided with the page's (one id spanning two
+  DevAddrs). Any new await in `subscribePackets` needs the same check. In dev
+  the first of the double mount now stops before fetching, so a load makes
+  one packets request.
 - **Don't wrap a `ColoredSelect` in a `<label>`.** A click on one of its options
   bubbles to the label, which re-clicks the trigger button and reopens the list
   (picking an option with the mouse left it open). The filter row uses `<div>`s;

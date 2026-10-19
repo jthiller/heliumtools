@@ -168,16 +168,23 @@ function reconnectSse() {
 
 async function subscribePackets(mac) {
   // Replace any stale state for this mac so a switch can't bleed across.
-  const own = createSegmenter();
+  // `own` is this call's segmenter. A newer subscribe for the mac (the page
+  // reopening it mid-load; StrictMode does that on every dev mount) or an
+  // unsubscribe replaces or removes it, and from then on this call is stale:
+  // it leaves the mac's state alone and resolves empty, since nobody is
+  // waiting on it any more.
+  let own = createSegmenter();
   segmenters.set(mac, own);
   subscribedMacs.add(mac);
+  const stale = () => segmenters.get(mac) !== own;
 
   // Hydrate from IDB cache first so the chart can show something instant
   // while the network fetch is in flight. Cached packets are ingested into
   // the fresh segmenter, then we send a `cached` event with the result.
   const cached = await readPackets(mac).catch(() => []);
+  if (stale()) return { packets: [], tracks: [] };
   if (cached.length > 0) {
-    const kept = ingestBatch(segmenters.get(mac), cached.map((p) => ({ ...p, _new: false })));
+    const kept = ingestBatch(own, cached.map((p) => ({ ...p, _new: false })));
     broadcast({ type: "cached_packets", mac, packets: kept, tracks: summariesFor(mac) });
   }
 
@@ -185,21 +192,24 @@ async function subscribePackets(mac) {
   try {
     packets = await fetchGatewayPackets(mac);
   } catch (err) {
+    if (stale()) return { packets: [], tracks: [] };
     broadcast({ type: "subscribe_error", mac, message: err?.message ?? "fetch failed" });
     // The page drops the cached packets when the batch resolves, so drop
     // their tracks too: the replay can be any age, and its tracks would
     // otherwise rank the NetID colours and the Device list from packets that
-    // are no longer shown. Only while this call still owns the segmenter: a
-    // newer subscribe for the mac (a reopen mid-fetch) holds live state.
-    if (segmenters.get(mac) === own) segmenters.set(mac, createSegmenter());
+    // are no longer shown.
+    own = createSegmenter();
+    segmenters.set(mac, own);
     return { packets: [], tracks: [] };
   }
+  if (stale()) return { packets: [], tracks: [] };
 
   // Reset segmenter again before the authoritative ingest so any SSE packet
   // delivered during the fetch window doesn't get mixed in.
-  segmenters.set(mac, createSegmenter());
+  own = createSegmenter();
+  segmenters.set(mac, own);
   const tagged = packets.map((p) => ({ ...p, _new: false }));
-  const kept = ingestBatch(segmenters.get(mac), tagged);
+  const kept = ingestBatch(own, tagged);
   writePackets(mac, kept).catch(() => {});
   return { packets: kept, tracks: summariesFor(mac) };
 }
