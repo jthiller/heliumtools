@@ -14,7 +14,7 @@
  * against the tool's `inputSchema` before `execute` runs — browsers pass
  * agent-supplied arguments through as-is, so validation is on us. Failures
  * come back as MCP error results (`isError: true`) with messages the agent
- * can act on, never as thrown exceptions.
+ * can act on. Cancellation continues to reject with the caller's abort reason.
  */
 
 import { TOOL_CATALOG, SITE_TOOL_NAMES } from "./catalog.js";
@@ -56,8 +56,14 @@ export function toolResult(value) {
 }
 
 /** Wrap a message as an MCP error result the agent can read and retry on. */
-export function toolError(message) {
-  return { content: [{ type: "text", text: message }], isError: true };
+export function toolError(message, details) {
+  return {
+    content: [
+      { type: "text", text: message },
+      ...(details === undefined ? [] : toolResult(details).content),
+    ],
+    isError: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +96,7 @@ export function normalizeInput(schema, input) {
   const out = { ...input };
   const props = schema.properties || {};
   for (const [key, propSchema] of Object.entries(props)) {
-    if (out[key] === undefined) {
+    if (!Object.hasOwn(out, key) || out[key] === undefined) {
       if (propSchema.default !== undefined) out[key] = propSchema.default;
       continue;
     }
@@ -175,10 +181,10 @@ export function validateAgainstSchema(schema, value, path = "input") {
   if (schema.type === "object" && typeOf(value) === "object") {
     const props = schema.properties || {};
     for (const key of schema.required || []) {
-      if (value[key] === undefined) errors.push(`${path}.${key}: required`);
+      if (!Object.hasOwn(value, key) || value[key] === undefined) errors.push(`${path}.${key}: required`);
     }
     for (const [key, propValue] of Object.entries(value)) {
-      if (props[key]) {
+      if (Object.hasOwn(props, key)) {
         if (propValue !== undefined) {
           errors.push(...validateAgainstSchema(props[key], propValue, `${path}.${key}`));
         }
@@ -220,6 +226,8 @@ function wrapTool(tool) {
   return {
     ...descriptor,
     async execute(rawInput, options) {
+      const signal = options?.signal;
+      signal?.throwIfAborted();
       const input = normalizeInput(tool.inputSchema, rawInput ?? {});
       const schemaErrors = validateAgainstSchema(tool.inputSchema, input);
       if (schemaErrors.length > 0) {
@@ -228,19 +236,23 @@ function wrapTool(tool) {
       try {
         if (validate) {
           const message = await validate(input);
+          signal?.throwIfAborted();
           if (message) return toolError(`Invalid arguments for ${tool.name}: ${message}`);
         }
+        signal?.throwIfAborted();
         const value = await execute(input, options);
+        signal?.throwIfAborted();
         // Pass through results that are already MCP-shaped.
         if (value && typeof value === "object" && Array.isArray(value.content)) return value;
         return toolResult(value);
       } catch (err) {
+        if (signal?.aborted) throw signal.reason;
         if (err?.name === "AbortError") throw err;
         let message = err?.message || String(err);
         if (err?.rateLimited) {
           message += ` (rate limited — retry after ${err.retryAfterSeconds || 60}s)`;
         }
-        return toolError(`${tool.name} failed: ${message}`);
+        return toolError(`${tool.name} failed: ${message}`, err?.data);
       }
     },
   };
@@ -268,7 +280,7 @@ export function registerWebMcpTools(tools) {
   const mc = getModelContext();
   if (!mc || tools.length === 0) return () => {};
 
-  if (import.meta.env.DEV) {
+  if (import.meta.env?.DEV) {
     // Names the catalog promises agents (per-page lists + the site tools).
     // Registering a name outside this set means catalog.js drifted from
     // the actual registrations — the checklist in CLAUDE.md was missed.
@@ -292,36 +304,72 @@ export function registerWebMcpTools(tools) {
   const wrapped = tools.map(wrapTool);
   wrapped.forEach((t) => activeToolNames.add(t.name));
 
-  let unregister;
-  if (typeof mc.registerTool === "function") {
-    const controller = new AbortController();
-    for (const tool of wrapped) {
-      // Fire-and-forget: rejections mean the browser refused registration
-      // (e.g. NotAllowedError under a restrictive Permissions-Policy).
-      Promise.resolve(mc.registerTool(tool, { signal: controller.signal })).catch((err) => {
-        warnOnce(`register:${err?.name}`, "registerTool failed:", err);
-      });
-    }
-    unregister = () => controller.abort();
-  } else if (typeof mc.provideContext === "function") {
-    // Legacy early-preview shape: provideContext replaces the page-level
-    // tool set wholesale, so maintain the union and re-provide on changes.
-    wrapped.forEach((t) => providedTools.set(t.name, t));
-    mc.provideContext({ tools: [...providedTools.values()] });
-    unregister = () => {
-      wrapped.forEach((t) => providedTools.delete(t.name));
-      mc.provideContext({ tools: [...providedTools.values()] });
-    };
-  } else {
-    warnOnce("shape", "model context exposes neither registerTool nor provideContext");
-    unregister = () => {};
-  }
-
   let done = false;
-  return () => {
+  let unregister = () => {};
+  const cleanup = () => {
     if (done) return;
     done = true;
     wrapped.forEach((t) => activeToolNames.delete(t.name));
     unregister();
   };
+
+  try {
+    if (typeof mc.registerTool === "function") {
+      const controller = new AbortController();
+      const registered = new Set();
+      const unregisterLegacy = (tool) => {
+        if (!registered.delete(tool) || typeof mc.unregisterTool !== "function") return;
+        // Early registerTool implementations ignore the signal option and
+        // require unregisterTool(name). Also handle their async variants.
+        try {
+          Promise.resolve(mc.unregisterTool(tool.name)).catch((err) => {
+            warnOnce(`unregister:${err?.name}`, "unregisterTool failed:", err);
+          });
+        } catch (err) {
+          warnOnce(`unregister:${err?.name}`, "unregisterTool failed:", err);
+        }
+      };
+      unregister = () => {
+        controller.abort();
+        [...registered].forEach(unregisterLegacy);
+      };
+      for (const tool of wrapped) {
+        const registration = mc.registerTool(tool, { signal: controller.signal });
+        if (registration && typeof registration.then === "function") {
+          // Rejection must be observed even if the component has unmounted.
+          Promise.resolve(registration).then(() => {
+            registered.add(tool);
+            if (done) unregisterLegacy(tool);
+          }, (err) => {
+            activeToolNames.delete(tool.name);
+            if (!controller.signal.aborted) warnOnce(`register:${err?.name}`, "registerTool failed:", err);
+          });
+        } else {
+          registered.add(tool);
+        }
+      }
+    } else if (typeof mc.provideContext === "function") {
+      // Legacy early-preview shape: provideContext replaces the page-level
+      // tool set wholesale, so maintain the union and re-provide on changes.
+      wrapped.forEach((t) => providedTools.set(t.name, t));
+      unregister = () => {
+        wrapped.forEach((t) => providedTools.delete(t.name));
+        mc.provideContext({ tools: [...providedTools.values()] });
+      };
+      mc.provideContext({ tools: [...providedTools.values()] });
+    } else {
+      warnOnce("shape", "model context exposes neither registerTool nor provideContext");
+    }
+  } catch (err) {
+    // A synchronous failure can occur after earlier tools registered.
+    // Roll them back before the hook reports the original failure.
+    try {
+      cleanup();
+    } catch (cleanupError) {
+      warnOnce(`cleanup:${cleanupError?.name}`, "registration cleanup failed:", cleanupError);
+    }
+    throw err;
+  }
+
+  return cleanup;
 }

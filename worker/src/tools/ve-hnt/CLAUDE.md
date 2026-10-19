@@ -149,6 +149,8 @@ is not open to us. Therefore:
 
 The /ve-hnt page registers the agent tool `get-vehnt-positions` (fetches positions and drives the page input so the UI shows the same analysis) from `pages/public/src/ve-hnt/webmcpTools.js`; claiming stays wallet-signed. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
+The agent analysis callback forwards its execution signal through the page loader to the positions fetch, preserving the single-fetch UI/result path. An already-cancelled invocation does not change the wallet input.
+
 ## Landing preview
 
 The `/` card (`pages/public/src/pages/landing/previews/ve-hnt.js`) is two prints from `pages/public/src/ve-hnt/VeHnt.jsx`, both dpr-3 macros at a 412px phone viewport: the anchor on top is `SummaryHeader`'s headline pair (HNT locked across N positions | total voting power in veHNT, with the epoch), and under it the first `PositionCard` (`01/02`, `StatusPill` Delegated · MOBILE, HNT locked with Cliff, voting power, the "Unlocks in" line and its `CliffProgress` bar), cut above the pending-reward strip. `scripts/tool-previews/capture/ve-hnt.mjs` loads `/ve-hnt?wallet=` with `WALLETS.empty` (two active Cliff positions, one delegated to MOBILE, one undelegated; no wallet connect, no mocks, nothing clicked) and shoots light then dark from that one page state; the figures are live (voting power decays, the countdown moves), so the crops frame the layout, not the digits. Re-capture and re-bake when a change touches `SummaryHeader`'s headline, `PositionCard`'s header, stat pair or lockup line, `StatusPill`, `CliffProgress` or `BigNumber`, or what the script finds them by (the "Total voting power" label, the cards' `<article>` element); see `pages/public/src/pages/landing/CLAUDE.md`.

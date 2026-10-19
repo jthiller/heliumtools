@@ -35,7 +35,8 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
       },
       annotations: { readOnlyHint: true },
       validate: validateAddress,
-      execute({ address }) {
+      execute({ address }, { signal } = {}) {
+        signal?.throwIfAborted();
         const solana = resolveSolanaWallet(address);
         return { solana: solana.toBase58(), helium: toHeliumB58(solana) };
       },
@@ -51,14 +52,22 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
         required: ["address"],
         additionalProperties: false,
       },
+      annotations: { readOnlyHint: false, consequentialHint: true },
       validate: validateAddress,
-      async execute({ address }) {
+      async execute({ address }, { signal } = {}) {
+        signal?.throwIfAborted();
         showWallet(address);
-        const result = await migrateWallet(resolveSolanaWallet(address).toBase58());
+        const result = await migrateWallet(resolveSolanaWallet(address).toBase58(), { signal });
+        signal?.throwIfAborted();
         reportStatus({
           tone: result.success ? (result.transactionsProcessed === 0 ? "info" : "success") : "error",
           message: result.message,
         });
+        if (result?.success === false) {
+          const error = new Error(result.error || result.message || "Migration did not complete; inspect the transaction results before retrying.");
+          error.data = result;
+          throw error;
+        }
         return result;
       },
     },

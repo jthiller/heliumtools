@@ -1,6 +1,7 @@
 import { dedupeAsync } from "./requestDedupe.js";
+import { withTimeout } from "./abort.js";
 
-export const API_BASE = import.meta.env.DEV
+export const API_BASE = import.meta.env?.DEV
   ? "/api/oui-notifier"
   : "https://api.heliumtools.org/oui-notifier";
 
@@ -9,7 +10,8 @@ export async function parseJson(res) {
   if (!contentType.includes("application/json")) return null;
   try {
     return await res.json();
-  } catch {
+  } catch (err) {
+    if (err?.name === "AbortError" || err?.name === "TimeoutError") throw err;
     return null;
   }
 }
@@ -39,8 +41,9 @@ export function throwIfApiError(res, data) {
   });
 }
 
-export async function fetchOuiIndex() {
-  const res = await fetch(`${API_BASE}/ouis`);
+export async function fetchOuiIndex({ signal } = {}) {
+  signal?.throwIfAborted();
+  const res = await fetch(`${API_BASE}/ouis`, { signal });
   if (!res.ok) {
     throw new Error("Unable to load OUIs");
   }
@@ -50,9 +53,10 @@ export async function fetchOuiIndex() {
 
 // Deduped: the WebMCP tool fetches and drives the lookup input, whose
 // debounced effect would otherwise repeat the identical request.
-export const fetchBalanceForOui = dedupeAsync(async (oui) => {
+export const fetchBalanceForOui = dedupeAsync(async (oui, { signal } = {}) => {
+  signal?.throwIfAborted();
   const query = new URLSearchParams({ oui: String(oui) });
-  const res = await fetch(`${API_BASE}/balance?${query.toString()}`);
+  const res = await fetch(`${API_BASE}/balance?${query.toString()}`, { signal: withTimeout(signal, 30_000) });
   const data = await parseJson(res);
   if (!res.ok) {
     throw new Error(data?.error || "Unable to fetch balance");
@@ -61,7 +65,7 @@ export const fetchBalanceForOui = dedupeAsync(async (oui) => {
     throw new Error(data.error);
   }
   return data;
-});
+}, 3_000, { signalIndex: 1 });
 
 export async function subscribeToAlerts(payload) {
   const form = new URLSearchParams();

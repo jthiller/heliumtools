@@ -8,7 +8,7 @@ const MAP_RESULT_CAP = 300;
  * WebMCP tools for /hotspot-map. Both callbacks are provided by the page
  * component (they reuse its resolveKeys pipeline, so plotting behaves
  * exactly like the user's own input: merge, fit-bounds, dedupe):
- *   addWalletToMap(address) -> resolves a wallet's Hotspots onto the map
+ *   addWalletToMap(address, { signal }) -> resolves a wallet's Hotspots onto the map
  *   addKeysToMap(keys[])    -> resolves explicit entity keys onto the map
  * get-hotspot-onboard-dates is a plain read through the same client (and
  * session cache) the detail card uses.
@@ -28,8 +28,9 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
         required: ["address"],
         additionalProperties: false,
       },
-      async execute({ address }) {
-        return capListField(await addWalletToMap(address), "hotspots", MAP_RESULT_CAP);
+      async execute({ address }, { signal } = {}) {
+        signal?.throwIfAborted();
+        return capListField(await addWalletToMap(address, { signal }), "hotspots", MAP_RESULT_CAP);
       },
     },
     {
@@ -51,8 +52,9 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
         required: ["entity_keys"],
         additionalProperties: false,
       },
-      execute({ entity_keys }) {
-        return addKeysToMap(entity_keys);
+      execute({ entity_keys }, { signal } = {}) {
+        signal?.throwIfAborted();
+        return addKeysToMap(entity_keys, { signal });
       },
     },
     {
@@ -76,8 +78,9 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      async execute({ entity_key, networks = ["iot", "mobile"] }) {
-        const onboarded = await fetchOnboardDates(entity_key, [...new Set(networks)].join(","));
+      async execute({ entity_key, networks = ["iot", "mobile"] }, { signal } = {}) {
+        signal?.throwIfAborted();
+        const onboarded = await fetchOnboardDates(entity_key, [...new Set(networks)].join(","), { signal });
         if (!onboarded) throw new Error("onboard-date lookup failed or was rate-limited — try again shortly");
         return { entityKey: entity_key, onboarded };
       },

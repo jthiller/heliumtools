@@ -26,7 +26,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Wallet Dashboard",
     summary:
-      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and on-chain onboard dates, IoT connectivity (latest reported day) and 30-day delivered messages per Hotspot and per operator (OUI), Mobile Hotspot activity (daily data-transfer HNT, users served, bans, and WiFi health: heartbeats in the last 60 minutes, speedtests; live while the tab is visible), unclaimed rewards, governance positions, and recent transactions. No wallet connection needed.",
+      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and on-chain onboard dates, IoT connectivity and traffic, Mobile activity, unclaimed rewards, governance, and recent transactions. Fleet, rewards, onboarding, IoT and Mobile lists accept offset/limit; follow pagination.nextOffset for every page. aggregateScope identifies page totals versus fleet totals. No wallet connection needed.",
     tools: [
       "open-wallet-dashboard",
       "get-wallet-summary",
@@ -52,7 +52,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Hotspot Reward Claimer",
     summary:
-      "Look up any Hotspot by entity key or list a wallet's Hotspots, view pending IOT/MOBILE/HNT rewards, and issue permissionless, treasury-subsidized claim transactions — no wallet connection needed.",
+      "Look up a Hotspot or a wallet's Hotspots and view pending IOT/MOBILE/HNT rewards. claim-hotspot-rewards broadcasts real, treasury-subsidized transactions and is marked consequential; only execute when the user requests a claim. No wallet connection needed.",
     tools: [
       "lookup-hotspot",
       "get-hotspot-rewards",
@@ -152,7 +152,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "L1 Migration",
     summary:
-      "Migrate a legacy Helium L1 account to Solana by broadcasting its pre-signed migration transactions. Accepts Helium B58 or Solana base58 addresses; safe to re-run (already-migrated wallets report as such).",
+      "Derive legacy Helium and Solana addresses, or migrate an L1 account by broadcasting its pre-signed transactions. migrate-l1-wallet is consequential and requires user intent. Accepts either address encoding; already-migrated wallets report as such.",
     tools: ["derive-helium-addresses", "migrate-l1-wallet"],
   },
 ];

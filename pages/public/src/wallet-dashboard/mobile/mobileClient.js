@@ -11,7 +11,7 @@
 //
 // `checkMobileOnce` is the one-shot variant for a wallet that isn't on
 // screen (the agent tool), in a worker of its own.
-import MobileWorker from "./mobileWorker.js?worker";
+import MobileWorker from "./mobileWorkerFactory.js";
 import { writePaint } from "./paintCache.js";
 import { CHECK_INTERVAL_MS } from "./tableMeta.js";
 
@@ -149,20 +149,31 @@ export function createMobileClient() {
  * @returns {Promise<{ state, timedOut: boolean }>} the finished state, or
  *   after `timeoutMs` the latest partial one (tables still "loading"; the
  *   check is then cancelled, keeping the files it finished).
- *   Rejects only if the worker itself fails.
+ *   Rejects if the worker fails or the caller aborts; caller cancellation
+ *   terminates the worker immediately, including outstanding downloads.
  */
-export function checkMobileOnce({ wallet, keys, wifi }, { timeoutMs = 60_000 } = {}) {
+export function checkMobileOnce({ wallet, keys, wifi }, { timeoutMs = 60_000, signal } = {}) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
     const worker = new MobileWorker();
     let state = null;
     let answered = false;
     let settleTimer = null;
     const end = () => {
+      signal?.removeEventListener("abort", onAbort);
       clearTimeout(timer);
       clearTimeout(settleTimer);
       worker.terminate();
     };
+    const onAbort = () => {
+      end();
+      if (!answered) {
+        answered = true;
+        reject(signal.reason);
+      }
+    };
     const answer = (result) => {
+      signal?.removeEventListener("abort", onAbort);
       answered = true;
       clearTimeout(timer);
       resolve(result);
@@ -186,6 +197,8 @@ export function checkMobileOnce({ wallet, keys, wifi }, { timeoutMs = 60_000 } =
         reject(new Error(e.message || "worker error"));
       }
     };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) { onAbort(); return; }
     worker.postMessage({ type: "start", session: 1, wallet, keys, wifi, once: true });
   });
 }

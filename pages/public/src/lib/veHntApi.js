@@ -2,24 +2,26 @@ import { ApiError, parseJson, throwIfApiError } from "./api.js";
 
 export { ApiError };
 
-export const API_BASE = import.meta.env.DEV
+export const API_BASE = import.meta.env?.DEV
   ? "/api/ve-hnt"
   : "https://api.heliumtools.org/ve-hnt";
 
 // NOT deduped: the post-claim refresh re-reads this and must reflect the
 // claim immediately. The WebMCP tool avoids double-fetching by going
 // through the page's own load (see VeHnt.jsx analyzeWallet).
-export async function fetchPositions(wallet) {
+export async function fetchPositions(wallet, { signal } = {}) {
+  signal?.throwIfAborted();
   const query = new URLSearchParams({ wallet });
-  const res = await fetch(`${API_BASE}/positions?${query.toString()}`);
+  const res = await fetch(`${API_BASE}/positions?${query.toString()}`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);
   return data;
 }
 
-export async function fetchPositionEpochs(positionMint) {
+export async function fetchPositionEpochs(positionMint, { signal } = {}) {
+  signal?.throwIfAborted();
   const query = new URLSearchParams({ positionMint });
-  const res = await fetch(`${API_BASE}/position-epochs?${query.toString()}`);
+  const res = await fetch(`${API_BASE}/position-epochs?${query.toString()}`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);
   return data;

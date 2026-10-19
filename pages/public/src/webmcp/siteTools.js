@@ -19,7 +19,8 @@ export function makeSiteTools(navigateSpa) {
         "List every tool page on heliumtools.org: path, what it does, and the WebMCP tools it registers once open. Use open-helium-tool to navigate to one; its tools become available after navigation (a toolchange event fires).",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute() {
+      execute(_input, { signal } = {}) {
+        signal?.throwIfAborted();
         return {
           site: "heliumtools.org — free, open-source Helium network operator tools; no login",
           currentPath: window.location.pathname,
@@ -44,7 +45,8 @@ export function makeSiteTools(navigateSpa) {
         required: ["path"],
         additionalProperties: false,
       },
-      execute({ path }) {
+      execute({ path }, { signal } = {}) {
+        signal?.throwIfAborted();
         const target = catalogEntry(path);
         if (navigateSpa && target.entry === "spa") {
           navigateSpa(path);
@@ -61,8 +63,9 @@ export function makeSiteTools(navigateSpa) {
         "Current HNT price snapshot from the heliumtools.org price API: live market price in USD (Jupiter aggregator) and the on-chain oracle price that HNT-to-Data-Credits minting pays, with timestamps. Cached server-side (~1 min freshness). For a live chain read, open /hnt-price and use get-hnt-price-instant.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute() {
-        return fetchCurrentPrice();
+      execute(_input, { signal } = {}) {
+        signal?.throwIfAborted();
+        return fetchCurrentPrice({ signal });
       },
     },
   ];

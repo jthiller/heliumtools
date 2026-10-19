@@ -726,11 +726,12 @@ export default function VeHnt() {
   // Agent path: one fetch serves both the tool result and the rendered
   // page. Marking lastLoadedRef first keeps the auto-query effect from
   // firing a duplicate load for the same wallet.
-  const analyzeWallet = useCallback((wallet) => {
+  const analyzeWallet = useCallback((wallet, { signal } = {}) => {
+    signal?.throwIfAborted();
     setInput(wallet);
     const resolved = resolveSolanaWallet(wallet).toBase58();
     lastLoadedRef.current = resolved;
-    return load(resolved);
+    return load(resolved, { signal });
   }, [load]);
   useWebMcpTools(() => makeVeHntTools(analyzeWallet), []);
 

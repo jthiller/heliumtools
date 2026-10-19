@@ -25,9 +25,10 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ entity_key }) {
+      execute({ entity_key }, { signal } = {}) {
+        signal?.throwIfAborted();
         showHotspot(entity_key);
-        return lookupHotspot(entity_key);
+        return lookupHotspot(entity_key, { signal });
       },
     },
     {
@@ -42,8 +43,9 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ entity_key }) {
-        return fetchRewards(entity_key);
+      execute({ entity_key }, { signal } = {}) {
+        signal?.throwIfAborted();
+        return fetchRewards(entity_key, { signal });
       },
     },
     {
@@ -57,8 +59,17 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
         required: ["entity_key"],
         additionalProperties: false,
       },
-      execute({ entity_key }) {
-        return claimRewards(entity_key);
+      annotations: { readOnlyHint: false, consequentialHint: true },
+      async execute({ entity_key }, { signal } = {}) {
+        signal?.throwIfAborted();
+        const result = await claimRewards(entity_key, { signal });
+        signal?.throwIfAborted();
+        if (result?.success === false) {
+          const error = new Error(result.error || result.message || "No rewards were claimed; inspect the per-token claim results before retrying.");
+          error.data = result;
+          throw error;
+        }
+        return result;
       },
     },
     {
@@ -76,9 +87,10 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      async execute({ address }) {
+      async execute({ address }, { signal } = {}) {
+        signal?.throwIfAborted();
         showWallet(address);
-        return capListField(await fetchWalletHotspots(address), "hotspots", WALLET_RESULT_CAP);
+        return capListField(await fetchWalletHotspots(address, { signal }), "hotspots", WALLET_RESULT_CAP);
       },
     },
   ];

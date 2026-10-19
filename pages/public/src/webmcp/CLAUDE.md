@@ -6,26 +6,28 @@ MCP-style tools that AI agents — browser-integrated agents, ChatGPT's in-app
 browser, extensions — can discover and invoke, with all arguments validated
 before any action runs. In browsers without WebMCP everything no-ops.
 
-## Standard status (as of Aug 2026)
+## Standard status (as of October 2026)
 
 - Draft Community Group Report from the W3C Web Machine Learning CG
   (Microsoft + Google), announced Feb 2026. Not yet on the standards track.
-- Entry point moved `navigator.modelContext` → `document.modelContext` in the
-  May 2026 draft; Chromium 150 deprecates the navigator alias. Origin trials:
+- Entry point moved `navigator.modelContext` → `document.modelContext`;
+  Chromium 150 deprecates the navigator alias. Origin trials:
   Chrome 149+, Edge 150+. ChatGPT's in-app browser supports it natively;
   Brave Leo experimental. Official TS types: `webmcp-types` on npm.
 - Core surface: `document.modelContext.registerTool(tool, { signal })`
   (unregister by aborting), `getTools()`, `executeTool()`, `toolchange`
   event. A tool is `{ name, title?, description, inputSchema, execute,
-  annotations? }`; `execute` resolves with an MCP CallToolResult
-  (`{ content: [{ type: "text", text }], isError? }`).
+  annotations? }`; the draft permits JSON-serializable results. This site
+  resolves with an MCP CallToolResult (`{ content: [{ type: "text", text }],
+  isError? }`) for compatibility across supporting agents.
 
 ## Files
 
 - `webmcp.js` — the core: `getModelContext()` feature detection (document →
   navigator fallback), `registerWebMcpTools(tools)` (handles the legacy
   `provideContext()`-only shape too), the JSON-Schema-subset validator,
-  `normalizeInput` (defaults + numeric-string coercion), result helpers,
+  `normalizeInput` (defaults + numeric-string coercion), cancellation
+  guards before actions and after asynchronous validation, result helpers,
   and DEV-only drift warnings (invalid/duplicate names, and names missing
   from `catalog.js`).
 - `helpers.js` — tiny, dependency-free schema fragments
@@ -84,6 +86,23 @@ mutations or reads that must reflect a mutation immediately (the
 claimer's rewards reads and ve-hnt's post-claim positions refresh stay
 live).
 
+Cancellation is per execution: tools accept `(input, { signal } = {})` and
+pass the signal through to API clients, scans and polling waits. Clients
+compose their own deadline with `lib/abort.js`'s `withTimeout(signal, ms)`;
+waits use `abortableDelay(ms, signal)`. Do not turn an abort into partial
+data or a normal error result. The Mobile tool terminates its one-shot
+worker on cancellation; cancelling a tool waiting for the dashboard does
+not stop the dashboard's own refresh.
+
+For shared reads, `dedupeAsync(fn, ttlMs, { signalIndex })` identifies the
+optional `{ signal }` argument of `fn`. Signals are excluded from the cache
+key, and cancelling one consumer does not cancel another consumer's read.
+The underlying request aborts only after its last consumer cancels. Other
+request options remain part of the key. Never dedupe mutations.
+Shared fetches must have their own deadline, because an uncancelled page
+consumer keeps an in-flight request alive; a stalled request must fail and
+leave the cache so a later call can retry.
+
 ## Coverage
 
 **The per-page tool lists live in `catalog.js`** — the single source,
@@ -131,12 +150,16 @@ A page listed on `/` also needs its landing card in the same commit (see
 optional per-tool `validate(input)` hook adds domain checks (e.g. "is this
 MAC in the gateway list"). Failures and thrown errors (incl. rate-limit
 info from `ApiError`) come back as `isError: true` MCP results the agent
-can read and retry — never as exceptions. Browsers do NOT validate agent
+can read and retry. Cancellation rejects with the caller's abort reason.
+Browsers do NOT validate agent
 arguments against `inputSchema`; this wrapper is the enforcement point.
 
 Error convention inside tools: reject bad arguments via the `validate`
 hook; `throw` for everything else (the wrapper renders it as
-"<name> failed: <message>"). Don't hand-build `{ content, isError }`
+"<name> failed: <message>"). Explicit transaction `success: false` results
+throw with the original payload in `error.data`; the wrapper preserves it
+as a second JSON text item alongside the error message. Partial successes
+keep their per-token results. Don't hand-build `{ content, isError }`
 literals — `toolError` in webmcp.js exists only for custom shaping.
 
 ## Safety rules
@@ -150,10 +173,25 @@ literals — `toolError` in webmcp.js exists only for custom shaping.
   already offer anyone: `claim-hotspot-rewards` (treasury-subsidized;
   description tells agents to check pending rewards first) and
   `migrate-l1-wallet` (idempotent, official pre-signed txns).
-- Tool results are capped (fleet 200 rows, packets 25 by default) so a big
-  wallet can't blow out an agent's context.
+  Both carry `annotations: { readOnlyHint: false, consequentialHint: true }`.
+  Hints inform the browser/agent; they do not replace user authorization.
+  Cancellation prevents starting a broadcast but cannot reverse one sent.
+- Tool results are bounded (fleet pages 200 rows, rewards pages 100,
+  packets 25 by default). Wallet fleet, rewards, onboarding, IoT and Mobile
+  tools expose `offset`/`limit` and `pagination.nextOffset` so agents can
+  retrieve the remainder. `aggregateScope` states whether summary counts
+  cover the current page or the whole fleet. Page ordering is documented
+  per tool; offsets apply to the current live dataset, not a frozen snapshot.
 
 ## Testing
+
+Run `cd pages/public && npm test` with Node.js 24+. The dependency-free
+Node test runner uses experimental module mocks to isolate API and worker
+boundaries. Tests cover schema validation, useful errors, registration and
+hook cleanup (including late asynchronous factories), shared cancellation,
+transaction metadata/failures, complete fleet pagination and Mobile worker
+termination. No test sends on-chain transactions. Frontend checks run
+`npm ci`, `npm test`, and `npm run build` on pull requests and main pushes.
 
 No WebMCP browser at hand: `document.modelContext` is undefined and
 everything no-ops — verify with the console. With Chrome 149+ (origin

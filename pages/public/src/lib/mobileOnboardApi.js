@@ -1,6 +1,6 @@
 import { parseJson } from "./api.js";
 
-const API_BASE = import.meta.env.DEV
+const API_BASE = import.meta.env?.DEV
   ? "/api/mobile-onboard"
   : "https://api.heliumtools.org/mobile-onboard";
 
@@ -21,8 +21,9 @@ async function post(path, body) {
 }
 
 /** Current wifiDataOnly onboarding fees (DC). */
-export async function fetchMobileFees() {
-  const res = await fetch(`${API_BASE}/fees`);
+export async function fetchMobileFees({ signal } = {}) {
+  signal?.throwIfAborted();
+  const res = await fetch(`${API_BASE}/fees`, { signal });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);
   return data;

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --experimental-test-module-mocks --test",
     "dev": "vite",
     "dev:remote": "VITE_API_TARGET=https://api.heliumtools.org vite",
     "build": "vite build",

@@ -135,6 +135,8 @@ own Hotspot, `payer = dc_fee_payer = hotspot_owner = the connected wallet`.
 
 The /update-location page registers the read-only agent tool `get-hotspot-onchain-info` from `pages/public/src/update-location/webmcpTools.js`; the assert stays wallet-signed in the UI. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
+The on-chain-info read forwards the WebMCP execution signal to fetch; the wallet-signing UI flow is separate.
+
 ## Landing preview
 
 The `/` card (`pages/public/src/pages/landing/previews/update-location.js`) lays the editor's Latitude/Longitude row (40.480057, -79.970868; the field grid in `UpdatePanel.jsx`) across a portrait of its location picker (the violet pin on its res-12 H3 hex, on a roof off Lincoln Avenue in Millvale; the anchor). Both are dpr-4 macros from the macro pass of `scripts/tool-previews/capture/update-location.mjs` (`node capture/update-location.mjs macros`): `/update-location` at a 390px phone viewport with the `mixed` wallet fake-connected read-only, "Huge Lava Raccoon" opened from the Hotspot list (`HotspotList.jsx`) and a new latitude/longitude typed into its inputs, the map wrapper raised to 420px and zoomed to 17.5 through the component's own viewState; no mocked responses (the open-elevation call is aborted), and Update Hotspot is never clicked. Re-capture and re-bake when the location picker (map, pin, hex layer, its `h-56` wrapper or controlled viewState), the Latitude/Longitude grid, or what the script clicks, types into and waits on (the "N IoT Hotspot(s)" count in `UpdateLocation.jsx`, the Hotspot row buttons, the "Drag the map" help line) change (`pages/public/src/pages/landing/CLAUDE.md`).

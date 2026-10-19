@@ -244,6 +244,8 @@ Config in `config.js`; runtime values in `wrangler.jsonc` (vars) and `wrangler s
 
 The OUI Notifier page registers agent tools `list-ouis`, `get-oui-balance` (also drives the lookup UI), and `prefill-alert-subscription` (fills the form; the user still clicks Subscribe) from `pages/public/src/oui-notifier/webmcpTools.js`. Being a separate Vite entry, it also registers the site-wide tools itself (`makeSiteTools(null)` in `Home.jsx`). Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
+Agent reads forward the WebMCP execution signal to fetch. OUI balance requests can share in-flight work with the page, with independent cancellation per consumer. An already-cancelled invocation does not navigate the lookup or prefill the subscription form.
+
 ## Landing preview
 
 The `/` card (`pages/public/src/pages/landing/previews/oui-notifier.js`) is three crops of one lookup result in `Home.jsx`: the Days Remaining tile (the anchor) and the Balance tile staggered over a zoom of the 30-Day History `AreaChart` (burn-down, top-up spike, burn-down again) with its tooltip hovered on 9/24. `scripts/tool-previews/capture/oui-notifier.mjs` loads `/oui-notifier/` at a 1100 px viewport, types OUI 6 into the OUI input and hovers the chart for `hero.png`; no wallet, no mocks, nothing submitted and no email typed. Re-capture and re-bake when the metric tiles, the chart's line, fill, axis or tooltip, or what the script types into and locates (the `#oui` input and its `#oui-options` list, the recharts wrapper, the metrics grid) change (`pages/public/src/pages/landing/CLAUDE.md`).

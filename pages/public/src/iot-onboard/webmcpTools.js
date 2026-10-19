@@ -13,9 +13,10 @@ export const iotOnboardTools = [
       "Current on-chain fees for onboarding a Helium IoT Hotspot, in Data Credits: full (PoC-eligible) vs data-only onboard fees and the location assert fee. Cached ~6h server-side.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
-    async execute() {
+    async execute(_input, { signal } = {}) {
+      signal?.throwIfAborted();
       // fetchOnboardFees returns null on upstream failure rather than throwing.
-      const fees = await fetchOnboardFees();
+      const fees = await fetchOnboardFees({ signal });
       if (!fees) throw new Error("fee lookup failed upstream — try again shortly");
       return fees;
     },

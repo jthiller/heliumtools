@@ -1,6 +1,6 @@
 import { parseJson } from "./api.js";
 
-const API_BASE = import.meta.env.DEV
+const API_BASE = import.meta.env?.DEV
   ? "/api/update-location"
   : "https://api.heliumtools.org/update-location";
 
@@ -9,8 +9,10 @@ const API_BASE = import.meta.env.DEV
  * its device type and the current location-assert fees.
  * @param {string} gatewayPubkey Helium-format entity key
  */
-export async function fetchHotspotStatus(gatewayPubkey) {
+export async function fetchHotspotStatus(gatewayPubkey, { signal } = {}) {
+  signal?.throwIfAborted();
   const res = await fetch(`${API_BASE}/status`, {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ gateway_pubkey: gatewayPubkey }),

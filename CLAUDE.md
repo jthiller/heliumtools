@@ -100,6 +100,9 @@ or removing a tool updates or removes its card. Follow the checklists in
 # Frontend dev
 cd pages/public && npm run dev
 
+# Frontend regression checks (Node.js 24+; mocked APIs, no on-chain writes)
+cd pages/public && npm test
+
 # Worker dev
 cd worker && wrangler dev
 

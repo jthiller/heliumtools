@@ -12,7 +12,8 @@
  * returning false drops a resolved value once in-flight callers have it, so
  * a transient answer is never served from cache.
  */
-export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep } = {}) {
+export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep, signalIndex } = {}) {
+  if (Number.isInteger(signalIndex)) return dedupeCancellable(fn, ttlMs, { max, keep, signalIndex });
   const entries = new Map(); // JSON args key -> { at, promise }
   return (...args) => {
     const key = JSON.stringify(args);
@@ -30,5 +31,74 @@ export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep } = {}) {
     };
     promise.then((value) => keep && !keep(value) && evict(), evict);
     return promise;
+  };
+}
+
+/**
+ * Signal-aware callers still share a request with the page. `signalIndex`
+ * identifies the optional `{ signal, ...options }` argument. The signal
+ * isn't part of the cache key; every other option is. Cancelling one caller
+ * releases only its subscription, and cancelling the last caller aborts
+ * the underlying request and removes it from the cache.
+ */
+function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
+  const entries = new Map();
+  return (...args) => {
+    const options = args[signalIndex] || {};
+    const signal = options.signal;
+    if (signal?.aborted) return Promise.reject(signal.reason);
+
+    const keyArgs = [...args];
+    const { signal: ignoredSignal, ...keyOptions } = options;
+    keyArgs[signalIndex] = Object.keys(keyOptions).length ? keyOptions : undefined;
+    while (keyArgs.length && keyArgs.at(-1) === undefined) keyArgs.pop();
+    const key = JSON.stringify(keyArgs);
+    let entry = entries.get(key);
+    if (entry && entry.settled && Date.now() - entry.at >= ttlMs) {
+      entries.delete(key);
+      entry = null;
+    }
+    if (!entry) {
+      if (entries.size >= max) entries.delete(entries.keys().next().value);
+      entry = { controller: new AbortController(), consumers: new Set(), settled: false, at: 0 };
+      const ownedEntry = entry;
+      const requestArgs = [...args];
+      requestArgs[signalIndex] = { ...options, signal: entry.controller.signal };
+      entry.promise = Promise.resolve().then(() => {
+        ownedEntry.controller.signal.throwIfAborted();
+        return fn(...requestArgs);
+      });
+      entry.evict = () => {
+        if (entries.get(key) === ownedEntry) entries.delete(key);
+      };
+      entry.promise.then((value) => {
+        ownedEntry.settled = true;
+        ownedEntry.at = Date.now();
+        if (keep && !keep(value)) ownedEntry.evict();
+      }, () => {
+        ownedEntry.settled = true;
+        ownedEntry.evict();
+      });
+      entries.set(key, entry);
+    }
+
+    return new Promise((resolve, reject) => {
+      const consumer = {};
+      entry.consumers.add(consumer);
+      const release = () => {
+        signal?.removeEventListener("abort", abort);
+        entry.consumers.delete(consumer);
+      };
+      const abort = () => {
+        release();
+        if (!entry.settled && entry.consumers.size === 0) {
+          entry.evict();
+          entry.controller.abort(signal.reason);
+        }
+        reject(signal.reason);
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+      entry.promise.then((value) => { release(); resolve(value); }, (error) => { release(); reject(error); });
+    });
   };
 }

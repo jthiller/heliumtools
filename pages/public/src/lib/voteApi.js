@@ -1,25 +1,26 @@
 import { parseJson, throwIfApiError } from "./api.js";
 
-export const API_BASE = import.meta.env.DEV
+export const API_BASE = import.meta.env?.DEV
   ? "/api/vote"
   : "https://api.heliumtools.org/vote";
 
-async function get(path, params) {
+async function get(path, params, { signal } = {}) {
+  signal?.throwIfAborted();
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_BASE}${path}${query ? `?${query}` : ""}`);
+  const res = await fetch(`${API_BASE}${path}${query ? `?${query}` : ""}`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);
   return data;
 }
 
 /** Index of tracked current + past votes (compact D1 catalog rows). */
-export function fetchProposals() {
-  return get("/proposals", {});
+export function fetchProposals(options) {
+  return get("/proposals", {}, options);
 }
 
 /** Decoded ProposalV0 + outcome (choices, weights, percentages, status). */
-export function fetchProposal(id) {
-  return get("/proposal", id ? { id } : {});
+export function fetchProposal(id, options) {
+  return get("/proposal", id ? { id } : {}, options);
 }
 
 /** Live voter roster (VoteMarkerV0 accounts) + per-choice aggregates. */
@@ -38,8 +39,8 @@ export function fetchHistory(id) {
 }
 
 /** One voter's vote/flip timeline (vote+relinquish actions with timestamps). */
-export function fetchVoterHistory(id, voter) {
+export function fetchVoterHistory(id, voter, options) {
   const params = { voter };
   if (id) params.id = id;
-  return get("/voter-history", params);
+  return get("/voter-history", params, options);
 }

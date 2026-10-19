@@ -20,9 +20,10 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
         "Catalog of every OUI (organization) on the Helium IoT network: OUI number, owner, payer, escrow account, and delegate keys.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute() {
+      execute(_input, { signal } = {}) {
+        signal?.throwIfAborted();
         const loaded = getOuis();
-        return loaded?.length ? loaded : fetchOuiIndex();
+        return loaded?.length ? loaded : fetchOuiIndex({ signal });
       },
     },
     {
@@ -37,9 +38,10 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ oui }) {
+      execute({ oui }, { signal } = {}) {
+        signal?.throwIfAborted();
         showOui(oui);
-        return fetchBalanceForOui(oui);
+        return fetchBalanceForOui(oui, { signal });
       },
     },
     {
@@ -68,7 +70,8 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
         required: ["oui", "email"],
         additionalProperties: false,
       },
-      execute({ oui, email, label, webhook_url }) {
+      execute({ oui, email, label, webhook_url }, { signal } = {}) {
+        signal?.throwIfAborted();
         prefillSubscription({ oui, email, label, webhook_url });
         return "Form filled in. Ask the user to review it and click Subscribe — a verification email will follow.";
       },
