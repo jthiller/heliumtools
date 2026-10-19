@@ -184,13 +184,14 @@ function installHelpers() {
 }
 
 const sel = {
-  kpis: 'div.mt-6.grid.grid-cols-2',
-  gatewayTable: 'div.mt-6 > div.-mx-4.overflow-hidden',
+  kpis: 'main > dl.grid.grid-cols-2',
+  gatewayTable: 'main > div.-mx-4.overflow-hidden',
   inspector: 'div.-mx-4.mt-4.bg-surface-raised',
   charts: 'div.-mx-4.mt-4.bg-surface-raised > div.flex.flex-col.sm\\:flex-row',
   scatterCol: 'div.-mx-4.mt-4.bg-surface-raised > div.flex.flex-col.sm\\:flex-row > div:first-child',
   spectrumCol: 'div.-mx-4.mt-4.bg-surface-raised > div.flex.flex-col.sm\\:flex-row > div:last-child',
-  packetTable: 'div.-mx-4.mt-4.bg-surface-raised div.overflow-auto.border-t',
+  // The table's box has a stable hook: its overflow class switches with width.
+  packetTable: 'div.-mx-4.mt-4.bg-surface-raised [data-packet-table]',
 };
 const TALL_CSS = `.flex-\\[7\\] > [data-chart-host]{height:400px!important}`;
 const HIDE_TIP_CSS = `.flex-\\[7\\] > [data-chart-host] > div.pointer-events-none.absolute.z-20{visibility:hidden!important}`;
@@ -334,9 +335,26 @@ await run(async ({ newPage, settle, shoot, shootRect, sleep }) => {
     // ===== native layout =====
     await unhover(page);
     if (want('full')) {
-      await page.evaluate(() => window.scrollTo(0, 0));
+      // The packet table runs at its full height in the page (hundreds of
+      // rows, mostly virtualization spacer), so cut it to its first 15 rows
+      // for the full-page shot, then restore it.
+      await page.evaluate((sel) => {
+        const el = document.querySelector(sel.packetTable);
+        const top = el.getBoundingClientRect().top;
+        const rows = [...el.querySelectorAll('tbody tr')].filter((tr) => tr.querySelectorAll('td').length > 3);
+        const h = Math.ceil(rows[Math.min(14, rows.length - 1)].getBoundingClientRect().bottom - top);
+        el.dataset.prevStyle = el.getAttribute('style') || '';
+        el.style.maxHeight = `${h}px`;
+        el.style.height = `${h}px`;
+        el.style.overflow = 'hidden';
+        window.scrollTo(0, 0);
+      }, sel);
       await sleep(400);
       await shoot(page, 'full', path.join(dir, 'full.png'));
+      await page.evaluate((sel) => {
+        const el = document.querySelector(sel.packetTable);
+        el.setAttribute('style', el.dataset.prevStyle || '');
+      }, sel);
     }
     if (want('kpis')) await shootRect(page, padded(await boxOf(page, sel.kpis)), path.join(dir, 'kpis.png'));
     if (want('gateway-table')) await shootRect(page, padded(await boxOf(page, sel.gatewayTable)), path.join(dir, 'gateway-table.png'));
@@ -510,9 +528,9 @@ async function writeManifest({ head, tip, target }) {
     'spectrum.png': ['supporting', 'element-crop', 'Spectrum waterfall as a portrait fragment (no hover, 1m/max pill hidden): every packet a colored tick at its EU868 channel, stacked by time, opacity by RSSI, frequency labels along the bottom.'],
     'packet-table.png': ['supporting', 'element-crop', 'Top of the live packet table: time ago, frame-type icon, NetID/operator, DevAddr, Helium OUI, FCnt, FPort, RSSI, SNR, frequency, SF/BW and size in monospace. Join Request rows show dashes (joins carry no DevAddr/FCnt); other dashes are non-Helium traffic with no Helium OUI.'],
     'gateway-table.png': ['supporting', 'element-crop', 'Gateway list card: gateways with connection dots, US915/EU868/AU915 region pills, MACs, animal-name public keys, uptime, last uplink, uplink/downlink counters and on-chain checkmarks; the inspected gateway row highlighted.'],
-    'kpis.png': ['supporting', 'element-crop', 'Four KPI tiles: Total Gateways, Connected, Uplinks, Downlinks.'],
+    'kpis.png': ['supporting', 'element-crop', 'Fleet totals set on the page (no cards), split by hairlines: Total Gateways, Connected, Uplinks, Downlinks.'],
     'viewport.png': ['backdrop', 'viewport', 'The dashboard at 1440x960: lower gateway list (selected row highlighted) above the inspector card with the hovered RSSI scatter (band + tooltip), events bar and spectrum waterfall, ending at the packet-table header.'],
-    'full.png': ['backdrop', 'full-page', 'Whole Multi-Gateway page, no hover: site header, collapsed "Add a Hotspot" panel, KPI tiles, gateway list, inspector card (scatter + events bar + spectrum) and the live packet table.'],
+    'full.png': ['backdrop', 'full-page', 'Whole Multi-Gateway page, no hover: site header, the page title with its "Add a Hotspot" button (setup panel closed), fleet totals, gateway list, inspector card (scatter with its floating NetID legend + events bar + spectrum) and the live packet table cut to its first 15 rows.'],
     'detail.png': ['detail', 'macro', `dpr-3 macro of the scatter hover: y-axis, ${band}, the packet tooltip (${tip}), joins lane and the whole time axis to "now"; spans the full scatter column so the entire track is in frame.`],
     'detail-band.png': ['detail', 'macro', 'Same dpr-3 rect as detail.png with the hover held and the tooltip hidden: the band alone with its FCnt labels.'],
     'tooltip.png': ['detail', 'macro', `The real scatter tooltip alone at dpr 3 (chart canvas made transparent underneath so it sits on the plain card surface, soft shadow included): ${tip}.`],

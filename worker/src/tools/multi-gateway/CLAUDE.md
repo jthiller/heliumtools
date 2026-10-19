@@ -31,9 +31,9 @@ aggregator**, not from heliumtools-owned code. The deployment runs a fork:
   changed (verified 2026-08-27 — **still the outstanding gap**: the divergence is
   documented here and in the site copy, not in the fork's own README). The
   frontend footer links upstream as "Built on helium/multi-gateway" and the fork
-  as "Source"; the setup note names the fork as what this demo runs and warns
-  that the live stream, packet history, and onboarding need the fork's added
-  endpoints (`MultiGateway.jsx`).
+  as "Source"; the setup panel (opened by the header's "Add a Hotspot" button)
+  names the fork as what this demo runs and warns that the live stream, packet
+  history, and onboarding need the fork's added endpoints (`MultiGateway.jsx`).
 
 ### What the worker actually calls
 
@@ -164,11 +164,48 @@ region) and ~4 dashboards saturated the fork's per-region cap of 20.
 
 ### Frontend (`pages/public/src/multi-gateway/`)
 
-`MultiGateway.jsx` is the shell: gateway list, inspector card, on-chain
-onboarding wizard, fleet map (deck.gl/MapLibre), and the upstream/fork footer
-links. The inspector card (`GatewayDetail`) is the `memo`'d component — it skips
-re-rendering on the ~60Hz hover churn. The 1Hz `nowTick` heartbeat lives in the
-chart subtree and is rate-limited (not memo-gated) to avoid a re-render cascade.
+`MultiGateway.jsx` is the shell: the page header, fleet totals, gateway list,
+inspector card, on-chain onboarding wizard, fleet map (deck.gl/MapLibre), and the
+upstream/fork footer links.
+
+- **Header**: the eyebrow / title / lede pattern of the newer tool pages (titled
+  "Add a Hotspot", the landing card's name; the breadcrumb stays "Multi-Gateway"),
+  then an accent pill button that discloses the setup panel (`SetupPanel`): the
+  aggregator's `server_address` beside a grid of region pills and their ports,
+  then the public-demo note. The button carries `aria-expanded`/`aria-controls`;
+  the panel stays mounted with `hidden` while closed.
+- **Fleet totals** (`FleetStats`): four figures set on the page itself, not in
+  cards, split by hairlines (two columns on phones, four from `lg`), then a
+  "Gateways" section label over the gateway list. The figures size in `cqi` of
+  the `<dl>` (capped at 40px), so an eight-digit uplink count never crosses a
+  hairline at any width.
+- **Inspector header**: gateway name, its region pill (the same `RegionBadge` as
+  its row in the list, which ties the two together), MAC, device count and span.
+- **Packet table** (`GatewayDetail`, the `memo`'d component — it skips
+  re-rendering on the ~60Hz hover churn) runs at its full height in the page; it
+  has no scroll box of its own, so the window's scroll reaches every row. It is
+  still virtualized: spacer rows stand in for the unmounted ones, and the
+  mounted slice follows the window (scroll, resize, and a `ResizeObserver` on
+  `document.body` for layout shifts above it, all coalesced per frame).
+  **The spacers must equal the rows they replace**, or the browser's scroll
+  anchoring compensates for the shift, crosses the row boundary back, swaps the
+  row again and loops (the page flickers a few pixels at ~30Hz). So: every row
+  is one line (`whitespace-nowrap`; operator and OUI names truncate at a fixed
+  width, full text in their tooltips), the row height is measured from the
+  mounted rows on every update (never assumed; it differs by breakpoint),
+  spacer rows carry `overflow-anchor: none`, and the mounted range only moves
+  once the viewport leaves a two-row margin. Column headers stick to the top of
+  the window whenever the table fits its card (measured; at 1440 it does, at
+  1024 and on phones it scrolls sideways in its own box, where sticky can't
+  reach the window). New packets prepend rows; where the browser has CSS scroll
+  anchoring (Chrome, Firefox, current Safari) it keeps the reader's row in
+  place, elsewhere the table scrolls the window by the inserted rows, except
+  while a pin's smooth scroll is still running (an instant scroll would cut it
+  short). Clicking a chart dot scrolls the window to center that packet's row,
+  once per pin.
+
+The 1Hz `nowTick` heartbeat lives in the chart subtree and is rate-limited (not
+memo-gated) to avoid a re-render cascade.
 
 - `packetWorkerClient.js` — main-thread API for the packet Web Worker.
   Request/response calls (`subscribePackets`/`unsubscribePackets`) are matched by
@@ -248,6 +285,16 @@ family (all Helium NetIDs share one emerald hue family via `colorForNetIdShade`;
 non-Helium NetIDs map deterministically via djb2), frame type
 picks the shade (confirmed darker). Hover uses a proportionally-damped
 Catmull-Rom band with sticky `pointInBand()` tracking.
+
+A NetID legend floats over the plot's top-left (mirroring the spectrum's `1m/max`
+pill at its top-right): each NetID with uplinks on this gateway, busiest first,
+in its dot colour and labelled as in the NetID filter, up to `LEGEND_MAX` (6;
+`LEGEND_MAX_NARROW` 3 under 640px) then "+N more". It is `pointer-events-none`,
+so dots under it stay hoverable; entries with no dots after the filters (NetID,
+Device, frame types) are dimmed; it fades out while a track is highlighted (so
+the band and its FCnt labels, which can reach the top of the plot, show), and it
+is hidden while the chart says "Loading...". NetIDs that hash to the same family
+share a swatch, as their dots do.
 
 ### NetID / operator decode (`pages/public/src/lib/lorawan.js`)
 `devAddrToNetId(devAddr)` counts leading 1-bits for the LoRaWAN type, extracts
@@ -374,4 +421,4 @@ The /multi-gateway page registers agent tools `list-gateways` (live page state, 
 
 ## Landing preview
 
-The `/` card ("Add a Hotspot", `pages/public/src/pages/landing/previews/multi-gateway.js`) stacks three prints of one frozen inspector state for gateway `647FDAFFFE02E8A7`: one device track's hovered RSSI band with its FCnt-labelled dots over the dimmed scatter (`PacketScatter.jsx`, tooltip hidden; the anchor), the top of the live packet table (Time, Type and NetID columns of `GatewayDetail` in `MultiGateway.jsx`), and that hovered packet's tooltip (`HoverTooltip` in `PacketScatter.jsx`). The card is featured (two columns wide on desktop): its wide stage lays the band large across the top, the packet table's signal columns (RSSI, SNR, frequency, spreading factor; from `packet-table.png`) across the lower right, and the tooltip at the lower left. `scripts/tool-previews/capture/multi-gateway.mjs` opens `/multi-gateway?mac=647FDAFFFE02E8A7` with no wallet and no mocks, lets the live stream fill the chart for about 10 minutes, then freezes the page (an init script pins `Date.now` and drops the packet worker's `requestId`-less broadcasts) and hovers an automatically ranked track; the band and tooltip are dpr-3 macros, the table a dpr-2 crop, and nothing is clicked (`ONLY=detail,tooltip,packet-table` shoots just these). Re-capture and re-bake when the scatter's band, dots or tooltip, track grouping (`segmentation.js`), the packet table's columns, or what the script hooks into (the `[data-chart-host]` wrapper and inspector classes it selects, the `packets`/`tracksById`/`xDomain` props it reads off `PacketScatter`, the worker's `requestId` message shape) change (`pages/public/src/pages/landing/CLAUDE.md`).
+The `/` card ("Add a Hotspot", `pages/public/src/pages/landing/previews/multi-gateway.js`) stacks three prints of one frozen inspector state for gateway `647FDAFFFE02E8A7`: one device track's hovered RSSI band with its FCnt-labelled dots over the dimmed scatter (`PacketScatter.jsx`, tooltip hidden; the anchor), the top of the live packet table (Time, Type and NetID columns of `GatewayDetail` in `MultiGateway.jsx`), and that hovered packet's tooltip (`HoverTooltip` in `PacketScatter.jsx`). The card is featured (two columns wide on desktop): its wide stage lays the band large across the top, the packet table's signal columns (RSSI, SNR, frequency, spreading factor; from `packet-table.png`) across the lower right, and the tooltip at the lower left. `scripts/tool-previews/capture/multi-gateway.mjs` opens `/multi-gateway?mac=647FDAFFFE02E8A7` with no wallet and no mocks, lets the live stream fill the chart for about 10 minutes, then freezes the page (an init script pins `Date.now` and drops the packet worker's `requestId`-less broadcasts) and hovers an automatically ranked track; the band and tooltip are dpr-3 macros, the table a dpr-2 crop, and nothing is clicked (`ONLY=detail,tooltip,packet-table` shoots just these). Re-capture and re-bake when the scatter's band, dots or tooltip, track grouping (`segmentation.js`), the packet table's columns, or what the script hooks into (the `[data-chart-host]` wrapper, the packet table's `[data-packet-table]` box, the `main > dl` fleet totals and the inspector classes it selects, the `packets`/`tracksById`/`xDomain` props it reads off `PacketScatter`, the worker's `requestId` message shape) change (`pages/public/src/pages/landing/CLAUDE.md`).

@@ -243,6 +243,10 @@ export function plotLeftFor(width) {
   // padding on small screens so the inset comes from the canvas alone.
   return width < 640 ? 68 : 78;
 }
+// NetIDs named in the floating legend before "+N more": fewer on a phone, so
+// it stays a strip across the top of the plot instead of covering it.
+const LEGEND_MAX = 6;
+const LEGEND_MAX_NARROW = 3;
 const HIT_RADIUS = 12;     // px from cursor to consider a dot hovered
 const HIT_RADIUS_SQ = HIT_RADIUS * HIT_RADIUS;
 const DOT_RADIUS = 4;
@@ -739,6 +743,33 @@ export default function PacketScatter({
   const innerW = size.w;
   const innerH = size.h;
 
+  // NetID legend, floated over the plot's top-left (the spectrum's time
+  // window sits top-right): each NetID with uplinks here, busiest first, in
+  // its dot colour and labelled as in the NetID filter. Past LEGEND_MAX the
+  // rest collapse into "+N more".
+  const legend = useMemo(() => {
+    const counts = new Map();
+    for (const t of tracksById.values()) {
+      if (!t.netId || !(t.count > 0)) continue;
+      counts.set(t.netId, (counts.get(t.netId) ?? 0) + t.count);
+    }
+    const operatorCounts = new Map();
+    for (const id of counts.keys()) {
+      const op = netIdToOperator(id) ?? id;
+      operatorCounts.set(op, (operatorCounts.get(op) ?? 0) + 1);
+    }
+    return [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => {
+        const op = netIdToOperator(id) ?? id;
+        return {
+          id,
+          label: operatorCounts.get(op) > 1 ? `${op} · ${id}` : op,
+          color: swatchColorForNetId(id, isDark),
+        };
+      });
+  }, [tracksById, isDark]);
+
   const yTicks = useMemo(() => yRange ? niceTicks(yRange.yMin, yRange.yMax, 5) : [], [yRange]);
 
   // Live scales: xMax is always Date.now() so the chart visibly slides left
@@ -983,6 +1014,10 @@ export default function PacketScatter({
   };
 
   const hasData = visiblePoints.length > 0;
+  const legendMax = innerW < 640 ? LEGEND_MAX_NARROW : LEGEND_MAX;
+  // NetIDs with dots on the plot right now, after every filter (NetID,
+  // Device, frame types); the legend dims the rest.
+  const plottedNetIds = useMemo(() => new Set(visiblePoints.map((p) => p.netId)), [visiblePoints]);
 
   return (
     <div
@@ -1024,6 +1059,37 @@ export default function PacketScatter({
           }}
           onClick={onClick}
         />
+      )}
+      {!loading && hasData && legend.length > 0 && innerW > 0 && (
+        // Not interactive (pointer-events-none), so hovering a dot under it
+        // still works. NetIDs the filters leave without dots are dimmed, and
+        // the legend fades out while a track is highlighted so it never
+        // covers the band and its FCnt labels.
+        <ul
+          aria-label="NetIDs"
+          className={`pointer-events-none absolute top-3 z-10 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-xl bg-surface-raised/85 px-2.5 py-1 text-[11px] font-medium text-content-secondary shadow-soft backdrop-blur transition-opacity duration-150 sm:ml-2 ${
+            hover?.trackId ? "opacity-0" : ""
+          }`}
+          style={{
+            left: plotLeftFor(innerW) + 8,
+            maxWidth: Math.max(0, innerW - plotLeftFor(innerW) - PLOT_RIGHT - 16),
+          }}
+        >
+          {legend.slice(0, legendMax).map((n) => (
+            <li
+              key={n.id}
+              className={`inline-flex items-center gap-1.5 transition-opacity ${
+                plottedNetIds.has(n.id) ? "" : "opacity-40"
+              }`}
+            >
+              <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: n.color }} />
+              {n.label}
+            </li>
+          ))}
+          {legend.length > legendMax && (
+            <li className="font-normal">+{legend.length - legendMax} more</li>
+          )}
+        </ul>
       )}
       {hover && hover.source === "chart" && <HoverTooltip hover={hover} />}
     </div>
