@@ -54,12 +54,12 @@ import {
   subscribePackets,
   unsubscribePackets,
 } from "./packetWorkerClient.js";
-import PacketScatter, { ColoredSelect, swatchColorForNetId } from "./PacketScatter.jsx";
+import PacketScatter, { ColoredSelect, assignNetIdFamilies, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeMultiGatewayTools } from "./webmcpTools.js";
 import SpectrumChart from "./SpectrumChart.jsx";
-import { packetMatchesFilters } from "./filters.js";
+import { packetMatchesFilters, switchedOn } from "./filters.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -679,6 +679,11 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visibleTypes, setVisibleTypes] = useState(ALL_TYPES_VISIBLE);
+  // This gateway's NetID colours (assignNetIdFamilies). The network batch
+  // builds the map (replacing a provisional one from the IDB replay); after
+  // that each NetID keeps its family for as long as the gateway is open.
+  // Tagged with the mac so a switch starts afresh.
+  const [netIdFamilies, setNetIdFamilies] = useState(() => ({ mac, map: new Map() }));
 
   const toggleType = (type) =>
     setVisibleTypes((prev) => ({ ...prev, [type]: !prev[type] }));
@@ -695,22 +700,36 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
     setLoading(true);
     setPackets([]);
     setTracks([]);
+    setNetIdFamilies({ mac, map: new Map() });
+    setNetIdSwitches(null);
 
     const tagPackets = (incoming) =>
       incoming.map((p) => ({ ...p, _id: ++idRef.current }));
+    // Every tracks snapshot also hands colours to NetIDs seen for the first
+    // time. The network batch starts the map over (`fresh`): the IDB replay
+    // before it can be any age, and only paints "Loading...", so its ranking
+    // mustn't decide which NetIDs get the seven families.
+    const applyTracks = (next, fresh = false) => {
+      setTracks(next);
+      setNetIdFamilies((prev) => {
+        const base = prev.mac === mac && !fresh ? prev.map : new Map();
+        const map = assignNetIdFamilies(base, next);
+        return map === base && prev.mac === mac && !fresh ? prev : { mac, map };
+      });
+    };
 
     const off = onWorkerEvent((event) => {
       if (cancelled || event.mac !== mac) return;
       if (event.type === "cached_packets") {
         setPackets(tagPackets(event.packets));
-        setTracks(event.tracks);
+        applyTracks(event.tracks);
       } else if (event.type === "subscribed_packet") {
         const pkt = { ...event.packet, _id: ++idRef.current };
         setPackets((prev) => {
           const next = [...prev, pkt];
           return next.length > MAX_PACKETS ? next.slice(-MAX_PACKETS) : next;
         });
-        setTracks(event.tracks);
+        applyTracks(event.tracks);
       }
     });
 
@@ -718,7 +737,7 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
       .then((res) => {
         if (cancelled) return;
         setPackets(tagPackets(res.packets));
-        setTracks(res.tracks);
+        applyTracks(res.tracks, true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -742,6 +761,17 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
   const [pinnedPacketId, setPinnedPacketId] = useState(null);
   const [netIdFilter, setNetIdFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
+  // The chart legend's NetID switches (`switchedOn` in filters.js; null when
+  // none). Applies everywhere the NetID filter does (scatter, spectrum, table,
+  // Device list). Picking a NetID (or All) in the dropdown starts over from it.
+  // Changing either drops the highlight, which may belong to a NetID that's
+  // now off.
+  const [netIdSwitches, setNetIdSwitches] = useState(null);
+  const pickNetId = useCallback((value) => {
+    setNetIdFilter(value);
+    setNetIdSwitches(null);
+    setHover(null);
+  }, []);
   // Anchors the events bar's right edge to current time. The canvas chart
   // ignores this and reads Date.now() directly per rAF frame — it stays
   // 60fps smooth regardless. The events bar isn't on its own animation
@@ -767,6 +797,29 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
     return [...set].sort();
   }, [tracks]);
 
+  // A legend click flips one NetID, relative to what the chart shows now.
+  // From All, the switches list what's off, so NetIDs first seen later come in
+  // on. From a NetID picked in the dropdown they list what's on (the pick, and
+  // now the clicked one alongside it), so later arrivals stay off; switching
+  // the last NetID off does the same, so "None" stays none. Every NetID back
+  // on is plain All again.
+  const toggleNetId = useCallback((id) => {
+    setHover(null);
+    setNetIdFilter("all");
+    let next;
+    if (netIdFilter !== "all") {
+      next = { only: true, ids: new Set(id === netIdFilter ? [] : [netIdFilter, id]) };
+    } else {
+      const ids = new Set(netIdSwitches?.ids);
+      if (ids.has(id)) ids.delete(id);
+      else ids.add(id);
+      next = { only: netIdSwitches?.only ?? false, ids };
+      if (!next.only && netIdOptions.every((x) => ids.has(x))) next = { only: true, ids: new Set() };
+    }
+    const allOn = netIdOptions.every((x) => switchedOn(next, x));
+    setNetIdSwitches(allOn ? null : next);
+  }, [netIdOptions, netIdFilter, netIdSwitches]);
+
   const isDark = useDarkMode();
 
   // Disambiguate when multiple NetIDs resolve to the same operator name.
@@ -781,19 +834,28 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
       ...netIdOptions.map((id) => {
         const op = netIdToOperator(id) ?? id;
         const label = operatorCounts.get(op) > 1 ? `${op} · ${id}` : op;
-        return { value: id, label, swatch: swatchColorForNetId(id, isDark) };
+        return { value: id, label, swatch: swatchColorForNetId(id, isDark, netIdFamilies.map) };
       }),
     ];
-  }, [netIdOptions, isDark]);
+  }, [netIdOptions, isDark, netIdFamilies]);
+
+  // With legend switches set the filter is "all" but some NetIDs are off; the
+  // dropdown says how many are on, and no option reads as selected.
+  const netIdButtonLabel = useMemo(() => {
+    if (!netIdSwitches) return undefined;
+    const on = netIdOptions.filter((id) => switchedOn(netIdSwitches, id)).length;
+    return on === 0 ? "None" : `${on} of ${netIdOptions.length}`;
+  }, [netIdOptions, netIdSwitches]);
 
   const trackOptions = useMemo(() => {
     const list = tracks.filter((t) => {
       if (netIdFilter !== "all" && t.netId !== netIdFilter) return false;
+      if (t.netId && !switchedOn(netIdSwitches, t.netId)) return false;
       return t.count > 0;
     });
     list.sort((a, b) => b.count - a.count);
     return list;
-  }, [tracks, netIdFilter]);
+  }, [tracks, netIdFilter, netIdSwitches]);
 
   const trackSelectOptions = useMemo(
     () => [
@@ -801,10 +863,10 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
       ...trackOptions.map((t) => ({
         value: t.id,
         label: `${t.devAddr} · ${t.id} (n=${t.count}, ~${Math.round(t.rssiMean)} dBm)`,
-        swatch: swatchColorForNetId(t.netId, isDark),
+        swatch: swatchColorForNetId(t.netId, isDark, netIdFamilies.map),
       })),
     ],
-    [trackOptions, isDark],
+    [trackOptions, isDark, netIdFamilies],
   );
 
   // If the selected device disappears (NetID filter changed, or track was evicted), reset.
@@ -817,7 +879,7 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
   const deviceCount = tracks.filter((t) => t.count > 0).length;
   // Single time-axis domain shared by the scatter and the events bar.
   // Uplinks honor the full filter chain (visibleTypes + netIdFilter +
-  // trackFilter), but joins/downs only honor visibleTypes — they don't have
+  // netIdSwitches + trackFilter), but joins/downs only honor visibleTypes — they don't have
   // a meaningful NetID or track binding. Including them in the domain keeps
   // their markers inside the events bar's plot bounds even when their
   // timestamps fall outside the uplinks' range.
@@ -830,6 +892,7 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
       if (!isEvent) {
         if (!pkt._trackId) continue;
         if (netIdFilter !== "all" && pkt._netId !== netIdFilter) continue;
+        if (pkt._netId && !switchedOn(netIdSwitches, pkt._netId)) continue;
         if (trackFilter !== "all" && pkt._trackId !== trackFilter) continue;
       }
       if (pkt.timestamp < xMin) xMin = pkt.timestamp;
@@ -839,7 +902,7 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
     // as time passes; xMin stays anchored to the earliest visible packet.
     const xMax = Math.max(xMin + 1, nowTick);
     return [xMin, xMax];
-  }, [packets, visibleTypes, netIdFilter, trackFilter, nowTick]);
+  }, [packets, visibleTypes, netIdFilter, netIdSwitches, trackFilter, nowTick]);
 
   const spanLabel = useMemo(() => {
     if (packets.length === 0) return null;
@@ -885,19 +948,22 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
 
       {/* Unified filter rows — both apply to BOTH chart and table.
           Dropdowns and checkboxes split across two lines so the checkbox
-          row can sit cleanly without the dropdowns crowding it. */}
+          row can sit cleanly without the dropdowns crowding it. The
+          dropdowns sit in <div>s, not <label>s: a label re-clicks its button
+          when an option is clicked, which reopened the list. */}
       <div className="border-b border-border px-3 py-2 text-xs sm:px-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <label className="flex items-center gap-1.5 text-content-secondary">
+          <div className="flex items-center gap-1.5 text-content-secondary">
             NetID
             <ColoredSelect
               label="NetID filter"
-              value={netIdFilter}
-              onChange={setNetIdFilter}
+              value={netIdSwitches ? null : netIdFilter}
+              onChange={pickNetId}
               options={netIdSelectOptions}
+              buttonLabel={netIdButtonLabel}
             />
-          </label>
-          <label className="flex items-center gap-1.5 text-content-secondary">
+          </div>
+          <div className="flex items-center gap-1.5 text-content-secondary">
             Device
             <ColoredSelect
               label="Device filter"
@@ -905,7 +971,7 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
               onChange={setTrackFilter}
               options={trackSelectOptions}
             />
-          </label>
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
           {ALL_FRAME_TYPES.map((type, i) => {
@@ -946,12 +1012,15 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
             tracksById={tracksById}
             loading={loading}
             netIdFilter={netIdFilter}
+            netIdSwitches={netIdSwitches}
+            onToggleNetId={toggleNetId}
             trackFilter={trackFilter}
             visibleTypes={visibleTypes}
             xDomain={xDomain}
             hover={hover}
             setHover={setHover}
             onPickPacket={setPinnedPacketId}
+            netIdFamilies={netIdFamilies.map}
           />
           <EventsBar
             key={`events-${mac}`}
@@ -968,11 +1037,13 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
             packets={packets}
             loading={loading}
             netIdFilter={netIdFilter}
+            netIdSwitches={netIdSwitches}
             trackFilter={trackFilter}
             visibleTypes={visibleTypes}
             hover={hover}
             setHover={setHover}
             onPickPacket={setPinnedPacketId}
+            netIdFamilies={netIdFamilies.map}
           />
         </div>
       </div>
@@ -983,6 +1054,7 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
         loading={loading}
         visibleTypes={visibleTypes}
         netIdFilter={netIdFilter}
+        netIdSwitches={netIdSwitches}
         trackFilter={trackFilter}
         hover={hover}
         setHover={setHover}
@@ -998,12 +1070,12 @@ function GatewayInspector({ mac, publicKey, region, ouiLookup, onClose }) {
 // stable refs across hover updates, hover/setHover are the only churning
 // props, and the visiblePackets useMemo + per-row isPinned check handle the
 // rest.
-const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, trackFilter, hover, setHover, pinnedPacketId }) {
+const GatewayDetail = memo(function GatewayDetail({ ouiLookup, packets, loading, visibleTypes, netIdFilter, netIdSwitches, trackFilter, hover, setHover, pinnedPacketId }) {
   const visiblePackets = useMemo(() => {
     return [...packets].reverse().filter((pkt) =>
-      packetMatchesFilters(pkt, { visibleTypes, netIdFilter, trackFilter }),
+      packetMatchesFilters(pkt, { visibleTypes, netIdFilter, netIdSwitches, trackFilter }),
     );
-  }, [packets, visibleTypes, netIdFilter, trackFilter]);
+  }, [packets, visibleTypes, netIdFilter, netIdSwitches, trackFilter]);
 
   // Virtualized rendering: only the rows currently in (or near) the window's
   // viewport are mounted. Without this, 10k packets means 10k <tr>s — enough

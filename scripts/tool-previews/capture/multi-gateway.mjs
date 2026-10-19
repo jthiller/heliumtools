@@ -195,7 +195,11 @@ const sel = {
 };
 const TALL_CSS = `.flex-\\[7\\] > [data-chart-host]{height:400px!important}`;
 const HIDE_TIP_CSS = `.flex-\\[7\\] > [data-chart-host] > div.pointer-events-none.absolute.z-20{visibility:hidden!important}`;
-const NOISE_CSS = `vite-error-overlay{display:none!important}`;
+// The scatter's NetID legend buttons take the pointer (they switch NetIDs);
+// the hover shots move straight onto a dot, which can sit under one, so they
+// pass the pointer through here. The legend is faded while a track is hovered.
+const NOISE_CSS = `vite-error-overlay{display:none!important}
+[data-chart-host] > ul[aria-label="NetIDs on the chart"] button{pointer-events:none!important}`;
 
 await run(async ({ newPage, settle, shoot, shootRect, sleep }) => {
   const page = await newPage({ colorScheme: 'light', width: 1440, height: 960, dpr: 2, initScript: FREEZE_INIT });
