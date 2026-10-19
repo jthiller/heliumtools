@@ -276,11 +276,41 @@ function failedTables(activity, loaded) {
   return out;
 }
 
+// Everything a Mobile row shows, as one string (identity reuse across assembles).
+function mobileRowSig(r) {
+  return JSON.stringify([
+    r.wifi,
+    r.heartbeating,
+    r.heartbeats,
+    r.lastHeartbeatAt,
+    r.trust,
+    r.distance,
+    r.locationSource,
+    r.assertedCell,
+    r.points,
+    r.speedtest,
+    r.speedtestKnown,
+    r.banned,
+    r.ban,
+    r.rejectedHeartbeats,
+    r.rejectedReasons,
+    r.hntLatestDay,
+    r.bytesLatestDay,
+    r.usageReported,
+    r.users,
+    r.issues,
+    r.days7,
+    r.week,
+  ]);
+}
+
 /**
  * One derivation of the whole Mobile picture per activity update (like
  * `aggregateIotStatus`): every surface (card, table filter, map panel, agent
  * tool) reads this object rather than re-deriving per row. `now` names the
- * sliding windows (see windowText): the hook's `asOf` for the page.
+ * sliding windows (see windowText): the hook's `asOf` for the page. `prev`
+ * (the previous result, optional): a Hotspot whose row is unchanged (`sig`)
+ * keeps that row object, so memoized rows downstream skip it.
  *
  * `rows`: Map entityKey → row, for every Mobile Hotspot. Fields are null while
  *   their table hasn't loaded (unknown, never "no"), or don't apply:
@@ -332,7 +362,7 @@ function failedTables(activity, loaded) {
  * `known`: per issue, whether its count is real: every table behind it is
  *   in, or it's a WiFi issue and the fleet has no WiFi Hotspots (a real 0).
  */
-export function aggregateMobile(hotspots, activity, now) {
+export function aggregateMobile(hotspots, activity, now, prev = null) {
   const rows = new Map();
   const groups = Object.fromEntries([...MOBILE_ISSUE_ORDER, "noIssue"].map((k) => [k, []]));
   const counts = {
@@ -391,7 +421,7 @@ export function aggregateMobile(hotspots, activity, now) {
     const rejected = inv?.[key];
     const earned = rewardsByKey ? rewardsByKey[key]?.[latest.day] : undefined;
     const used = usageByKey?.[key];
-    const row = {
+    let row = {
       wifi,
       heartbeating: wifi && hb ? Boolean(beat?.count) : null,
       heartbeats: wifi && hb ? (beat?.count ?? 0) : null,
@@ -441,6 +471,12 @@ export function aggregateMobile(hotspots, activity, now) {
     if (row.speedtestMultiplier != null && row.speedtestMultiplier < 1) row.issues.push("lowSpeedtest");
     if (row.rejectedHeartbeats > 0) row.issues.push("rejectedHeartbeats");
     row.issue = row.issues[0] ?? null;
+    // An unchanged Hotspot keeps the previous assemble's row object, so the
+    // unified list (and every memoized row on screen) skips it: a live check
+    // or a clock tick re-renders only the Hotspots whose data moved.
+    row.sig = mobileRowSig(row);
+    const old = prev?.rows?.get(key);
+    if (old && old.sig === row.sig) row = old;
     for (const issue of row.issues) {
       counts[issue]++;
       groups[issue].push({ hotspot: h, row });

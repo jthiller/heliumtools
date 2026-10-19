@@ -10,6 +10,7 @@ export { COVERAGE_GATE_NOTE, CoverageNotes, CoverageToggle } from "./CoverageNot
 export { DayBars, DayBarsHint } from "./DayBars.jsx";
 export { Disclosure } from "./Disclosure.jsx";
 export { ExtLink } from "./ExtLink.jsx";
+export { FleetError } from "./FleetError.jsx";
 export { InfoTip } from "./InfoTip.jsx";
 export { NetDot } from "./NetDot.jsx";
 export { Pending } from "./Pending.jsx";

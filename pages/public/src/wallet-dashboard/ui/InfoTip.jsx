@@ -73,11 +73,18 @@ export function InfoTip({ label, children, text, className = "" }) {
     place();
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
+    // A dialog sliding in moves the glyph after the bubble was placed (its
+    // transform also offsets `position: fixed`): place again when it lands.
+    const host = portalNode && portalNode !== document.body ? portalNode : null;
+    host?.addEventListener("animationend", place);
+    host?.addEventListener("transitionend", place);
     return () => {
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
+      host?.removeEventListener("animationend", place);
+      host?.removeEventListener("transitionend", place);
     };
-  }, [open, place]);
+  }, [open, place, portalNode]);
 
   useEffect(() => {
     if (!pinned) return undefined;
@@ -145,7 +152,9 @@ export function InfoTip({ label, children, text, className = "" }) {
           setFocused(false);
           if (!inBubble.current) setPinned(false);
         }}
-        className={`relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.3px] p-0 align-[-3px] text-[10px] font-semibold not-italic leading-[13px] transition-colors before:absolute before:-inset-1 before:content-[''] max-md:before:-inset-3.5 ${
+        // On phones the 44 px hit area sits above a neighbor it overlaps by a
+        // few px (a chip or a value just below), so the whole area reaches it.
+        className={`relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.3px] p-0 align-[-3px] text-[10px] font-semibold not-italic leading-[13px] transition-colors before:absolute before:-inset-1 before:content-[''] max-md:z-[1] max-md:before:-inset-3.5 ${
           open ? "border-accent-text text-accent-text" : "border-wd-ink-3 text-wd-ink-3 hover:border-wd-ink-2 hover:text-wd-ink-2"
         } ${className}`}
       >

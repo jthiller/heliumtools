@@ -13,12 +13,15 @@ const IDLE = { wallet: null, data: null, loading: false, error: null };
  * Run `reset` when `value` changes (not on the first render): per-wallet
  * state resets without re-keying a component (a re-keyed root would replay
  * the entrance motion). Runs during render, so `reset` may call only this
- * component's own state setters and reset refs.
+ * component's own state setters and reset refs, and must be idempotent.
+ * The value last seen is state, not a ref: under StrictMode's double render a
+ * ref already holds the new value on the second pass, so the setState calls
+ * made by the first pass's reset would be dropped.
  */
 export function useResetOnChange(value, reset) {
-  const ref = useRef(value);
-  if (!Object.is(ref.current, value)) {
-    ref.current = value;
+  const [seen, setSeen] = useState(value);
+  if (!Object.is(seen, value)) {
+    setSeen(value);
     reset();
   }
 }

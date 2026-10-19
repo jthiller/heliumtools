@@ -38,8 +38,6 @@ const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const EMPTY_FLEET = [];
 const isValidWallet = (a) => typeof a === "string" && a.length >= 32 && a.length <= 44 && BASE58_RE.test(a);
 const STATUS_SORT = { key: "status", dir: "desc" };
-// "Show on map" waits this long for the map panel's heading to render.
-const MAP_FOCUS_TRIES = 60;
 
 // The section wrapper's entrance (`.wd-zone`, first mount only; the root is
 // never re-keyed by wallet, so a wallet switch doesn't replay it).
@@ -159,10 +157,13 @@ export default function WalletDashboard() {
   const mobileActivity = useMobileActivity(activeWallet, walletHotspots, { refreshRef: mobileRefreshRef });
   // The one derivation of every Mobile row's verdicts; re-runs only on the
   // hook's own updates (a post, its `asOf` clock, the page shown or hidden).
+  // Unchanged Hotspots keep their row objects across assembles (`prev`).
+  const prevMobileRef = useRef(null);
   const mobileAgg = useMemo(
-    () => aggregateMobile(walletHotspots, mobileActivity, mobileActivity.asOf),
+    () => aggregateMobile(walletHotspots, mobileActivity, mobileActivity.asOf, prevMobileRef.current),
     [walletHotspots, mobileActivity],
   );
+  prevMobileRef.current = mobileAgg;
   // The map decides its one camera ease per selection on live heartbeats,
   // not on the saved paint.
   const heartbeatsLive = Boolean(mobileActivity.heartbeats) && !mobileActivity.cachedSections.includes("heartbeats");
@@ -179,6 +180,15 @@ export default function WalletDashboard() {
     openerSeqRef.current = 0;
     setMapSelect(null);
   });
+  // A different wallet starts at its Summary (not at the last one's scroll
+  // depth: the sticky app bar's field is reachable from anywhere).
+  const shownWalletRef = useRef(activeWallet);
+  useEffect(() => {
+    if (shownWalletRef.current === activeWallet) return;
+    const had = shownWalletRef.current;
+    shownWalletRef.current = activeWallet;
+    if (had && activeWallet) window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [activeWallet]);
   const hotspotList = useMemo(
     () =>
       aggregateHotspotList({
@@ -285,23 +295,29 @@ export default function WalletDashboard() {
     requestAnimationFrame(() => detailHeadingRef.current?.focus({ preventScroll: true }));
   }, [selectedRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A drawer or full-screen detail covers the page: closing puts the opener
+  // back where it was in the viewport.
+  const modalDetail = detailMode === "drawer" || detailMode === "fullscreen";
   const onOpenDetail = useCallback(
     (param, el) => {
       focusDetailRef.current = true;
-      nav.openDetail(param, el);
+      nav.openDetail(param, el, { modal: modalDetail });
     },
-    [nav],
+    [nav, modalDetail],
   );
   // From outside the list (Summary, Health, About, the map panel): bring the
-  // list into view first when the detail opens beside it.
+  // list into view first when the detail opens beside it. A drawer or
+  // full-screen detail opens over the page where the viewer is, so closing
+  // returns there (the opener), not to the list row far above.
   const onOpenHotspot = useCallback(
     (param, el) => {
       if (detailMode === "aside") {
         document.getElementById("hotspots")?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
       }
-      onOpenDetail(param, el);
+      focusDetailRef.current = true;
+      nav.openDetail(param, el, { preferOpener: modalDetail, modal: modalDetail });
     },
-    [detailMode, onOpenDetail],
+    [detailMode, modalDetail, nav],
   );
   const onCloseDetail = useCallback(() => nav.closeDetail(), [nav]);
   const onNavigate = useCallback(
@@ -314,8 +330,9 @@ export default function WalletDashboard() {
     [nav],
   );
   // "Show on map": close the detail (through history), then select the
-  // Hotspot on the map. Desktop and tablet scroll to the map and focus its
-  // panel heading; on phone MapSection opens its map dialog with it.
+  // Hotspot on the map. Desktop and tablet scroll to the map; on phone
+  // MapSection opens its map dialog with it. MapSection (on `mapSelect`)
+  // focuses the panel heading once the detail's modal dialog has closed.
   const onShowOnMap = useCallback(
     (key) => {
       nav.closeDetail({ returnFocus: false });
@@ -324,15 +341,6 @@ export default function WalletDashboard() {
       if (!medium) return;
       requestAnimationFrame(() => {
         document.getElementById("map")?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
-        let tries = 0;
-        const focusPanel = () => {
-          const heading = document.querySelector("#map [data-map-panel] h3");
-          if (heading) {
-            if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
-            heading.focus({ preventScroll: true });
-          } else if (++tries < MAP_FOCUS_TRIES) requestAnimationFrame(focusPanel);
-        };
-        focusPanel();
       });
     },
     [nav, medium],
@@ -352,7 +360,10 @@ export default function WalletDashboard() {
   const onRetryRewards = rewardsState.retryFailed;
   const onRetryIot = iotStatusState.retryFailed;
   const onRetryMobile = useCallback(() => mobileRefreshRef.current?.(), []);
-  const detailRetry = useMemo(() => ({ iot: onRetryIot, mobile: onRetryMobile }), [onRetryIot, onRetryMobile]);
+  const detailRetry = useMemo(
+    () => ({ iot: onRetryIot, mobile: onRetryMobile, rewards: onRetryRewards }),
+    [onRetryIot, onRetryMobile, onRetryRewards],
+  );
 
   // ── Agent tools (WebMCP): refs keep them reading the wallet on screen ──
   const walletRef = useRef(null);
@@ -388,7 +399,6 @@ export default function WalletDashboard() {
 
   // The detail element, memoized so HotspotsSection (which renders it beside
   // the list) skips flushes that don't touch the open Hotspot.
-  const selectedRewards = selectedRow ? rewardsState.rewardsByKey[selectedRow.key] : undefined;
   const prices = summary?.prices;
   const walletWeekHnt = money.earned.weekHnt;
   const veHntPending = money.unclaimed.veHnt;
@@ -399,11 +409,7 @@ export default function WalletDashboard() {
           row={selectedRow}
           list={hotspotList}
           mobile={mobileAgg}
-          activity={mobileActivity}
           freshness={freshness}
-          iotStatus={iotStatusAgg}
-          utilizationIndex={utilizationIndex}
-          rewards={selectedRewards}
           prices={prices}
           walletWeekHnt={walletWeekHnt}
           veHntPending={veHntPending}
@@ -422,11 +428,7 @@ export default function WalletDashboard() {
       selectedRow,
       hotspotList,
       mobileAgg,
-      mobileActivity,
       freshness,
-      iotStatusAgg,
-      utilizationIndex,
-      selectedRewards,
       prices,
       walletWeekHnt,
       veHntPending,
@@ -469,7 +471,11 @@ export default function WalletDashboard() {
   return (
     <div className="wd-root" data-wd-settled={hotspotList.settled.all ? "true" : "false"}>
       <AppBar wallet={wallet} onSubmit={goToWallet} />
-      <main id="wd-main" tabIndex={-1} className="mx-auto flex max-w-[1440px] flex-col gap-8 px-4 pb-14 pt-4 outline-none md:gap-11 md:px-10 md:pb-[72px] md:pt-7">
+      <main
+        id="wd-main"
+        tabIndex={-1}
+        className="mx-auto flex max-w-[1440px] scroll-mt-[var(--wd-appbar-h)] flex-col gap-8 px-4 pb-14 pt-4 outline-none md:gap-11 md:px-10 md:pb-[72px] md:pt-7"
+      >
         <Zone i={0}>
           <SummarySection
             wallet={wallet}
@@ -486,7 +492,6 @@ export default function WalletDashboard() {
             activity={mobileActivity}
             governance={govState}
             transactions={txState}
-            rewardsProgress={rewardsState.progress}
             onRetryRewards={onRetryRewards}
             onRetryIot={onRetryIot}
             onRetryMobile={onRetryMobile}
@@ -504,6 +509,7 @@ export default function WalletDashboard() {
             freshness={freshness}
             prices={summary?.prices}
             governance={govState}
+            fleetState={fleetState}
             onRetryRewards={onRetryRewards}
             onRetryMobile={onRetryMobile}
           />
@@ -527,6 +533,10 @@ export default function WalletDashboard() {
             onOpenDetail={onOpenDetail}
             listRegionRef={listRegionRef}
             listApiRef={listApiRef}
+            onRetryIot={onRetryIot}
+            onRetryRewards={onRetryRewards}
+            onRetryMobile={onRetryMobile}
+            veHntPending={veHntPending}
           />
         </Zone>
         {hasFleet && (
@@ -567,6 +577,7 @@ export default function WalletDashboard() {
               mapSelect={mapSelect}
               onOpenDetail={onOpenHotspot}
               onPlace={onPlace}
+              onShowStatus={onShowStatus}
             />
           </Zone>
         )}

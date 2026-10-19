@@ -112,6 +112,11 @@ html:has(.wd-root) body {
 .wd-root :where(a, [tabindex="-1"]):focus-visible {
   border-radius: 6px;
 }
+/* A full-width control inside a clipped card (the phone map's rows, its
+   Legend summary) or a region filling one: the ring sits inside its box. */
+.wd-root .wd-ring-inset:focus-visible {
+  outline-offset: -2px;
+}
 
 /* Anchors land below the sticky app bar: sections, the list heading, the
    detail heading in aside mode, the map panel heading. */
@@ -383,6 +388,15 @@ dialog.wd-full {
   max-height: 100dvh;
   margin: 0;
   overflow: auto;
+}
+/* A control Tab brings into view clears the detail's sticky bar at the top
+   and keeps its focus ring off the bottom edge. */
+dialog.wd-drawer,
+dialog.wd-full {
+  scroll-padding-block: 64px 8px;
+}
+dialog.wd-sheet {
+  scroll-padding-block: 8px;
 }
 @keyframes wd-drawer-in {
   from {

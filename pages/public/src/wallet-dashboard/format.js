@@ -22,14 +22,16 @@ export function fmtUsd(n, { empty, dash } = {}) {
 }
 
 /** Format a token UI amount (already divided by decimals), up to `max`
- * decimals. The floor follows `max` ("<0.01" at 2), so a nonzero amount
- * never reads 0. */
+ * decimals, never fewer than 2 when `max` allows (the one trailing-zero
+ * policy, as fmtHnt: "13.50", "1,541.6092", "110,754.10"). The floor follows
+ * `max` ("<0.01" at 2), so a nonzero amount never reads 0. Lists and
+ * summaries use 2 (`max: 2`); a detail (the Wallet's Balances) up to 4. */
 export function fmtToken(uiAmount, { max = 4, empty = "Unavailable" } = {}) {
   if (uiAmount == null || Number.isNaN(uiAmount)) return empty;
   if (uiAmount === 0) return "0";
   const floor = max > 0 ? 10 ** -max : 1;
   if (uiAmount > 0 && uiAmount < floor) return `<${floor.toFixed(max)}`;
-  return uiAmount.toLocaleString(LOCALE, { maximumFractionDigits: max });
+  return uiAmount.toLocaleString(LOCALE, { minimumFractionDigits: Math.min(2, max), maximumFractionDigits: max });
 }
 
 const fixed = (v, digits) => v.toLocaleString(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -838,6 +840,12 @@ export function deriveTrafficDetail(detail, labels, index) {
  * median cell sits near −131 (helium-iot-service docs/RF-MODEL.md), so cells
  * below −130 are dropped as near-noise-floor haze. */
 export const COVERAGE_RSSI_MIN = -130;
+
+/** A whole dB value with a true minus sign: "−130 dBm" (the coverage ramp's ends). */
+export function fmtDbm(value) {
+  const n = Math.round(value);
+  return `${n < 0 ? "−" : ""}${Math.abs(n)} dBm`;
+}
 export const COVERAGE_RSSI_MAX = -90;
 
 /**

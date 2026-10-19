@@ -1,4 +1,4 @@
-import { COVERAGE_RSSI_MIN, fmtElevationM, fmtGainDbi, modeledCoverageInputs } from "../format.js";
+import { COVERAGE_RSSI_MIN, fmtDbm, fmtElevationM, fmtGainDbi, modeledCoverageInputs } from "../format.js";
 import { ExtLink } from "./ExtLink.jsx";
 
 const TERRAIN_TILES_URL = "https://registry.opendata.aws/terrain-tiles/";
@@ -8,12 +8,6 @@ const DEFAULT_RAMP =
 
 /** Shown instead of the toggle for a Hotspot the service doesn't model (inactive, or no asserted location). */
 export const COVERAGE_GATE_NOTE = "Coverage is modeled nightly for active Hotspots with an asserted location.";
-
-/** A whole dB value with a true minus sign: "−130 dBm". */
-function fmtDbm(value) {
-  const n = Math.round(value);
-  return `${n < 0 ? "−" : ""}${Math.abs(n)} dBm`;
-}
 
 const NOTE = "m-0 text-xs leading-[17px] text-wd-ink-2";
 
@@ -69,6 +63,7 @@ export function CoverageNotes({ coverage, hotspot, className = "" }) {
         <button
           type="button"
           onClick={retry}
+          aria-label="Retry modeled coverage"
           className="relative font-semibold text-accent-text hover:underline before:absolute before:-inset-x-1 before:-inset-y-3 before:content-['']"
         >
           Retry

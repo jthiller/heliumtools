@@ -487,14 +487,18 @@ export function aggregateHotspotList({
 /**
  * Totals over any set of rows (the whole list, or the filtered rows for
  * "Total, 3 shown"): numbers over the rows whose value is known.
- *   { unclaimedHnt, unconfirmed, latestDayHnt, weekHnt, lifetimeHnt,
- *     lifetimeLowerBound, messages30d, rewardsChecked, count }
+ *   { unclaimedHnt, unclaimedKnown (rows with a known unclaimed figure),
+ *     unconfirmed, rewardsFailed (rows whose rewards batch failed),
+ *     latestDayHnt, weekHnt, lifetimeHnt, lifetimeLowerBound, messages30d,
+ *     rewardsChecked (rows with a lifetime figure), count }
  */
 export function sumRows(rows) {
   const t = {
     count: 0,
     unclaimedHnt: 0,
+    unclaimedKnown: 0,
     unconfirmed: 0,
+    rewardsFailed: 0,
     latestDayHnt: 0,
     weekHnt: 0,
     lifetimeHnt: 0,
@@ -504,8 +508,12 @@ export function sumRows(rows) {
   };
   for (const r of rows) {
     t.count++;
-    if (r.unclaimed.state === "ok") t.unclaimedHnt += r.unclaimed.hnt;
+    if (r.unclaimed.state === "ok") {
+      t.unclaimedHnt += r.unclaimed.hnt;
+      t.unclaimedKnown++;
+    }
     if (r.unclaimed.state === "unconfirmed") t.unconfirmed++;
+    if (r.unclaimed.state === "failed") t.rewardsFailed++;
     if (r.lifetime.state === "ok") {
       t.rewardsChecked++;
       t.lifetimeHnt += r.lifetime.hnt;
@@ -822,7 +830,10 @@ export function orderRows(rows, sort = DEFAULT_SORT) {
   const desc = dir !== "asc";
   let groups;
   if (key === "name") {
-    groups = [{ kind: null, label: null, rows: [...rows].sort((a, b) => (desc ? byName(b, a) : byName(a, b))) }];
+    // Unnamed Hotspots after the named ones in both directions (by entity key).
+    const named = rows.filter((r) => r.name).sort((a, b) => (desc ? byName(b, a) : byName(a, b)));
+    const unnamed = rows.filter((r) => !r.name).sort((a, b) => nameCollator.compare(a.key, b.key));
+    groups = [{ kind: null, label: null, rows: [...named, ...unnamed] }];
   } else if (key === "status") {
     const cmp = (a, b) =>
       statusRankOf(a) - statusRankOf(b) ||
@@ -862,6 +873,44 @@ export function summaryLine(list) {
   const label = STATES[top.key].label(list.ctx);
   const end = through ? `${fmtDataDay(through)} (UTC)` : "the latest reported day";
   return `All ${fmtCount(rows.length)} are ${label} on ${top.window}, with no messages in the 30 days to ${end}.`;
+}
+
+/**
+ * What a line waiting on the verdicts says, the one wording for the Hotspot
+ * list's subtitle, Summary's status line and the map: the rewards scan
+ * ("Checking 150 of 1,659 Hotspots…"), then IoT ("Checking 1 of 2 IoT
+ * Hotspots…"), then Mobile ("Checking 8 Mobile Hotspots…": a saved paint can
+ * have every row answered while the live check runs, so no count that reads
+ * complete), else "Checking 10 Hotspots…".
+ */
+export function checkingText(list) {
+  const rows = list?.rows || [];
+  const total = list?.counts?.total ?? rows.length;
+  const s = list?.settled || {};
+  if (!s.rewards) {
+    const n = rows.reduce((k, r) => k + (r.unclaimed.state === "loading" ? 0 : 1), 0);
+    if (n < total) return `Checking ${fmtCount(n)} of ${plural(total, "Hotspot")}…`;
+  }
+  const iot = list?.counts?.iot ?? 0;
+  if (!s.iot && iot > 0) {
+    const n = rows.reduce((k, r) => k + (r.nets.iot && r.iot && r.iot.status !== "pending" ? 1 : 0), 0);
+    return n < iot ? `Checking ${fmtCount(n)} of ${plural(iot, "IoT Hotspot")}…` : `Checking ${plural(iot, "IoT Hotspot")}…`;
+  }
+  const mobileN = list?.counts?.mobileTables ?? 0;
+  if (!s.mobile && mobileN > 0) return `Checking ${plural(mobileN, "Mobile Hotspot")}…`;
+  return `Checking ${plural(total, "Hotspot")}…`;
+}
+
+/**
+ * Whether a verdict source failed or froze, so "No issues" would be a claim
+ * the page can't make ("0 of 10 need a look" instead): an IoT lookup or a
+ * rewards batch that failed, a Mobile table that couldn't load, or Mobile
+ * data shown from an older check (mobileFreshness frozen or error).
+ */
+export function verdictsPartial(list, freshness) {
+  const b = list?.counts?.byState || {};
+  if ((b.iotFailed ?? 0) > 0 || (b.mobileFailed ?? 0) > 0 || (list?.totals?.rewardsFailed ?? 0) > 0) return true;
+  return (list?.counts?.mobileTables ?? 0) > 0 && (freshness?.state === "frozen" || freshness?.state === "error");
 }
 
 /**

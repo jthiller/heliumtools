@@ -7,7 +7,8 @@
 import { fmtToken, govPendingHnt } from "./format.js";
 
 const BALANCE_SPLIT_ORDER = ["hnt", "sol", "dc", "mobile", "iot"];
-const ZERO_ORDER = ["hnt", "mobile", "iot", "sol", "dc"];
+// Zero balances in the Wallet's Balances order (HNT, SOL, DC, then the legacy tokens).
+const ZERO_ORDER = ["hnt", "sol", "dc", "mobile", "iot"];
 const LEGACY = new Set(["mobile", "iot"]);
 const LABEL = { hnt: "HNT", sol: "SOL", dc: "DC", mobile: "MOBILE", iot: "IOT" };
 
@@ -182,6 +183,10 @@ export function deriveMoney({
     withPending,
     checked: rewardsState?.progress?.done ?? 0,
     total: rewardsState?.progress?.total ?? 0,
+    // A Retry of failed batches runs: what settled stays settled.
+    retrying: Boolean(rewardsState?.retrying),
+    // The last failed batch's message (Details beside Retry).
+    error: rewardsState?.error ?? null,
     noOracle: list?.totals?.unconfirmed ?? 0,
     sofar: hotspotsState === "scanning",
     veState,

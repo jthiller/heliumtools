@@ -9,12 +9,13 @@ const FAILED_MS = 4000;
  * Copies `text` (a string, or a function read at click time, e.g.
  * `() => location.href`). Icon-only by default (32 px, 44 on phones; `label`
  * is its accessible name, "Copy wallet address"); with `children` it is a
- * secondary button whose text reads "Copied" for a moment. Success shows a
+ * secondary button whose text reads "Copied" for a moment (`icon={false}`:
+ * no icon at rest, a check beside "Copied" after). Success shows a
  * check and announces `copiedText` politely; a failed clipboard write (denied,
  * or no clipboard in this context) shows and announces "Couldn't copy. Select
  * the text and copy it." for 4 s instead of failing silently.
  */
-export function CopyIconButton({ text, label, copiedText = "Copied", children, className = "" }) {
+export function CopyIconButton({ text, label, copiedText = "Copied", icon = true, children, className = "" }) {
   const [state, setState] = useState("idle"); // idle | copied | failed
   const timer = useRef(0);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -43,7 +44,7 @@ export function CopyIconButton({ text, label, copiedText = "Copied", children, c
       onClick={copy}
       className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-wd-control bg-surface-raised px-3 text-xs font-medium text-wd-ink transition hover:bg-wd-well md:min-h-8 ${className}`}
     >
-      <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-wd-ink-2" />
+      {(icon || state === "copied") && <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-wd-ink-2" />}
       {state === "copied" ? "Copied" : children}
     </button>
   ) : (

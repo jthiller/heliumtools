@@ -5,7 +5,7 @@
 // and Back closes a detail. A different wallet is a different path: every
 // in-app wallet link goes to the bare path, so filters reset with it.
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { DEVICE_LABEL, UNKNOWN_DEVICE } from "./format.js";
 import { isStatusFilter } from "./statusRegistry.js";
 import { DEFAULT_SORT, parseSort, serializeSort } from "./hotspotList.js";
@@ -142,32 +142,47 @@ function focusListHeading() {
  *   `focusList` scrolls #hotspots into view (smooth unless reduced motion)
  *   and focuses the list's heading ([data-wd-list-heading] or its h2).
  *
- * nav.openDetail(param, opener)  no detail open: push `hotspot` with history
- *   state { wdDetail: true } and remember `opener` (the element focus returns
- *   to); one open (another row, a Health name, the map panel): replace it.
+ * nav.openDetail(param, opener, { preferOpener, modal })  no detail open: push
+ *   `hotspot` with history state { wdDetail: true } and remember `opener` (the
+ *   element focus returns to); one open (another row, a Health name, the map
+ *   panel): replace it. `preferOpener`: the detail opened over the page from
+ *   outside the list (a drawer or full-screen dialog), so closing returns to
+ *   the opener, where the viewer was, rather than the list row. `modal`: the
+ *   detail covers the page (drawer or full screen), so the opener's place in
+ *   the viewport is remembered too: whatever grew above it while the page was
+ *   covered (the map's selection panel on a phone), closing puts it back there.
  * nav.closeDetail({ returnFocus = true })  history back when the detail
- *   pushed, else replace without `hotspot`. Going back keeps a filter, search
- *   or sort changed while the detail was open (the entry below is then
- *   replaced with them). On close (Back included) focus returns to the row
- *   link of the Hotspot last shown ([data-hotspot-link="<param>"]), else the
- *   opener, else the list heading; `returnFocus: false` skips it (Show on map
- *   focuses the map instead).
+ *   pushed, else replace without `hotspot`. Leaving a pushed detail by going
+ *   back (Close, Escape or the browser's Back) keeps a filter, search or sort
+ *   changed while it was open: the entry below is read with that view from
+ *   its first frame and then replaced with it. On close focus returns to the
+ *   row link of the Hotspot last shown ([data-hotspot-link="<param>"]), else
+ *   the opener, else the list heading (the opener first with `preferOpener`);
+ *   after a `modal` open, that element (the opener, or the opened Hotspot's
+ *   row link) sits where the opener was. `returnFocus: false` skips it (Show
+ *   on map focuses the map instead).
  * nav.stepDetail(param)  replace `hotspot` (Back still closes). Callers first
  *   run listApiRef.current.ensureRendered(key) so the row exists for focus.
  * nav.detailPushed  the open detail was pushed (Back closes it).
  *
  * Behavior: with no `sort` in the URL, the wallet's remembered sort is written
  * in by replace (so Copy link and a reload carry it); the default stays out.
- * Once the fleet loads, a `hotspot` not in it is dropped by replace. Every
+ * Once the fleet loads, a `hotspot` not in it is dropped by replace; a deep
+ * link to a valid one gets the list entry below it (the same view without
+ * `hotspot`), so Back closes the detail and a second Back leaves. Every
  * write also drops view parameters that don't validate (an unknown status,
  * a device the fleet doesn't have, `net` without both networks).
  */
 export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {}) {
   const location = useLocation();
   const navigate = useNavigate();
+  const navType = useNavigationType();
   const locRef = useRef(location);
   locRef.current = location;
   const openerRef = useRef(null);
+  const preferOpenerRef = useRef(false);
+  // A modal detail's opener: { el, param, top } (its viewport offset at open).
+  const anchorRef = useRef(null);
   const lastShownRef = useRef(null);
   const shownRef = useRef(null);
   // Whether the next detail close returns focus (not after "Show on map",
@@ -175,9 +190,15 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
   const focusReturnRef = useRef(true);
   const pendingRef = useRef({ patch: null, timer: null, opts: null });
   const changeRef = useRef({ seq: 0, source: "url", search: location.search });
-  // A close that went back: { from: the detail entry's key, search: the view
-  // to keep on the entry below }.
-  const restoreRef = useRef(null);
+  // The location last committed, and the view kept on the entry below a
+  // detail left by going back: { key: that entry's key, search }.
+  const committedRef = useRef(location);
+  const keepRef = useRef(null);
+  // The deep-link list entry below a detail is being inserted (its replace and push).
+  const insertingRef = useRef(false);
+  const deepLinkForRef = useRef(null);
+  // A Close is already going back (until the detail is gone).
+  const closingRef = useRef(false);
 
   // The fleet facts the URL validates against, keyed on their values so the
   // returned `url` keeps its identity across list flushes.
@@ -193,26 +214,53 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
 
   useResetOnChange(wallet, () => {
     openerRef.current = null;
+    preferOpenerRef.current = false;
+    anchorRef.current = null;
     lastShownRef.current = null;
     shownRef.current = null;
     focusReturnRef.current = true;
-    restoreRef.current = null;
+    keepRef.current = null;
     clearTimeout(pendingRef.current.timer);
     pendingRef.current = { patch: null, timer: null, opts: null };
   });
   useEffect(() => () => clearTimeout(pendingRef.current.timer), []);
 
-  if (changeRef.current.search !== location.search) {
+  // Going back from a pushed detail (Close, Escape, the browser's Back) lands
+  // on the entry below with the view changed while the detail was open: read
+  // that view from the first frame (no flash of the old one, and the row link
+  // focus returns to is the one that stays), then replace the entry with it.
+  let keep = keepRef.current?.key === location.key ? keepRef.current.search : null;
+  if (keep == null) {
+    const prev = committedRef.current;
+    if (
+      prev &&
+      prev.key !== location.key &&
+      navType === "POP" &&
+      prev.pathname === location.pathname &&
+      prev.state?.wdDetail &&
+      new URLSearchParams(prev.search).get("hotspot") &&
+      !new URLSearchParams(location.search).get("hotspot")
+    ) {
+      const sp = new URLSearchParams(prev.search);
+      sp.delete("hotspot");
+      const qs = canonicalParams(sp, fleetRef.current).toString();
+      const kept = qs ? `?${qs}` : "";
+      if (kept !== location.search) keep = kept;
+    }
+  }
+  const search = keep ?? location.search;
+
+  if (changeRef.current.search !== search) {
     const intent = changeRef.current.intent;
     changeRef.current = {
       seq: changeRef.current.seq + 1,
-      source: intent?.search === location.search && intent.announce ? "user" : "url",
-      search: location.search,
+      source: intent?.search === search && intent.announce ? "user" : "url",
+      search,
     };
   }
   const { seq, source } = changeRef.current;
 
-  const url = useMemo(() => ({ ...parseUrlParams(location.search, fleet), seq, source }), [location.search, fleet, seq, source]);
+  const url = useMemo(() => ({ ...parseUrlParams(search, fleet), seq, source }), [search, fleet, seq, source]);
 
   const write = useCallback(
     (patch, { push = false, announce = true, focusList = false, state } = {}) => {
@@ -289,16 +337,39 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
     }
   }, [fleetLoaded, list, url.hotspot, write]);
 
-  // After a close went back, the entry below gets the view changed while the
-  // detail was open (a filter, search or sort), so closing never undoes it.
+  // The entry below a detail left by going back gets the view kept from it.
   useEffect(() => {
-    const r = restoreRef.current;
-    if (!r || location.key === r.from) return;
-    restoreRef.current = null;
-    if (new URLSearchParams(location.search).get("hotspot") || location.search === r.search) return;
-    changeRef.current.intent = { search: r.search, announce: false };
-    navigate({ pathname: location.pathname, search: r.search, hash: "" }, { replace: true, state: location.state });
-  }, [location, navigate]);
+    committedRef.current = location;
+    if (!new URLSearchParams(location.search).get("hotspot")) closingRef.current = false;
+    if (keep == null) {
+      if (keepRef.current && keepRef.current.key !== location.key) keepRef.current = null;
+      return;
+    }
+    keepRef.current = { key: location.key, search: keep };
+    changeRef.current.intent = { search: keep, announce: false };
+    navigate({ pathname: location.pathname, search: keep, hash: "" }, { replace: true, state: location.state });
+  }, [location, keep, navigate]);
+
+  // A deep link to a Hotspot (no detail pushed in this tab) gets the list
+  // entry below it once the fleet is in, so Back closes the detail and a
+  // second Back leaves the page (IMPL_PLAN 10.4).
+  useEffect(() => {
+    if (!fleetLoaded || !list || !wallet || deepLinkForRef.current === wallet) return;
+    deepLinkForRef.current = wallet;
+    const loc = locRef.current;
+    const hotspot = new URLSearchParams(loc.search).get("hotspot");
+    if (!hotspot || loc.state?.wdDetail || !list.byParam.has(hotspot) || list.counts.total <= 1) return;
+    const sp = new URLSearchParams(loc.search);
+    sp.delete("hotspot");
+    const qs = canonicalParams(sp, fleetRef.current).toString();
+    insertingRef.current = true;
+    changeRef.current.intent = { search: loc.search, announce: false };
+    navigate({ pathname: loc.pathname, search: qs ? `?${qs}` : "", hash: loc.hash }, { replace: true, state: loc.state });
+    navigate({ pathname: loc.pathname, search: loc.search, hash: loc.hash }, { state: { ...(loc.state || {}), wdDetail: true } });
+  }, [fleetLoaded, list, wallet, navigate]);
+  useEffect(() => {
+    if (insertingRef.current && location.state?.wdDetail) insertingRef.current = false;
+  }, [location]);
 
   // Focus return when a detail closes, however it closed (Close, Escape, Back).
   useEffect(() => {
@@ -308,18 +379,36 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
       lastShownRef.current = url.hotspot;
       return;
     }
-    if (!was) return;
+    // The deep link's list entry passing by is not a close.
+    if (!was || insertingRef.current) return;
     const returnFocus = focusReturnRef.current;
     focusReturnRef.current = true;
+    const preferOpener = preferOpenerRef.current;
+    preferOpenerRef.current = false;
+    const anchor = anchorRef.current;
+    anchorRef.current = null;
     if (!returnFocus) return;
     const param = lastShownRef.current;
     const opener = openerRef.current;
     openerRef.current = null;
     requestAnimationFrame(() => {
       const link = param ? document.querySelector(`[data-hotspot-link="${CSS.escape(param)}"]`) : null;
-      const target = link || (opener?.isConnected ? opener : null);
-      if (target) target.focus();
-      else focusListHeading();
+      const openerOk = opener?.isConnected && opener !== document.body ? opener : null;
+      // A detail opened over the page from outside the list returns to where
+      // the viewer was; otherwise the row link (or the opener, or the heading).
+      const target = preferOpener ? openerOk || link : link || openerOk;
+      if (!target) {
+        focusListHeading();
+        return;
+      }
+      // The page couldn't scroll under a modal detail, but it could change
+      // above the opener: put the opener (or its Hotspot's row link, the same
+      // row re-rendered) back at its offset, then focus it without a scroll.
+      if (anchor && (target === anchor.el || (anchor.param && target.getAttribute?.("data-hotspot-link") === anchor.param))) {
+        const dy = target.getBoundingClientRect().top - anchor.top;
+        if (Math.abs(dy) >= 1) window.scrollTo({ top: window.scrollY + dy, left: window.scrollX, behavior: "instant" });
+        target.focus({ preventScroll: true });
+      } else target.focus();
     });
   }, [url.hotspot]);
 
@@ -327,10 +416,17 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
     const detailPushed = Boolean(location.state?.wdDetail);
     return {
       detailPushed,
-      openDetail(param, opener) {
+      openDetail(param, opener, { preferOpener = false, modal = false } = {}) {
         if (!param) return;
         if (!url.hotspot) {
           openerRef.current = opener ?? document.activeElement ?? null;
+          preferOpenerRef.current = preferOpener;
+          const el = openerRef.current;
+          // Only an opener on the page itself (not inside another dialog).
+          anchorRef.current =
+            modal && el?.isConnected && el !== document.body && !el.closest?.("dialog") && el.getClientRects().length
+              ? { el, param: el.getAttribute("data-hotspot-link") === param ? param : null, top: el.getBoundingClientRect().top }
+              : null;
           write({ hotspot: param }, { push: true, announce: false, state: { ...(locRef.current.state || {}), wdDetail: true } });
         } else if (param !== url.hotspot) {
           write({ hotspot: param }, { announce: false });
@@ -339,7 +435,7 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
       closeDetail({ returnFocus = true } = {}) {
         // Nothing open, or this close is already going back (a second Close
         // before the pop lands must not go back twice).
-        if (!url.hotspot || restoreRef.current?.from === locRef.current.key) return;
+        if (!url.hotspot || closingRef.current) return;
         focusReturnRef.current = returnFocus;
         // A search still in its debounce goes with the close.
         const pending = pendingRef.current.patch;
@@ -347,12 +443,10 @@ export function useDashboardUrlState(wallet, list, { fleetLoaded = false } = {})
         pendingRef.current = { patch: null, timer: null, opts: null };
         const loc = locRef.current;
         if (loc.state?.wdDetail) {
-          const sp = new URLSearchParams(loc.search);
-          sp.delete("hotspot");
-          if (pending?.q) sp.set("q", String(pending.q).slice(0, Q_MAX));
-          else if (pending && "q" in pending) sp.delete("q");
-          const qs = canonicalParams(sp, fleetRef.current).toString();
-          restoreRef.current = { from: loc.key, search: qs ? `?${qs}` : "" };
+          // The pending search lands on the detail entry first; going back
+          // then keeps it (see `keep` above).
+          if (pending) write(pending, { announce: false });
+          closingRef.current = true;
           navigate(-1);
         } else write({ ...pending, hotspot: null }, { announce: false });
       },

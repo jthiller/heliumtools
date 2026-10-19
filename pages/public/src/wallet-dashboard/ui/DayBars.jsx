@@ -166,7 +166,8 @@ export function DayBars({
         ))}
         <div aria-hidden="true" className={`absolute inset-y-0 right-0 flex ${S.inset} ${S.cols}`}>
           {days.map((d, i) => {
-            const on = i === active;
+            // A day still loading isn't ringed (the latest stub is the default pick).
+            const on = i === active && d.state !== "loading";
             const v = valueOf(d);
             let bar;
             let style;

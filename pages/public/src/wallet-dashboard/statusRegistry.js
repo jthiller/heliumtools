@@ -14,6 +14,7 @@
 // is inside a function).
 import { fmtCount, fmtDataDay, fmtUtcDate, livenessDay, plural } from "./format.js";
 import { fmtMultiplier, fmtReason, isWifiNoIssue } from "./mobileFormat.js";
+import { WIFI_SIGNALS_NOTE } from "./copy.js";
 
 /** Tiers, most severe first. `mark` is the `.wd-st-*` shape (shape + color,
  * never color alone), `word` the sr-only tier word, `textClass` the label tone. */
@@ -49,8 +50,8 @@ export const STATE_ORDER = [
 /** Whether a tier counts toward "need a look" (Serious + Check). */
 export const needsALook = (tier) => tier === "serious" || tier === "check";
 
-const WIFI_SIGNALS =
-  "Heartbeats, location trust and speedtests are WiFi health signals. HNT from data transfer doesn't depend on them.";
+// copy.js's WIFI_SIGNALS_NOTE is read when a hint is asked for, never while
+// this module evaluates (copy.js → format.js → this module is a cycle).
 
 // What a Mobile table is called where a check of it failed ("Couldn't check:
 // Heartbeats, last 60 min").
@@ -80,7 +81,7 @@ const TABLE_CHIP = {
 };
 
 const issueChip = (key, fallback) => (ctx) => ctx.issueText?.[key]?.chip ?? fallback;
-const issueHint = (key, fallback) => (ctx) => ctx.issueText?.[key]?.hint ?? fallback;
+const issueHint = (key, fallback) => (ctx) => ctx.issueText?.[key]?.hint ?? fallback ?? WIFI_SIGNALS_NOTE;
 const iotDay = (data, ctx) => data?.day ?? ctx.iotDay;
 const iotDayText = (data, ctx) => `${fmtDataDay(iotDay(data, ctx))} (UTC)`;
 const messagesText = (data, ctx) =>
@@ -164,7 +165,7 @@ export const STATES = {
     label: () => "No heartbeat",
     window: (ctx) => ctx.windows?.heartbeats?.span ?? "last 60 min",
     chip: issueChip("noHeartbeat", "No heartbeat (60 min)"),
-    hint: issueHint("noHeartbeat", WIFI_SIGNALS),
+    hint: issueHint("noHeartbeat"),
     csv: "no_heartbeat",
   },
   lowTrust: {
@@ -173,7 +174,7 @@ export const STATES = {
     label: (ctx, d) => (d?.trust != null ? `Location trust ${fmtMultiplier(d.trust)}` : "Location trust below 1"),
     window: (ctx) => `latest heartbeat, ${ctx.windows?.heartbeats?.span ?? "last 60 min"}`,
     chip: issueChip("lowTrust", "Location trust below 1"),
-    hint: issueHint("lowTrust", WIFI_SIGNALS),
+    hint: issueHint("lowTrust"),
     csv: "low_location_trust",
   },
   lowSpeedtest: {
@@ -182,7 +183,7 @@ export const STATES = {
     label: (ctx, d) => (d?.multiplier != null ? `Speedtest ×${fmtMultiplier(d.multiplier)}` : "Speedtest below ×1"),
     window: (ctx) => ctx.windows?.speedtests?.span ?? "last 24 h",
     chip: issueChip("lowSpeedtest", "Speedtest below ×1 (24 h)"),
-    hint: issueHint("lowSpeedtest", WIFI_SIGNALS),
+    hint: issueHint("lowSpeedtest"),
     csv: "low_speedtest",
   },
   rejectedHeartbeats: {
@@ -194,7 +195,7 @@ export const STATES = {
         .filter(Boolean)
         .join(" · "),
     chip: issueChip("rejectedHeartbeats", "Rejected heartbeat (60 min)"),
-    hint: issueHint("rejectedHeartbeats", WIFI_SIGNALS),
+    hint: issueHint("rejectedHeartbeats"),
     csv: "rejected_heartbeats",
   },
   neverRewarded: {
@@ -259,12 +260,12 @@ export const STATES = {
     tier: "unknown",
     network: "mobile",
     label: () => "Couldn't check",
-    window: (ctx, d) => (d?.tables?.length ? d.tables.map((t) => tableWindowText(t, ctx)).join("; ") : "Mobile tables"),
+    window: (ctx, d) => (d?.tables?.length ? d.tables.map((t) => tableWindowText(t, ctx)).join("; ") : "Mobile activity"),
     chip: (ctx, d) => {
       const tables = d?.tables ?? ctx.failedTables ?? [];
       return tables.length === 1 ? `Couldn't check ${TABLE_CHIP[tables[0]] ?? tables[0]}` : "Couldn't check Mobile";
     },
-    hint: () => "A Mobile table couldn't be checked right now. Nothing is counted as a problem until it loads.",
+    hint: () => "Mobile activity couldn't be checked right now. Nothing is counted as a problem until it loads.",
     csv: "mobile_check_failed",
   },
   heartbeatOk: {
@@ -275,7 +276,7 @@ export const STATES = {
     label: (ctx, d) => (d?.frozen ? "Heartbeat received" : "Heartbeat"),
     window: (ctx) => ctx.windows?.heartbeats?.span ?? "last 60 min",
     chip: (ctx) => `Heartbeat (${ctx.windows?.heartbeats?.short ?? "60 min"})`,
-    hint: () => WIFI_SIGNALS,
+    hint: () => WIFI_SIGNALS_NOTE,
     csv: "heartbeat",
   },
   rewardedDays: {

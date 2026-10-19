@@ -18,7 +18,7 @@ export function eligibleRewardHotspots(hotspots) {
     .map((h) => ({ entityKey: h.entityKey, assetId: h.assetId }));
 }
 
-const IDLE = { rewardsByKey: {}, progress: { done: 0, total: 0 }, loading: false, done: false, failed: 0, retrying: false };
+const IDLE = { rewardsByKey: {}, progress: { done: 0, total: 0 }, loading: false, done: false, failed: 0, retrying: false, error: null };
 
 /**
  * Progressively fetch pending + lifetime rewards for an entire fleet via the
@@ -36,9 +36,10 @@ const IDLE = { rewardsByKey: {}, progress: { done: 0, total: 0 }, loading: false
  * leaves those entries null. A no-op while a scan runs. `failed` counts the
  * Hotspots whose batch failed. `retrying` is true while a retry runs (`done`
  * is then false, but the scan isn't starting over: figures that settled stay
- * settled).
+ * settled). `error`: the last failed batch's message once the scan settles
+ * with failures (for a "Details" beside Retry), else null.
  *
- * @returns {{ rewardsByKey, progress: {done,total}, loading, done, failed, retrying, retryFailed }}
+ * @returns {{ rewardsByKey, progress: {done,total}, loading, done, failed, retrying, error, retryFailed }}
  */
 export default function useFleetRewards(wallet, hotspots) {
   const [state, setState] = useState(IDLE);
@@ -67,12 +68,13 @@ export default function useFleetRewards(wallet, hotspots) {
             if (rewards) run.rewardsByKey[h.entityKey] = rewards;
             else if (run.rewardsByKey[h.entityKey] === undefined) run.rewardsByKey[h.entityKey] = null;
           }
-        } catch {
+        } catch (e) {
           // Record the batch as failed (null) so these Hotspots read as "unknown"
           // (excluded from earning/idle counts) rather than silently counting as
           // idle; keep going so partial totals still render. A retried batch
           // never clears an entry that loaded.
           if (!live()) return;
+          run.lastError = e?.message || String(e);
           for (const h of batch) if (run.rewardsByKey[h.entityKey] === undefined) run.rewardsByKey[h.entityKey] = null;
         }
         run.doneCount += counted ? counted[idx] : batch.length;
@@ -89,7 +91,7 @@ export default function useFleetRewards(wallet, hotspots) {
       run.running--;
       if (run.running > 0) return;
       const failed = Object.values(run.rewardsByKey).filter((v) => v === null).length;
-      setState((prev) => ({ ...prev, loading: false, done: true, failed, retrying: false }));
+      setState((prev) => ({ ...prev, loading: false, done: true, failed, retrying: false, error: failed ? (run.lastError ?? null) : null }));
     });
   }, []);
 
@@ -140,6 +142,7 @@ export default function useFleetRewards(wallet, hotspots) {
     });
     const retried = counted.reduce((s, n) => s + n, 0);
     run.doneCount -= retried;
+    run.lastError = null;
     setState((prev) => ({
       ...prev,
       rewardsByKey: { ...run.rewardsByKey },

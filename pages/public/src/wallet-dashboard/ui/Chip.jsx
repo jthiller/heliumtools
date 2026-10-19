@@ -22,10 +22,11 @@ const HIT = "relative before:absolute before:inset-x-0 before:-inset-y-1.5 befor
  * `critical` (status only, never money); `pending` is the dashed placeholder
  * that reserves a chip's place while its data is checked (hidden from
  * assistive tech: the list's busy state speaks for it). `tier` adds the
- * status mark before the label; `count` follows it (numbers get thousands
- * separators).
+ * status mark before the label (`mark` overrides its shape for one state, as
+ * StatusMark's: the x ring of "Couldn't check"); `count` follows it (numbers
+ * get thousands separators).
  */
-export function Chip({ on, pending, caution, critical, count, onClick, ariaLabel, tier, className = "", children }) {
+export function Chip({ on, pending, caution, critical, count, onClick, ariaLabel, tier, mark, className = "", children }) {
   if (pending) {
     return (
       <span aria-hidden="true" className={`${CHIP} ${TONE.pending} ${className}`}>
@@ -41,7 +42,7 @@ export function Chip({ on, pending, caution, critical, count, onClick, ariaLabel
   const name = ariaLabel ?? (countText != null && typeof children === "string" ? `${children}, ${countText}` : undefined);
   const body = (
     <>
-      {tier && <StatusMark tier={tier} sr={false} />}
+      {tier && <StatusMark tier={tier} mark={mark} sr={false} />}
       {children}
       {countText != null && <b className="font-normal tabular-nums opacity-85">{countText}</b>}
     </>
