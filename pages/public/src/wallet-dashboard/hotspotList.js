@@ -490,7 +490,8 @@ export function aggregateHotspotList({
  *   { unclaimedHnt, unclaimedKnown (rows with a known unclaimed figure),
  *     unconfirmed, rewardsFailed (rows whose rewards batch failed),
  *     latestDayHnt, weekHnt, lifetimeHnt, lifetimeLowerBound, messages30d,
- *     rewardsChecked (rows with a lifetime figure), count }
+ *     rewardsChecked (rows with a lifetime figure), dayKnown, weekKnown,
+ *     messagesKnown (rows each of those sums covers), count }
  */
 export function sumRows(rows) {
   const t = {
@@ -505,6 +506,10 @@ export function sumRows(rows) {
     lifetimeLowerBound: false,
     messages30d: 0,
     rewardsChecked: 0,
+    // How many rows each sum covers (a sum over none is unknown, not 0).
+    dayKnown: 0,
+    weekKnown: 0,
+    messagesKnown: 0,
   };
   for (const r of rows) {
     t.count++;
@@ -519,9 +524,18 @@ export function sumRows(rows) {
       t.lifetimeHnt += r.lifetime.hnt;
       if (r.lifetime.lowerBound) t.lifetimeLowerBound = true;
     }
-    if (r.day.state === "ok") t.latestDayHnt += r.day.hnt;
-    if (r.week.hnt != null) t.weekHnt += r.week.hnt;
-    if (r.messages.state === "ok") t.messages30d += r.messages.count;
+    if (r.day.state === "ok") {
+      t.latestDayHnt += r.day.hnt;
+      t.dayKnown++;
+    }
+    if (r.week.hnt != null) {
+      t.weekHnt += r.week.hnt;
+      t.weekKnown++;
+    }
+    if (r.messages.state === "ok") {
+      t.messages30d += r.messages.count;
+      t.messagesKnown++;
+    }
   }
   return t;
 }

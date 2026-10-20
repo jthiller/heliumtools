@@ -14,6 +14,10 @@ const DOT = { live: "", checking: "checking", saved: "checking", updating: "chec
 const HEALTH_TABLES_WIFI = ["bans", "heartbeats", "invalidHeartbeats", "speedtests"];
 const HEALTH_TABLES_DATA_ONLY = ["bans"];
 const TABLE_WORD = { bans: "bans", heartbeats: "heartbeats", invalidHeartbeats: "rejected heartbeats", speedtests: "speedtests" };
+// The tables Earnings reads (HNT per day and Rewarded data, Users served),
+// and what Earnings' own note calls them.
+const EARNINGS_TABLES = ["rewards", "usage"];
+const EARNINGS_WORD = { rewards: "earnings", usage: "users served" };
 
 /** "heartbeats", "heartbeats and speedtests", "bans, heartbeats and speedtests". */
 function joinWords(words) {
@@ -41,6 +45,11 @@ function joinWords(words) {
  *                            7:42 PM.", "Couldn't update bans. Showing data from 1:11 PM.",
  *                            "Couldn't load speedtests."), null when nothing failed
  *   failedTables: string[],  the Mobile health tables whose latest check failed
+ *   earningsNote: string|null  Earnings' own note (Summary's Earned column, "HNT per day")
+ *                            when the earnings or users-served figures on screen couldn't
+ *                            update: "Couldn't update earnings and users served. Showing
+ *                            data from 5:38 PM.", null otherwise (a table that never
+ *                            loaded shows its own failed state instead)
  *   line: string|null,       the whole chip text at derivation time ("Live · checked 1m ago",
  *                            "Couldn't check · data from 7:42 PM")
  *   srLine: string|null      the same for screen readers (the time is visible on desktop only)
@@ -71,6 +80,7 @@ export function mobileFreshness(activity, mobile) {
       from: null,
       note: null,
       failedTables: [],
+      earningsNote: null,
       line: null,
       srLine: null,
     };
@@ -144,6 +154,18 @@ export function mobileFreshness(activity, mobile) {
     note = from ? `Couldn't check the latest Mobile data. ${from}` : "Couldn't check the latest Mobile data.";
   }
 
+  // Earnings' note: the earnings tables whose figures are on screen but
+  // couldn't update (every table, when the whole check failed).
+  const earningsStale = EARNINGS_TABLES.filter(
+    (t) => activity[t] != null && (state === "error" || tables[t]?.state === "error"),
+  );
+  let earningsNote = null;
+  if (earningsStale.length) {
+    const at =
+      earningsStale.map((t) => tables[t]?.okAt).filter(Boolean).sort((a, b) => a - b)[0] ?? dataAt ?? savedAt;
+    earningsNote = `Couldn't update ${joinWords(earningsStale.map((t) => EARNINGS_WORD[t]))}.${at ? ` Showing data from ${fmtClock(at, now)}.` : ""}`;
+  }
+
   return {
     state,
     word,
@@ -156,6 +178,7 @@ export function mobileFreshness(activity, mobile) {
     from,
     note,
     failedTables: failing,
+    earningsNote,
     line,
     srLine: line,
   };

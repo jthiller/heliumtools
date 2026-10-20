@@ -23,3 +23,4 @@ export { Stat } from "./Stat.jsx";
 export { StatusMark } from "./StatusMark.jsx";
 export { TimeAgo } from "./TimeAgo.jsx";
 export { defaultDayIndex, useDaySelect } from "./useDaySelect.js";
+export { default as useRetryFocus } from "./useRetryFocus.js";

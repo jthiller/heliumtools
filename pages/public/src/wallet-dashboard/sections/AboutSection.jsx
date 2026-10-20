@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo, useState } from "react";
-import { Card, FleetError, Section, Skeleton } from "../ui/index.js";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { Btn2, Card, FleetError, Section, Skeleton } from "../ui/index.js";
 import { fmtCount, fmtUtcDate, plural, ONBOARDED_NOTE } from "../format.js";
 import { FLEET_UNAVAILABLE } from "../copy.js";
 import { compositionOf, feesOf, placesOf } from "../about/aboutModel.js";
@@ -11,19 +11,31 @@ import OnboardingFees from "../about/OnboardingFees.jsx";
 const CLEAR = { q: null, net: null, device: null, status: null, month: null };
 
 /** The quiet one-line About for a wallet with one Hotspot (or none). */
-function Line({ children, note }) {
+function Line({ children, note, action }) {
   return (
     <div className="rounded-xl bg-wd-well px-[18px] py-3.5 text-wd-sm leading-5 text-wd-ink-2 max-md:px-3.5 max-md:py-3">
       <p className="m-0">{children}</p>
       {note && <p className="m-0 mt-1 text-wd-cap">{note}</p>}
+      {action && <div className="mt-2 flex">{action}</div>}
     </div>
   );
 }
 
-function OneHotspot({ row, fees }) {
+function OneHotspot({ row, fees, onboarding }) {
   const at = row.onboarded.at;
+  // Its lookup failed (not "no date on chain"): said, with a Retry.
+  const failed = !at && onboarding.done && (onboarding.failed ?? 0) > 0;
   return (
-    <Line note={ONBOARDED_NOTE}>
+    <Line
+      note={ONBOARDED_NOTE}
+      action={
+        failed && !onboarding.retrying && onboarding.retry ? (
+          <Btn2 onClick={onboarding.retry} aria-label="Retry the onboard date">
+            Retry
+          </Btn2>
+        ) : null
+      }
+    >
       <span className="font-semibold text-wd-ink">{row.name || "Unnamed Hotspot"}</span>
       {` · ${row.deviceLabel} · ${row.place.full ?? row.placeText} · `}
       {at === undefined ? (
@@ -33,6 +45,10 @@ function OneHotspot({ row, fees }) {
         </>
       ) : at ? (
         `Onboarded ${fmtUtcDate(at)} (UTC)`
+      ) : onboarding.retrying ? (
+        "Retrying the onboard date"
+      ) : failed ? (
+        "Onboard date couldn't load"
       ) : (
         "Onboard date unknown"
       )}
@@ -99,6 +115,29 @@ export default memo(function AboutSection({ wallet, list, places, onboarding, su
   const fees = useMemo(() => (ready && total > 0 ? feesOf(list) : null), [ready, total, list]);
   const single = onboarding.done && (onboarding.stats?.timeline?.length ?? 0) === 1;
 
+  // Said once a Retry of the failed onboard-date lookups finishes, however it
+  // went: the failure line beside it reads the same when it fails again, so
+  // it wouldn't be read out again.
+  const retryRef = useRef(null);
+  if (retryRef.current?.wallet !== wallet) retryRef.current = { wallet, n: 0, message: "" };
+  if (onboarding.retrying) {
+    if (!retryRef.current.n) retryRef.current = { wallet, n: onboarding.failed ?? 0, message: "" };
+  } else if (retryRef.current.n) {
+    const n = retryRef.current.n;
+    const left = Math.min(onboarding.failed ?? 0, n);
+    const message =
+      n === 1
+        ? left
+          ? "Couldn't read the onboard date."
+          : "Onboard date read."
+        : left === 0
+          ? `Onboard dates read for ${plural(n, "Hotspot")}.`
+          : left < n
+            ? `Onboard dates read for ${fmtCount(n - left)} of ${plural(n, "Hotspot")}. ${fmtCount(left)} couldn't be read.`
+            : `Couldn't read onboard dates for ${plural(n, "Hotspot")}.`;
+    retryRef.current = { wallet, n: 0, message };
+  }
+
   const count = ready ? total : summary.data?.fleet?.count;
   const unlisted = ready ? list.counts.unlisted : 0;
   const caption =
@@ -116,7 +155,7 @@ export default memo(function AboutSection({ wallet, list, places, onboarding, su
   } else if (total === 0) {
     body = <Line>No Hotspots in this wallet.</Line>;
   } else if (total === 1) {
-    body = <OneHotspot row={list.rows[0]} fees={fees} />;
+    body = <OneHotspot row={list.rows[0]} fees={fees} onboarding={onboarding} />;
   } else {
     body = (
       <div className="grid grid-cols-1 gap-3 md:gap-4 lg:grid-cols-12">
@@ -150,6 +189,9 @@ export default memo(function AboutSection({ wallet, list, places, onboarding, su
 
   return (
     <Section id="about" title="About this fleet" caption={caption} busy={!ready && fleetState.state !== "failed"} data-wd-section="about">
+      <p role="status" className="sr-only">
+        {retryRef.current.message}
+      </p>
       {body}
     </Section>
   );

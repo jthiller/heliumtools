@@ -255,12 +255,3 @@ export function deriveFleetPlaces(hotspots) {
     caption,
   };
 }
-
-/** The note shown with duplicate spellings, for one alias pair ("FL and Florida are one state."). */
-export function aliasNote(places) {
-  const s = places?.states?.find((x) => x.aliasOf);
-  if (s) return `Places are shown as recorded. ${s.aliasOf} and ${s.label} are one state.`;
-  const c = places?.cities?.find((x) => x.aliasOf);
-  if (c) return `Places are shown as recorded. ${c.aliasOf} and ${c.label} are one place.`;
-  return null;
-}

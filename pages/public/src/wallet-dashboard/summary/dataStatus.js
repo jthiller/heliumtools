@@ -199,15 +199,20 @@ function onboardSource(list, onboarding) {
       state: "Checking",
     };
   }
+  const failed = onboarding.failed ?? 0;
+  if (onboarding.retrying) {
+    return { key: "onboard", name: "Onboard dates", kind: "checking", anchor: `Retrying ${plural(failed, "Hotspot")}`, state: "Retrying" };
+  }
   let dated = 0;
   for (const r of list.rows) if (r.onboarded.at) dated++;
-  const unknown = total - dated;
+  // A failed lookup isn't an unknown date: it's said, and the row is an error.
+  const unknown = Math.max(0, total - dated - failed);
   return {
     key: "onboard",
     name: "Onboard dates",
-    kind: "ok",
-    anchor: `${fmtCount(dated)} of ${plural(total, "Hotspot")}${unknown > 0 ? `, ${fmtCount(unknown)} unknown` : ""}`,
-    state: LOADED,
+    kind: failed > 0 ? "error" : "ok",
+    anchor: `${fmtCount(dated)} of ${plural(total, "Hotspot")}${failed > 0 ? `, ${fmtCount(failed)} couldn't be read` : ""}${unknown > 0 ? `, ${fmtCount(unknown)} unknown` : ""}`,
+    state: failed > 0 ? COULDNT_LOAD : LOADED,
   };
 }
 
@@ -217,7 +222,7 @@ function onboardSource(list, onboarding) {
  * @param {{state: "loading"|"ready"|"failed"}} p.fleetState
  * @param {object} p.list                          aggregateHotspotList
  * @param {object} p.money                         deriveMoney
- * @param {{done, progress}} p.onboarding
+ * @param {{done, progress, failed, retrying}} p.onboarding
  * @param {object} p.iotStatus                     aggregateIotStatus
  * @param {boolean} p.iotDone
  * @param {object|null} p.utilizationIndex

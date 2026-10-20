@@ -6,7 +6,7 @@
 // in-app wallet link goes to the bare path, so filters reset with it.
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
-import { DEVICE_LABEL, UNKNOWN_DEVICE } from "./format.js";
+import { DEVICE_LABEL, UNKNOWN_DEVICE, UTC_MONTH_RE } from "./format.js";
 import { isStatusFilter } from "./statusRegistry.js";
 import { DEFAULT_SORT, parseSort, serializeSort } from "./hotspotList.js";
 import { prefersReducedMotion } from "../lib/useReducedMotion.js";
@@ -16,7 +16,6 @@ const SORT_STORE = "heliumtools:wallet-dashboard:sort:v1";
 const SORT_STORE_MAX = 8;
 const Q_MAX = 100;
 const Q_DEBOUNCE_MS = 300;
-const MONTH_RE = /^\d{4}-\d{2}$/;
 const PARAMS = ["hotspot", "q", "net", "status", "device", "sort", "month"];
 
 /** The remembered sort per wallet (this browser), most recent last. */
@@ -73,7 +72,7 @@ export function parseUrlParams(search, fleet = {}) {
     device: deviceOk ? device : "all",
     sort: sort ?? DEFAULT_SORT,
     sortParam: sort ? serializeSort(sort) : null,
-    month: month && MONTH_RE.test(month) ? month : null,
+    month: month && UTC_MONTH_RE.test(month) ? month : null,
   };
 }
 

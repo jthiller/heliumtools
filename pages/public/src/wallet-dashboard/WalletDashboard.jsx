@@ -16,6 +16,7 @@ import { deriveMoney } from "./money.js";
 import { useDashboardUrlState } from "./urlState.js";
 import { rememberWallet } from "./recentWallets.js";
 import useHotspotOrder from "./hotspots/useHotspotOrder.js";
+import { useRetryFocus } from "./ui/index.js";
 import AppBar from "./AppBar.jsx";
 import LookupPage from "./LookupPage.jsx";
 import SummarySection from "./sections/SummarySection.jsx";
@@ -72,6 +73,8 @@ export default function WalletDashboard() {
   const activeWallet = valid ? wallet : null;
 
   const goToWallet = useCallback((addr) => navigate(`/wallet-dashboard/${addr.trim()}`), [navigate]);
+  // A pressed Retry that goes away while its retry runs leaves focus nearby.
+  useRetryFocus();
 
   // Redirect the ?wallet= alias to the canonical path form, keeping the view.
   useEffect(() => {
@@ -130,8 +133,24 @@ export default function WalletDashboard() {
     [onboardedState.done, onboardedByKey, walletHotspots],
   );
   const onboarding = useMemo(
-    () => ({ stats: onboardingStatsValue, done: onboardedState.done, progress: onboardedState.progress, byKey: onboardedByKey }),
-    [onboardingStatsValue, onboardedState.done, onboardedState.progress, onboardedByKey],
+    () => ({
+      stats: onboardingStatsValue,
+      done: onboardedState.done,
+      progress: onboardedState.progress,
+      byKey: onboardedByKey,
+      failed: onboardedState.failed,
+      retrying: onboardedState.retrying,
+      retry: onboardedState.retry,
+    }),
+    [
+      onboardingStatsValue,
+      onboardedState.done,
+      onboardedState.progress,
+      onboardedByKey,
+      onboardedState.failed,
+      onboardedState.retrying,
+      onboardedState.retry,
+    ],
   );
   // The one per-flush derivation of every row's IoT verdicts.
   const iotStatusAgg = useMemo(
@@ -286,12 +305,21 @@ export default function WalletDashboard() {
     };
   }, [order.keys, selectedRow, hotspotList, url.sort]);
 
-  // Focus moves to the detail heading when the viewer opens or steps one
-  // (not on a deep link's first paint).
+  // Focus moves to the detail heading when the viewer opens or steps one, or
+  // an agent's open-wallet-dashboard opens one (as the viewer would from
+  // outside the list: in the aside, the list comes into view first). Not on
+  // a deep link's first paint, nor on Back or Forward.
   const focusDetailRef = useRef(false);
+  // The `hotspot` an agent's open asked for (one the page drops never matches).
+  const agentOpenRef = useRef(null);
   useEffect(() => {
-    if (!selectedRow || !focusDetailRef.current) return;
+    const agent = agentOpenRef.current != null && agentOpenRef.current === url.hotspot;
+    if (!selectedRow || !(focusDetailRef.current || agent)) return;
     focusDetailRef.current = false;
+    agentOpenRef.current = null;
+    if (agent && detailMode === "aside") {
+      document.getElementById("hotspots")?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
+    }
     requestAnimationFrame(() => detailHeadingRef.current?.focus({ preventScroll: true }));
   }, [selectedRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -374,7 +402,12 @@ export default function WalletDashboard() {
   useWebMcpTools(
     () =>
       makeWalletDashboardTools(
-        navigate,
+        // A Hotspot the agent opens takes focus like one the viewer opens.
+        (to, opts) => {
+          const hotspot = typeof to === "string" ? new URLSearchParams(to.split("?")[1] ?? "").get("hotspot") : null;
+          if (hotspot) agentOpenRef.current = hotspot;
+          navigate(to, opts);
+        },
         () => walletRef.current,
         () => iotStateRef.current,
         () => mobileStateRef.current,
@@ -395,7 +428,10 @@ export default function WalletDashboard() {
       : fleetLoaded && mobileActivity.wallet === wallet
         ? { wallet, hotspots: walletHotspots, activity: mobileActivity, mobile: mobileAgg }
         : null;
-  listStateRef.current = valid && fleetLoaded ? { wallet, list: hotspotList, settled: hotspotList.settled } : null;
+  listStateRef.current =
+    valid && fleetLoaded
+      ? { wallet, list: hotspotList, settled: hotspotList.settled, onboardFailed: onboardedState.failed, onboardRetrying: onboardedState.retrying }
+      : null;
 
   // The detail element, memoized so HotspotsSection (which renders it beside
   // the list) skips flushes that don't touch the open Hotspot.

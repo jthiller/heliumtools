@@ -79,12 +79,18 @@ export default memo(function SummarySection({
   );
 
   // "Rewards checked for 1,659 Hotspots." once a scan that showed partial
-  // figures finishes (a short scan never reads as partial, so it stays quiet).
+  // figures finishes (a short scan never reads as partial, so it stays quiet),
+  // and once a Retry of the failed batches finishes (the viewer asked for it),
+  // including one that failed again (the alert beside it doesn't change, so
+  // it wouldn't be read again).
   const scanRef = useRef(null);
   if (scanRef.current?.wallet !== wallet) scanRef.current = { wallet, scanning: false, message: "" };
   const hs = money.unclaimed.hotspotsState;
-  if (hs === "scanning") scanRef.current = { wallet, scanning: true, message: "" };
-  else if (scanRef.current.scanning && hs === "ready") {
+  if (hs === "scanning" || money.unclaimed.retrying) scanRef.current = { wallet, scanning: true, message: "" };
+  else if (scanRef.current.scanning && hs === "failed" && fleetState.state !== "failed") {
+    const total = money.unclaimed.total || list.counts.total;
+    scanRef.current = { wallet, scanning: false, message: `Rewards couldn't be checked for ${plural(total, "Hotspot")}.` };
+  } else if (scanRef.current.scanning && hs === "ready") {
     // Says what it covered: batches that failed aren't "checked".
     const total = money.unclaimed.total;
     let failed = 0;

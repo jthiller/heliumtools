@@ -96,33 +96,18 @@ export function nextWindowFlip(activity, now) {
 
 // ── Issues ──────────────────────────────────────────────────────────────────
 
-// The amber issues' styling: WiFi health signals, not earnings problems.
-// (`color`, `textClass` and `tone` are deprecated: the old cards read them;
-// the status registry's `tier` replaces them.)
-const CAUTION = {
-  tier: "check",
-  color: "#d97706", // amber-600
-  textClass: "text-amber-600 dark:text-amber-400",
-  tone: "caution",
-};
-
 /**
- * Per-Hotspot issues, most actionable first. `tier` is the status
- * registry's (statusRegistry.js: Banned is Serious, the WiFi signals Check,
- * since they don't change HNT from data transfer). Deprecated: `color`,
- * `textClass`, `tone`. `wifi`: applies only to WiFi indoor/outdoor Hotspots.
- * `table`: the table behind it. `window`: the sliding section it's named by;
- * `text(w)` words it for that window (see windowText): `label` for the card's
- * rows and callouts, `chip` for the table's filter chips and status cells,
- * `hint` for their tooltips. Surfaces read the wording from
- * `aggregateMobile(...).issueText`, which names the windows as they stand.
+ * Per-Hotspot issues, most actionable first. Each key is a status registry
+ * state (statusRegistry.js), which owns its tier: Banned is Serious, the WiFi
+ * signals Check, since they don't change HNT from data transfer. `wifi`:
+ * applies only to WiFi indoor/outdoor Hotspots. `table`: the table behind it.
+ * `window`: the sliding section it's named by; `text(w)` words it for that
+ * window (see windowText): `label` for rows and callouts, `chip` for filter
+ * chips and status cells, `hint` for their tooltips. Surfaces read the wording
+ * from `aggregateMobile(...).issueText`, which names the windows as they stand.
  */
 export const MOBILE_ISSUES = {
   banned: {
-    tier: "serious",
-    color: "#e11d48", // rose-600
-    textClass: "text-rose-600 dark:text-rose-400",
-    tone: "warn",
     wifi: false,
     table: "bans",
     window: null,
@@ -133,7 +118,6 @@ export const MOBILE_ISSUES = {
     }),
   },
   noHeartbeat: {
-    ...CAUTION,
     wifi: true,
     table: "heartbeats",
     window: "heartbeats",
@@ -144,7 +128,6 @@ export const MOBILE_ISSUES = {
     }),
   },
   lowTrust: {
-    ...CAUTION,
     wifi: true,
     table: "heartbeats",
     window: "heartbeats",
@@ -155,7 +138,6 @@ export const MOBILE_ISSUES = {
     }),
   },
   lowSpeedtest: {
-    ...CAUTION,
     wifi: true,
     table: "speedtests",
     window: "speedtests",
@@ -167,7 +149,6 @@ export const MOBILE_ISSUES = {
     }),
   },
   rejectedHeartbeats: {
-    ...CAUTION,
     wifi: true,
     table: "invalidHeartbeats",
     window: "invalidHeartbeats",
@@ -306,7 +287,7 @@ function mobileRowSig(r) {
 
 /**
  * One derivation of the whole Mobile picture per activity update (like
- * `aggregateIotStatus`): every surface (card, table filter, map panel, agent
+ * `aggregateIotStatus`): every surface (Health, list filter, map panel, agent
  * tool) reads this object rather than re-deriving per row. `now` names the
  * sliding windows (see windowText): the hook's `asOf` for the page. `prev`
  * (the previous result, optional): a Hotspot whose row is unchanged (`sig`)

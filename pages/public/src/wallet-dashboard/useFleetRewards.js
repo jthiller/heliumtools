@@ -24,7 +24,7 @@ const IDLE = { rewardsByKey: {}, progress: { done: 0, total: 0 }, loading: false
  * Progressively fetch pending + lifetime rewards for an entire fleet via the
  * dashboard's own cached /wallet-dashboard/rewards endpoint (`fetchRewards`), in
  * batches of BATCH_SIZE with bounded concurrency. Returns the accumulating reward
- * map plus progress, so cards can show running totals while the fan-out is in flight.
+ * map plus progress, so sections can show running totals while the fan-out is in flight.
  *
  * rewardsByKey values: the Hotspot's rewards, or null when its batch failed
  * (unknown, never counted as idle); an absent key is still loading.
@@ -101,7 +101,7 @@ export default function useFleetRewards(wallet, hotspots) {
 
     // `hotspots === undefined` means the fleet hasn't loaded yet; `[]` means it
     // loaded and is genuinely empty. Only report `done` in the latter case so
-    // cards show a loading state ("…") instead of a false settled "$0 / 0 earning".
+    // sections show a loading state ("…") instead of a false settled "$0 / 0 earning".
     const fleetLoaded = Array.isArray(hotspots);
     const eligible = eligibleRewardHotspots(hotspots);
     if (!wallet || eligible.length === 0) {

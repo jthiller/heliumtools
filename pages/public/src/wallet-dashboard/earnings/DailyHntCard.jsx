@@ -17,7 +17,8 @@ const gapWord = (state) => (state === "missing" ? "no data" : state === "failed"
  * arrival only (`growKey`). The section keys it by wallet, so the day being
  * read resets per wallet. `failed`: nothing to chart, because the earnings check
  * ("mobile") or the Hotspot list ("fleet") failed, with `onRetry` for it
- * when there is one; `onRetryMobile` retries the days that couldn't load.
+ * when there is one; `onRetryMobile` retries the days that couldn't load, and
+ * the figures that couldn't update (`freshness.earningsNote`, under the total).
  * `loading`: the Hotspot list hasn't loaded, so the chart waits as Summary's
  * Earned column does.
  */
@@ -73,6 +74,8 @@ export default memo(function DailyHntCard({ loading, money, mobile, activity, fr
 
   const ok = days.filter((d) => d.state === "ok");
   const loadingAny = days.some((d) => d.state === "loading");
+  // The days shown couldn't update (the latest check failed): said once, with its Retry.
+  const stale = freshness.earningsNote;
   const missing = days.filter((d) => d.state === "missing").length;
   const failedDays = days.filter((d) => d.state === "failed").length;
   const priced = ok.filter((d) => d.usd != null);
@@ -180,11 +183,19 @@ export default memo(function DailyHntCard({ loading, money, mobile, activity, fr
           {gap && (
             <div className="mt-1.5 flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
               <span className="text-wd-ink-2">{gap}</span>
-              {failedDays > 0 && (
+              {failedDays > 0 && !stale && (
                 <Btn2 onClick={onRetryMobile} aria-label="Retry the days that couldn't load">
                   Retry
                 </Btn2>
               )}
+            </div>
+          )}
+          {stale && (
+            <div className="mt-1.5 flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
+              <span className="text-wd-ink-2">{stale}</span>
+              <Btn2 onClick={onRetryMobile} aria-label="Retry earnings">
+                Retry
+              </Btn2>
             </div>
           )}
         </div>

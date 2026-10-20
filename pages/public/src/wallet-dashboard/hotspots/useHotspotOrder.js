@@ -40,6 +40,16 @@ function sortReady(key, settled) {
   }
 }
 
+/**
+ * Whether the data a sort breaks its ties with has settled too: every sort
+ * but Name and Status ties on 7 days, then Lifetime (`orderRows`), so its
+ * order is final only once the Mobile check and the rewards scan are in.
+ */
+function tiesReady(key, settled) {
+  if (key === "name" || key === "status") return true;
+  return Boolean(settled?.mobile && settled?.rewards);
+}
+
 /** How many Hotspots have the value a sort ranks by (answered, failed or not). */
 function checkedFor(key, rows) {
   let n = 0;
@@ -71,7 +81,9 @@ const nameSnapshot = (rows) => snapshot(orderRows(rows, NAME_SORT));
  * is still being checked the rows stay in name order with
  * "Unclaimed: 150 of 1,659 Hotspots checked. Rows sort when it finishes."
  * and Sort now; when it finishes they sort themselves, unless focus is in the
- * list or the detail (then "Order is out of date." and Sort now). A row that
+ * list or the detail (then "Order is out of date." and Sort now). The same
+ * goes for the data a sort breaks ties with (7 days, then Lifetime): rows
+ * sorted before it's in sort again when it arrives. A row that
  * stops matching the filter stays in place (`noLongerMatches`) and newly
  * matching rows wait, both until the next user action (a filter, search or
  * sort change, Sort now, paging). Resets per wallet.
@@ -92,6 +104,7 @@ export default function useHotspotOrder(list, filter, sort, { settled, listRegio
   const viewKey = viewKeyOf(location.search);
   const sortValue = sortOption(sort).value;
   const ready = sortReady(sort?.key, settled);
+  const full = ready && tiesReady(sort?.key, settled);
   const computed = useMemo(() => orderRows(filter.rows, sort), [filter.rows, sort]);
   const latest = useRef(null);
   latest.current = { filter, computed, ready };
@@ -165,6 +178,32 @@ export default function useHotspotOrder(list, filter, sort, { settled, listRegio
     });
   }, [ready, st.mode, listRegionRef, detailRegionRef, list]);
 
+  // The ties' data finished after the rows sorted (a cold first load sorts by
+  // Unclaimed before the 7-day figures are in): sort again, by the same rule
+  // as a scan finishing (not while the viewer is in the list or the detail;
+  // then the order is out of date). Until then the order isn't called out
+  // of date: the 7-day figures fill in before the Mobile check settles, and
+  // a line that the re-sort removes a moment later would still be announced.
+  const fullRef = useRef({ wallet, full });
+  const tiesArrived = fullRef.current.wallet === wallet && !fullRef.current.full && full && next.mode === "sorted";
+  useLayoutEffect(() => {
+    const prev = fullRef.current;
+    fullRef.current = { wallet, full };
+    if (prev.wallet !== wallet || prev.full || !full) return;
+    const a = document.activeElement;
+    const inside =
+      Boolean(a) &&
+      a !== document.body &&
+      Boolean(listRegionRef?.current?.contains(a) || detailRegionRef?.current?.contains(a));
+    setSt((s) =>
+      s.mode !== "sorted" || s.wallet !== wallet
+        ? s
+        : inside
+          ? { ...s } // render again: the order now reads out of date
+          : { ...s, groups: snapshot(latest.current.computed) },
+    );
+  }, [full, wallet, listRegionRef, detailRegionRef]);
+
   const sortNow = useCallback(
     () =>
       setSt((s) => {
@@ -217,12 +256,12 @@ export default function useHotspotOrder(list, filter, sort, { settled, listRegio
   // Out of date: the rows shown (those still matching) aren't the computed
   // order, or rows that match now aren't shown yet.
   const outOfDate = useMemo(() => {
-    if (mode !== "sorted") return false;
+    if (mode !== "sorted" || !full || tiesArrived) return false;
     const shown = view.keys.filter((k) => filter.keys.has(k));
     if (shown.length !== computed.keys.length) return true;
     for (let i = 0; i < shown.length; i++) if (shown[i] !== computed.keys[i]) return true;
     return false;
-  }, [mode, view.keys, filter.keys, computed.keys]);
+  }, [mode, full, tiesArrived, view.keys, filter.keys, computed.keys]);
 
   let staleText = null;
   if (mode === "scan" && sort?.key !== "name") {

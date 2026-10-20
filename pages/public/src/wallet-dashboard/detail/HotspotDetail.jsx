@@ -184,6 +184,24 @@ export default memo(function HotspotDetail({
           onClose();
         }
       : undefined;
+  // It also closes, while on screen, with nothing focused: an aside a deep
+  // link or Back / Forward opened doesn't take focus, unlike one the viewer
+  // (or an agent) opened. Focus anywhere else keeps Escape for that control,
+  // and an aside scrolled out of view isn't closed from afar.
+  useEffect(() => {
+    if (mode !== "aside") return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const a = document.activeElement;
+      if (a && a !== document.body && a !== document.documentElement) return;
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r || r.bottom <= 0 || r.top >= window.innerHeight) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mode, onClose]);
 
   if (mode === "aside") {
     // The list's 440 px column (HotspotsSection) is the sticky, scrolling

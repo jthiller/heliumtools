@@ -543,7 +543,14 @@ function EarnedCol({ wallet, money, fleetState, freshness, activity, onRetryMobi
           <Sub>No earnings data published for {day}.</Sub>
         )}
         <MiniBars days={e.days} />
-        <Caps items={[{ t: week, strong: true }, scope]} />
+        <Caps items={[{ t: week, strong: true }, scope, freshness.earningsNote]} />
+        {freshness.earningsNote && (
+          <Actions>
+            <Btn2 onClick={onRetryMobile} aria-label="Retry earnings">
+              Retry
+            </Btn2>
+          </Actions>
+        )}
       </>
     );
   }

@@ -261,11 +261,15 @@ export default memo(function HotspotRow({
     );
   }
 
+  // `relative` gives each row its own paint layer and changes no pixel: with
+  // every row of a large fleet shown ("Show all"), a frame that adds rows or
+  // moves the hover repaints only the rows that changed, not the whole list.
+  // Nothing overlaps a row; the sticky header (z-index 2) still covers them.
   return (
     <tr
       aria-current={selected ? "true" : undefined}
       onClick={open}
-      className={`cursor-pointer ${selected ? "[&>*]:bg-accent-surface [&>:first-child]:shadow-[inset_3px_0_0_rgb(var(--color-accent))]" : "[&:hover>*]:bg-wd-well"}`}
+      className={`relative cursor-pointer ${selected ? "[&>*]:bg-accent-surface [&>:first-child]:shadow-[inset_3px_0_0_rgb(var(--color-accent))]" : "[&:hover>*]:bg-wd-well"}`}
     >
       <th scope="row" className={`${TD} text-left font-normal ${COL.name}`}>
         <a

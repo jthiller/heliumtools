@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { Card, InfoTip, Progress, Skeleton, useDaySelect } from "../ui/index.js";
+import { Btn2, Card, InfoTip, Progress, Skeleton, useDaySelect } from "../ui/index.js";
 import { fmtCount, plural, ONBOARDED_NOTE } from "../format.js";
 import { NET, datedText, hotspotOnboardedAt, monthSplit, singleMonthText, timelineOf } from "./aboutModel.js";
 import { HotspotName } from "./Composition.jsx";
@@ -161,6 +161,25 @@ export default memo(function OnboardingTimeline({ wallet, onboarding, list, onSh
   const caption = loading ? "By month (UTC)" : model ? (model.single ? `${model.months[0].full} (UTC)` : model.range) : null;
   const { done: pDone = 0, total: pTotal = 0 } = onboarding.progress || {};
   const progressText = `Checking onboard dates: ${fmtCount(pDone)} of ${plural(pTotal || total, "Hotspot")}…`;
+  // Lookups that failed read as no date in the chart: said, with a Retry for just those.
+  const failed = loading ? 0 : (onboarding.failed ?? 0);
+  const failure =
+    failed > 0 || onboarding.retrying ? (
+      <div className="flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
+        <span className="text-wd-sm text-wd-ink-2">
+          {onboarding.retrying
+            ? `Retrying onboard dates for ${plural(failed, "Hotspot")}…`
+            : model
+              ? `Couldn't read onboard dates for ${plural(failed, "Hotspot")}. They're left out of the chart.`
+              : "Couldn't read onboard dates."}
+        </span>
+        {!onboarding.retrying && onboarding.retry && (
+          <Btn2 onClick={onboarding.retry} aria-label="Retry onboard dates">
+            Retry
+          </Btn2>
+        )}
+      </div>
+    ) : null;
 
   return (
     <Card
@@ -193,11 +212,13 @@ export default memo(function OnboardingTimeline({ wallet, onboarding, list, onSh
         </>
       )}
 
-      {!loading && !model && <p className="m-0 text-sm text-wd-ink-2">No onboard dates found.</p>}
+      {!loading && !model && !failure && <p className="m-0 text-sm text-wd-ink-2">No onboard dates found.</p>}
+      {!model && failure}
 
       {model && !model.single && (
         <>
           <Chart key={wallet} model={model} onShow={onShow} />
+          {failure}
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5">
             <span className={CAP}>{datedText(model.dated, total)}</span>
             <span className={`${CAP} max-md:hidden`}>Use ← → to read each month. Select one to filter the list.</span>
@@ -219,6 +240,7 @@ export default memo(function OnboardingTimeline({ wallet, onboarding, list, onSh
             )}
           </div>
           <span className={CAP}>{datedText(model.dated, total)}</span>
+          {failure}
           <p className={`m-0 ${CAP}`}>{ONBOARDED_NOTE}</p>
         </>
       )}

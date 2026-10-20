@@ -30,9 +30,10 @@ import { csvFileName, hotspotsCsv } from "../hotspots/csv.js";
 
 const COPY_FAILED = "Couldn't copy. Your browser blocked clipboard access.";
 const PAGE = { desktop: 100, phone: 50 };
-// "Show all" renders in steps of this many pages, one task each, so a fleet
-// of 2,000 never blocks the page in one long task.
-const ALL_STEP = 2;
+// "Show all" renders the rest in steps of this many pages (100 rows in the
+// table), one step per frame, so a fleet of 2,000 never blocks the page in
+// one long task (IMPL_PLAN 6: under 100 ms).
+const ALL_STEP = 1;
 // Live arrivals flash a row's Status cell only on lists this size or smaller.
 const FLASH_MAX_ROWS = 200;
 const FLASH_TABLES = ["heartbeats", "invalidHeartbeats", "speedtests"];
@@ -401,15 +402,25 @@ export default memo(function HotspotsSection({
     const row = key ? list.byKey.get(key) : null;
     if (row) document.querySelector(`[data-hotspot-link="${CSS.escape(row.param)}"]`)?.focus();
   }, [rendered, order.keys, list]);
-  // "Show all" keeps adding steps, each its own task, until every row is in.
+  // "Show all" keeps adding steps until every row is in. The next step waits
+  // for the frame that paints this one (a frame callback, then a task after
+  // it): chained timeouts alone run several steps before the browser renders,
+  // and then one frame lays out and paints all of them in one long task.
+  // A hidden tab runs no frames, so the steps resume when it's shown again.
   useEffect(() => {
     if (!growing) return undefined;
     if (rendered.count >= displayed) {
       setGrowing(false);
       return undefined;
     }
-    const t = setTimeout(() => setPages((p) => p + ALL_STEP), 0);
-    return () => clearTimeout(t);
+    let t = 0;
+    const frame = requestAnimationFrame(() => {
+      t = setTimeout(() => setPages((p) => p + ALL_STEP), 0);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(t);
+    };
   }, [growing, rendered.count, displayed]);
 
   // ── Exports: the current filter, in the order shown ──

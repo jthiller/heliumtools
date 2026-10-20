@@ -151,7 +151,7 @@ function SkeletonItem() {
  * both): labelled groups of rows, the "Show 50 more" pager, the totals strip,
  * and the empty state. `iot`: the Messages column set (IoT network filter, or
  * a wallet with no Mobile Hotspot). `total`: { lead, body, sub, notes } (notes
- * are the table footer's Unclaimed lines, one per line).
+ * are the table footer's Unclaimed lines, a paragraph each).
  */
 export default function HotspotListPhone({
   groups,
@@ -207,16 +207,21 @@ export default function HotspotListPhone({
           )}
           {pager && <Pager phone {...pager} />}
           {total && (
-            <p className="m-0 rounded-b-2xl border-t border-wd-line bg-wd-well px-4 py-3 text-wd-sm text-wd-ink-2">
-              {total.lead} <b className="font-semibold text-wd-ink">{total.body}</b>
-              {total.sub && <span> · {total.sub}</span>}
-              {total.notes?.length > 0 && <span className="sr-only">.</span>}
+            // The totals and each note are paragraphs of their own, so a
+            // screen reader reads them as separate sentences (an sr-only "."
+            // between them is absolutely positioned, a block, and read with
+            // a space before it).
+            <div className="rounded-b-2xl border-t border-wd-line bg-wd-well px-4 py-3 text-wd-sm text-wd-ink-2">
+              <p className="m-0">
+                {total.lead} <b className="font-semibold text-wd-ink">{total.body}</b>
+                {total.sub && <span> · {total.sub}</span>}
+              </p>
               {total.notes?.map((n) => (
-                <span key={n} className="mt-0.5 block text-wd-cap">
+                <p key={n} className="m-0 mt-0.5 text-wd-cap">
                   {n}
-                </span>
+                </p>
               ))}
-            </p>
+            </div>
           )}
         </>
       )}

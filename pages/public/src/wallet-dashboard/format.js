@@ -1,8 +1,6 @@
-import { usdFormatter, numberFormatter, truncateString } from "../lib/utils.js";
+import { usdFormatter, numberFormatter } from "../lib/utils.js";
 import { DATA_DAY_RE } from "../lib/dataDay.js";
 import { stateRank } from "./statusRegistry.js";
-
-export { truncateString };
 
 // Every formatter here returns a string, never null, and is en-US throughout
 // (one locale policy, so a figure and its count never disagree on
@@ -13,9 +11,9 @@ export { truncateString };
 const LOCALE = "en-US";
 
 /** Format a USD amount, with a word for an unknown and a floor for tiny
- * values. (`dash` is the old name of `empty`.) */
-export function fmtUsd(n, { empty, dash } = {}) {
-  if (n == null || Number.isNaN(n)) return empty ?? dash ?? "Unavailable";
+ * values. */
+export function fmtUsd(n, { empty = "Unavailable" } = {}) {
+  if (n == null || Number.isNaN(n)) return empty;
   if (n === 0) return "$0.00";
   if (n > 0 && n < 0.01) return "<$0.01";
   return usdFormatter.format(n);
@@ -82,7 +80,7 @@ const dateFmt = new Intl.DateTimeFormat(LOCALE, {
 });
 
 /** Format an ISO string, Date, or ms timestamp as a short date in the
- * viewer's time zone. (Unix seconds must be ×1000 first, see fmtAgoSeconds.)
+ * viewer's time zone. (Unix seconds must be ×1000 first.)
  * Onboard dates use fmtUtcDate instead. */
 export function fmtDate(value, { empty = "Unknown" } = {}) {
   if (!value) return empty;
@@ -109,10 +107,15 @@ export function fmtUtcDate(value, { empty = "Unknown" } = {}) {
   return dateFmtUtc.format(d);
 }
 
+/** A "YYYY-MM" onboard month with a real month (01 to 12): the one test for
+ * the URL's `month` and for formatting it, so "2024-13" never reaches a Date. */
+export const UTC_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 /** "Apr 2025" for a "YYYY-MM" (UTC) month. */
 export function fmtUtcMonth(month, { empty = "Unknown" } = {}) {
-  if (!/^\d{4}-\d{2}$/.test(month || "")) return empty;
-  return monthFmtUtc.format(new Date(`${month}-01T00:00:00Z`));
+  if (!UTC_MONTH_RE.test(month || "")) return empty;
+  const d = new Date(`${month}-01T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? empty : monthFmtUtc.format(d);
 }
 
 /** "BMJiAP…Cc84Hd": an address or key with a real ellipsis (the shared
@@ -132,12 +135,6 @@ function agoText(diff) {
   return null;
 }
 
-/** Relative time from unix seconds (transactions) → "3h ago", "2d ago". */
-export function fmtAgoSeconds(sec, { empty = "Unknown" } = {}) {
-  if (!sec) return empty;
-  return agoText(Math.floor(Date.now() / 1000 - sec)) ?? fmtDate(sec * 1000);
-}
-
 /** Relative time from a ms timestamp, minute-grained for live data (a check,
  * a heartbeat) → "just now", "4m ago", "3h ago", "2d ago". */
 export function fmtAgo(ms, now = Date.now(), { empty = "Unknown" } = {}) {
@@ -150,18 +147,6 @@ export function fmtAgo(ms, now = Date.now(), { empty = "Unknown" } = {}) {
 const SOLSCAN = "https://solscan.io";
 export const txUrl = (sig) => `${SOLSCAN}/tx/${sig}`;
 export const accountUrl = (addr) => `${SOLSCAN}/account/${addr}`;
-
-// Per-token display metadata. Colors are inline hex (used for chips/dots/charts).
-export const TOKEN_META = {
-  hnt: { label: "HNT", color: "#0ea5b7" },
-  mobile: { label: "MOBILE", color: "#7c3aed" },
-  iot: { label: "IOT", color: "#059669" },
-  sol: { label: "SOL", color: "#a855f7" },
-  dc: { label: "DC", color: "#d97706" },
-};
-
-export const NETWORK_LABEL = { iot: "IoT", mobile: "Mobile" };
-export const NETWORK_COLOR = { iot: "#059669", mobile: "#7c3aed" };
 
 // Every label leads with its network (IoT… / Mobile…) so device type alone
 // conveys the network — the table doesn't need a separate Network column.
@@ -176,11 +161,6 @@ export const DEVICE_LABEL = {
   wifiDataOnly: "Mobile WiFi Data-Only",
 };
 
-/** Human label for a device-type key (falls back to the raw key). */
-export function deviceLabel(key) {
-  return DEVICE_LABEL[key] || key || "Unknown";
-}
-
 /** The device facet's value for rows whose type is missing or not listed. */
 export const UNKNOWN_DEVICE = "unknown";
 
@@ -189,8 +169,7 @@ export const UNKNOWN_DEVICE = "unknown";
 export const deviceKeyOf = (deviceType) => (deviceType && Object.hasOwn(DEVICE_LABEL, deviceType) ? deviceType : UNKNOWN_DEVICE);
 
 /** A device label for lists, facets and About: "Unknown device" for a null
- * type (never deviceLabel's bare "Unknown"); an unlisted future type shows
- * its raw key. */
+ * type (never a bare "Unknown"); an unlisted future type shows its raw key. */
 export function deviceLabelOf(deviceType) {
   if (deviceType === UNKNOWN_DEVICE) return "Unknown device";
   return (deviceType && Object.hasOwn(DEVICE_LABEL, deviceType) ? DEVICE_LABEL[deviceType] : deviceType) || "Unknown device";
@@ -291,24 +270,10 @@ export function onboardingStats(onboardedByKey, hotspots) {
 // `dataThrough` is the END of that 24h window: name the day with
 // `livenessDay()` + `fmtDataDay()`, never by formatting the timestamp.
 
-export const IOT_STATUS_LABEL = {
-  active: "Active",
-  inactive: "Inactive",
-  settingUp: "Setting up",
-  unknown: "Unknown",
-};
-
-// The canonical set of resolved verdicts `iotStatusOf` can settle on (the
-// IOT_STATUS_LABEL keys). Internal — consumers get the vocabulary via LABEL.
-const IOT_STATUSES = Object.keys(IOT_STATUS_LABEL);
-
-// Dot/marker colors (shared by the table and the map, like NETWORK_COLOR).
-export const IOT_STATUS_COLOR = {
-  active: NETWORK_COLOR.iot,
-  inactive: "#e11d48", // rose-600
-  settingUp: "#d97706", // amber-600
-  unknown: "#94a3b8", // slate-400
-};
+// The canonical set of resolved verdicts `iotStatusOf` can settle on.
+// Internal: surfaces name them through the status registry (statusRegistry.js:
+// active, inactive, settingUp, and iotUnknown or iotFailed for `unknown`).
+const IOT_STATUSES = ["active", "inactive", "settingUp", "unknown"];
 
 /**
  * Whether a fleet row participates in IoT connectivity at all — on the IoT
@@ -333,7 +298,7 @@ export function hasIotStatus(hotspot) {
  *                           settingUp vs inactive/unknown — is still loading
  *                           (undefined)
  *   null                  — no IoT status applies (see hasIotStatus)
- * Resolved verdicts are exactly the IOT_STATUS_LABEL keys. Invalid dates
+ * Resolved verdicts are exactly IOT_STATUSES. Invalid dates
  * compare false and simply fall through to inactive/unknown. `onboardedAt` is
  * the Hotspot's IoT onboard date (not its earliest network's: a Hotspot that
  * joined Mobile long ago and IoT yesterday is setting up on IoT).
@@ -367,7 +332,7 @@ export function iotStatusOf(hotspot, entry, dataThrough, onboardedAt) {
 
 const DAY_MS = 86_400_000;
 
-/** The messages caveat, worded once for every surface (card, table, detail,
+/** The messages caveat, worded once for every surface (Health, list, detail,
  * agent tools). */
 export const IOT_MESSAGES_NOTE =
   "Delivered LoRaWAN messages. Data-transfer rewards are based on them, but a count isn't a reward amount, DC, or unique device messages: with multi-buy, a device message delivered by several Hotspots counts at each.";
@@ -405,14 +370,6 @@ export function fmtDayRange(range, opts = {}) {
   if (!range?.min) return opts.empty ?? "Unknown";
   if (range.min === range.max) return fmtDataDay(range.min, opts);
   return `${fmtDataDay(range.min)} to ${fmtDataDay(range.max, opts)}`;
-}
-
-const compactFmt = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });
-
-/** Exact below 1,000, then compact with one decimal (1.9K, 10.5K, 45.4M). */
-export function fmtCompact(n, { empty = "Not reported" } = {}) {
-  if (n == null || Number.isNaN(n)) return empty;
-  return n < 1000 ? fmtCount(n) : compactFmt.format(n);
 }
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -474,46 +431,16 @@ export const IOT_TRAFFIC_STATE_NOTE = {
 export const isTrafficKnown = (traffic) => traffic != null && typeof traffic === "object";
 
 // Health = connectivity × 30-day traffic. Only resolved active/inactive rows
-// with a known traffic block get one. Listed in urgency order; `tier` is the
-// status registry's (statusRegistry.js: Inactive, no traffic is Check, owner
-// decision 1). `color` / `textClass` are deprecated (the old cards still read
-// them; the registry's tiers replace them).
+// with a known traffic block get one. Listed in urgency order. Each key is a
+// status registry state (statusRegistry.js), which owns its tier, label,
+// chip and hint; `csv` is the CSV export's value (hotspots/csv.js).
 export const IOT_HEALTH = {
-  inactiveTraffic: {
-    label: "Inactive, had traffic",
-    csv: "inactive_had_traffic",
-    tier: "serious",
-    color: IOT_STATUS_COLOR.inactive,
-    textClass: "text-rose-600 dark:text-rose-400",
-    hint: "Not connected on the latest reported day, but delivered messages within the 30-day window. The Hotspots most worth checking first.",
-  },
-  activeQuiet: {
-    label: "Active, no traffic",
-    csv: "active_no_traffic",
-    tier: "check",
-    color: IOT_STATUS_COLOR.settingUp, // amber
-    textClass: "text-amber-600 dark:text-amber-400",
-    hint: "Connected, but delivered no messages in 30 days. Check antenna and placement, or there may be no devices nearby.",
-  },
-  inactiveQuiet: {
-    label: "Inactive, no traffic",
-    csv: "inactive_no_traffic",
-    tier: "check",
-    color: "#94a3b8", // slate-400
-    textClass: "text-content-tertiary",
-    hint: "Not connected on the latest reported day, and no messages in 30 days.",
-  },
-  activeTraffic: {
-    label: "Active, had traffic",
-    csv: "active_with_traffic",
-    tier: "ok",
-    color: NETWORK_COLOR.iot,
-    // Neutral, not green: a 30-day total can't confirm traffic is still flowing.
-    textClass: "text-content",
-    hint: "Connected, and delivered messages within the 30-day window. A 30-day total can't confirm traffic is still flowing; open the Hotspot for its daily chart.",
-  },
+  inactiveTraffic: { csv: "inactive_had_traffic" },
+  activeQuiet: { csv: "active_no_traffic" },
+  inactiveQuiet: { csv: "inactive_no_traffic" },
+  activeTraffic: { csv: "active_with_traffic" },
 };
-export const IOT_HEALTH_ORDER = Object.keys(IOT_HEALTH);
+const IOT_HEALTH_ORDER = Object.keys(IOT_HEALTH);
 
 /**
  * Combine an `iotStatusOf` verdict with an `iotTrafficOf` result. Returns an
@@ -546,8 +473,8 @@ export function iotActionRank(status, health) {
 
 /**
  * One fleet row's IoT verdicts, derived once per scan flush (by
- * `aggregateIotStatus`, whose `rows` every surface reads) so the table, map,
- * card and agent tools can't disagree. Null for a non-IoT row.
+ * `aggregateIotStatus`, whose `rows` every surface reads) so the list, map,
+ * Health and agent tools can't disagree. Null for a non-IoT row.
  *   status   — iotStatusOf verdict      traffic — iotTrafficOf result
  *   health   — iotHealthOf key | null   messages — 30-day count when known (0 is real)
  *   anchor   — the liveness dataThrough behind an active/inactive verdict
@@ -689,7 +616,7 @@ export function aggregateIotStatus(hotspots, statusByKey, dataThrough, onboarded
 /** Categorical series slots for the per-OUI stacked chart; the tail folds
  * into "Other". Five, so no series hue collides with the dashboard's
  * reserved IoT green / Mobile violet / Inactive rose. */
-export const OUI_SERIES_MAX = 5;
+const OUI_SERIES_MAX = 5;
 
 /** Display name for a labeled OUI (see lib/wellKnownOuis `labelOuis`). */
 function ouiDisplayName(o) {
@@ -903,26 +830,6 @@ export function isEarning(rewards) {
   return REWARD_TOKENS.some((t) => safeBig(rewards[t]?.lifetime) > 0n);
 }
 
-/** One Hotspot's lifetime rewards for a single token, as a UI number. */
-export function lifetimeUi(rewards, token) {
-  const raw = rewards?.[token]?.lifetime;
-  return raw ? Number(raw) / 10 ** REWARD_DECIMALS[token] : 0;
-}
-
-/** Lifetime rewards in USD for one Hotspot (needs reward prices: {iot,mobile,hnt}). */
-export function hotspotLifetimeUsd(rewards, prices) {
-  if (!rewards) return null;
-  let usd = 0;
-  for (const t of REWARD_TOKENS) {
-    const life = safeBig(rewards[t]?.lifetime);
-    if (life === 0n) continue;
-    const ui = Number(life) / 10 ** REWARD_DECIMALS[t];
-    const price = prices?.[t];
-    if (price != null) usd += ui * price;
-  }
-  return usd;
-}
-
 /**
  * Aggregate a rewardsByKey map into fleet totals. Returns UI-amount sums per
  * token for pending / lifetime / claimable, plus earning/idle counts. Tolerates
@@ -967,16 +874,6 @@ export function aggregateRewards(rewardsByKey) {
   };
 }
 
-/** Sum a per-token UI map to USD using reward prices {iot,mobile,hnt}. */
-export function rewardUsd(uiByToken, prices) {
-  let usd = 0;
-  for (const t of REWARD_TOKENS) {
-    const price = prices?.[t];
-    if (price != null && uiByToken?.[t]) usd += uiByToken[t] * price;
-  }
-  return usd;
-}
-
 /**
  * Pending veHNT delegation rewards in HNT (UI units). Returns 0 when the wallet
  * holds no positions. Single source for the governance-totals access + position
@@ -986,24 +883,4 @@ export function govPendingHnt(governance) {
   const totals = governance?.totals;
   if (!totals || Number(totals.positionCount) <= 0) return 0;
   return Number(totals.pendingRewardsHnt || 0);
-}
-
-/**
- * USD value of pending veHNT delegation rewards (always paid in HNT post
- * HIP-138). Returns 0 when there are no positions or the HNT price isn't
- * loaded, so it folds cleanly into the headline unclaimed-rewards total.
- */
-export function govPendingUsd(governance, prices) {
-  const hnt = govPendingHnt(governance);
-  const price = prices?.hnt;
-  return price != null && hnt > 0 ? hnt * price : 0;
-}
-
-/**
- * Total unclaimed rewards in USD: Hotspot (fleet) pending + veHNT delegation
- * pending. The one definition of the dashboard's headline "Unclaimed" figure,
- * so the hero stat and the rewards card always agree on what it includes.
- */
-export function unclaimedTotalUsd(rewards, governance, prices) {
-  return rewardUsd(rewards?.pendingUi, prices) + govPendingUsd(governance, prices);
 }

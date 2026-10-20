@@ -48,9 +48,18 @@ export default memo(function IdentityRow({ wallet, places, summary, fleetState, 
       const n = Number(governance.data?.totals?.positionCount) || 0;
       if (n > 0) caption += ` · ${plural(n, "veHNT position")}`;
     } else if (!onboarding.done) onb = "Onboard dates: checking";
+    else if (onboarding.retrying) onb = "Onboard dates: retrying";
     else {
-      onb = onboardRange(onboarding.stats, total);
-      onbTip = Boolean(onb);
+      const range = onboardRange(onboarding.stats, total);
+      const failed = onboarding.failed ?? 0;
+      // A range from the dates that loaded, and how many couldn't be read.
+      onb =
+        failed > 0
+          ? range
+            ? `${range} · ${plural(failed, "onboard date")} couldn't load`
+            : "Onboard dates couldn't load"
+          : range;
+      onbTip = Boolean(range);
     }
   }
 
