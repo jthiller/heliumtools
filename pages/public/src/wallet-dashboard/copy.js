@@ -60,6 +60,19 @@ export const USERS_NOTE = "Counted per Hotspot, so a user served by two of your 
  */
 export const noDailyNote = (subject = "IoT Hotspots") => `Daily HNT is published only for Mobile data transfer. ${hntWhere(subject)}`;
 
+/**
+ * A daily-HNT cell for a Hotspot with none (row.noDaily: "iot" | "cbrs" |
+ * "none"). "Not tracked", not "No daily HNT": the same row shows its Unclaimed
+ * and Lifetime HNT, so it mustn't read as earning nothing. Narrow cells use
+ * NOT_TRACKED.
+ */
+export const NO_DAILY_TEXT = {
+  iot: "Daily earnings not tracked for IoT",
+  cbrs: "Daily earnings not tracked for CBRS",
+  none: "Daily earnings not tracked",
+};
+export const NOT_TRACKED = "Not tracked";
+
 /** Where a Hotspot type's HNT is instead: "IoT Hotspots' HNT is in Unclaimed and Lifetime earned." */
 export const hntWhere = (subject = "IoT Hotspots") =>
   `${subject}${subject.endsWith("s") ? "'" : "'s"} HNT is in Unclaimed and Lifetime earned.`;

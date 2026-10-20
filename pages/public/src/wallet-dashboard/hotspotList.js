@@ -799,7 +799,7 @@ function restGroups(key, rest) {
       const gaps = known.filter((r) => !r.noDaily);
       if (none.length) {
         const noun = allIot(none) ? "IoT Hotspot" : "Hotspot";
-        groups.push({ kind: "noDaily", label: `No daily HNT: ${plural(none.length, noun)}`, rows: none });
+        groups.push({ kind: "noDaily", label: `Daily earnings not tracked: ${plural(none.length, noun)}`, rows: none });
       }
       if (gaps.length) {
         groups.push({ kind: "dayUnavailable", label: `Daily HNT unavailable: ${plural(gaps.length, "Mobile Hotspot")}`, rows: gaps });
@@ -831,7 +831,7 @@ function restGroups(key, rest) {
 
 /**
  * Order rows for a sort (WdHotspots `order()`): ranked rows first, then
- * labelled groups for rows without the sort's value ("No daily HNT: 2 IoT
+ * labelled groups for rows without the sort's value ("Daily earnings not tracked: 2 IoT
  * Hotspots", "Daily HNT unavailable: …", "Not on IoT: 8 Mobile Hotspots",
  * "Messages unavailable: …", "Onboard date unknown: …", "Couldn't confirm
  * Unclaimed: …", "Couldn't load Unclaimed: …", "Unclaimed unavailable: …",

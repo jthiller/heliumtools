@@ -10,7 +10,7 @@ import {
 } from "../format.js";
 import { SORTS, checkingText, facetCounts, sortOption, sumRows, summaryLine, verdictsPartial } from "../hotspotList.js";
 import { statusFilterLabel } from "../statusRegistry.js";
-import { CLEAR_FILTERS, DATA_ONLY_NOTE, HOTSPOTS_ONLY_NOTE, WIFI_SIGNALS_NOTE, couldntCheck, needsLine } from "../copy.js";
+import { CLEAR_FILTERS, DATA_ONLY_NOTE, HOTSPOTS_ONLY_NOTE, NOT_TRACKED, WIFI_SIGNALS_NOTE, couldntCheck, needsLine } from "../copy.js";
 import { dashboardSearch } from "../urlState.js";
 import { useResetOnChange } from "../useWalletData.js";
 import { downloadTextFile } from "../../lib/download.js";
@@ -613,7 +613,7 @@ export default memo(function HotspotsSection({
     const daily = rows.filter((r) => !r.noDaily);
     const dayish = (field, okOf, sumOf) => {
       if (loading) return PENDING;
-      if (!daily.length) return word("No daily HNT");
+      if (!daily.length) return word(NOT_TRACKED);
       const ok = daily.filter(okOf);
       if (ok.length) return num(fmtHnt(sumOf(), "list"));
       return daily.some((r) => r[field].state === "loading") ? PENDING : word("No data");

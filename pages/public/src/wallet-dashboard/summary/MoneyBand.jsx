@@ -2,7 +2,7 @@ import { memo, useRef } from "react";
 import { Btn, Btn2, Disclosure, InfoTip, Progress, Skeleton, StatusMark } from "../ui/index.js";
 import { IOT_CONNECTIVITY_NOTE, fmtCount, fmtDataDay, fmtHnt, fmtUsd, plural } from "../format.js";
 import { CountUp } from "../arrivalMotion.jsx";
-import { CLAIM_LABEL, NOTHING_TO_CLAIM, lowerBoundClause, noDailyNote, rewardsFromScope } from "../copy.js";
+import { CLAIM_LABEL, NOTHING_TO_CLAIM, NOT_TRACKED, lowerBoundClause, noDailyNote, rewardsFromScope } from "../copy.js";
 
 const tok = (v) => fmtHnt(v, "stat");
 const tok2 = (v) => fmtHnt(v, "list");
@@ -565,7 +565,7 @@ function EarnedCol({ wallet, money, fleetState, freshness, activity, onRetryMobi
 function NoDailyCol() {
   return (
     <Col wdCol="earned" eyebrow="Earned" tip={EARNED_TIP} tipLabel="Earned">
-      <Err>No daily HNT</Err>
+      <Err>{NOT_TRACKED}</Err>
       <Caps items={[noDailyNote("These Hotspots")]} />
     </Col>
   );

@@ -7,7 +7,7 @@ import { Skeleton } from "../ui/Skeleton.jsx";
 import { Sparkline } from "../ui/Sparkline.jsx";
 import { StatusMark } from "../ui/StatusMark.jsx";
 import StatusCell from "./StatusCell.jsx";
-import { LOWER_BOUND_NOTE } from "../copy.js";
+import { LOWER_BOUND_NOTE, NO_DAILY_TEXT } from "../copy.js";
 
 export { LOWER_BOUND_NOTE };
 
@@ -16,13 +16,12 @@ export { LOWER_BOUND_NOTE };
 // word), or { pending: true } for "…" (read as "Loading"), plus optional
 // `sub` (a second line) and `tip` (an InfoTip). Never a dash, never a false 0.
 
-const NO_DAILY = { iot: "No daily HNT for IoT", cbrs: "No daily HNT for CBRS", none: "No daily HNT" };
 const PENDING = Object.freeze({ pending: true });
 const num = (text, extra) => ({ text, num: true, ...extra });
 const word = (text, extra) => ({ text, num: false, ...extra });
 
-/** Why this row has no daily HNT ("No daily HNT for IoT"), or null for a Mobile row. */
-export const noDailyText = (row) => (row.noDaily ? NO_DAILY[row.noDaily] : null);
+/** Why this row has no daily HNT ("Daily earnings not tracked for IoT"), or null for a Mobile row. */
+export const noDailyText = (row) => (row.noDaily ? NO_DAILY_TEXT[row.noDaily] : null);
 
 /** Unclaimed HNT: "14.61", "0", "<0.01"; "Couldn't confirm" (no oracle answer),
  * "Couldn't load" (its batch failed), "Unavailable" (no asset ID). */
@@ -57,7 +56,7 @@ export function dayModel(row) {
   if (d.state === "ok") return num(fmtHnt(d.hnt, "list"));
   if (d.state === "missing") return word("No data");
   if (d.state === "failed") return word("Couldn't load");
-  if (d.state === "na") return word(noDailyText(row) ?? "No daily HNT");
+  if (d.state === "na") return word(noDailyText(row) ?? NO_DAILY_TEXT.none);
   return PENDING;
 }
 
@@ -68,7 +67,7 @@ export function weekModel(row) {
   if (w.state === "ok") return num(fmtHnt(w.hnt, "list"), { spark: true });
   if (w.state === "partial") return num(fmtHnt(w.hnt, "list"), { spark: true, sub: `${w.daysLoaded} of 7 days` });
   if (w.state === "failed") return word("Couldn't load");
-  if (w.state === "na") return word(noDailyText(row) ?? "No daily HNT");
+  if (w.state === "na") return word(noDailyText(row) ?? NO_DAILY_TEXT.none);
   return PENDING;
 }
 

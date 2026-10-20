@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { NOT_TRACKED } from "../copy.js";
 import { TIERS } from "../statusRegistry.js";
 import { Card, Empty } from "../ui/Card.jsx";
 import { Btn2 } from "../ui/Controls.jsx";
@@ -20,7 +21,7 @@ import {
   weekModel,
 } from "./HotspotRow.jsx";
 
-const NO_DAILY = { text: "No daily HNT", num: false };
+const NO_DAILY = { text: NOT_TRACKED, num: false };
 
 // The figure strip's third cell follows the sort: Lifetime, or the sorted
 // figure (Oct 14, Onboarded, Messages) with its label.

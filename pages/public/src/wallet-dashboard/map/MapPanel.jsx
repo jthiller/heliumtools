@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { XMarkIcon } from "@heroicons/react/20/solid";
+import { NO_DAILY_TEXT } from "../copy.js";
 import { fmtElevationM, fmtGainDbi, fmtHnt } from "../format.js";
 import { COVERAGE_GATE_NOTE, CoverageNotes, CoverageToggle, IconBtn, NetDot, Pending, StatusMark, TimeAgo } from "../ui/index.js";
 import {
@@ -114,7 +115,7 @@ export const MapPanel = memo(function MapPanel({
   const l = row.lifetime;
   const lifetimeValue =
     l.state === "ok" ? (l.never ? "Never rewarded" : `${l.lowerBound ? "≥ " : ""}${fmtHnt(l.hnt, "list")} HNT`) : value(l.state, null);
-  const noDaily = row.noDaily === "cbrs" ? "No daily HNT for CBRS" : row.noDaily === "iot" ? "No daily HNT for IoT" : "No daily HNT";
+  const noDaily = NO_DAILY_TEXT[row.noDaily] ?? NO_DAILY_TEXT.none;
   const extra = alsoLine(row) ?? messagesLine(row);
   const isIot = Boolean(row.nets.iot);
   const elevation = Number.isFinite(row.hotspot.elevation) ? row.hotspot.elevation : null;
