@@ -22,7 +22,6 @@ export const updateLocationTools = [
     },
     annotations: { readOnlyHint: true },
     execute({ gateway }, { signal } = {}) {
-      signal?.throwIfAborted();
       return fetchHotspotStatus(gateway, { signal });
     },
   },

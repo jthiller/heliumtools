@@ -68,22 +68,6 @@ const timeoutError = (message) => new DOMException(message, "TimeoutError");
 /** The abort reason for a check that was cancelled (wallet switch, stop). */
 export const cancelledError = () => new DOMException("The check was cancelled.", "AbortError");
 
-/** A signal that aborts with the first of `signals` to abort (absent ones skipped). */
-export function anySignal(...signals) {
-  const list = signals.filter(Boolean);
-  if (list.length <= 1) return list[0];
-  if (typeof AbortSignal.any === "function") return AbortSignal.any(list);
-  const ctl = new AbortController();
-  for (const s of list) {
-    if (s.aborted) {
-      ctl.abort(s.reason);
-      break;
-    }
-    s.addEventListener("abort", () => ctl.abort(s.reason), { once: true });
-  }
-  return ctl.signal;
-}
-
 // Download slots: at most MAX_DOWNLOADS at once, at most one of them large.
 // Waiters are served in arrival order; a small one passes a large one that
 // is waiting only for the large slot.

@@ -21,7 +21,6 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute(_input, { signal } = {}) {
-        signal?.throwIfAborted();
         const loaded = getOuis();
         return loaded?.length ? loaded : fetchOuiIndex({ signal });
       },
@@ -39,7 +38,6 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
       },
       annotations: { readOnlyHint: true },
       execute({ oui }, { signal } = {}) {
-        signal?.throwIfAborted();
         showOui(oui);
         return fetchBalanceForOui(oui, { signal });
       },
@@ -70,8 +68,7 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
         required: ["oui", "email"],
         additionalProperties: false,
       },
-      execute({ oui, email, label, webhook_url }, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute({ oui, email, label, webhook_url }) {
         prefillSubscription({ oui, email, label, webhook_url });
         return "Form filled in. Ask the user to review it and click Subscribe — a verification email will follow.";
       },

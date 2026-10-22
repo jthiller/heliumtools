@@ -35,8 +35,7 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
       },
       annotations: { readOnlyHint: true },
       validate: validateAddress,
-      execute({ address }, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute({ address }) {
         const solana = resolveSolanaWallet(address);
         return { solana: solana.toBase58(), helium: toHeliumB58(solana) };
       },
@@ -55,7 +54,6 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
       annotations: { readOnlyHint: false, consequentialHint: true },
       validate: validateAddress,
       async execute({ address }, { signal } = {}) {
-        signal?.throwIfAborted();
         showWallet(address);
         const result = await migrateWallet(resolveSolanaWallet(address).toBase58(), { signal });
         signal?.throwIfAborted();

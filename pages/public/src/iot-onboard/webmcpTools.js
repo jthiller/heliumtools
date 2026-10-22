@@ -14,7 +14,6 @@ export const iotOnboardTools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
     async execute(_input, { signal } = {}) {
-      signal?.throwIfAborted();
       // fetchOnboardFees returns null on upstream failure rather than throwing.
       const fees = await fetchOnboardFees({ signal });
       if (!fees) throw new Error("fee lookup failed upstream — try again shortly");

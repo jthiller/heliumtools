@@ -19,8 +19,7 @@ export function makeSiteTools(navigateSpa) {
         "List every tool page on heliumtools.org: path, what it does, and the WebMCP tools it registers once open. Use open-helium-tool to navigate to one; its tools become available after navigation (a toolchange event fires).",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute(_input, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute() {
         return {
           site: "heliumtools.org — free, open-source Helium network operator tools; no login",
           currentPath: window.location.pathname,
@@ -45,8 +44,7 @@ export function makeSiteTools(navigateSpa) {
         required: ["path"],
         additionalProperties: false,
       },
-      execute({ path }, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute({ path }) {
         const target = catalogEntry(path);
         if (navigateSpa && target.entry === "spa") {
           navigateSpa(path);
@@ -64,7 +62,6 @@ export function makeSiteTools(navigateSpa) {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute(_input, { signal } = {}) {
-        signal?.throwIfAborted();
         return fetchCurrentPrice({ signal });
       },
     },

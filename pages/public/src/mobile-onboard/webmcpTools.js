@@ -16,7 +16,6 @@ export function makeMobileOnboardTools(setTab) {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute(_input, { signal } = {}) {
-        signal?.throwIfAborted();
         return fetchMobileFees({ signal });
       },
     },
@@ -33,8 +32,7 @@ export function makeMobileOnboardTools(setTab) {
         required: ["tab"],
         additionalProperties: false,
       },
-      execute({ tab }, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute({ tab }) {
         setTab(tab);
         return `Showing the ${tab} tab.`;
       },

@@ -23,7 +23,6 @@ export function makeVoteTools(navigate) {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute(_input, { signal } = {}) {
-        signal?.throwIfAborted();
         return fetchProposals({ signal });
       },
     },
@@ -39,7 +38,6 @@ export function makeVoteTools(navigate) {
       },
       annotations: { readOnlyHint: true },
       execute({ proposal }, { signal } = {}) {
-        signal?.throwIfAborted();
         return fetchProposal(proposal, { signal });
       },
     },
@@ -59,7 +57,6 @@ export function makeVoteTools(navigate) {
       },
       annotations: { readOnlyHint: true },
       execute({ voter, proposal }, { signal } = {}) {
-        signal?.throwIfAborted();
         return fetchVoterHistory(proposal, voter, { signal });
       },
     },
@@ -74,8 +71,7 @@ export function makeVoteTools(navigate) {
         required: ["proposal"],
         additionalProperties: false,
       },
-      execute({ proposal }, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute({ proposal }) {
         navigate(`/vote/${proposal}`);
         return `Now showing proposal ${proposal} in the vote viewer.`;
       },

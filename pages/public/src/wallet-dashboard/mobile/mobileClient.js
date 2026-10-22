@@ -149,8 +149,10 @@ export function createMobileClient() {
  * @returns {Promise<{ state, timedOut: boolean }>} the finished state, or
  *   after `timeoutMs` the latest partial one (tables still "loading"; the
  *   check is then cancelled, keeping the files it finished).
- *   Rejects if the worker fails or the caller aborts; caller cancellation
- *   terminates the worker immediately, including outstanding downloads.
+ *   Rejects if the worker fails or the caller aborts. A caller's cancellation
+ *   rejects at once and stops the check (its downloads too), then, as after a
+ *   timeout, gives the worker up to SETTLE_MAX_MS to write the files it
+ *   already has, so a retry doesn't fetch them again.
  */
 export function checkMobileOnce({ wallet, keys, wifi }, { timeoutMs = 60_000, signal } = {}) {
   return new Promise((resolve, reject) => {
@@ -166,11 +168,12 @@ export function checkMobileOnce({ wallet, keys, wifi }, { timeoutMs = 60_000, si
       worker.terminate();
     };
     const onAbort = () => {
-      end();
-      if (!answered) {
-        answered = true;
-        reject(signal.reason);
-      }
+      if (answered) return;
+      answered = true;
+      clearTimeout(timer);
+      reject(signal.reason);
+      worker.postMessage({ type: "stop", session: 1 });
+      settleTimer = setTimeout(end, SETTLE_MAX_MS);
     };
     const answer = (result) => {
       signal?.removeEventListener("abort", onAbort);
@@ -198,7 +201,6 @@ export function checkMobileOnce({ wallet, keys, wifi }, { timeoutMs = 60_000, si
       }
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) { onAbort(); return; }
     worker.postMessage({ type: "start", session: 1, wallet, keys, wifi, once: true });
   });
 }

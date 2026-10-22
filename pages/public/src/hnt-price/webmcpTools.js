@@ -18,7 +18,6 @@ export const hntPriceTools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
     execute(_input, { signal } = {}) {
-      signal?.throwIfAborted();
       return fetchInstantPrice({ signal });
     },
   },
@@ -29,8 +28,7 @@ export const hntPriceTools = [
       "Get the public, keyless HNT price API endpoints, recommended use cases, rate limits, streaming behavior, and payload semantics. Use this when choosing or integrating /current, /instant, /sse, or /ws; use get-hnt-price or get-hnt-price-instant when you only need one snapshot.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
-    execute(_input, { signal } = {}) {
-      signal?.throwIfAborted();
+    execute() {
       return {
         authentication: "None",
         cors: "Open",

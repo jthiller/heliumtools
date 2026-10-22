@@ -923,10 +923,18 @@ export default function HotspotMap() {
     signal?.throwIfAborted();
     if (!result.hotspots?.length) throw new Error("No Helium Hotspots found for this wallet.");
     const merged = mergeByEntityKey(result.hotspots);
-    walletCountRef.current += 1;
     const entityKeys = merged.map((h) => h.entityKey);
     const nameMap = new Map(merged.map((h) => [h.entityKey, h.name]));
-    const resolved = await resolveKeys(entityKeys, nameMap, `Wallet ${walletCountRef.current}`, { signal });
+    // Claim the label number now (a concurrent lookup takes the next one) and
+    // give it back if nothing is plotted under it, so a cancelled or failed
+    // call doesn't skip a number.
+    const number = ++walletCountRef.current;
+    let resolved = null;
+    try {
+      resolved = await resolveKeys(entityKeys, nameMap, `Wallet ${number}`, { signal });
+    } finally {
+      if (!resolved && walletCountRef.current === number) walletCountRef.current = number - 1;
+    }
     if (!resolved) throw new Error("failed to resolve Hotspot locations — the page shows the error");
     return {
       added: entityKeys.length,

@@ -86,13 +86,21 @@ mutations or reads that must reflect a mutation immediately (the
 claimer's rewards reads and ve-hnt's post-claim positions refresh stay
 live).
 
-Cancellation is per execution: tools accept `(input, { signal } = {})` and
-pass the signal through to API clients, scans and polling waits. Clients
-compose their own deadline with `lib/abort.js`'s `withTimeout(signal, ms)`;
-waits use `abortableDelay(ms, signal)`. Do not turn an abort into partial
-data or a normal error result. The Mobile tool terminates its one-shot
-worker on cancellation; cancelling a tool waiting for the dashboard does
-not stop the dashboard's own refresh.
+Cancellation is per execution. The wrapper rejects a call whose signal has
+already aborted before `validate` or `execute` runs, and discards a result
+that lands after an abort, so a tool needs no abort check on entry; check
+again only after an await that comes before a side effect. Tools that do
+I/O accept `(input, { signal } = {})` and pass the signal through to API
+clients, scans and polling waits. Clients compose their own deadline with
+`lib/abort.js`'s `withTimeout(signal, ms)`; every shared page read passes
+through it, so it falls back where `AbortSignal.any` or
+`AbortSignal.timeout` is missing. Waits use `abortableDelay(ms, signal)`. A
+tool that shares the page's own load ends only its wait with
+`raceAbort(promise, signal)` (ve-hnt), so the page still renders. Do not
+turn an abort into partial data or a normal error result. The Mobile tool
+stops its one-shot worker on cancellation and lets it write what it already
+downloaded; cancelling a tool waiting for the dashboard does not stop the
+dashboard's own refresh.
 
 For shared reads, `dedupeAsync(fn, ttlMs, { signalIndex })` identifies the
 optional `{ signal }` argument of `fn`. Signals are excluded from the cache
@@ -101,7 +109,9 @@ The underlying request aborts only after its last consumer cancels. Other
 request options remain part of the key. Never dedupe mutations.
 Shared fetches must have their own deadline, because an uncancelled page
 consumer keeps an in-flight request alive; a stalled request must fail and
-leave the cache so a later call can retry.
+leave the cache so a later call can retry. Expired results are swept (at
+most once per TTL), so a long-lived page keeps only what it could still
+serve.
 
 ## Coverage
 
@@ -180,8 +190,10 @@ literals — `toolError` in webmcp.js exists only for custom shaping.
   packets 25 by default). Wallet fleet, rewards, onboarding, IoT and Mobile
   tools expose `offset`/`limit` and `pagination.nextOffset` so agents can
   retrieve the remainder. `aggregateScope` states whether summary counts
-  cover the current page or the whole fleet. Page ordering is documented
-  per tool; offsets apply to the current live dataset, not a frozen snapshot.
+  cover the current page or the whole fleet. Page membership follows
+  entityKey; triage goes through filters applied before paging (IoT
+  `health`, Mobile `issue`). Offsets apply to the current live dataset,
+  not a frozen snapshot.
 
 ## Testing
 
@@ -189,8 +201,10 @@ Run `cd pages/public && npm test` with Node.js 24+. The dependency-free
 Node test runner uses experimental module mocks to isolate API and worker
 boundaries. Tests cover schema validation, useful errors, registration and
 hook cleanup (including late asynchronous factories), shared cancellation,
-transaction metadata/failures, complete fleet pagination and Mobile worker
-termination. No test sends on-chain transactions. Frontend checks run
+transaction metadata/failures, complete and stable fleet pagination, Mobile
+worker stop and settle, and the abort helpers' fallbacks for browsers
+without `AbortSignal.any`/`AbortSignal.timeout`. No test sends on-chain
+transactions. Frontend checks run
 `npm ci`, `npm test`, and `npm run build` on pull requests and main pushes.
 
 No WebMCP browser at hand: `document.modelContext` is undefined and

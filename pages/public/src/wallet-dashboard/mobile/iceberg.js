@@ -6,7 +6,8 @@ import { parseIcebergJson } from "icebird/src/json.js";
 import { fetchManifestEntries, icebergManifestList } from "icebird/src/manifest.js";
 import { fileMightMatch, manifestMightMatch, partitionMightMatch } from "icebird/src/prune.js";
 import { readDataFile } from "icebird/src/read.js";
-import { HttpError, anySignal } from "./storage.js";
+import { withTimeout } from "../../lib/abort.js";
+import { HttpError } from "./storage.js";
 import { dayOf } from "./tables.js";
 import { DAY_MS } from "./tableMeta.js";
 
@@ -55,7 +56,7 @@ const refsUnsupported = new Set();
 function catalogFetch(url, signal) {
   // `no-cache` revalidates with the catalog's ETag: an unchanged table is a
   // 304 the browser answers from its HTTP cache.
-  return fetch(url, { cache: "no-cache", signal: anySignal(signal, AbortSignal.timeout(CATALOG_TIMEOUT_MS)) });
+  return fetch(url, { cache: "no-cache", signal: withTimeout(signal, CATALOG_TIMEOUT_MS) });
 }
 
 /**

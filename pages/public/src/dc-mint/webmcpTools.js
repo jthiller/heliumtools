@@ -33,7 +33,6 @@ export const dcMintTools = [
       return null;
     },
     async execute({ hnt_amount, dc_amount, usd_amount }, { signal } = {}) {
-      signal?.throwIfAborted();
       const price = await fetchHntPrice({ signal });
       const { dc_per_hnt, dc_per_usd } = price;
       if (!(dc_per_hnt > 0) || !(dc_per_usd > 0)) {
@@ -72,7 +71,6 @@ export const dcMintTools = [
     },
     annotations: { readOnlyHint: true },
     async execute({ target }, { signal } = {}) {
-      signal?.throwIfAborted();
       const trimmed = target.trim();
       const result = /^\d+$/.test(trimmed)
         ? await resolveOui(Number(trimmed), { signal })

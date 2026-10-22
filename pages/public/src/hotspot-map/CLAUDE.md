@@ -52,7 +52,7 @@ Merged shape:   { entityKey, networks: ["iot", "mobile"], networkDetails: { iot:
 
 The page registers agent tools `map-wallet-hotspots` (plots everything a wallet owns — skips the manual preview step) and `map-hotspots` (plot explicit entity keys) from `webmcpTools.js`, both reusing `resolveKeys`, plus `get-hotspot-onboard-dates` (one Hotspot's per-network onboard dates through `fetchOnboardDates`, the detail card's client and session cache; for a whole wallet, `/wallet-dashboard`'s `get-wallet-onboarding`). Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
-Agent map callbacks forward the execution signal through wallet lookup and every location-resolution batch. Cancellation stops later batches and prevents cancelled results from being plotted. Onboard-date lookups keep their session cache and share in-flight reads with detail cards while each consumer cancels independently. Abort errors remain aborts rather than becoming map lookup failures.
+Agent map callbacks forward the execution signal through wallet lookup and every location-resolution batch. Cancellation stops later batches and prevents cancelled results from being plotted, and `map-wallet-hotspots` gives back the "Wallet N" label number it claimed, so a cancelled or failed call never skips one. Onboard-date lookups keep their session cache and share in-flight reads with detail cards while each consumer cancels independently. Abort errors remain aborts rather than becoming map lookup failures.
 
 ## Landing preview
 

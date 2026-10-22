@@ -43,6 +43,7 @@ export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep, signalIndex } 
  */
 function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
   const entries = new Map();
+  let sweptAt = Date.now();
   return (...args) => {
     const options = args[signalIndex] || {};
     const signal = options.signal;
@@ -51,7 +52,9 @@ function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
     const keyArgs = [...args];
     const { signal: ignoredSignal, ...keyOptions } = options;
     keyArgs[signalIndex] = Object.keys(keyOptions).length ? keyOptions : undefined;
-    while (keyArgs.length && keyArgs.at(-1) === undefined) keyArgs.pop();
+    // Not .at(-1): this runs synchronously in every page read, and a throw
+    // here (no Array.prototype.at before Safari 15.4) escapes callers' .catch.
+    while (keyArgs.length && keyArgs[keyArgs.length - 1] === undefined) keyArgs.pop();
     const key = JSON.stringify(keyArgs);
     let entry = entries.get(key);
     if (entry && entry.settled && Date.now() - entry.at >= ttlMs) {
@@ -59,6 +62,14 @@ function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
       entry = null;
     }
     if (!entry) {
+      // Drop expired results (at most once per TTL), so a long-lived page
+      // keeps only what it could still serve, not every key it ever read,
+      // and a live entry isn't evicted for room an expired one is holding.
+      const now = Date.now();
+      if (now - sweptAt >= ttlMs) {
+        sweptAt = now;
+        for (const [k, e] of entries) if (e.settled && now - e.at >= ttlMs) entries.delete(k);
+      }
       if (entries.size >= max) entries.delete(entries.keys().next().value);
       entry = { controller: new AbortController(), consumers: new Set(), settled: false, at: 0 };
       const ownedEntry = entry;

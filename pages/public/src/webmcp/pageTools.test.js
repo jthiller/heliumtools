@@ -30,6 +30,7 @@ const { parseJson } = await import("../lib/api.js");
 
 const ADDRESS = "11111111111111111111111111111111";
 const ENTITY_KEY = "11111111111111111111111111111111111111111111";
+const PAYER_KEY = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
 const originalFetch = globalThis.fetch;
 let cleanups;
 let registered;
@@ -199,8 +200,9 @@ test("response-body cancellation stays an AbortError", async () => {
 test("all fetch-backed read tools forward cancellation to their actual HTTP client", async () => {
   const reads = [
     [dcMintTools, "get-dc-mint-quote", { dc_amount: 1000 }, { dc_per_hnt: 200_000, dc_per_usd: 100_000 }],
-    [dcMintTools, "resolve-oui", { target: "12" }, { oui: 12 }],
-    [dcMintTools, "resolve-oui", { target: ADDRESS }, { payer: ADDRESS }],
+    [dcMintTools, "resolve-oui", { target: "12" }, { oui: 12 }, "/dc-purchase/oui/12"],
+    // A payer key with letters: an all-digit one would take the OUI-number path.
+    [dcMintTools, "resolve-oui", { target: PAYER_KEY }, { payer: PAYER_KEY }, `/resolve-payer/${PAYER_KEY}`],
     [claimer(), "get-hotspot-rewards", { entity_key: ENTITY_KEY }, { rewards: [] }],
     [hntPriceTools, "get-hnt-price-instant", {}, { symbol: "HNT" }],
     [iotOnboardTools, "get-iot-onboard-fees", {}, { fee: 123 }],
@@ -213,12 +215,14 @@ test("all fetch-backed read tools forward cancellation to their actual HTTP clie
     [makeOuiNotifierTools({ getOuis: () => [], showOui() {}, prefillSubscription() {} }), "list-ouis", {}, { orgs: [] }],
     [makeSiteTools(() => {}), "get-hnt-price", {}, { symbol: "HNT" }],
   ];
-  for (const [tools, name, input, payload] of reads) {
+  for (const [tools, name, input, payload, path] of reads) {
     const controller = new AbortController();
     let received;
-    globalThis.fetch = async (_url, { signal }) => { received = signal; return json(payload); };
+    let requested;
+    globalThis.fetch = async (url, { signal }) => { requested = String(url); received = signal; return json(payload); };
     await tool(tools, name).execute(input, { signal: controller.signal });
     assert.equal(received, controller.signal, `${name} did not forward its execution signal`);
+    if (path) assert.ok(requested.endsWith(path), `${name} requested ${requested}, not …${path}`);
   }
 });
 
@@ -235,7 +239,7 @@ test("map and veHNT callback tools pass the execution signal through to page loa
   const veTools = makeVeHntTools(async (wallet, options) => received.push([wallet, options.signal]));
   await veTools[0].execute({ wallet: ADDRESS }, { signal: controller.signal });
   assert.deepEqual(received, [[ADDRESS, controller.signal], [[ENTITY_KEY], controller.signal], [ADDRESS, controller.signal]]);
-  await assert.rejects(tool(mapTools, "map-wallet-hotspots").execute({ address: ADDRESS }, { signal: AbortSignal.abort() }), { name: "AbortError" });
+  await assert.rejects(expose(mapTools, "map-wallet-hotspots").execute({ address: ADDRESS }, { signal: AbortSignal.abort() }), { name: "AbortError" });
   assert.equal(received.length, 3);
 });
 
@@ -251,8 +255,10 @@ test("already-cancelled invocations do not drive navigation, tabs, lookup, or fo
     [makeOuiNotifierTools({ getOuis: () => [], showOui: change, prefillSubscription: change }), "prefill-alert-subscription", { oui: 12, email: "operator@example.com" }],
     [makeMultiGatewayTools(change, () => [{ mac: "123456" }]), "select-gateway", { mac: "123456" }],
   ];
+  // Through the wrapper, as agents call them: it rejects a cancelled call
+  // before execute runs, so the tools need no check of their own.
   for (const [tools, name, input] of factories) {
-    await assert.rejects(Promise.resolve().then(() => tool(tools, name).execute(input, { signal: AbortSignal.abort() })), { name: "AbortError" });
+    await assert.rejects(expose(tools, name).execute(input, { signal: AbortSignal.abort() }), { name: "AbortError" });
   }
   assert.equal(callbacks, 0);
 });

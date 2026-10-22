@@ -20,7 +20,7 @@ test("pre-cancelled checks never create or start a worker", async () => {
   assert.equal(workers.length, 0);
 });
 
-test("cancelling a running check terminates its worker and preserves abort reason", async () => {
+test("cancelling a running check rejects at once, stops it, and lets its cache writes land", async () => {
   const controller = new AbortController();
   const pending = checkMobileOnce(request, { signal: controller.signal });
   const worker = workers[0];
@@ -28,6 +28,10 @@ test("cancelling a running check terminates its worker and preserves abort reaso
   const reason = new DOMException("Caller left", "AbortError");
   controller.abort(reason);
   await assert.rejects(pending, (error) => error === reason);
+  assert.equal(worker.messages.at(-1).type, "stop");
+  assert.equal(worker.terminated, false);
+  worker.emit({ type: "state", state: { tables: {} }, final: true });
+  worker.emit({ type: "settled" });
   assert.equal(worker.terminated, true);
 });
 

@@ -29,7 +29,6 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
         additionalProperties: false,
       },
       async execute({ address }, { signal } = {}) {
-        signal?.throwIfAborted();
         return capListField(await addWalletToMap(address, { signal }), "hotspots", MAP_RESULT_CAP);
       },
     },
@@ -53,7 +52,6 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
         additionalProperties: false,
       },
       execute({ entity_keys }, { signal } = {}) {
-        signal?.throwIfAborted();
         return addKeysToMap(entity_keys, { signal });
       },
     },
@@ -79,7 +77,6 @@ export function makeHotspotMapTools({ addWalletToMap, addKeysToMap }) {
       },
       annotations: { readOnlyHint: true },
       async execute({ entity_key, networks = ["iot", "mobile"] }, { signal } = {}) {
-        signal?.throwIfAborted();
         const onboarded = await fetchOnboardDates(entity_key, [...new Set(networks)].join(","), { signal });
         if (!onboarded) throw new Error("onboard-date lookup failed or was rate-limited — try again shortly");
         return { entityKey: entity_key, onboarded };

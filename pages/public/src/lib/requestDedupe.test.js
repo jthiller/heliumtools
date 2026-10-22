@@ -111,3 +111,35 @@ test("cancellation before the request microtask prevents network work", async ()
   assert.equal(calls, 0);
   assert.equal(await read(), 1);
 });
+
+test("a shared read still returns a promise where Array.prototype.at is missing", async () => {
+  const read = dedupeAsync(async (key) => `value for ${key}`, 3_000, { signalIndex: 1 });
+  const at = Object.getOwnPropertyDescriptor(Array.prototype, "at");
+  let pending;
+  delete Array.prototype.at;
+  try {
+    pending = read("key");
+  } finally {
+    Object.defineProperty(Array.prototype, "at", at);
+  }
+  assert.equal(await pending, "value for key");
+});
+
+test("expired results are dropped before a live one is evicted for room", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 0 });
+  let finishSlow;
+  let calls = 0;
+  const read = dedupeAsync((key) => {
+    calls++;
+    return key === "slow" ? new Promise((resolve) => { finishSlow = resolve; }) : Promise.resolve(key);
+  }, 1_000, { signalIndex: 1, max: 2 });
+  const slow = read("slow");
+  assert.equal(await read("fast"), "fast"); // cached from t=0
+  t.mock.timers.tick(900);
+  finishSlow("slow");
+  assert.equal(await slow, "slow"); // cached from t=900
+  t.mock.timers.tick(200); // t=1100: "fast" has expired, "slow" hasn't
+  assert.equal(await read("third"), "third");
+  assert.equal(await read("slow"), "slow");
+  assert.equal(calls, 3);
+});

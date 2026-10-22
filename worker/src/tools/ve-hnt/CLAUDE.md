@@ -149,7 +149,7 @@ is not open to us. Therefore:
 
 The /ve-hnt page registers the agent tool `get-vehnt-positions` (fetches positions and drives the page input so the UI shows the same analysis) from `pages/public/src/ve-hnt/webmcpTools.js`; claiming stays wallet-signed. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
-The agent analysis callback forwards its execution signal through the page loader to the positions fetch, preserving the single-fetch UI/result path. An already-cancelled invocation does not change the wallet input.
+The agent analysis callback shares the page's own load, so one positions fetch serves both the UI and the result. Its execution signal ends only the agent's wait (`raceAbort` in `lib/abort.js`): a cancelled call rejects at once while the page's load finishes and renders, so an agent cancel never leaves the page on an abort error. An already-cancelled invocation does not change the wallet input.
 
 ## Landing preview
 

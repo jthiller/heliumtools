@@ -32,8 +32,7 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
         "List the LoRaWAN gateways on this dashboard with their live status (from the page's stream): MAC, name, connection state, and packet counts. Use a MAC with select-gateway or get-gateway-packets.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute(_input, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute() {
         // Gateway rows carry no name in state — the UI derives display
         // names from the public key at render time; do the same here.
         return (getGateways() || []).map((g) => ({
@@ -58,8 +57,7 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       validate({ mac }) {
         return findGateway(mac) ? null : `no gateway with MAC "${mac}" — call list-gateways for valid MACs`;
       },
-      execute({ mac }, { signal } = {}) {
-        signal?.throwIfAborted();
+      execute({ mac }) {
         const gateway = findGateway(mac);
         selectMac(gateway.mac);
         const name = gateway.public_key ? animalHash(gateway.public_key) : gateway.mac;
@@ -82,7 +80,6 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       },
       annotations: { readOnlyHint: true },
       async execute({ mac, limit }, { signal } = {}) {
-        signal?.throwIfAborted();
         const data = await fetchGatewayPackets(mac, { signal });
         const packets = Array.isArray(data) ? data : data?.packets || [];
         // Upstream order isn't guaranteed (the chart pipeline sorts too),

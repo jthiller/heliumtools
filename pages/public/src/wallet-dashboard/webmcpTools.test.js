@@ -29,22 +29,11 @@ mock.module("../lib/iotStatusApi.js", {
     fetchGatewayUtilizationDetail: async () => ({ unpublished: true }),
   },
 });
-// Hooks import React and the browser Worker; these tests exercise tool logic
-// with the hook contracts supplied at their boundary.
-mock.module("./useFleetRewards.js", {
-  exports: {
-    REWARDS_BATCH_SIZE: 50,
-    eligibleRewardHotspots: (rows = []) => rows.filter((h) => h.entityKey && h.assetId)
-      .sort((a, b) => a.entityKey < b.entityKey ? -1 : a.entityKey > b.entityKey ? 1 : 0)
-      .map(({ entityKey, assetId }) => ({ entityKey, assetId })),
-  },
-});
-mock.module("./mobile/mobileClient.js", { exports: { checkMobileOnce: (...args) => mobileCheck(...args) } });
-mock.module("./mobile/useMobileActivity.js", {
-  exports: { mobileFleetOf: (rows) => {
-    const mobile = rows.filter((h) => h.networks.includes("mobile"));
-    return { keys: mobile.map((h) => h.entityKey), mobileTotal: mobile.length, wifiTotal: 0 };
-  } },
+// The Mobile client starts a Vite worker, so it's mocked at its boundary;
+// createMobileClient is stubbed only so useMobileActivity.js (the real
+// mobileFleetOf) loads. useFleetRewards.js is the real module too.
+mock.module("./mobile/mobileClient.js", {
+  exports: { checkMobileOnce: (...args) => mobileCheck(...args), createMobileClient: () => ({}) },
 });
 const { makeWalletDashboardTools } = await import("./webmcpTools.js");
 const { aggregateIotStatus } = await import("./format.js");
@@ -121,6 +110,17 @@ test("missing reward responses are partial, not known-zero rewards", async () =>
   assert.equal(result.lookupErrors, 2);
 });
 
+test("rewards pages request the dashboard's own 50-wide batches for any offset", async () => {
+  const result = await tools()["get-wallet-rewards"].execute({ address: "wallet", offset: 25, limit: 30 });
+  const keys = fleet.map((h) => h.entityKey).sort();
+  const requested = calls.filter(([type]) => type === "rewards").map(([, rows]) => rows.map((h) => h.entityKey));
+  assert.deepEqual(requested, [keys.slice(0, 50), keys.slice(50, 100)]);
+  assert.equal(result.hotspotsCounted, 30);
+  assert.deepEqual(result.totalPending, { IOT: "30" });
+  assert.deepEqual(result.hotspotsWithPending.map((h) => h.entityKey), keys.slice(25, 55));
+  assert.equal(result.pagination.nextOffset, 55);
+});
+
 test("onboard dates and monthly aggregates apply only to the selected page", async () => {
   const tool = tools()["get-wallet-onboarding"];
   const first = await tool.execute({ address: "wallet" });
@@ -146,6 +146,36 @@ test("IoT page membership stays the same when dashboard data replaces own scans"
   assert.equal(onscreen.pagination.nextOffset, null);
 });
 
+test("IoT health filter finds the fleet's Hotspots in that state in one dashboard call", async () => {
+  fleet = hotspots(250);
+  const status = entriesFor(fleet.map((h) => h.entityKey));
+  // Not connected on the latest day, but had messages: inactiveTraffic, at the last entityKey.
+  status.key0249 = { ...status.key0249, status: 1 };
+  const iot = {
+    wallet: "wallet",
+    done: true,
+    hotspots: fleet,
+    iotStatus: aggregateIotStatus(fleet, status, "2026-10-18T00:00:00.000Z", { key0249: { iot: null } }),
+  };
+  const tool = tools({ current: "wallet", iot })["get-wallet-iot-status"];
+  const unfiltered = await tool.execute({});
+  assert.equal(unfiltered.health.inactiveTraffic, 1);
+  assert(!unfiltered.hotspots.some((h) => h.entityKey === "key0249"));
+  const triage = await tool.execute({ health: "inactiveTraffic" });
+  assert.equal(triage.aggregateScope, "fleet");
+  assert.deepEqual(triage.hotspots.map((h) => h.entityKey), ["key0249"]);
+  assert.equal(triage.pagination.total, 1);
+  assert.equal(triage.pagination.nextOffset, null);
+
+  // An own scan can only filter the page it looked up.
+  const offscreen = await tools()["get-wallet-iot-status"].execute({ address: "wallet", health: "inactiveTraffic" });
+  assert.equal(offscreen.aggregateScope, "page");
+  assert.deepEqual(offscreen.hotspots, []);
+  assert.equal(offscreen.pagination.total, 250);
+  assert.equal(offscreen.pagination.nextOffset, 200);
+  assert(offscreen.notes.some((n) => n.includes("open-wallet-dashboard")));
+});
+
 test("Mobile rows beyond 200 remain reachable with deterministic ties and fleet counts", async () => {
   fleet = hotspots(205, ["mobile"]);
   const activity = { checked: true, stale: false, tables: {}, checkedAt: Date.now() };
@@ -157,6 +187,38 @@ test("Mobile rows beyond 200 remain reachable with deterministic ties and fleet 
   assert.equal(result.pagination.total, 205);
   assert.equal(result.pagination.nextOffset, null);
   assert.deepEqual(result.hotspots.map((h) => h.entityKey), ["key0200", "key0201", "key0202", "key0203", "key0204"]);
+});
+
+test("Mobile page membership holds still when an issue changes between calls", async () => {
+  fleet = hotspots(120, ["mobile"]);
+  const activity = { checked: true, stale: false, tables: {}, checkedAt: Date.now() };
+  const agg = aggregateMobile(fleet, activity, Date.now());
+  const setBanned = (key, banned) => Object.assign(agg.rows.get(key), banned ? { issue: "banned", issues: ["banned"] } : { issue: null, issues: [] });
+  for (let i = 100; i < 110; i++) setBanned(`key0${i}`, true);
+  const tool = tools({ current: "wallet", mobile: { wallet: "wallet", hotspots: fleet, activity, mobile: agg } })["get-wallet-mobile-activity"];
+  const first = await tool.execute({ offset: 0, limit: 50 });
+  setBanned("key0105", false); // a ban clears between page calls
+  const second = await tool.execute({ offset: 50, limit: 50 });
+  const third = await tool.execute({ offset: 100, limit: 50 });
+  const seen = [first, second, third].flatMap((p) => p.hotspots.map((h) => h.entityKey));
+  assert.equal(seen.length, 120);
+  assert.equal(new Set(seen).size, 120);
+  // Within a page, rows still run most actionable first.
+  assert.deepEqual(third.hotspots.slice(0, 10).map((h) => h.entityKey), [
+    "key0100", "key0101", "key0102", "key0103", "key0104", "key0106", "key0107", "key0108", "key0109", "key0105",
+  ]);
+  const banned = await tool.execute({ issue: "banned" });
+  assert.equal(banned.pagination.total, 9);
+});
+
+test("an off-screen wallet with only CBRS Mobile radios starts no Mobile check", async () => {
+  fleet = [{ entityKey: "11cbrsRadioKey", assetId: "asset-cbrs", name: "radio", networks: ["mobile"] }];
+  let checks = 0;
+  mobileCheck = async () => { checks++; return { state: null, timedOut: false }; };
+  const result = await tools()["get-wallet-mobile-activity"].execute({ address: "cbrs-only-wallet" });
+  assert.equal(checks, 0);
+  assert.equal(result.mobileHotspots, 0);
+  assert.match(result.notes[0], /ecc_compact/);
 });
 
 test("cancelling rewards rejects instead of returning a partial success from allSettled", async () => {

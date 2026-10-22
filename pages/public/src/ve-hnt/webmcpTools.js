@@ -26,7 +26,6 @@ export function makeVeHntTools(analyzeWallet) {
         return resolveSolanaWallet(wallet) ? null : `"${wallet}" is not a valid Solana or Helium wallet address`;
       },
       execute({ wallet }, { signal } = {}) {
-        signal?.throwIfAborted();
         return analyzeWallet(wallet, { signal });
       },
     },

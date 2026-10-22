@@ -26,7 +26,6 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       },
       annotations: { readOnlyHint: true },
       execute({ entity_key }, { signal } = {}) {
-        signal?.throwIfAborted();
         showHotspot(entity_key);
         return lookupHotspot(entity_key, { signal });
       },
@@ -44,7 +43,6 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       },
       annotations: { readOnlyHint: true },
       execute({ entity_key }, { signal } = {}) {
-        signal?.throwIfAborted();
         return fetchRewards(entity_key, { signal });
       },
     },
@@ -61,7 +59,6 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       },
       annotations: { readOnlyHint: false, consequentialHint: true },
       async execute({ entity_key }, { signal } = {}) {
-        signal?.throwIfAborted();
         const result = await claimRewards(entity_key, { signal });
         signal?.throwIfAborted();
         if (result?.success === false) {
@@ -88,7 +85,6 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
       },
       annotations: { readOnlyHint: true },
       async execute({ address }, { signal } = {}) {
-        signal?.throwIfAborted();
         showWallet(address);
         return capListField(await fetchWalletHotspots(address, { signal }), "hotspots", WALLET_RESULT_CAP);
       },
