@@ -1,5 +1,5 @@
 // Arrival motion for live Mobile data: what moved at the latest live arrival
-// (flash keys for ArrivalFlash in cards/primitives.jsx) and a count-up for
+// (flash keys for ui/ArrivalFlash.jsx) and a count-up for
 // numbers. Only live arrivals animate (`arrivals.seq` increments, see
 // mobile/engine.js): the first load, a cached paint, a remount and the sliding
 // windows' re-assembles never do. JS motion honors reduced motion via

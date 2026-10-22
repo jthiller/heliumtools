@@ -1,34 +1,36 @@
 import { memo, useMemo } from "react";
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import useDarkMode from "../lib/useDarkMode.js";
 import { labelOuis, WELL_KNOWN_REPO_URL } from "../lib/wellKnownOuis.js";
-import { ACTION_BTN, Badge, InfoTip, Skeleton } from "./cards/primitives.jsx";
 import { useHotspotTrafficDetail, useWellKnownOuiNames, useUtilizationIndex } from "./useIotLookups.js";
-import IotTrafficChart, { MissingDayKey, seriesColor, trafficChartHeight } from "./IotTrafficChart.jsx";
+import IotTrafficChart, { MissingDayKey, seriesColor } from "./IotTrafficChart.jsx";
+import { DSub, FailNote, Foot, Line, RetryBtn, TIP } from "./detail/parts.jsx";
+import { ExtLink } from "./ui/ExtLink.jsx";
+import { InfoTip } from "./ui/InfoTip.jsx";
+import { Pending } from "./ui/Pending.jsx";
+import { Skeleton } from "./ui/Skeleton.jsx";
+import { Tag } from "./ui/Chip.jsx";
 import {
   deriveTrafficDetail,
   isTrafficKnown,
   fmtCount,
-  fmtCompact,
   fmtDataDay,
   fmtLowerBound,
   plural,
   IOT_MESSAGES_NOTE,
   IOT_TRAFFIC_STATE_NOTE,
-  OUI_SERIES_MAX,
 } from "./format.js";
-
-const CHART_HEIGHT = { full: 160, compact: 72 };
 
 const OUI_HINT =
   "OUI: the routing ID of the LoRaWAN Network Server (LNS) operator your Hotspot delivered messages for.";
 const NOT_LISTED_HINT = "An operator whose OUI isn't listed there can add it.";
 const QUIET_NETWORK_HINT =
-  "No Hotspot on the network delivered messages for this OUI in the last 7 days — a drop here is the operator's, not your Hotspot's.";
+  "No Hotspot on the network delivered messages for this OUI in these 7 days. A drop here is the operator's, not your Hotspot's.";
+const UNKNOWN_DAYS = "Which days went unreported isn't known right now, so an empty day may be unreported.";
+// The chart's footprint while the daily detail loads: readout, plot, x labels.
+const CHART_SKELETON_H = 168;
 
-/** Share of the Hotspot's messages, World Explorer's rules: whole percent,
- * "<1%" for a non-zero share that rounds to 0, ">99%" when rounding would
- * claim 100% for one OUI among several. */
+/** Share of the Hotspot's messages: whole percent, "<1%" for a non-zero
+ * share that rounds to 0, ">99%" when rounding would claim 100% for one OUI
+ * among several. */
 function fmtShare(share, count) {
   const pct = Math.round(share * 100);
   if (share > 0 && pct < 1) return "<1%";
@@ -38,126 +40,105 @@ function fmtShare(share, count) {
 
 /** "22 of 30": days with messages out of the window's complete days. */
 function activeDays(o, view) {
-  return o.daysActive30d == null ? "—" : `${o.daysActive30d} of ${view.window.daysComplete}`;
+  return o.daysActive30d == null ? "Not reported" : `${o.daysActive30d} of ${view.window.daysComplete}`;
 }
 
-/** The window line under the heading, naming the single OUI when there's no legend. */
-function windowSubtitle(view) {
-  const single = view.series.length === 1 ? view.series[0] : null;
-  return `30 days through ${fmtDataDay(view.dataThrough)} (UTC)${single ? ` · delivered for ${single.name}` : ""}`;
-}
+// The window's last 7 data days, named by their end (a data-day window, never "last N").
+const sevenDays = (view) => (view?.dataThrough ? `7 days to ${fmtDataDay(view.dataThrough)} (UTC)` : "7 days");
 
-function recentShareText(share) {
+function recentShareText(share, view) {
   const pct = Math.round(share * 100);
-  if (pct >= 90 && pct <= 110) return "Last 7 days: about the same as its 30-day daily average.";
-  return `Last 7 days: ${pct}% of its 30-day daily average.`;
+  if (pct >= 90 && pct <= 110) return `${sevenDays(view)}: about the same as its 30-day daily average.`;
+  return `${sevenDays(view)}: ${pct}% of its 30-day daily average.`;
 }
 
-/** Section heading + window line; `compact` is the map panel's small caps. */
-function Frame({ compact, subtitle, children }) {
+/** The four figures ("Messages, 30 days" carries the messages InfoTip).
+ * `figs` items: { label, value, sub, pending }. */
+function Figures({ figs }) {
   return (
-    <section className={compact ? "space-y-2" : "space-y-3"}>
-      <div>
-        <h3
-          className={
-            compact
-              ? "text-[11px] font-medium uppercase tracking-wide text-content-tertiary"
-              : "font-display text-sm font-semibold tracking-[-0.01em] text-content"
-          }
-        >
-          Data transfer
-        </h3>
-        {subtitle && (
-          <div className={compact ? "text-[11px] text-content-tertiary" : "mt-0.5 text-xs text-content-tertiary"}>
-            {subtitle}
-          </div>
-        )}
-      </div>
-      {children}
-    </section>
+    <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3">
+      {figs.map((f, i) => (
+        <div key={f.label} className="flex min-w-0 flex-col gap-0.5">
+          <dt className="flex items-center gap-1.5 text-wd-cap text-wd-ink-2">
+            {f.label}
+            {i === 0 && (
+              <InfoTip label="Messages, 30 days" className={TIP}>
+                {IOT_MESSAGES_NOTE}
+              </InfoTip>
+            )}
+          </dt>
+          <dd className="m-0">
+            {f.pending ? (
+              <span className="font-display text-wd-s font-semibold text-wd-ink-3">
+                <Pending />
+              </span>
+            ) : f.word ? (
+              <span className="text-wd-sm text-wd-ink-2">{f.value}</span>
+            ) : (
+              <span className="font-display text-wd-s font-semibold text-wd-ink">{f.value}</span>
+            )}
+            {f.sub && <span className="text-wd-cap text-wd-ink-2"> {f.sub}</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
-function Note({ children }) {
-  return <p className="text-xs text-content-tertiary">{children}</p>;
-}
+const pendingFigs = (total) => [
+  total != null ? { label: "Messages, 30 days", value: fmtCount(total) } : { label: "Messages, 30 days", pending: true },
+  { label: "7 days", pending: true },
+  { label: "Latest day", pending: true },
+  { label: "Last message", pending: true },
+];
 
-/** Small stat: caption + value (proportional figures — a standalone number). */
-function Figure({ label, value, sub, hint }) {
+/** Placeholder in the final layout's footprint: chart and one row per OUI. */
+function DetailSkeleton({ total, ouiCount }) {
   return (
-    <div className="min-w-0">
-      <dt className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
-        {label}
-        {hint && <InfoTip text={hint} label={`About ${label}`} />}
-      </dt>
-      <dd className="mt-0.5 font-display text-lg font-semibold text-content">{value}</dd>
-      {sub && <dd className="text-[11px] text-content-tertiary">{sub}</dd>}
-    </div>
+    <>
+      <Figures figs={pendingFigs(total)} />
+      <Skeleton h={CHART_SKELETON_H} className="w-full rounded-lg" />
+      {Array.from({ length: Math.max(ouiCount, 1) }, (_, i) => (
+        <Skeleton key={i} h={30} className="w-full" />
+      ))}
+    </>
   );
 }
 
-function Swatch({ slot, dark, title }) {
+/** Caution well: nothing delivered in the last 7 days of the window. */
+function QuietCallout({ view }) {
   return (
-    <span
-      aria-hidden={title ? undefined : "true"}
-      title={title}
-      className="inline-block h-2.5 w-2.5 shrink-0 rounded-[2px]"
-      style={{ background: seriesColor(slot, dark) }}
-    />
-  );
-}
-
-function WellKnownLink() {
-  return (
-    <a
-      href={WELL_KNOWN_REPO_URL}
-      target="_blank"
-      rel="noreferrer"
-      className="underline underline-offset-2 hover:text-content-secondary"
-    >
-      well-known OUI list
-    </a>
-  );
-}
-
-/** Amber callout: nothing delivered in the last 7 days of the window. */
-function QuietCallout({ view, compact }) {
-  return (
-    <div
-      className={`flex items-start gap-2 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 ${
-        compact ? "p-2 text-[11px]" : "p-2.5 text-xs"
-      }`}
-    >
-      <ExclamationTriangleIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <p>
-        No messages in the last 7 days
+    <div className="grid grid-cols-[12px_minmax(0,1fr)] gap-x-2.5 rounded-lg bg-wd-caution-surface px-3 py-2.5 text-wd-sm text-wd-caution-text">
+      <span className="mt-[3px] flex">
+        <span aria-hidden="true" className="wd-st wd-st-caution" />
+      </span>
+      <p className="m-0">
+        <span className="sr-only">Check: </span>
+        No messages in the {sevenDays(view)}
         {view.missing7 > 0 && ` (${view.missing7} not reported)`}
         {!view.missingKnown && " (some days may be unreported)"}
-        {view.lastDay ? ` — last delivered ${fmtDataDay(view.lastDay)}.` : "."}
+        {view.lastDay ? `. Last delivered ${fmtDataDay(view.lastDay)}.` : "."}
       </p>
     </div>
   );
 }
 
-/**
- * The chart's legend: one row per series when there are ≥ 2 (a single series
- * is named in the subtitle), plus the key for unreported days. `withTotals`
- * adds each series' 30-day count — the compact panel's stand-in for the table.
- */
-function Legend({ view, dark, withTotals = false }) {
-  if (view.series.length < 2 && !view.hasMissing) return null;
+/** One swatch and name per series (the top five OUIs, then "Other"), plus
+ * the unreported-day key. A single series is named in the window line
+ * instead, so it gets no row here. */
+function Legend({ view }) {
+  const several = view.series.length >= 2;
+  if (!several && !view.hasMissing) return null;
   return (
-    <ul className={withTotals ? "space-y-1 text-xs" : "flex flex-wrap gap-x-4 gap-y-1 text-xs text-content-secondary"}>
-      {view.series.length >= 2 &&
-        view.series.map((s) => (
-          <li key={s.key} className={withTotals ? "flex items-center gap-2" : "flex min-w-0 items-center gap-1.5"}>
-            <Swatch slot={s.slot} dark={dark} />
-            <span className={withTotals ? "min-w-0 flex-1 truncate text-content-secondary" : "truncate"}>{s.name}</span>
-            {withTotals && <span className="shrink-0 tabular-nums text-content">{fmtCompact(s.packets30d)}</span>}
-          </li>
-        ))}
+    <ul aria-hidden="true" className="m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1 p-0 text-wd-cap text-wd-ink-2">
+      {several && view.series.map((s) => (
+        <li key={s.key} className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: seriesColor(s.slot) }} />
+          <span className="truncate">{s.name}</span>
+        </li>
+      ))}
       {view.hasMissing && (
-        <li className={withTotals ? "flex items-center gap-2 text-content-tertiary" : "flex items-center gap-1.5"}>
+        <li className="inline-flex items-center gap-1.5">
           <MissingDayKey />
           No data reported
         </li>
@@ -166,251 +147,184 @@ function Legend({ view, dark, withTotals = false }) {
   );
 }
 
-/** The chart's table view: every OUI, folded ones included. */
-function OuiTable({ view, dark, namesFailed }) {
+/** The chart's table view: every OUI, folded ones included. Its last three
+ * columns fold into a line under the name when the detail is 520 px or
+ * narrower (`.wd-fold-520` / `.wd-unfold-520`). */
+function OuiTable({ view, namesFailed, windowText }) {
   const count = view.ouis.length;
+  const num = "py-[9px] pl-3 text-right align-top tabular-nums whitespace-nowrap";
   return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <table className="w-full text-sm">
-        <caption className="sr-only">
-          Messages by OUI, 30 days through {fmtDataDay(view.dataThrough, { year: true })}
-        </caption>
-        <thead className="border-b border-border text-left text-xs text-content-tertiary">
-          <tr>
-            <th scope="col" className="py-1.5 pr-3 font-medium">
-              <span className="inline-flex items-center gap-1">
-                OUI
-                <InfoTip text={OUI_HINT} label="About OUIs" />
-              </span>
-            </th>
-            <th scope="col" className="px-3 py-1.5 text-right font-medium sm:whitespace-nowrap">
-              Messages (30d)
-            </th>
-            <th scope="col" className="py-1.5 pl-3 text-right font-medium sm:px-3">
-              Share
-            </th>
-            <th scope="col" className="hidden whitespace-nowrap px-3 py-1.5 text-right font-medium sm:table-cell">
-              Last 7 days
-            </th>
-            <th scope="col" className="hidden whitespace-nowrap px-3 py-1.5 text-right font-medium sm:table-cell">
-              Active days
-            </th>
-            <th scope="col" className="hidden whitespace-nowrap py-1.5 pl-3 text-right font-medium sm:table-cell">
-              Last message
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {view.ouis.map((o) => (
-            <tr key={o.oui}>
-              <td className="py-2 pr-3 align-top">
-                <div className="flex items-start gap-2">
-                  <span className="mt-[5px]">
-                    <Swatch slot={o.slot} dark={dark} title={o.slot == null ? "Shown as Other in the chart" : undefined} />
-                  </span>
+    <table className="w-full border-collapse text-wd-sm">
+      <caption className="sr-only">Messages by OUI, {windowText}</caption>
+      <thead>
+        <tr className="text-[11px] font-medium leading-4 text-wd-ink-2">
+          <th scope="col" className="whitespace-nowrap pb-1.5 text-left font-medium">
+            <span className="inline-flex items-center gap-1.5">
+              OUI
+              <InfoTip label="OUIs" className={TIP}>
+                {OUI_HINT}
+              </InfoTip>
+            </span>
+          </th>
+          <th scope="col" className="whitespace-nowrap pb-1.5 pl-3 text-right font-medium">
+            Messages, 30 days
+          </th>
+          <th scope="col" className="whitespace-nowrap pb-1.5 pl-3 text-right font-medium">
+            Share
+          </th>
+          <th scope="col" className="wd-fold-520 whitespace-nowrap pb-1.5 pl-3 text-right font-medium">
+            7 days
+          </th>
+          <th scope="col" className="wd-fold-520 whitespace-nowrap pb-1.5 pl-3 text-right font-medium">
+            Active days
+          </th>
+          <th scope="col" className="wd-fold-520 whitespace-nowrap pb-1.5 pl-3 text-right font-medium">
+            Last message
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {view.ouis.map((o) => {
+          const sub = o.fullName
+            ? o.fullName !== o.name
+              ? `${o.fullName}, OUI ${o.oui}`
+              : `OUI ${o.oui}`
+            : // Only when the list loaded: a failed load proves nothing.
+              namesFailed
+              ? null
+              : "Not in well-known list";
+          const fold = [
+            `7 days ${fmtCount(o.packets7d)}`,
+            o.daysActive30d != null ? `active ${activeDays(o, view)} days` : null,
+            o.lastDay ? `last message ${fmtDataDay(o.lastDay)}` : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          return (
+            <tr key={o.oui} className="border-t border-wd-line-2">
+              <th scope="row" className="py-[9px] text-left align-top font-normal">
+                <div className="grid grid-cols-[10px_minmax(0,1fr)] gap-x-2">
+                  <span
+                    aria-hidden="true"
+                    className="mt-1 inline-block h-2.5 w-2.5 rounded-[3px]"
+                    style={{ background: seriesColor(o.slot) }}
+                  />
                   <div className="min-w-0">
-                    <div
-                      className="break-words font-medium text-content sm:max-w-[200px] sm:truncate"
-                      title={o.fullName ?? undefined}
-                    >
-                      {o.name}
-                    </div>
-                    {o.fullName ? (
-                      <div className="text-[11px] text-content-tertiary">OUI {o.oui}</div>
-                    ) : (
-                      // Only when the list loaded — a failed load proves nothing.
-                      !namesFailed && (
-                        <div className="whitespace-nowrap text-[11px] text-content-tertiary">
-                          Not in well-known list
-                        </div>
-                      )
-                    )}
-                    {/* Phones: the last three columns fold into this line. */}
-                    <div className="text-[11px] text-content-tertiary sm:hidden">
-                      {[
-                        `7d ${fmtCount(o.packets7d)}`,
-                        o.daysActive30d != null && `active ${activeDays(o, view)} days`,
-                        o.lastDay && `last ${fmtDataDay(o.lastDay)}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
+                    <b className="break-words font-semibold text-wd-ink">{o.name}</b>
+                    {o.slot == null && <span className="sr-only"> (shown as Other in the chart)</span>}
+                    {sub && <span className="block text-wd-cap text-wd-ink-2">{sub}</span>}
+                    <div className="wd-unfold-520 mt-0.5 text-wd-cap text-wd-ink-2">{fold}</div>
                     {o.quietNetworkWide === true && (
-                      <span className="mt-1 inline-flex whitespace-nowrap">
-                        <Badge>Quiet network-wide</Badge>
+                      <span className="mt-1 inline-flex">
+                        <Tag>Quiet network-wide</Tag>
                       </span>
                     )}
                   </div>
                 </div>
-              </td>
-              <td className="px-3 py-2 text-right align-top tabular-nums text-content">{fmtCount(o.packets30d)}</td>
-              <td className="py-2 pl-3 text-right align-top tabular-nums text-content-secondary sm:px-3">
-                {fmtShare(o.share, count)}
-              </td>
-              <td className="hidden px-3 py-2 text-right align-top tabular-nums text-content-secondary sm:table-cell">
-                {fmtCount(o.packets7d)}
-              </td>
-              <td className="hidden whitespace-nowrap px-3 py-2 text-right align-top tabular-nums text-content-secondary sm:table-cell">
-                {activeDays(o, view)}
-              </td>
-              <td className="hidden whitespace-nowrap py-2 pl-3 text-right align-top tabular-nums text-content-secondary sm:table-cell">
-                {fmtDataDay(o.lastDay)}
-              </td>
+              </th>
+              <td className={`${num} text-wd-ink`}>{fmtCount(o.packets30d)}</td>
+              <td className={`${num} text-wd-ink`}>{fmtShare(o.share, count)}</td>
+              <td className={`wd-fold-520 ${num} text-wd-ink`}>{fmtCount(o.packets7d)}</td>
+              <td className={`wd-fold-520 ${num} text-wd-ink`}>{activeDays(o, view)}</td>
+              <td className={`wd-fold-520 ${num} text-wd-ink`}>{fmtDataDay(o.lastDay, { empty: "Unknown" })}</td>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** Placeholder with the final layout's footprint (no jump when data lands). */
-function DetailSkeleton({ compact, ouiCount }) {
-  const seriesCount = Math.min(ouiCount, OUI_SERIES_MAX) + (ouiCount > OUI_SERIES_MAX ? 1 : 0);
-  const chart = (
-    <div style={{ height: trafficChartHeight(compact ? CHART_HEIGHT.compact : CHART_HEIGHT.full) }}>
-      <Skeleton className="h-full w-full" />
-    </div>
-  );
-  if (compact) {
-    return (
-      <Frame compact subtitle={<Skeleton className="mt-0.5 h-3 w-32" />}>
-        <Skeleton className="h-5 w-56 max-w-full" />
-        {chart}
-        {seriesCount >= 2 && (
-          <div className="space-y-1.5">
-            {Array.from({ length: seriesCount }, (_, i) => (
-              <Skeleton key={i} className="h-4 w-full" />
-            ))}
-          </div>
-        )}
-      </Frame>
-    );
-  }
-  return (
-    <Frame subtitle={<Skeleton className="mt-1 h-3 w-40" />}>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i}>
-            <Skeleton className="h-3.5 w-20" />
-            <Skeleton className="mt-1.5 h-6 w-16" />
-          </div>
-        ))}
-      </div>
-      {seriesCount >= 2 && <Skeleton className="h-4 w-2/3" />}
-      {chart}
-      <div className="space-y-2 pt-1">
-        <Skeleton className="h-4 w-full" />
-        {Array.from({ length: Math.max(ouiCount, 1) }, (_, i) => (
-          <Skeleton key={i} className="h-9 w-full" />
-        ))}
-      </div>
-    </Frame>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
 /** Partial-window note; adds that the unreported days can't be pinpointed
  * when the index for this build isn't available. */
-function PartialNote({ view, compact }) {
+function partialText(view) {
   if (!view.isPartial) return null;
-  const text = `${fmtLowerBound(view.window.daysComplete, view.window.days)}${
-    view.missingKnown ? "" : " Which days went unreported isn't known right now, so an empty day may be unreported."
-  }`;
-  return compact ? <p className="text-[11px] text-content-tertiary">{text}</p> : <Note>{text}</Note>;
+  return `${fmtLowerBound(view.window.daysComplete, view.window.days)}${view.missingKnown ? "" : ` ${UNKNOWN_DAYS}`}`;
 }
 
-function ReadyFull({ view, dark, namesFailed }) {
+function Ready({ view, namesFailed, chartKey, windowText }) {
   const anyQuietNetwork = view.ouis.some((o) => o.quietNetworkWide === true);
   const anyUnlisted = !namesFailed && view.ouis.some((o) => !o.fullName);
+  const partial = partialText(view);
+  const lastMissing = view.days.at(-1)?.missing;
   return (
-    <Frame subtitle={windowSubtitle(view)}>
-      <PartialNote view={view} />
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-        <Figure label="Messages (30d)" value={fmtCount(view.total)} hint={IOT_MESSAGES_NOTE} />
-        <Figure
-          label="Last 7 days"
-          value={fmtCount(view.packets7d)}
-          sub={view.missing7 > 0 ? `${plural(view.missing7, "day")} not reported` : null}
-        />
-        <Figure
-          label="Latest day"
-          value={fmtCount(view.packets1d)}
-          sub={`${fmtDataDay(view.dataThrough)}${view.days.at(-1)?.missing ? " · not reported" : ""}`}
-        />
-        <Figure label="Last message" value={fmtDataDay(view.lastDay)} />
-      </dl>
+    <>
+      <Figures
+        figs={[
+          { label: "Messages, 30 days", value: fmtCount(view.total) },
+          {
+            label: "7 days",
+            value: fmtCount(view.packets7d),
+            sub: view.missing7 > 0 ? `${plural(view.missing7, "day")} not reported` : null,
+          },
+          {
+            label: "Latest day",
+            value: fmtCount(view.packets1d),
+            sub: `${fmtDataDay(view.dataThrough)}${lastMissing ? " · not reported" : ""}`,
+          },
+          { label: "Last message", value: fmtDataDay(view.lastDay, { empty: "None" }) },
+        ]}
+      />
+      {partial && <Line>{partial}</Line>}
       {view.quietLast7 ? (
         <QuietCallout view={view} />
       ) : (
-        view.recentShare != null && <Note>{recentShareText(view.recentShare)}</Note>
+        view.recentShare != null && <Line>{recentShareText(view.recentShare, view)}</Line>
       )}
-      <Legend view={view} dark={dark} />
-      <IotTrafficChart view={view} height={CHART_HEIGHT.full} />
-      <OuiTable view={view} dark={dark} namesFailed={namesFailed} />
-      {anyQuietNetwork && <Note>Quiet network-wide: {QUIET_NETWORK_HINT}</Note>}
-      <Note>
+      <Legend view={view} />
+      <IotTrafficChart key={chartKey} view={view} />
+      <OuiTable view={view} namesFailed={namesFailed} windowText={windowText} />
+      {anyQuietNetwork && <Foot>Quiet network-wide: {QUIET_NETWORK_HINT}</Foot>}
+      <Foot>
         {namesFailed ? (
           <>
-            Operator names couldn&apos;t be loaded from Helium&apos;s{" "}
-            <WellKnownLink />.
+            Operator names couldn&apos;t be loaded from Helium&apos;s <ExtLink href={WELL_KNOWN_REPO_URL}>well-known OUI list</ExtLink>.
           </>
         ) : (
           <>
-            Names from Helium&apos;s <WellKnownLink />.{anyUnlisted && ` ${NOT_LISTED_HINT}`}
+            Names from Helium&apos;s <ExtLink href={WELL_KNOWN_REPO_URL}>well-known OUI list</ExtLink>.
+            {anyUnlisted && ` ${NOT_LISTED_HINT}`}
           </>
         )}
-      </Note>
-    </Frame>
+      </Foot>
+    </>
   );
-}
-
-function ReadyCompact({ view, dark }) {
-  return (
-    <Frame compact subtitle={windowSubtitle(view)}>
-      <p className="text-sm text-content-secondary">
-        <span className="font-semibold text-content">{fmtCount(view.total)}</span>{" "}
-        {view.total === 1 ? "message" : "messages"} · 30d · last 7d {fmtCount(view.packets7d)}
-      </p>
-      <PartialNote view={view} compact />
-      {view.quietLast7 && <QuietCallout view={view} compact />}
-      <IotTrafficChart view={view} height={CHART_HEIGHT.compact} compact />
-      <Legend view={view} dark={dark} withTotals />
-    </Frame>
-  );
-}
-
-/** Why there's no chart, when the gateway record or the detail settles it. */
-function statusMessage(traffic, state) {
-  if (!isTrafficKnown(traffic)) return IOT_TRAFFIC_STATE_NOTE[traffic] ?? IOT_TRAFFIC_STATE_NOTE.unavailable;
-  if (traffic.packets30d === 0) return `No messages in the 30 days through ${fmtDataDay(traffic.dataThrough)}.`;
-  if (state === "unpublished") return "Daily detail isn't available right now.";
-  return null;
 }
 
 /**
- * One Hotspot's "Data transfer": delivered messages per day stacked by
- * operator (OUI), with stats and the per-OUI table. Rendered in the fleet
- * table's detail panel (full) and the map panel (`compact`).
+ * One Hotspot's "Messages delivered": delivered LoRaWAN messages over the
+ * 30-day window, per UTC day stacked by operator (OUI), with its figures,
+ * the honesty notes (lower bound, recent share or the quiet callout), a
+ * fixed readout over the chart, and the per-OUI table. The IoT section of the
+ * Hotspot detail; the map no longer hosts it.
  *
  * Requests nothing when the gateway record already settles it (`traffic`
  * isn't a known block, or it delivered 0 messages); otherwise one daily-detail
  * request for this Hotspot plus the page-wide OUI names and utilization index
- * (both shared and memoized). Memoized: its props are an entity key and the
- * frozen traffic block, so the map panel's pan/zoom re-renders skip it.
+ * (both shared and memoized).
  *
- * @param entityKey  the Hotspot's entity key
- * @param traffic    its row's `traffic` (iotTrafficOf result)
+ * @param entityKey     the Hotspot's entity key
+ * @param traffic       its IoT row's `traffic` (iotTrafficOf result)
+ * @param lookupFailed  the IoT lookup itself failed ("Couldn't check")
+ * @param onRetry       retries the failed IoT lookups (the shell's failed-only retry)
+ * @param through       the fleet's latest 30-day window end (YYYY-MM-DD), named
+ *                      while this Hotspot's own isn't known
  */
-export default memo(function IotTrafficDetail({ entityKey, traffic, compact = false }) {
-  const dark = useDarkMode();
-  const wantsDetail = isTrafficKnown(traffic) && traffic.packets30d > 0;
+export default memo(function IotTrafficDetail({
+  entityKey,
+  traffic,
+  lookupFailed = false,
+  onRetry,
+  through: fallbackThrough = null,
+}) {
+  const wantsDetail = !lookupFailed && isTrafficKnown(traffic) && traffic.packets30d > 0;
   const { state, detail, retry } = useHotspotTrafficDetail(wantsDetail ? entityKey : null);
   const { names, failed: namesFailed } = useWellKnownOuiNames(wantsDetail);
   const { index } = useUtilizationIndex(wantsDetail, detail?.dataThrough);
 
   // Waits for the names (usually cached by now) so labels don't repaint. The
-  // index only refines it (missing-day stubs, quiet-network badges), so the
-  // chart doesn't wait on it.
+  // index only refines it (unreported-day marks, quiet-network badges), so
+  // the chart doesn't wait on it.
   const view = useMemo(() => {
     if (!detail || names === null) return null;
     const labels = labelOuis(
@@ -420,45 +334,65 @@ export default memo(function IotTrafficDetail({ entityKey, traffic, compact = fa
     return deriveTrafficDetail(detail, labels, index);
   }, [detail, names, index]);
 
-  if (traffic == null || state === "notFound") return null;
-  const message = statusMessage(traffic, state);
-  if (message) {
-    return (
-      <Frame compact={compact}>
-        <Note>{message}</Note>
-      </Frame>
+  const through = view?.dataThrough ?? (isTrafficKnown(traffic) ? traffic.dataThrough : fallbackThrough);
+  const windowText = through ? `30 days to ${fmtDataDay(through)} (UTC)` : "30 days";
+  const total = isTrafficKnown(traffic) ? traffic.packets30d : null;
+
+  let body;
+  let single = null;
+  if (lookupFailed) {
+    body = (
+      <>
+        <Figures figs={[{ label: "Messages, 30 days", value: "Unavailable", word: true }]} />
+        {onRetry && (
+          <div>
+            <RetryBtn onClick={onRetry} label="Retry IoT status" />
+          </div>
+        )}
+      </>
     );
-  }
-  if (state === "error") {
-    return (
-      <Frame compact={compact}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Note>Couldn&apos;t load daily detail.</Note>
-          <button type="button" onClick={retry} className={ACTION_BTN}>
-            Retry
-          </button>
-        </div>
-      </Frame>
+  } else if (traffic === "pending") {
+    body = <DetailSkeleton total={null} ouiCount={1} />;
+  } else if (!isTrafficKnown(traffic)) {
+    body = <Line>{IOT_TRAFFIC_STATE_NOTE[traffic] ?? IOT_TRAFFIC_STATE_NOTE.unavailable}</Line>;
+  } else if (traffic.packets30d === 0) {
+    body = <Line>No messages in the {windowText}.</Line>;
+  } else if (state === "notFound") {
+    body = <Line>{IOT_TRAFFIC_STATE_NOTE.unavailable}</Line>;
+  } else if (state === "unpublished") {
+    body = (
+      <>
+        <Figures figs={[{ label: "Messages, 30 days", value: fmtCount(total) }]} />
+        <Line>Daily detail isn&apos;t available right now.</Line>
+      </>
     );
-  }
-  if (!view) {
-    return <DetailSkeleton compact={compact} ouiCount={traffic.ouis.length} />;
+  } else if (state === "error") {
+    body = (
+      <>
+        <Figures figs={[{ label: "Messages, 30 days", value: fmtCount(total) }]} />
+        <FailNote onRetry={retry} retryLabel="Retry daily detail">
+          Couldn&apos;t load daily detail.
+        </FailNote>
+      </>
+    );
+  } else if (!view) {
+    body = <DetailSkeleton total={total} ouiCount={traffic.ouis?.length ?? 1} />;
+  } else if (view.kind === "empty") {
+    const partial = view.isPartial ? ` ${fmtLowerBound(view.window.daysComplete, view.window.days)}` : "";
+    body = (
+      <Line>
+        No messages in the {windowText}.{partial}
+      </Line>
+    );
+  } else {
+    // A Hotspot that delivered for one OUI names it with the window (no legend).
+    if (view.series.length === 1) single = view.series[0];
+    body = <Ready view={view} namesFailed={namesFailed} chartKey={entityKey} windowText={windowText} />;
   }
 
-  if (view.kind === "empty") {
-    return (
-      <Frame compact={compact}>
-        <Note>
-          No messages in the 30 days through {fmtDataDay(view.dataThrough)}.
-          {view.isPartial && ` ${fmtLowerBound(view.window.daysComplete, view.window.days)}`}
-        </Note>
-      </Frame>
-    );
-  }
-
-  return compact ? (
-    <ReadyCompact view={view} dark={dark} />
-  ) : (
-    <ReadyFull view={view} dark={dark} namesFailed={namesFailed} />
+  return (
+    <DSub title="Messages delivered" right={single ? `${windowText} · delivered for ${single.name}` : windowText}>
+      {body}
+    </DSub>
   );
 });
