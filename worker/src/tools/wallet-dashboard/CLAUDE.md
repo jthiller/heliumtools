@@ -589,7 +589,11 @@ All five fleet-list tools (`get-wallet-fleet`, `get-wallet-rewards`,
 `get-wallet-onboarding`, `get-wallet-iot-status`, `get-wallet-mobile-activity`)
 accept `offset` (default 0) and `limit`, and return
 `pagination: { offset, limit, total, returned, nextOffset }`; follow `nextOffset`
-until null. Rewards pagination counts eligible Hotspots, including ones with zero
+until null. The tools share one `/fleet` read per wallet for 60 s (a dedupe made
+with the tools, so it lasts as long as their registration): `handleFleet` spends
+an `rl:wd` token (30/min per IP, shared with the open dashboard) before its KV
+read, so re-reading the fleet on every page of a walk could 429 both the agent
+and the dashboard. Rewards pagination counts eligible Hotspots, including ones with zero
 pending rewards; `hotspotsWithPending` lists only the nonzero rows. Rewards
 `partial: true` identifies missing/failed lookups. Page membership is sorted by
 entityKey in all five, so changing API row order, a Mobile issue appearing or

@@ -245,6 +245,36 @@ test("late legacy registration success after cleanup is removed", async (t) => {
   assert.equal(tools.size, 0);
 });
 
+test("a registration that resolves after its page unmounted never removes a newer one by name", async (t) => {
+  // A host between the old API and the draft: promise-returning registerTool
+  // that honors the signal, yet still exposes unregisterTool(name).
+  const tools = new Map();
+  const pending = [];
+  surfaces(t, {
+    registerTool(tool, { signal }) {
+      return new Promise((resolve) => {
+        pending.push(() => {
+          if (!signal.aborted) {
+            tools.set(tool.name, tool);
+            signal.addEventListener("abort", () => { if (tools.get(tool.name) === tool) tools.delete(tool.name); }, { once: true });
+          }
+          resolve();
+        });
+      });
+    },
+    unregisterTool(name) { tools.delete(name); },
+  });
+  const votes = registerWebMcpTools([descriptor("list-vote-proposals")]);
+  votes(); // /votes unmounts while its registration is still pending
+  const vote = registerWebMcpTools([descriptor("list-vote-proposals")]);
+  pending[1](); // /vote's registration lands first
+  pending[0](); // then the stale one resolves
+  await flush();
+  assert.equal(tools.size, 1);
+  vote();
+  assert.equal(tools.size, 0);
+});
+
 test("synchronous registration failure rolls back earlier modern and legacy registrations", (t) => {
   surfaces(t);
   for (const legacy of [false, true]) {

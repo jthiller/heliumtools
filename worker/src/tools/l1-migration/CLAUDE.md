@@ -157,7 +157,7 @@ considers the wallet incomplete), so the authoritative completeness check is
 
 The /l1-migration page registers agent tools `derive-helium-addresses` (pure client-side conversion) and `migrate-l1-wallet` (the permissionless broadcast; mirrors outcome into the page banner) from `pages/public/src/l1-migration/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
-`migrate-l1-wallet` declares `consequentialHint: true`. A `success: false` response becomes an agent error retaining the full payload, including processed and remaining transaction counts. The execution signal reaches the migrate request, and cancellation suppresses later page-status callbacks. Cancelling before the request prevents broadcast; cancelling after the API receives it cannot undo a transaction.
+`migrate-l1-wallet` declares `consequentialHint: true`. A `success: false` response becomes an agent error retaining the full payload, including processed and remaining transaction counts. The migrate POST deliberately doesn't take the execution signal: cancelling before it starts prevents the broadcast, but once sent it runs to completion (a client disconnect could otherwise get the Worker's remaining batches cancelled) and the page banner reports the outcome; the cancelled call itself still rejects.
 
 ## Landing preview
 

@@ -53,10 +53,13 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
       },
       annotations: { readOnlyHint: false, consequentialHint: true },
       validate: validateAddress,
-      async execute({ address }, { signal } = {}) {
+      // The wrapper refuses a call cancelled before it starts; once sent, the
+      // migration isn't tied to the call's signal (see migrateWallet), so it
+      // finishes and the page reports its outcome even if the agent stops
+      // waiting.
+      async execute({ address }) {
         showWallet(address);
-        const result = await migrateWallet(resolveSolanaWallet(address).toBase58(), { signal });
-        signal?.throwIfAborted();
+        const result = await migrateWallet(resolveSolanaWallet(address).toBase58());
         reportStatus({
           tone: result.success ? (result.transactionsProcessed === 0 ? "info" : "success") : "error",
           message: result.message,

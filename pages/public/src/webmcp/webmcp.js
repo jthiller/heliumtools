@@ -201,10 +201,12 @@ export function validateAgainstSchema(schema, value, path = "input") {
 // Registration
 // ---------------------------------------------------------------------------
 
-// Names currently registered on this page, to catch collisions in dev, plus
-// the full wrapped-tool map for the legacy provideContext() fallback (which
-// replaces the whole tool set on every call, so we must re-provide the union).
-const activeToolNames = new Set();
+// The registration that currently owns each tool name (to catch collisions in
+// dev, and so one registration's cleanup never removes another's tool by
+// name), plus the full wrapped-tool map for the legacy provideContext()
+// fallback (which replaces the whole tool set on every call, so we must
+// re-provide the union).
+const toolOwners = new Map();
 const providedTools = new Map();
 
 const warned = new Set();
@@ -292,7 +294,7 @@ export function registerWebMcpTools(tools) {
       if (!/^[a-zA-Z0-9_.-]{1,128}$/.test(tool.name)) {
         warnOnce(`name:${tool.name}`, `tool name "${tool.name}" is not a valid MCP tool name`);
       }
-      if (activeToolNames.has(tool.name)) {
+      if (toolOwners.has(tool.name)) {
         warnOnce(`dup:${tool.name}`, `tool "${tool.name}" is already registered on this page`);
       }
       if (!catalogNames.has(tool.name)) {
@@ -302,14 +304,18 @@ export function registerWebMcpTools(tools) {
   }
 
   const wrapped = tools.map(wrapTool);
-  wrapped.forEach((t) => activeToolNames.add(t.name));
+  wrapped.forEach((t) => toolOwners.set(t.name, t));
+  // Only ever drop our own claim on a name: a remount may already own it.
+  const release = (t) => {
+    if (toolOwners.get(t.name) === t) toolOwners.delete(t.name);
+  };
 
   let done = false;
   let unregister = () => {};
   const cleanup = () => {
     if (done) return;
     done = true;
-    wrapped.forEach((t) => activeToolNames.delete(t.name));
+    wrapped.forEach(release);
     unregister();
   };
 
@@ -319,6 +325,10 @@ export function registerWebMcpTools(tools) {
       const registered = new Set();
       const unregisterLegacy = (tool) => {
         if (!registered.delete(tool) || typeof mc.unregisterTool !== "function") return;
+        // unregisterTool removes by name, so once a newer registration (a
+        // remount, or /vote after /votes) owns the name, calling it would
+        // remove that one instead; the abort already covers hosts that honor it.
+        if (toolOwners.has(tool.name)) return;
         // Early registerTool implementations ignore the signal option and
         // require unregisterTool(name). Also handle their async variants.
         try {
@@ -341,7 +351,7 @@ export function registerWebMcpTools(tools) {
             registered.add(tool);
             if (done) unregisterLegacy(tool);
           }, (err) => {
-            activeToolNames.delete(tool.name);
+            release(tool);
             if (!controller.signal.aborted) warnOnce(`register:${err?.name}`, "registerTool failed:", err);
           });
         } else {

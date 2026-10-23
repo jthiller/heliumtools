@@ -58,9 +58,11 @@ export function makeClaimerTools({ showHotspot, showWallet }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, consequentialHint: true },
-      async execute({ entity_key }, { signal } = {}) {
-        const result = await claimRewards(entity_key, { signal });
-        signal?.throwIfAborted();
+      // The wrapper refuses a call cancelled before it starts; once the claim
+      // is sent it isn't tied to the call's signal (see claimRewards), so the
+      // Worker finishes and records it even if the agent stops waiting.
+      async execute({ entity_key }) {
+        const result = await claimRewards(entity_key);
         if (result?.success === false) {
           const error = new Error(result.error || result.message || "No rewards were claimed; inspect the per-token claim results before retrying.");
           error.data = result;

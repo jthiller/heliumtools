@@ -25,7 +25,9 @@ before any action runs. In browsers without WebMCP everything no-ops.
 
 - `webmcp.js` — the core: `getModelContext()` feature detection (document →
   navigator fallback), `registerWebMcpTools(tools)` (handles the legacy
-  `provideContext()`-only shape too), the JSON-Schema-subset validator,
+  `provideContext()`-only shape too; for early hosts that need
+  `unregisterTool(name)` it calls that only while no newer registration owns
+  the name, since it removes by name), the JSON-Schema-subset validator,
   `normalizeInput` (defaults + numeric-string coercion), cancellation
   guards before actions and after asynchronous validation, result helpers,
   and DEV-only drift warnings (invalid/duplicate names, and names missing
@@ -91,7 +93,8 @@ already aborted before `validate` or `execute` runs, and discards a result
 that lands after an abort, so a tool needs no abort check on entry; check
 again only after an await that comes before a side effect. Tools that do
 I/O accept `(input, { signal } = {})` and pass the signal through to API
-clients, scans and polling waits. Clients compose their own deadline with
+clients, scans and polling waits, except the two broadcast POSTs (see
+Safety rules). Clients compose their own deadline with
 `lib/abort.js`'s `withTimeout(signal, ms)`; every shared page read passes
 through it, so it falls back where `AbortSignal.any` or
 `AbortSignal.timeout` is missing. Waits use `abortableDelay(ms, signal)`. A
@@ -185,7 +188,12 @@ literals — `toolError` in webmcp.js exists only for custom shaping.
   `migrate-l1-wallet` (idempotent, official pre-signed txns).
   Both carry `annotations: { readOnlyHint: false, consequentialHint: true }`.
   Hints inform the browser/agent; they do not replace user authorization.
-  Cancellation prevents starting a broadcast but cannot reverse one sent.
+  Cancellation prevents starting a broadcast, but the broadcast POST never
+  takes the call's signal: once sent it runs to completion, because when a
+  client disconnects Cloudflare may cancel the Worker's remaining work (a
+  claim cut off between tokens, a migration between batches). The
+  cancelled call still rejects; a migration still reports its outcome on
+  the page.
 - Tool results are bounded (fleet pages 200 rows, rewards pages 100,
   packets 25 by default). Wallet fleet, rewards, onboarding, IoT and Mobile
   tools expose `offset`/`limit` and `pagination.nextOffset` so agents can

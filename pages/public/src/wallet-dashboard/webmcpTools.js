@@ -421,6 +421,12 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
     return wallet;
   };
 
+  // One /fleet read per wallet serves these tools for a minute. An agent
+  // paging a wallet calls several in a row, and every /fleet request spends a
+  // token from the per-IP rate limit the open dashboard shares (30/min), even
+  // when the worker answers from its 120 s cache.
+  const fetchToolFleet = dedupeAsync(fetchFleet, 60_000, { signalIndex: 1, max: 4 });
+
   // The page's Mobile state for `wallet` once it's ready (pageSettled), or
   // when the wait runs out whatever the page has (`settled: false`). null if
   // the wallet isn't on screen or stops being, or at once if the page's fleet
@@ -483,7 +489,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
       },
       annotations: { readOnlyHint: true },
       async execute({ address, offset = 0, limit = FLEET_RESULT_CAP }, { signal } = {}) {
-        const fleet = await fetchFleet(requireWallet(address), { signal });
+        const fleet = await fetchToolFleet(requireWallet(address), { signal });
         signal?.throwIfAborted();
         const all = orderedFleet(fleet?.hotspots);
         const hotspots = all.slice(offset, offset + limit);
@@ -503,7 +509,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
       annotations: { readOnlyHint: true },
       async execute({ address, offset = 0, limit = REWARDS_HOTSPOT_CAP }, { signal } = {}) {
         const wallet = requireWallet(address);
-        const fleet = await fetchFleet(wallet, { signal });
+        const fleet = await fetchToolFleet(wallet, { signal });
         const eligible = eligibleRewardHotspots(fleet?.hotspots);
         const counted = eligible.slice(offset, offset + limit);
         // Ask for the dashboard's own batches (useFleetRewards cuts `eligible`
@@ -582,7 +588,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
       annotations: { readOnlyHint: true },
       async execute({ address, offset = 0, limit = ONBOARDED_HOTSPOT_CAP }, { signal } = {}) {
         const wallet = requireWallet(address);
-        const fleet = await fetchFleet(wallet, { signal });
+        const fleet = await fetchToolFleet(wallet, { signal });
         const all = orderedFleet(fleet?.hotspots);
         const counted = all.slice(offset, offset + limit);
         // A failed or rate-limited batch reads null for its Hotspots rather than
@@ -642,7 +648,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
         // else a capped scan of our own through the same per-row loop.
         const page = getIotState?.();
         const usePage = page?.done && page.wallet === wallet && Array.isArray(page.hotspots);
-        const eligible = orderedFleet((usePage ? page.hotspots : (await fetchFleet(wallet, { signal }))?.hotspots || []).filter(hasIotStatus));
+        const eligible = orderedFleet((usePage ? page.hotspots : (await fetchToolFleet(wallet, { signal }))?.hotspots || []).filter(hasIotStatus));
         const iotHotspots = eligible.length;
         // The dashboard's scan knows every row's health, so `health` narrows
         // the whole fleet before paging; an own scan learns health only for the

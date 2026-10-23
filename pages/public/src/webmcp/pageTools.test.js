@@ -25,7 +25,7 @@ const { dcMintTools } = await import("../dc-mint/webmcpTools.js");
 const { hntPriceTools } = await import("../hnt-price/webmcpTools.js");
 const { iotOnboardTools } = await import("../iot-onboard/webmcpTools.js");
 const { updateLocationTools } = await import("../update-location/webmcpTools.js");
-const { lookupHotspot, claimRewards } = await import("../lib/hotspotClaimerApi.js");
+const { lookupHotspot } = await import("../lib/hotspotClaimerApi.js");
 const { parseJson } = await import("../lib/api.js");
 
 const ADDRESS = "11111111111111111111111111111111";
@@ -132,7 +132,7 @@ test("incomplete migration is an agent error retaining processed and remaining c
   assert.deepEqual(statuses, [{ tone: "error", message: payload.message }]);
 });
 
-test("cancelling migration aborts its fetch and suppresses completion callbacks", async () => {
+test("a sent migration runs to completion and reports its outcome when the call is cancelled", async () => {
   const request = deferredFetch();
   const statuses = [];
   const controller = new AbortController();
@@ -140,9 +140,22 @@ test("cancelling migration aborts its fetch and suppresses completion callbacks"
     .execute({ address: ADDRESS }, { signal: controller.signal });
   await request.started;
   controller.abort();
+  assert.equal(request.signal, undefined, "the broadcast POST isn't tied to the call's signal");
+  request.finish({ success: true, message: "Migration successful!", transactionsProcessed: 3 });
   await assert.rejects(execution, { name: "AbortError" });
-  assert.equal(request.signal.aborted, true);
-  assert.deepEqual(statuses, []);
+  assert.deepEqual(statuses, [{ tone: "success", message: "Migration successful!" }]);
+});
+
+test("a sent claim runs to completion when the call is cancelled", async () => {
+  const request = deferredFetch();
+  const controller = new AbortController();
+  const execution = expose(claimer(), "claim-hotspot-rewards").execute({ entity_key: ENTITY_KEY }, { signal: controller.signal });
+  await request.started;
+  controller.abort();
+  assert.equal(request.signal, undefined, "the broadcast POST isn't tied to the call's signal");
+  request.finish({ success: true, claims: [{ token: "HNT", txSignature: "confirmed-signature" }] });
+  await assert.rejects(execution, { name: "AbortError" });
+  assert.equal(request.calls, 1);
 });
 
 test("cancelling an agent lookup preserves an overlapping page subscriber", async () => {
@@ -187,10 +200,6 @@ for (const [name, tools, input] of [
     assert.equal(request.signal.aborted, true);
   });
 }
-
-test("claim API rejects before fetch when its caller is already cancelled", async () => {
-  await assert.rejects(claimRewards(ENTITY_KEY, { signal: AbortSignal.abort() }), { name: "AbortError" });
-});
 
 test("response-body cancellation stays an AbortError", async () => {
   const error = new DOMException("Response cancelled", "AbortError");

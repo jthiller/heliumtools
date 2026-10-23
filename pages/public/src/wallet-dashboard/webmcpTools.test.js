@@ -221,6 +221,17 @@ test("an off-screen wallet with only CBRS Mobile radios starts no Mobile check",
   assert.match(result.notes[0], /ecc_compact/);
 });
 
+test("one /fleet read serves an agent paging through the wallet tools", async () => {
+  // Every /fleet request spends a token from the per-IP limit the dashboard shares.
+  const api = tools();
+  await api["get-wallet-fleet"].execute({ address: "wallet" });
+  await api["get-wallet-fleet"].execute({ address: "wallet", offset: 200 });
+  await api["get-wallet-rewards"].execute({ address: "wallet", offset: 100 });
+  await api["get-wallet-onboarding"].execute({ address: "wallet" });
+  await api["get-wallet-iot-status"].execute({ address: "wallet", offset: 200 });
+  assert.equal(calls.filter(([type]) => type === "fleet").length, 1);
+});
+
 test("cancelling rewards rejects instead of returning a partial success from allSettled", async () => {
   const controller = new AbortController();
   let started;

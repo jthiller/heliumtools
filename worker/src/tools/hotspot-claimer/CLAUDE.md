@@ -99,7 +99,7 @@ cd worker && npx wrangler tail --env production --format json | grep '"event":"c
 
 The /hotspot-claimer page registers agent tools `lookup-hotspot` and `list-wallet-hotspots` (both also drive the ?mode=&key=/wallet= URL so the UI follows), `get-hotspot-rewards`, and `claim-hotspot-rewards` (the permissionless treasury-subsidized claim — the tool description tells agents to check pending rewards first) from `pages/public/src/hotspot-claimer/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
-`claim-hotspot-rewards` declares `consequentialHint: true`. A `success: false` response becomes an agent error with the full per-token claim results retained; partial successes keep their transaction signatures and token errors. All agent requests forward the execution signal. Lookup and wallet reads share requests with the page while allowing each consumer to cancel independently. Cancellation before the claim request prevents broadcast; cancellation after it reaches the API cannot undo a transaction.
+`claim-hotspot-rewards` declares `consequentialHint: true`. A `success: false` response becomes an agent error with the full per-token claim results retained; partial successes keep their transaction signatures and token errors. Agent reads forward the execution signal; lookup and wallet reads share requests with the page while allowing each consumer to cancel independently. The claim POST deliberately doesn't take the signal: cancelling before it starts prevents the broadcast, but once sent it runs to completion, because when a client disconnects Cloudflare may cancel a Worker's remaining work, which could cut a claim off between tokens.
 
 ## Landing preview
 

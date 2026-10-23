@@ -30,10 +30,11 @@ export async function fetchRewards(entityKey, { signal } = {}) {
   return data;
 }
 
-export async function claimRewards(entityKey, { signal } = {}) {
-  signal?.throwIfAborted();
+// No signal, on purpose: the claim broadcasts one transaction per token, and a
+// client that disconnects mid-request can get the Worker's remaining work
+// cancelled between tokens. Once sent, it runs to completion.
+export async function claimRewards(entityKey) {
   const res = await fetch(`${API_BASE}/claim`, {
-    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entityKey }),
