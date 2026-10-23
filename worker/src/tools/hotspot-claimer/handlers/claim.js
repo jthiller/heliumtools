@@ -48,17 +48,12 @@ async function checkRateLimits(env, entityKey) {
 }
 
 /**
- * Record a successful claim in rate-limit KV.
- * Stores the claim results so they can be shown when the hotspot is looked up.
+ * Record a successful claim in rate-limit KV: start the per-Hotspot cooldown
+ * and count it toward the global daily limit. Returns when it was recorded.
  */
 async function recordClaim(env, entityKey, claims) {
-  const ttl = MAX_CLAIMS_PER_HOTSPOT_HOURS * 3600;
-  const hotspotKey = `claim:hotspot:${entityKey}`;
-  await env.KV.put(
-    hotspotKey,
-    JSON.stringify({ claimedAt: new Date().toISOString(), claims }),
-    { expirationTtl: ttl }
-  );
+  const claimedAt = new Date().toISOString();
+  await storeClaimResults(env, entityKey, claimedAt, claims);
 
   // Global daily: increment counter, expires at end of day
   const dailyKey = `claims:daily:${todayUTC()}`;
@@ -66,6 +61,19 @@ async function recordClaim(env, entityKey, claims) {
   await env.KV.put(dailyKey, String(currentCount + 1), {
     expirationTtl: 86400,
   });
+  return claimedAt;
+}
+
+/**
+ * The per-Hotspot cooldown entry. Stores the claim results so they can be
+ * shown when the Hotspot is looked up.
+ */
+function storeClaimResults(env, entityKey, claimedAt, claims) {
+  return env.KV.put(
+    `claim:hotspot:${entityKey}`,
+    JSON.stringify({ claimedAt, claims }),
+    { expirationTtl: MAX_CLAIMS_PER_HOTSPOT_HOURS * 3600 }
+  );
 }
 
 /**
@@ -75,7 +83,7 @@ async function recordClaim(env, entityKey, claims) {
  * Claims pending rewards for a hotspot. Builds, signs, and broadcasts
  * claim transactions funded by the treasury wallet.
  */
-export async function handleClaim(request, env) {
+export async function handleClaim(request, env, ctx) {
   // IP-based rate limit
   const ipRateLimitError = await checkIpRateLimit(env, request, {
     prefix: "rl:claim",
@@ -112,6 +120,17 @@ export async function handleClaim(request, env) {
     );
   }
 
+  // Broadcasting runs under waitUntil. When the client disconnects (a closed
+  // tab, an aborted request), Cloudflare may cancel a request's remaining
+  // work, which could stop the loop between tokens; waitUntil keeps it going
+  // (up to 30 s after a disconnect) while the response still waits for it.
+  const claimed = claimHotspot(env, entityKey);
+  ctx?.waitUntil(claimed);
+  return claimed;
+}
+
+/** Resolve the Hotspot, claim each token, record the claim, respond. Never rejects. */
+async function claimHotspot(env, entityKey) {
   try {
     // Resolve hotspot
     const hotspot = await resolveEntityKey(env, entityKey);
@@ -146,8 +165,12 @@ export async function handleClaim(request, env) {
     const initKey = `claims:inits:${todayUTC()}`;
     let initsToday = parseInt((await env.KV.get(initKey)) || "0", 10);
 
-    // Claim each token
+    // Claim each token. The claim is recorded as soon as the first token is
+    // broadcast, not after the loop, so a request cut off between tokens
+    // still leaves the cooldown and the daily count.
     const claims = [];
+    let claimedAt = null;
+    let recordedCount = 0;
     for (const [tokenKey, rewardData] of claimableTokens) {
       try {
         // If recipient needs init, check daily limit
@@ -195,12 +218,18 @@ export async function handleClaim(request, env) {
           error: err.message,
         });
       }
+
+      // Record the claim for rate limiting (even partial success)
+      if (!claimedAt && claims[claims.length - 1].txSignature) {
+        claimedAt = await recordClaim(env, entityKey, claims);
+        recordedCount = claims.length;
+      }
     }
 
-    // Record the claim for rate limiting (even partial success)
-    const anySuccess = claims.some((c) => c.txSignature);
-    if (anySuccess) {
-      await recordClaim(env, entityKey, claims);
+    // Store the full results once later tokens added to what was recorded.
+    const anySuccess = claimedAt !== null;
+    if (anySuccess && claims.length > recordedCount) {
+      await storeClaimResults(env, entityKey, claimedAt, claims);
     }
 
     console.log(JSON.stringify({
