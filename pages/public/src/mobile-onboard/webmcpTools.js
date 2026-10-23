@@ -15,8 +15,8 @@ export function makeMobileOnboardTools(setTab) {
         "Current on-chain fees for onboarding a WiFi network as a Helium Mobile data-only Hotspot, in Data Credits: onboard fee plus location assert fee. Cached ~6h server-side.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute() {
-        return fetchMobileFees();
+      execute(_input, { signal } = {}) {
+        return fetchMobileFees({ signal });
       },
     },
     {

@@ -240,6 +240,8 @@ offset 104). Historically the legacy receiver feed
 
 The /dc-mint page registers agent tools `get-dc-mint-quote` (oracle-price conversion between HNT/DC/USD via `/price`) and `resolve-oui` (OUI number or payer key) from `pages/public/src/dc-mint/webmcpTools.js`. The burn itself stays wallet-signed in the UI. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
+Quote and OUI-resolution requests forward the WebMCP execution signal to their fetches; a cancelled invocation stops waiting for the network response.
+
 ## Landing preview
 
 The `/` card (`pages/public/src/pages/landing/previews/dc-mint.js`) lays the Mint DC tab's burn quote (`ConversionPreview` in `DcMintTool.jsx`, cut to its HNT and DC amounts; the DC figure is the anchor) across the Wallet balance strip (HNT + DC, mono, from `MintTab`). Both are dpr-5 macros from the macro pass of `scripts/tool-previews/capture/dc-mint.mjs` (`node capture/dc-mint.mjs macros`): `/dc-mint` with the `nyc` wallet fake-connected as a read-only Phantom and 50 typed into HNT to burn, no mocks, Mint never clicked. The quote is live-priced, so the crop rect holds only while the DC amount keeps its digit count. Re-capture and re-bake when the quote panel, the wallet balance strip, or what the script types into and locates (the `e.g. 0.5` input, the "Wallet balance" and "You receive" labels, the wallet adapter button) change (`pages/public/src/pages/landing/CLAUDE.md`).

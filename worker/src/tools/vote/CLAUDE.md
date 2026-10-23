@@ -483,3 +483,5 @@ upserted on every snapshot refresh, `PRIMARY KEY (address)`. Self-provisions in
 ## WebMCP
 
 The /vote and /votes pages register agent tools `list-vote-proposals`, `get-vote-details`, `get-voter-history`, and `open-vote` (navigates the viewer) from `pages/public/src/vote/webmcpTools.js`. All reads hit the same KV/D1-backed endpoints, so agent traffic adds no RPC load. Both pages are also listed in the agent catalog (`src/webmcp/catalog.js`) even though the landing page does not link them. Framework: `pages/public/src/webmcp/CLAUDE.md`.
+
+Proposal and voter-history reads forward the WebMCP execution signal to fetch. An already-cancelled invocation does not navigate the viewer.

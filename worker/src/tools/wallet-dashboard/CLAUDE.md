@@ -97,7 +97,7 @@ re-implementing on-chain logic.
   page opens hidden). Switching wallets, clearing the wallet or loading one without
   Mobile Hotspots cancels the running check, downloads included. The agent tool's
   off-screen check costs the same and shares the caches; its worker finishes writing
-  them (at most 5 s) before it's terminated.
+  them (at most 5 s) before it's terminated, a cancelled check included.
 - (The shared `POST /hotspot-claimer/wallet/rewards` is intentionally NOT used by
   the dashboard — it must stay live/uncached for actual claims. The dashboard owns
   the cached `/rewards` path above instead.)
@@ -582,7 +582,48 @@ rows do). A section shown from the saved paint keeps the paint's `tables[name].u
 
 ## WebMCP
 
-The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (capped at 200 rows), `get-wallet-rewards` (fleet-wide pending totals via the cached `/rewards` batches — shares `useFleetRewards`' exported `eligibleRewardHotspots`/`REWARDS_BATCH_SIZE` so batches stay cache-stable; capped at 100 Hotspots), `get-wallet-onboarding` (on-chain onboard dates via `/onboarded` — first/latest, per-month counts, per-Hotspot dates; through the shared `scanOnboardDates` (no 429 waits — partial results instead), capped at 200 Hotspots; `/summary` and `/fleet` carry no dates, and their tool descriptions point here), `get-wallet-iot-status` (per-IoT-Hotspot connectivity, 30-day messages and health; reads the page's finished scan for the wallet on screen — no per-Hotspot requests, only the 5-min-memoized utilization index — otherwise scans up to 200 IoT Hotspots), `get-iot-hotspot-traffic` (one Hotspot's daily messages per OUI with well-known names; answers a known zero from the gateway record without a detail request), `get-wallet-mobile-activity` (the Mobile picture from `aggregateMobile`: latest-day and 7-day data-transfer HNT with the rewarded bytes it paid for, users served with the usage report's coverage, issue counts over every Mobile Hotspot (null while a count's table isn't in, never 0), each table's state with its `checkedAt` / `okAt` / `error`, each sliding window's end and whether it's current (a frozen one is named by its end), notes saying which sections are the saved paint (`cachedSections`, dated by `cachedAt` or the section's own `tables[name].until`) or a failed table's last good check, and per-Hotspot rows most actionable first (`mobileActionRank`), filterable by `issue`, 50 by default and at most 200; windows and null counts come from the aggregate's `windows` and `known`; when the wallet is on screen it reads the page's state and aggregate through `getMobileState`, waiting up to 45 s for the hook's `checked` (on a visible page, also not `stale`; at once if the worker failed), so nothing is downloaded twice, except when that tab is hidden (`paused`) with its last check older than `FRESH_MS` (hidden tabs don't poll) or the page's fleet failed (`{ wallet, fleetError }`, no wait); otherwise it fetches the fleet and runs one check with `checkMobileOnce`, its own short-lived worker over the same engine and caches, with a 60 s limit after which it returns what it has (per wallet, a running off-screen call, fleet fetch included, is shared and a finished one reused for 30 s after it finishes); its description states that check's byte cost), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. The health and Mobile issue filters, map encoding, Mobile map overlay, arrival motion, coverage footprint and the lookup screen's Recent wallets are UI-only and intentionally not exposed (`get-wallet-iot-status` and `get-wallet-mobile-activity` already return health and issues; the footprint is a model for visual context; recent wallets are this browser's lookup history, not wallet data). `open-wallet-dashboard` navigates like a user, so a wallet it opens is recorded in Recent wallets once its summary loads; the get-* tools never touch the list. Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.
+The /wallet-dashboard page registers agent tools `open-wallet-dashboard`, `get-wallet-summary`, `get-wallet-fleet` (up to 200 rows per page, fleet-wide stats), `get-wallet-rewards` (page-only pending totals via the cached `/rewards` batches — shares `useFleetRewards`' exported `eligibleRewardHotspots`/`REWARDS_BATCH_SIZE` and asks for the dashboard's own 50-wide batches covering the page, whatever its offset/limit, counting only the page's Hotspots, so batches stay cache-stable; up to 100 Hotspots per page), `get-wallet-onboarding` (on-chain onboard dates via `/onboarded` — first/latest, per-month counts, per-Hotspot dates; through the shared `scanOnboardDates` (no 429 waits — partial results instead), up to 200 Hotspots per page, first/latest/monthly figures cover that page; `/summary` and `/fleet` carry no dates, and their tool descriptions point here), `get-wallet-iot-status` (per-IoT-Hotspot connectivity, 30-day messages and health; reads the page's finished scan for the wallet on screen — no per-Hotspot requests, only the 5-min-memoized utilization index — otherwise scans up to 200 IoT Hotspots per page; page membership always follows entityKey, with actionable order within the page; a `health` filter narrows the returned rows within each entityKey page in both modes, so a nextOffset keeps its meaning when the dashboard's scan finishes; pagination counts all IoT Hotspots, including nonmatches, and callers continue even if a page returns no matching rows; `aggregateScope` is `fleet` when reusing the dashboard and `page` for an own scan), `get-iot-hotspot-traffic` (one Hotspot's daily messages per OUI with well-known names; answers a known zero from the gateway record without a detail request), `get-wallet-mobile-activity` (the Mobile picture from `aggregateMobile`: latest-day and 7-day data-transfer HNT with the rewarded bytes it paid for, users served with the usage report's coverage, issue counts over every Mobile Hotspot (null while a count's table isn't in, never 0), each table's state with its `checkedAt` / `okAt` / `error`, each sliding window's end and whether it's current (a frozen one is named by its end), notes saying which sections are the saved paint (`cachedSections`, dated by `cachedAt` or the section's own `tables[name].until`) or a failed table's last good check, and per-Hotspot rows paged by entityKey within the `issue` filter, most actionable first within a page (`mobileActionRank`), 50 by default and at most 200 per page; its description defines each issue and the on-screen wait; windows and null counts come from the aggregate's `windows` and `known`; when the wallet is on screen it reads the page's state and aggregate through `getMobileState`, waiting up to 45 s for the hook's `checked` (on a visible page, also not `stale`; at once if the worker failed), so nothing is downloaded twice, except when that tab is hidden (`paused`) with its last check older than `FRESH_MS` (hidden tabs don't poll) or the page's fleet failed (`{ wallet, fleetError }`, no wait); otherwise it fetches the fleet and runs one check with `checkMobileOnce`, its own short-lived worker over the same engine and caches, with a 60 s limit after which it returns what it has (per wallet, a running off-screen call, fleet fetch included, is shared and a finished one reused for 30 s after it finishes); its description states that check's byte cost), and `get-wallet-transactions` from `pages/public/src/wallet-dashboard/webmcpTools.js`. The dashboard's own health and Mobile issue filter controls, map encoding, Mobile map overlay, arrival motion, coverage footprint and the lookup screen's Recent wallets are UI-only and no tool drives them (`get-wallet-iot-status` and `get-wallet-mobile-activity` return health and issues and take their own `health`/`issue` filters; the footprint is a model for visual context; recent wallets are this browser's lookup history, not wallet data). `open-wallet-dashboard` navigates like a user, so a wallet it opens is recorded in Recent wallets once its summary loads; the get-* tools never touch the list. Framework + conventions: `pages/public/src/webmcp/CLAUDE.md`.
+
+
+All five fleet-list tools (`get-wallet-fleet`, `get-wallet-rewards`,
+`get-wallet-onboarding`, `get-wallet-iot-status`, `get-wallet-mobile-activity`)
+accept `offset` (default 0) and `limit`, and return
+`pagination: { offset, limit, total, returned, nextOffset }`; follow `nextOffset`
+until null. The tools share one `/fleet` read per wallet for 60 s (a dedupe made
+with the tools, so it lasts as long as their registration): `handleFleet` spends
+an `rl:wd` token (30/min per IP, shared with the open dashboard) before its KV
+read, so re-reading the fleet on every page of a walk could 429 both the agent
+and the dashboard. Rewards pagination counts eligible Hotspots, including ones with zero
+pending rewards; `hotspotsWithPending` lists only the nonzero rows. Rewards
+`partial: true` identifies missing/failed lookups. Page membership is sorted by
+entityKey in all five, so changing API row order, a Mobile issue appearing or
+clearing, or switching to the dashboard's completed IoT scan cannot move entities
+between pages; IoT and Mobile rows run most actionable first within a page.
+Mobile's `issue` filters before paging, so its pagination totals count matching
+Hotspots while counts/rewards/usage remain fleet-wide. IoT's `health` filters
+rows after entityKey page membership is set in both scan modes: its pagination
+`total` counts every IoT Hotspot and `returned` counts page members before the
+health filter. A page with no matching rows can still have a `nextOffset`;
+callers must continue until it is null. The `aggregateScope` field labels every paged result: rewards
+and onboarding aggregates are page-only, fleet stats and Mobile aggregates cover
+the fleet, and IoT labels its own scan versus dashboard aggregate as described
+above. Offset pages reflect the current dataset, rather than a pinned snapshot;
+wallet ownership changes, or Mobile's issue-filtered set changing with live
+data between calls, can still move rows, so callers requiring an unchanging list should
+restart/deduplicate by entityKey.
+
+Tool cancellation reaches request fetches (combined with their existing time
+limits), gateway/onboard scan workers, onboarding rate-limit waits, the page's
+initial Mobile wait, and one-shot Mobile workers. A cancelled rewards call rejects
+rather than returning the successful subset from `allSettled`. Cached IoT/name
+reads and off-screen Mobile checks track consumers independently: cancelling one
+consumer preserves other readers, while cancelling the last aborts the underlying
+request, or stops the off-screen check (its downloads too) and gives its worker up
+to 5 s to write the files it already has, as after a timeout. A completed
+off-screen Mobile check is still reused for 30 seconds and dropped once expired
+(the shared dedupe cache sweeps expired results); a failed or timed-out check is
+never reused. UI hooks retain their existing optional
+`isCancelled` behavior and default request signatures.
 
 ## Landing preview
 

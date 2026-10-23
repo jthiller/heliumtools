@@ -17,8 +17,8 @@ export const hntPriceTools = [
       "Read HNT pricing from its live sources: a fresh RPC read of the on-chain Pyth oracle account the Data Credits mint uses, plus a fresh Jupiter market quote. The oracle account itself normally advances about every 5 minutes. This endpoint is slower and limited to 15 requests/minute/IP; prefer get-hnt-price for polling and ordinary displays.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
-    execute() {
-      return fetchInstantPrice();
+    execute(_input, { signal } = {}) {
+      return fetchInstantPrice({ signal });
     },
   },
   {

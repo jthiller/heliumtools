@@ -1,10 +1,11 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
-const API_BASE = import.meta.env.DEV
+const API_BASE = import.meta.env?.DEV
   ? "/api/dc-mint"
   : "https://api.heliumtools.org/dc-mint";
 
-const DC_PURCHASE_API = import.meta.env.DEV
+const DC_PURCHASE_API = import.meta.env?.DEV
   ? "/api/dc-purchase"
   : "https://api.heliumtools.org/dc-purchase";
 
@@ -30,22 +31,25 @@ export async function buildDelegateTransaction({ owner, amount, oui, payer_key, 
   return data;
 }
 
-export async function fetchHntPrice() {
-  const res = await fetch(`${API_BASE}/price`);
+export async function fetchHntPrice({ signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${API_BASE}/price`, { signal });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || "Failed to fetch price");
   return data;
 }
 
-export async function resolveOui(oui) {
-  const res = await fetch(`${DC_PURCHASE_API}/oui/${oui}`);
+export async function resolveOui(oui, { signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${DC_PURCHASE_API}/oui/${oui}`, { signal });
   const data = await parseJson(res);
   if (!res.ok) return null;
   return data;
 }
 
-export async function resolvePayerKey(payerKey) {
-  const res = await fetch(`${API_BASE}/resolve-payer/${encodeURIComponent(payerKey)}`);
+export async function resolvePayerKey(payerKey, { signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${API_BASE}/resolve-payer/${encodeURIComponent(payerKey)}`, { signal });
   const data = await parseJson(res);
   if (!res.ok) return null;
   return data;

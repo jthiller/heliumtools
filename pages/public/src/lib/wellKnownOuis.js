@@ -1,4 +1,5 @@
 import { dedupeAsync } from "./requestDedupe.js";
+import { withTimeout } from "./abort.js";
 
 // Helium's curated OUI directory (`helium/well-known` lists/ouis.json) — the
 // only public source of human names for OUIs (the IoT utilization API is
@@ -31,11 +32,11 @@ function normalizeWellKnownOuis(raw) {
   return out;
 }
 
-async function requestWellKnownOuiNames() {
+async function requestWellKnownOuiNames({ signal } = {}) {
   // raw.githubusercontent.com serves text/plain, so not api.js's parseJson.
   const res = await fetch(WELL_KNOWN_OUIS_URL, {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(8_000),
+    signal: withTimeout(signal, 8_000),
   });
   if (!res.ok) throw new Error(`well-known OUI fetch failed: ${res.status}`);
   const list = normalizeWellKnownOuis(await res.json());
@@ -49,7 +50,7 @@ async function requestWellKnownOuiNames() {
  * didn't load" from "this OUI isn't listed" — on failure every OUI reads
  * "OUI {id}" and nothing should claim it's unlisted.
  */
-export const fetchWellKnownOuiNames = dedupeAsync(requestWellKnownOuiNames, Infinity);
+export const fetchWellKnownOuiNames = dedupeAsync(requestWellKnownOuiNames, Infinity, { signalIndex: 0 });
 
 // Longest first where one suffix contains another (" LoRaWAN Console" before
 // " Console", " Ltd." before " Ltd"); only one is ever stripped.

@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson, throwIfApiError } from "./api.js";
 
 
@@ -5,7 +6,7 @@ import { parseJson, throwIfApiError } from "./api.js";
  * Same-origin in dev (the vite /api proxy forwards plain GETs and SSE alike),
  * the absolute API origin in prod. Used for anything this page fetches itself.
  */
-export const API_BASE = import.meta.env.DEV
+export const API_BASE = import.meta.env?.DEV
   ? "/api/hnt-price"
   : "https://api.heliumtools.org/hnt-price";
 
@@ -21,16 +22,18 @@ export const PUBLIC_WS_BASE = "wss://api.heliumtools.org/hnt-price";
 export const SSE_URL = `${API_BASE}/sse`;
 
 /** Cached snapshot, stale-while-revalidate. Rate limited per IP; limits are documented in the worker README. */
-export async function fetchCurrentPrice() {
-  const res = await fetch(`${API_BASE}/current`);
+export async function fetchCurrentPrice({ signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${API_BASE}/current`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);
   return data;
 }
 
 /** Live chain plus market read on every call. Rate limited per IP; limits are documented in the worker README. */
-export async function fetchInstantPrice() {
-  const res = await fetch(`${API_BASE}/instant`);
+export async function fetchInstantPrice({ signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${API_BASE}/instant`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);
   return data;

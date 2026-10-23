@@ -1,5 +1,6 @@
 import { parseJson, throwIfApiError } from "./api.js";
 import { dedupeAsync } from "./requestDedupe.js";
+import { withTimeout, throwIfAborted } from "./abort.js";
 
 // Client for api-iot.heliumtools.org (helium-iot-service): per-Hotspot IoT
 // connectivity, delivered-message traffic (utilization) and modeled coverage.
@@ -28,8 +29,8 @@ export const DATA_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // by concurrent callers (StrictMode, the WebMCP tool alongside the page).
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function apiFetch(path) {
-  return fetch(`${IOT_STATUS_API_BASE}${path}`, { signal: AbortSignal.timeout(15_000) });
+function apiFetch(path, signal) {
+  return fetch(`${IOT_STATUS_API_BASE}${path}`, { signal: withTimeout(signal, 15_000) });
 }
 
 // ── Per-Hotspot gateway record (status + 30-day utilization summary) ─────────
@@ -65,8 +66,8 @@ function normalizeUtilization(raw, cacheControl) {
   };
 }
 
-async function requestGatewayStatus(address) {
-  const res = await apiFetch(`/v1/gateways/${encodeURIComponent(address)}`);
+async function requestGatewayStatus(address, { signal } = {}) {
+  const res = await apiFetch(`/v1/gateways/${encodeURIComponent(address)}`, signal);
   if (res.status === 404) return { notFound: true };
   const data = await parseJson(res);
   throwIfApiError(res, data);
@@ -94,6 +95,7 @@ async function requestGatewayStatus(address) {
  * unpublished block must be re-asked on the next scan, not pinned.
  */
 export const fetchGatewayStatus = dedupeAsync(requestGatewayStatus, CACHE_TTL_MS, {
+  signalIndex: 1,
   max: 2000, // a couple of large fleets
   keep: (v) => v.notFound || v.utilizationState === "ok",
 });
@@ -114,16 +116,19 @@ const SCAN_CONCURRENCY = 8;
  * `isCancelled()` stops the workers early.
  * @returns {Promise<{statusByKey: Record<string, object|null>, dataThrough: string|null}>}
  */
-export async function scanGatewayStatuses(addresses, { onProgress, isCancelled = () => false } = {}) {
+export async function scanGatewayStatuses(addresses, { onProgress, isCancelled = () => false, signal } = {}) {
+  throwIfAborted(signal);
   const result = { statusByKey: {}, dataThrough: null };
   let cursor = 0;
   async function worker() {
     while (!isCancelled() && cursor < addresses.length) {
+      throwIfAborted(signal);
       const address = addresses[cursor++];
       let entry = null;
       try {
-        entry = await fetchGatewayStatus(address);
+        entry = await fetchGatewayStatus(address, { signal });
       } catch {
+        throwIfAborted(signal);
         // Transport failure / 5xx — stays null.
       }
       if (isCancelled()) return;
@@ -135,13 +140,14 @@ export async function scanGatewayStatuses(addresses, { onProgress, isCancelled =
     }
   }
   await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, addresses.length) }, worker));
+  throwIfAborted(signal);
   return result;
 }
 
 // ── Network utilization index (one request per page, not per Hotspot) ────────
 
-async function requestUtilizationIndex() {
-  const res = await apiFetch("/v1/iot/utilization");
+async function requestUtilizationIndex({ signal } = {}) {
+  const res = await apiFetch("/v1/iot/utilization", signal);
   if (res.status === 404) return { published: false };
   const data = await parseJson(res);
   throwIfApiError(res, data);
@@ -169,7 +175,7 @@ async function requestUtilizationIndex() {
  * "quiet network-wide" hint. Returns `{ published: false }` on 404 (no build
  * published); throws on failure (callers treat that as "completeness unknown").
  */
-export const fetchUtilizationIndex = dedupeAsync(requestUtilizationIndex, CACHE_TTL_MS);
+export const fetchUtilizationIndex = dedupeAsync(requestUtilizationIndex, CACHE_TTL_MS, { signalIndex: 0 });
 
 // ── Per-Hotspot daily detail (lazy: only for a Hotspot the user opens) ───────
 
@@ -185,8 +191,8 @@ function normalizeOuiDetail(o) {
   };
 }
 
-async function requestUtilizationDetail(address) {
-  const res = await apiFetch(`/v1/gateways/${encodeURIComponent(address)}/iot/utilization?series=1`);
+async function requestUtilizationDetail(address, { signal } = {}) {
+  const res = await apiFetch(`/v1/gateways/${encodeURIComponent(address)}/iot/utilization?series=1`, signal);
   if (res.status === 404) return { notFound: true };
   const data = await parseJson(res);
   throwIfApiError(res, data);
@@ -226,14 +232,15 @@ async function requestUtilizationDetail(address) {
  * transport errors. Call only for a Hotspot the user opened.
  */
 export const fetchGatewayUtilizationDetail = dedupeAsync(requestUtilizationDetail, CACHE_TTL_MS, {
+  signalIndex: 1,
   max: 200,
   keep: (v) => !v.unpublished,
 });
 
 // ── Per-Hotspot modeled coverage footprint (lazy: one opened Hotspot) ────────
 
-async function requestCoverage(address) {
-  const res = await apiFetch(`/v1/gateways/${encodeURIComponent(address)}/iot/coverage`);
+async function requestCoverage(address, { signal } = {}) {
+  const res = await apiFetch(`/v1/gateways/${encodeURIComponent(address)}/iot/coverage`, signal);
   if (res.status === 404) return { notFound: true };
   const data = await parseJson(res);
   throwIfApiError(res, data);
@@ -252,4 +259,4 @@ async function requestCoverage(address) {
  * not a measurement — callers must say so and show the terrain attribution.
  * Only one footprint is shown at a time, so a few are kept for back-and-forth.
  */
-export const fetchGatewayCoverage = dedupeAsync(requestCoverage, CACHE_TTL_MS, { max: 10 });
+export const fetchGatewayCoverage = dedupeAsync(requestCoverage, CACHE_TTL_MS, { max: 10, signalIndex: 1 });

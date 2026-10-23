@@ -22,8 +22,8 @@ export function makeVoteTools(navigate) {
         "List every tracked Helium governance vote, current and past: proposal address, name, network (HNT/IOT/MOBILE), state, and tallies. Use a proposal address with get-vote-details or open-vote.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute() {
-        return fetchProposals();
+      execute(_input, { signal } = {}) {
+        return fetchProposals({ signal });
       },
     },
     {
@@ -37,8 +37,8 @@ export function makeVoteTools(navigate) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ proposal }) {
-        return fetchProposal(proposal);
+      execute({ proposal }, { signal } = {}) {
+        return fetchProposal(proposal, { signal });
       },
     },
     {
@@ -56,8 +56,8 @@ export function makeVoteTools(navigate) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ voter, proposal }) {
-        return fetchVoterHistory(proposal, voter);
+      execute({ voter, proposal }, { signal } = {}) {
+        return fetchVoterHistory(proposal, voter, { signal });
       },
     },
     {

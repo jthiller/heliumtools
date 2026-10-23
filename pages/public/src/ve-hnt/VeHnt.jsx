@@ -5,6 +5,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { resolveSolanaWallet } from "../lib/solanaAddress.js";
+import { raceAbort, throwIfAborted } from "../lib/abort.js";
 import {
   ArrowTopRightOnSquareIcon,
   BoltIcon,
@@ -725,12 +726,15 @@ export default function VeHnt() {
 
   // Agent path: one fetch serves both the tool result and the rendered
   // page. Marking lastLoadedRef first keeps the auto-query effect from
-  // firing a duplicate load for the same wallet.
-  const analyzeWallet = useCallback((wallet) => {
+  // firing a duplicate load for the same wallet. The agent's signal ends
+  // only its own wait: the page's load keeps going and renders, so a
+  // cancelled call can't leave the page on an abort error.
+  const analyzeWallet = useCallback((wallet, { signal } = {}) => {
+    throwIfAborted(signal);
     setInput(wallet);
     const resolved = resolveSolanaWallet(wallet).toBase58();
     lastLoadedRef.current = resolved;
-    return load(resolved);
+    return raceAbort(load(resolved), signal);
   }, [load]);
   useWebMcpTools(() => makeVeHntTools(analyzeWallet), []);
 

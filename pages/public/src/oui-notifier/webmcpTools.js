@@ -20,9 +20,9 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
         "Catalog of every OUI (organization) on the Helium IoT network: OUI number, owner, payer, escrow account, and delegate keys.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
-      execute() {
+      execute(_input, { signal } = {}) {
         const loaded = getOuis();
-        return loaded?.length ? loaded : fetchOuiIndex();
+        return loaded?.length ? loaded : fetchOuiIndex({ signal });
       },
     },
     {
@@ -37,9 +37,9 @@ export function makeOuiNotifierTools({ getOuis, showOui, prefillSubscription }) 
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true },
-      execute({ oui }) {
+      execute({ oui }, { signal } = {}) {
         showOui(oui);
-        return fetchBalanceForOui(oui);
+        return fetchBalanceForOui(oui, { signal });
       },
     },
     {

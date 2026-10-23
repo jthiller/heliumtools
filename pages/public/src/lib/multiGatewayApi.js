@@ -1,6 +1,7 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
-const API_BASE = import.meta.env.DEV
+const API_BASE = import.meta.env?.DEV
   ? "/api/multi-gateway"
   : "https://api.heliumtools.org/multi-gateway";
 
@@ -25,8 +26,9 @@ export async function fetchGateways() {
   return data;
 }
 
-export async function fetchGatewayPackets(mac) {
-  const res = await fetch(`${API_BASE}/gateways/${mac}/packets`);
+export async function fetchGatewayPackets(mac, { signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${API_BASE}/gateways/${mac}/packets`, { signal });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || "Failed to fetch packets");
   return data;

@@ -1,3 +1,5 @@
+import { throwIfAborted } from "./abort.js";
+
 /**
  * Share identical in-flight GETs and reuse fresh results for a few
  * seconds. WebMCP tools drive the page UI and return data in one call, so
@@ -12,7 +14,8 @@
  * returning false drops a resolved value once in-flight callers have it, so
  * a transient answer is never served from cache.
  */
-export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep } = {}) {
+export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep, signalIndex } = {}) {
+  if (Number.isInteger(signalIndex)) return dedupeCancellable(fn, ttlMs, { max, keep, signalIndex });
   const entries = new Map(); // JSON args key -> { at, promise }
   return (...args) => {
     const key = JSON.stringify(args);
@@ -30,5 +33,93 @@ export function dedupeAsync(fn, ttlMs = 3_000, { max = 100, keep } = {}) {
     };
     promise.then((value) => keep && !keep(value) && evict(), evict);
     return promise;
+  };
+}
+
+/**
+ * Signal-aware callers still share a request with the page. `signalIndex`
+ * identifies the optional `{ signal, ...options }` argument. The signal
+ * isn't part of the cache key; every other option is. Cancelling one caller
+ * releases only its subscription, and cancelling the last caller aborts
+ * the underlying request and removes it from the cache.
+ */
+function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
+  const entries = new Map();
+  let sweptAt = Date.now();
+  return (...args) => {
+    const options = args[signalIndex] || {};
+    const signal = options.signal;
+    try {
+      throwIfAborted(signal);
+    } catch (reason) {
+      return Promise.reject(reason);
+    }
+
+    const keyArgs = [...args];
+    const { signal: ignoredSignal, ...keyOptions } = options;
+    keyArgs[signalIndex] = Object.keys(keyOptions).length ? keyOptions : undefined;
+    // Not .at(-1): this runs synchronously in every page read, and a throw
+    // here (no Array.prototype.at before Safari 15.4) escapes callers' .catch.
+    while (keyArgs.length && keyArgs[keyArgs.length - 1] === undefined) keyArgs.pop();
+    const key = JSON.stringify(keyArgs);
+    let entry = entries.get(key);
+    if (entry && entry.settled && Date.now() - entry.at >= ttlMs) {
+      entries.delete(key);
+      entry = null;
+    }
+    if (!entry) {
+      // Drop expired results (at most once per TTL), so a long-lived page
+      // keeps only what it could still serve, not every key it ever read,
+      // and a live entry isn't evicted for room an expired one is holding.
+      const now = Date.now();
+      if (now - sweptAt >= ttlMs) {
+        sweptAt = now;
+        for (const [k, e] of entries) if (e.settled && now - e.at >= ttlMs) entries.delete(k);
+      }
+      if (entries.size >= max) entries.delete(entries.keys().next().value);
+      entry = { controller: new AbortController(), consumers: new Set(), settled: false, at: 0 };
+      const ownedEntry = entry;
+      const requestArgs = [...args];
+      requestArgs[signalIndex] = { ...options, signal: entry.controller.signal };
+      entry.promise = Promise.resolve().then(() => {
+        throwIfAborted(ownedEntry.controller.signal);
+        return fn(...requestArgs);
+      });
+      entry.evict = () => {
+        if (entries.get(key) === ownedEntry) entries.delete(key);
+      };
+      entry.promise.then((value) => {
+        ownedEntry.settled = true;
+        ownedEntry.at = Date.now();
+        if (keep && !keep(value)) ownedEntry.evict();
+      }, () => {
+        ownedEntry.settled = true;
+        ownedEntry.evict();
+      });
+      entries.set(key, entry);
+    }
+
+    return new Promise((resolve, reject) => {
+      const consumer = {};
+      entry.consumers.add(consumer);
+      const release = () => {
+        signal?.removeEventListener("abort", abort);
+        entry.consumers.delete(consumer);
+      };
+      const abort = () => {
+        release();
+        try {
+          throwIfAborted(signal);
+        } catch (reason) {
+          if (!entry.settled && entry.consumers.size === 0) {
+            entry.evict();
+            entry.controller.abort(reason);
+          }
+          reject(reason);
+        }
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+      entry.promise.then((value) => { release(); resolve(value); }, (error) => { release(); reject(error); });
+    });
   };
 }

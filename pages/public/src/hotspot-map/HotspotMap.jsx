@@ -1,3 +1,4 @@
+import { throwIfAborted } from "../lib/abort.js";
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import MapGL, { NavigationControl } from "react-map-gl/maplibre";
@@ -704,7 +705,8 @@ export default function HotspotMap() {
 
   // Resolve entity keys → locations
   const resolveKeys = useCallback(
-    async (entityKeys, nameMap = null, label = null) => {
+    async (entityKeys, nameMap = null, label = null, { signal } = {}) => {
+      throwIfAborted(signal);
       setResolving(true);
       setError(null);
       setProgress({ done: 0, total: entityKeys.length });
@@ -713,7 +715,8 @@ export default function HotspotMap() {
       try {
         for (let i = 0; i < entityKeys.length; i += RESOLVE_CHUNK_SIZE) {
           const chunk = entityKeys.slice(i, i + RESOLVE_CHUNK_SIZE);
-          const result = await resolveLocations(chunk);
+          const result = await resolveLocations(chunk, { signal });
+          throwIfAborted(signal);
 
           for (const h of result.hotspots) {
             let coords = null;
@@ -740,6 +743,7 @@ export default function HotspotMap() {
           setProgress({ done: Math.min(i + chunk.length, entityKeys.length), total: entityKeys.length });
         }
 
+        throwIfAborted(signal);
         const merged = mergeByEntityKey(allHotspots);
 
         setHotspots((prev) => {
@@ -755,12 +759,13 @@ export default function HotspotMap() {
         // the error state instead, but the agent tools need the signal.
         return merged;
       } catch (err) {
+        if (signal?.aborted || err?.name === "AbortError") throw err;
         setError(err.message);
         return null;
       } finally {
         setResolving(false);
         setProgress({ done: 0, total: 0 });
-        setMobileExpanded(false);
+        if (!signal?.aborted) setMobileExpanded(false);
       }
     },
     [fitBounds]
@@ -913,14 +918,24 @@ export default function HotspotMap() {
   // Agent tools reuse the same resolveKeys pipeline as the manual flows.
   // The wallet tool skips the preview step — the agent's ask already names
   // the wallet, so everything it owns goes straight onto the map.
-  const addWalletToMap = useCallback(async (address) => {
-    const result = await fetchWalletHotspots(address);
+  const addWalletToMap = useCallback(async (address, { signal } = {}) => {
+    throwIfAborted(signal);
+    const result = await fetchWalletHotspots(address, { signal });
+    throwIfAborted(signal);
     if (!result.hotspots?.length) throw new Error("No Helium Hotspots found for this wallet.");
     const merged = mergeByEntityKey(result.hotspots);
-    walletCountRef.current += 1;
     const entityKeys = merged.map((h) => h.entityKey);
     const nameMap = new Map(merged.map((h) => [h.entityKey, h.name]));
-    const resolved = await resolveKeys(entityKeys, nameMap, `Wallet ${walletCountRef.current}`);
+    // Claim the label number now (a concurrent lookup takes the next one) and
+    // give it back if nothing is plotted under it, so a cancelled or failed
+    // call doesn't skip a number.
+    const number = ++walletCountRef.current;
+    let resolved = null;
+    try {
+      resolved = await resolveKeys(entityKeys, nameMap, `Wallet ${number}`, { signal });
+    } finally {
+      if (!resolved && walletCountRef.current === number) walletCountRef.current = number - 1;
+    }
     if (!resolved) throw new Error("failed to resolve Hotspot locations — the page shows the error");
     return {
       added: entityKeys.length,
@@ -928,12 +943,13 @@ export default function HotspotMap() {
     };
   }, [resolveKeys]);
 
-  const addKeysToMap = useCallback(async (keys) => {
+  const addKeysToMap = useCallback(async (keys, { signal } = {}) => {
+    throwIfAborted(signal);
     const valid = keys.filter(isValidEntityKey);
     if (valid.length === 0) throw new Error("No valid entity keys given.");
     setMode("keys");
     setKeysInput(valid.join("\n"));
-    const resolved = await resolveKeys(valid);
+    const resolved = await resolveKeys(valid, null, null, { signal });
     if (!resolved) throw new Error("failed to resolve Hotspot locations — the page shows the error");
     return { requested: keys.length, plotted: resolved.length };
   }, [resolveKeys]);

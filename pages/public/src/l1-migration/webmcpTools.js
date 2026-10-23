@@ -51,7 +51,12 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
         required: ["address"],
         additionalProperties: false,
       },
+      annotations: { readOnlyHint: false, consequentialHint: true },
       validate: validateAddress,
+      // The wrapper refuses a call cancelled before it starts; once sent, the
+      // migration isn't tied to the call's signal (see migrateWallet), so it
+      // finishes and the page reports its outcome even if the agent stops
+      // waiting.
       async execute({ address }) {
         showWallet(address);
         const result = await migrateWallet(resolveSolanaWallet(address).toBase58());
@@ -59,6 +64,11 @@ export function makeL1MigrationTools({ showWallet, reportStatus }) {
           tone: result.success ? (result.transactionsProcessed === 0 ? "info" : "success") : "error",
           message: result.message,
         });
+        if (result?.success === false) {
+          const error = new Error(result.error || result.message || "Migration did not complete; inspect the transaction results before retrying.");
+          error.data = result;
+          throw error;
+        }
         return result;
       },
     },

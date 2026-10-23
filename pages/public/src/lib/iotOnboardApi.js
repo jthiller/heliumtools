@@ -1,11 +1,13 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
-const API_BASE = import.meta.env.DEV
+const API_BASE = import.meta.env?.DEV
   ? "/api/iot-onboard"
   : "https://api.heliumtools.org/iot-onboard";
 
-export async function fetchOnboardFees() {
-  const res = await fetch(`${API_BASE}/fees`);
+export async function fetchOnboardFees({ signal } = {}) {
+  throwIfAborted(signal);
+  const res = await fetch(`${API_BASE}/fees`, { signal });
   const data = await parseJson(res);
   if (!res.ok) return null;
   return data;

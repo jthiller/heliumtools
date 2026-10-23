@@ -234,6 +234,8 @@ involved (it has no R2 binding); the browser fetches the `.img` directly.
 
 The /iot-onboard page registers the read-only agent tool `get-iot-onboard-fees` from `pages/public/src/iot-onboard/webmcpTools.js`; BLE and wallet steps stay human-only. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
+Fee reads forward the WebMCP execution signal to fetch. Cancellation remains an abort rather than becoming an upstream-fee failure.
+
 ## Landing preview
 
 The `/` card (`pages/public/src/pages/landing/previews/iot-onboard.js`) lays the paired Hotspot's identity bar (Bluetooth signal icon, animal name Electric Pewter Perch, device name Helium Hotspot 3C72; the connected header in `IotOnboard.jsx`, the anchor) across the WiFi panel's Available Networks chips with Rooftop-Mesh-5G selected (`WifiPanel`). Both are dpr-3 macros from the macro pass of `scripts/tool-previews/capture/iot-onboard.mjs` (`node capture/iot-onboard.mjs macros`): `/iot-onboard` with the `single` wallet fake-connected read-only, Web Bluetooth mocked by `capture/iot-onboard.ble-mock.mjs` (a fake gateway-config Hotspot serving values in the `bleTypes.js`/`bleProto.js` formats) and `POST /iot-onboard/lookup` fulfilled locally; it clicks Pair Hotspot, Scan, the Rooftop-Mesh-5G chip and the Full Onboard (PoC) mode card, and never Connect, Identify, Issue or Onboard. Re-capture and re-bake when the connected identity bar, `WifiPanel`'s network chips, the BLE characteristics or encodings the mock emulates, or what the script clicks and waits on (those button labels, the Diagnostics heading, "Available Networks", "Step 3: Assert Location") change (`pages/public/src/pages/landing/CLAUDE.md`).
