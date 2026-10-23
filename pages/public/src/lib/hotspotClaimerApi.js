@@ -1,4 +1,4 @@
-import { withTimeout } from "./abort.js";
+import { withTimeout, throwIfAborted } from "./abort.js";
 import { ApiError, parseJson, throwIfApiError as throwIfError } from "./api.js";
 import { dedupeAsync } from "./requestDedupe.js";
 
@@ -13,7 +13,7 @@ export const API_BASE = import.meta.env?.DEV
 // identical live lookups. Rewards and claims stay undeduped — a claim must
 // be reflected by the very next rewards read.
 export const lookupHotspot = dedupeAsync(async (entityKey, { signal } = {}) => {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ entityKey });
   const res = await fetch(`${API_BASE}/lookup?${query.toString()}`, { signal: withTimeout(signal, 30_000) });
   const data = await parseJson(res);
@@ -22,7 +22,7 @@ export const lookupHotspot = dedupeAsync(async (entityKey, { signal } = {}) => {
 }, 3_000, { signalIndex: 1 });
 
 export async function fetchRewards(entityKey, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ entityKey });
   const res = await fetch(`${API_BASE}/rewards?${query.toString()}`, { signal });
   const data = await parseJson(res);
@@ -45,7 +45,7 @@ export async function claimRewards(entityKey) {
 }
 
 export async function fetchBulkRewards(owner, hotspots, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/wallet/rewards`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -58,7 +58,7 @@ export async function fetchBulkRewards(owner, hotspots, { signal } = {}) {
 }
 
 export const fetchWalletHotspots = dedupeAsync(async (address, { signal } = {}) => {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ address });
   const res = await fetch(`${API_BASE}/wallet?${query.toString()}`, { signal: withTimeout(signal, 30_000) });
   const data = await parseJson(res);

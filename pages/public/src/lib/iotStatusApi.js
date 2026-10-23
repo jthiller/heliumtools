@@ -1,6 +1,6 @@
 import { parseJson, throwIfApiError } from "./api.js";
 import { dedupeAsync } from "./requestDedupe.js";
-import { withTimeout } from "./abort.js";
+import { withTimeout, throwIfAborted } from "./abort.js";
 
 // Client for api-iot.heliumtools.org (helium-iot-service): per-Hotspot IoT
 // connectivity, delivered-message traffic (utilization) and modeled coverage.
@@ -117,18 +117,18 @@ const SCAN_CONCURRENCY = 8;
  * @returns {Promise<{statusByKey: Record<string, object|null>, dataThrough: string|null}>}
  */
 export async function scanGatewayStatuses(addresses, { onProgress, isCancelled = () => false, signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const result = { statusByKey: {}, dataThrough: null };
   let cursor = 0;
   async function worker() {
     while (!isCancelled() && cursor < addresses.length) {
-      signal?.throwIfAborted();
+      throwIfAborted(signal);
       const address = addresses[cursor++];
       let entry = null;
       try {
         entry = await fetchGatewayStatus(address, { signal });
       } catch {
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         // Transport failure / 5xx — stays null.
       }
       if (isCancelled()) return;
@@ -140,7 +140,7 @@ export async function scanGatewayStatuses(addresses, { onProgress, isCancelled =
     }
   }
   await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, addresses.length) }, worker));
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   return result;
 }
 

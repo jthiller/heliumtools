@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
 const API_BASE = import.meta.env?.DEV
@@ -31,7 +32,7 @@ export async function buildDelegateTransaction({ owner, amount, oui, payer_key, 
 }
 
 export async function fetchHntPrice({ signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/price`, { signal });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || "Failed to fetch price");
@@ -39,7 +40,7 @@ export async function fetchHntPrice({ signal } = {}) {
 }
 
 export async function resolveOui(oui, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${DC_PURCHASE_API}/oui/${oui}`, { signal });
   const data = await parseJson(res);
   if (!res.ok) return null;
@@ -47,7 +48,7 @@ export async function resolveOui(oui, { signal } = {}) {
 }
 
 export async function resolvePayerKey(payerKey, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/resolve-payer/${encodeURIComponent(payerKey)}`, { signal });
   const data = await parseJson(res);
   if (!res.ok) return null;

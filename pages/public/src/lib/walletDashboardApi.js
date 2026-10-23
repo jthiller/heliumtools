@@ -1,5 +1,5 @@
 import { ApiError, parseJson, throwIfApiError } from "./api.js";
-import { withTimeout, abortableDelay } from "./abort.js";
+import { withTimeout, abortableDelay, throwIfAborted } from "./abort.js";
 
 export { ApiError };
 
@@ -80,7 +80,7 @@ const MAX_RETRY_WAIT_SECONDS = 60;
  * @returns {Promise<{onboardedByKey: Record<string, Record<string, string|null>>, failedBatches: number, batchCount: number}>}
  */
 export async function scanOnboardDates(hotspots, { onProgress, isCancelled = () => false, waitOutRateLimit = false, signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const rows = hotspots.map(({ entityKey, networks }) => ({ entityKey, networks }));
   const batches = [];
   for (let i = 0; i < rows.length; i += ONBOARDED_BATCH_SIZE) batches.push(rows.slice(i, i + ONBOARDED_BATCH_SIZE));
@@ -91,7 +91,7 @@ export async function scanOnboardDates(hotspots, { onProgress, isCancelled = () 
       try {
         return await fetchOnboarded(batch, { signal });
       } catch (err) {
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         if (!waitOutRateLimit || !err?.rateLimited || attempt >= MAX_RATE_LIMIT_RETRIES || isCancelled()) throw err;
         const waitSeconds = Math.min(err.retryAfterSeconds || 5, MAX_RETRY_WAIT_SECONDS);
         await abortableDelay(waitSeconds * 1000, signal);
@@ -102,13 +102,13 @@ export async function scanOnboardDates(hotspots, { onProgress, isCancelled = () 
   let cursor = 0;
   async function worker() {
     while (!isCancelled() && cursor < batches.length) {
-      signal?.throwIfAborted();
+      throwIfAborted(signal);
       const batch = batches[cursor++];
       let results = null;
       try {
         results = await fetchBatch(batch);
       } catch {
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         result.failedBatches++;
       }
       if (isCancelled()) return;
@@ -117,7 +117,7 @@ export async function scanOnboardDates(hotspots, { onProgress, isCancelled = () 
     }
   }
   await Promise.all(Array.from({ length: Math.min(ONBOARDED_CONCURRENCY, batches.length) }, worker));
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   return result;
 }
 

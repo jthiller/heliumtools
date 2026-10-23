@@ -1,3 +1,15 @@
+/** AbortError for older signals without `reason`; custom reasons stay intact. */
+function abortReason(signal) {
+  return signal.reason === undefined
+    ? new DOMException("The operation was aborted.", "AbortError")
+    : signal.reason;
+}
+
+/** Check cancellation without requiring AbortSignal.prototype.throwIfAborted. */
+export function throwIfAborted(signal) {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
 /**
  * A signal that aborts with the first of `signals` to abort (absent ones
  * skipped). AbortSignal.any is missing before Safari 17.4, Chrome 116 and
@@ -10,10 +22,10 @@ export function anySignal(...signals) {
   const ctl = new AbortController();
   for (const s of list) {
     if (s.aborted) {
-      ctl.abort(s.reason);
+      ctl.abort(abortReason(s));
       break;
     }
-    s.addEventListener("abort", () => ctl.abort(s.reason), { once: true });
+    s.addEventListener("abort", () => ctl.abort(abortReason(s)), { once: true });
   }
   return ctl.signal;
 }
@@ -37,7 +49,7 @@ export function withTimeout(signal, milliseconds) {
 
 /** A cancellable wait, including cleanup when it finishes normally. */
 export function abortableDelay(milliseconds, signal) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   return new Promise((resolve, reject) => {
     const finish = () => {
       signal?.removeEventListener("abort", abort);
@@ -47,7 +59,7 @@ export function abortableDelay(milliseconds, signal) {
     const abort = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", abort);
-      reject(signal.reason);
+      reject(abortReason(signal));
     };
     signal?.addEventListener("abort", abort, { once: true });
   });
@@ -60,9 +72,9 @@ export function abortableDelay(milliseconds, signal) {
  */
 export function raceAbort(promise, signal) {
   if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(signal.reason);
+  if (signal.aborted) return Promise.reject(abortReason(signal));
   return new Promise((resolve, reject) => {
-    const abort = () => reject(signal.reason);
+    const abort = () => reject(abortReason(signal));
     signal.addEventListener("abort", abort, { once: true });
     promise.then(
       (value) => {

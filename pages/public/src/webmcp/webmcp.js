@@ -18,6 +18,7 @@
  */
 
 import { TOOL_CATALOG, SITE_TOOL_NAMES } from "./catalog.js";
+import { throwIfAborted } from "../lib/abort.js";
 
 /**
  * Feature-detect the Model Context entry point. Returns null when the
@@ -229,7 +230,7 @@ function wrapTool(tool) {
     ...descriptor,
     async execute(rawInput, options) {
       const signal = options?.signal;
-      signal?.throwIfAborted();
+      throwIfAborted(signal);
       const input = normalizeInput(tool.inputSchema, rawInput ?? {});
       const schemaErrors = validateAgainstSchema(tool.inputSchema, input);
       if (schemaErrors.length > 0) {
@@ -238,17 +239,17 @@ function wrapTool(tool) {
       try {
         if (validate) {
           const message = await validate(input);
-          signal?.throwIfAborted();
+          throwIfAborted(signal);
           if (message) return toolError(`Invalid arguments for ${tool.name}: ${message}`);
         }
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         const value = await execute(input, options);
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         // Pass through results that are already MCP-shaped.
         if (value && typeof value === "object" && Array.isArray(value.content)) return value;
         return toolResult(value);
       } catch (err) {
-        if (signal?.aborted) throw signal.reason;
+        throwIfAborted(signal);
         if (err?.name === "AbortError") throw err;
         let message = err?.message || String(err);
         if (err?.rateLimited) {
@@ -363,7 +364,9 @@ export function registerWebMcpTools(tools) {
       // tool set wholesale, so maintain the union and re-provide on changes.
       wrapped.forEach((t) => providedTools.set(t.name, t));
       unregister = () => {
-        wrapped.forEach((t) => providedTools.delete(t.name));
+        wrapped.forEach((t) => {
+          if (providedTools.get(t.name) === t) providedTools.delete(t.name);
+        });
         mc.provideContext({ tools: [...providedTools.values()] });
       };
       mc.provideContext({ tools: [...providedTools.values()] });

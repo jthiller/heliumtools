@@ -1,3 +1,4 @@
+import { throwIfAborted } from "../lib/abort.js";
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import MapGL, { NavigationControl } from "react-map-gl/maplibre";
@@ -705,7 +706,7 @@ export default function HotspotMap() {
   // Resolve entity keys → locations
   const resolveKeys = useCallback(
     async (entityKeys, nameMap = null, label = null, { signal } = {}) => {
-      signal?.throwIfAborted();
+      throwIfAborted(signal);
       setResolving(true);
       setError(null);
       setProgress({ done: 0, total: entityKeys.length });
@@ -715,7 +716,7 @@ export default function HotspotMap() {
         for (let i = 0; i < entityKeys.length; i += RESOLVE_CHUNK_SIZE) {
           const chunk = entityKeys.slice(i, i + RESOLVE_CHUNK_SIZE);
           const result = await resolveLocations(chunk, { signal });
-          signal?.throwIfAborted();
+          throwIfAborted(signal);
 
           for (const h of result.hotspots) {
             let coords = null;
@@ -742,7 +743,7 @@ export default function HotspotMap() {
           setProgress({ done: Math.min(i + chunk.length, entityKeys.length), total: entityKeys.length });
         }
 
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         const merged = mergeByEntityKey(allHotspots);
 
         setHotspots((prev) => {
@@ -918,9 +919,9 @@ export default function HotspotMap() {
   // The wallet tool skips the preview step — the agent's ask already names
   // the wallet, so everything it owns goes straight onto the map.
   const addWalletToMap = useCallback(async (address, { signal } = {}) => {
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const result = await fetchWalletHotspots(address, { signal });
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     if (!result.hotspots?.length) throw new Error("No Helium Hotspots found for this wallet.");
     const merged = mergeByEntityKey(result.hotspots);
     const entityKeys = merged.map((h) => h.entityKey);
@@ -943,7 +944,7 @@ export default function HotspotMap() {
   }, [resolveKeys]);
 
   const addKeysToMap = useCallback(async (keys, { signal } = {}) => {
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const valid = keys.filter(isValidEntityKey);
     if (valid.length === 0) throw new Error("No valid entity keys given.");
     setMode("keys");

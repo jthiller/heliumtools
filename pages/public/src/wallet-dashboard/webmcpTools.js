@@ -27,7 +27,7 @@ import { MOBILE_ISSUE_ORDER, aggregateMobile, isMobileHotspot, mobileActionRank 
 import { checkMobileOnce } from "./mobile/mobileClient.js";
 import { mobileFleetOf } from "./mobile/useMobileActivity.js";
 import { FRESH_MS, windowLength } from "./mobile/tableMeta.js";
-import { abortableDelay } from "../lib/abort.js";
+import { abortableDelay, throwIfAborted } from "../lib/abort.js";
 import { dedupeAsync } from "../lib/requestDedupe.js";
 
 const ADDRESS_SCHEMA = {
@@ -120,7 +120,7 @@ async function runWalletMobile(wallet, { signal } = {}) {
   const hotspots = (await fetchFleet(wallet, { signal }))?.hotspots || [];
   const fleet = mobileFleetOf(hotspots);
   if (fleet.mobileTotal === 0) return { hotspots, activity: null, timedOut: false };
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const { state, timedOut } = await checkMobileOnce(
     { wallet, keys: fleet.keys, wifi: fleet.wifiTotal > 0 },
     { timeoutMs: MOBILE_CHECK_TIMEOUT_MS, signal },
@@ -434,7 +434,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
   async function pageMobileState(wallet, signal) {
     const deadline = Date.now() + MOBILE_PAGE_WAIT_MS;
     for (;;) {
-      signal?.throwIfAborted();
+      throwIfAborted(signal);
       if (getWallet() !== wallet) return null;
       const page = getMobileState?.();
       const ours = page?.wallet === wallet ? page : null;
@@ -490,7 +490,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
       annotations: { readOnlyHint: true },
       async execute({ address, offset = 0, limit = FLEET_RESULT_CAP }, { signal } = {}) {
         const fleet = await fetchToolFleet(requireWallet(address), { signal });
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         const all = orderedFleet(fleet?.hotspots);
         const hotspots = all.slice(offset, offset + limit);
         return { ...fleet, hotspots, aggregateScope: "fleet", pagination: pagination(all.length, offset, limit, hotspots.length) };
@@ -532,7 +532,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
         // allSettled, matching useFleetRewards: one slow or rate-limited
         // batch shouldn't discard the others' totals.
         const settled = await Promise.allSettled(batches.map((batch) => fetchRewards(wallet, batch, { signal })));
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         for (const [batchIndex, outcome] of settled.entries()) {
           if (outcome.status === "rejected") { failedBatches++; continue; }
           const results = outcome.value;
@@ -594,7 +594,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
         // A failed or rate-limited batch reads null for its Hotspots rather than
         // discarding the others' dates (the agent gets a partial result, not a wait).
         const { onboardedByKey, failedBatches, batchCount } = await scanOnboardDates(counted, { signal });
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         if (failedBatches === batchCount && batchCount > 0) {
           throw new Error("every onboard-date batch failed — try again shortly");
         }
@@ -625,7 +625,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
       name: "get-wallet-iot-status",
       title: "Get wallet IoT connectivity and traffic",
       description:
-        `Per-Hotspot IoT connectivity and 30-day delivered LoRaWAN messages for a wallet's IoT Hotspots. Connectivity is a per-UTC-day verdict (active = connected to the Helium Packet Router on the latest reported day), not online-now. Health combines the two: inactiveTraffic (not connected, but had messages in the window — check these first), activeQuiet (connected, no messages in 30 days), inactiveQuiet, activeTraffic. Page membership follows entityKey, so pages hold still between calls; rows run most actionable first within a page. To triage, pass health: with the dashboard's finished scan it filters the whole fleet before paging, so one call returns every Hotspot in that state; an own scan can only filter the page it looks up. Use offset/limit and pagination.nextOffset for all Hotspots. Uses the dashboard's finished scan when that wallet is on screen (whole fleet, same counts as the UI); otherwise looks up at most ${IOT_SCAN_HOTSPOT_CAP} IoT Hotspots per page. aggregateScope identifies whether counts/health/traffic cover the fleet (dashboard) or only this page (own scan). For one Hotspot's daily messages per OUI (operator), use get-iot-hotspot-traffic.`,
+        `Per-Hotspot IoT connectivity and 30-day delivered LoRaWAN messages for a wallet's IoT Hotspots. Connectivity is a per-UTC-day verdict (active = connected to the Helium Packet Router on the latest reported day), not online-now. Health combines the two: inactiveTraffic (not connected, but had messages in the window — check these first), activeQuiet (connected, no messages in 30 days), inactiveQuiet, activeTraffic. Page membership follows entityKey before health filtering, so pages hold still when the dashboard's scan finishes; rows run most actionable first within a page. To triage, pass health to list matching rows within each page. Pagination always counts all IoT Hotspots, including nonmatches: follow pagination.nextOffset even when hotspots is empty. Use offset/limit to retrieve all pages. Uses the dashboard's finished scan when that wallet is on screen (whole-fleet counts, same as the UI); otherwise looks up at most ${IOT_SCAN_HOTSPOT_CAP} IoT Hotspots per page. aggregateScope identifies whether counts/health/traffic cover the fleet (dashboard) or only this page (own scan). For one Hotspot's daily messages per OUI (operator), use get-iot-hotspot-traffic.`,
       inputSchema: {
         type: "object",
         properties: {
@@ -634,7 +634,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
             type: "string",
             enum: IOT_HEALTH_ORDER,
             description:
-              "List only IoT Hotspots in this health state. Filters the whole fleet when the dashboard's finished scan is used; an own scan filters only the page it looks up. counts and health still cover everything looked up.",
+              "List only rows in this health state within each entityKey page. Pagination still counts every IoT Hotspot; continue with nextOffset even when no rows match. counts and health cover the whole fleet with dashboard data, or the scanned page otherwise.",
           },
           offset: OFFSET_SCHEMA,
           limit: limitSchema(IOT_SCAN_HOTSPOT_CAP),
@@ -650,13 +650,10 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
         const usePage = page?.done && page.wallet === wallet && Array.isArray(page.hotspots);
         const eligible = orderedFleet((usePage ? page.hotspots : (await fetchToolFleet(wallet, { signal }))?.hotspots || []).filter(hasIotStatus));
         const iotHotspots = eligible.length;
-        // The dashboard's scan knows every row's health, so `health` narrows
-        // the whole fleet before paging; an own scan learns health only for the
-        // page it looks up, so there it filters that page's rows below.
-        const listed = usePage && health
-          ? eligible.filter((h) => page.iotStatus.rows.get(h.entityKey)?.health === health)
-          : eligible;
-        const hotspots = listed.slice(offset, offset + limit);
+        // Offset always indexes the same entityKey-ordered fleet, even when
+        // the dashboard's completed scan replaces an own scan between calls.
+        // Health narrows only the returned rows, after page membership is set.
+        const hotspots = eligible.slice(offset, offset + limit);
         // The page-wide index (memoized), fetched alongside the scan.
         const indexPromise = hotspots.length ? fetchUtilizationIndex({ signal }).catch(() => null) : null;
         let agg = page?.iotStatus;
@@ -674,7 +671,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
           agg = aggregateIotStatus(hotspots, statusByKey, dataThrough, onboardedByKey);
         }
         const index = await indexPromise;
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
 
         const { traffic, trafficRange, livenessRange } = agg;
         // The network index describes one build; apply it only to that build's day.
@@ -701,19 +698,18 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
         }
         if (usePage) {
           notes.push("Counts, health and traffic cover the whole dashboard fleet; hotspots lists only this page.");
-          if (health) notes.push(`hotspots lists only Hotspots with health ${health}; pagination counts those.`);
         } else {
           notes.push("Counts, health and traffic cover only this page; continue with pagination.nextOffset.");
-          if (health) {
-            notes.push(
-              `health filters this page's own scan: hotspots lists the ${rows.length} of its ${hotspots.length} looked-up Hotspots with health ${health}, and pagination counts every IoT Hotspot.`,
-            );
-          }
           if (iotHotspots > hotspots.length) {
             notes.push(
-              "For whole-fleet counts and a fleet-wide health filter, open the wallet with open-wallet-dashboard and call again once its IoT scan finishes.",
+              "For whole-fleet counts, open the wallet with open-wallet-dashboard and call again once its IoT scan finishes.",
             );
           }
+        }
+        if (health) {
+          notes.push(
+            `health filters this entityKey page: hotspots lists the ${rows.length} of its ${hotspots.length} members with health ${health}. Pagination counts every IoT Hotspot, including nonmatches; continue with pagination.nextOffset even when hotspots is empty.`,
+          );
         }
 
         return {
@@ -721,7 +717,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
           iotHotspots,
           hotspotsCounted: usePage ? eligible.length : hotspots.length,
           aggregateScope: usePage ? "fleet" : "page",
-          pagination: pagination(listed.length, offset, limit, hotspots.length),
+          pagination: pagination(eligible.length, offset, limit, hotspots.length),
           connectivityDay: livenessRange,
           trafficThrough: trafficRange,
           window: indexWindow,
@@ -764,7 +760,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
           // The page-wide index (memoized; no per-Hotspot request) says whether
           // this zero spans 30 reported days or is a lower bound.
           const index = await fetchUtilizationIndex({ signal }).catch(() => null);
-          signal?.throwIfAborted();
+          throwIfAborted(signal);
           const build = indexForBuild(index, known.dataThrough);
           const partial = build ? build.daysComplete < build.days : null;
           return {
@@ -794,7 +790,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
           fetchWellKnownOuiNames({ signal }).catch(() => null),
           fetchUtilizationIndex({ signal }).catch(() => null),
         ]);
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         if (result.notFound) {
           throw new Error("not in the IoT service's Hotspot inventory — check the entity key (IoT Hotspots only)");
         }
@@ -924,7 +920,7 @@ export function makeWalletDashboardTools(navigate, getWallet, getIotState, getMo
           ({ hotspots, activity, timedOut } = await checkWalletMobile(wallet, { signal }));
           agg = aggregateMobile(hotspots, activity, Date.now());
         }
-        signal?.throwIfAborted();
+        throwIfAborted(signal);
         return mobileActivityResult({ wallet, hotspots, activity, agg, page, timedOut, hiddenAt, issue, offset, limit });
       },
     },

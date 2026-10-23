@@ -1,5 +1,5 @@
 import { dedupeAsync } from "./requestDedupe.js";
-import { withTimeout } from "./abort.js";
+import { withTimeout, throwIfAborted } from "./abort.js";
 
 export const API_BASE = import.meta.env?.DEV
   ? "/api/oui-notifier"
@@ -42,7 +42,7 @@ export function throwIfApiError(res, data) {
 }
 
 export async function fetchOuiIndex({ signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/ouis`, { signal });
   if (!res.ok) {
     throw new Error("Unable to load OUIs");
@@ -54,7 +54,7 @@ export async function fetchOuiIndex({ signal } = {}) {
 // Deduped: the WebMCP tool fetches and drives the lookup input, whose
 // debounced effect would otherwise repeat the identical request.
 export const fetchBalanceForOui = dedupeAsync(async (oui, { signal } = {}) => {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ oui: String(oui) });
   const res = await fetch(`${API_BASE}/balance?${query.toString()}`, { signal: withTimeout(signal, 30_000) });
   const data = await parseJson(res);

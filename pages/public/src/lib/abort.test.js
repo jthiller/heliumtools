@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
-import { abortableDelay, raceAbort, withTimeout } from "./abort.js";
+import { abortableDelay, raceAbort, withTimeout, throwIfAborted } from "./abort.js";
 
 /** Run `body` with AbortSignal[name] removed, as on older browsers. */
 function without(t, name, body) {
@@ -77,4 +77,34 @@ test("a completed delay removes its abort listener", async () => {
 
 test("an already cancelled delay never schedules work", () => {
   assert.throws(() => abortableDelay(60_000, AbortSignal.abort()), { name: "AbortError" });
+});
+
+
+test("portable cancellation guard does not require the AbortSignal prototype method", (t) => {
+  const descriptor = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "throwIfAborted");
+  delete AbortSignal.prototype.throwIfAborted;
+  t.after(() => Object.defineProperty(AbortSignal.prototype, "throwIfAborted", descriptor));
+  assert.doesNotThrow(() => throwIfAborted());
+  assert.doesNotThrow(() => throwIfAborted(new AbortController().signal));
+  const reason = new Error("caller stopped");
+  assert.throws(() => throwIfAborted(AbortSignal.abort(reason)), (error) => error === reason);
+  assert.throws(() => throwIfAborted({ aborted: true }), { name: "AbortError" });
+  let caught = false;
+  try {
+    throwIfAborted({ aborted: true, reason: null });
+  } catch (error) {
+    caught = true;
+    assert.equal(error, null);
+  }
+  assert.equal(caught, true, "a defined null reason must not be replaced");
+});
+
+test("old signals without an exposed reason still reject waits with AbortError", async () => {
+  const controller = new AbortController();
+  Object.defineProperty(controller.signal, "reason", { value: undefined });
+  const waiting = abortableDelay(60_000, controller.signal);
+  const racing = raceAbort(new Promise(() => {}), controller.signal);
+  controller.abort();
+  await assert.rejects(waiting, { name: "AbortError" });
+  await assert.rejects(racing, { name: "AbortError" });
 });

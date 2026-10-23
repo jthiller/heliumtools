@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson, throwIfApiError } from "./api.js";
 
 
@@ -22,7 +23,7 @@ export const SSE_URL = `${API_BASE}/sse`;
 
 /** Cached snapshot, stale-while-revalidate. Rate limited per IP; limits are documented in the worker README. */
 export async function fetchCurrentPrice({ signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/current`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);
@@ -31,7 +32,7 @@ export async function fetchCurrentPrice({ signal } = {}) {
 
 /** Live chain plus market read on every call. Rate limited per IP; limits are documented in the worker README. */
 export async function fetchInstantPrice({ signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/instant`, { signal });
   const data = await parseJson(res);
   throwIfApiError(res, data);

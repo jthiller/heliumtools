@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { ApiError, parseJson, throwIfApiError } from "./api.js";
 
 export { ApiError };
@@ -10,7 +11,7 @@ export const API_BASE = import.meta.env?.DEV
 // claim immediately. The WebMCP tool avoids double-fetching by going
 // through the page's own load (see VeHnt.jsx analyzeWallet).
 export async function fetchPositions(wallet, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ wallet });
   const res = await fetch(`${API_BASE}/positions?${query.toString()}`, { signal });
   const data = await parseJson(res);
@@ -19,7 +20,7 @@ export async function fetchPositions(wallet, { signal } = {}) {
 }
 
 export async function fetchPositionEpochs(positionMint, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ positionMint });
   const res = await fetch(`${API_BASE}/position-epochs?${query.toString()}`, { signal });
   const data = await parseJson(res);

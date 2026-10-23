@@ -97,7 +97,9 @@ clients, scans and polling waits, except the two broadcast POSTs (see
 Safety rules). Clients compose their own deadline with
 `lib/abort.js`'s `withTimeout(signal, ms)`; every shared page read passes
 through it, so it falls back where `AbortSignal.any` or
-`AbortSignal.timeout` is missing. Waits use `abortableDelay(ms, signal)`. A
+`AbortSignal.timeout` is missing. `throwIfAborted(signal)` checks cancellation
+without requiring the native method and supplies an AbortError when an older
+signal has no reason. Waits use `abortableDelay(ms, signal)`. A
 tool that shares the page's own load ends only its wait with
 `raceAbort(promise, signal)` (ve-hnt), so the page still renders. Do not
 turn an abort into partial data or a normal error result. The Mobile tool
@@ -199,8 +201,11 @@ literals — `toolError` in webmcp.js exists only for custom shaping.
   tools expose `offset`/`limit` and `pagination.nextOffset` so agents can
   retrieve the remainder. `aggregateScope` states whether summary counts
   cover the current page or the whole fleet. Page membership follows
-  entityKey; triage goes through filters applied before paging (IoT
-  `health`, Mobile `issue`). Offsets apply to the current live dataset,
+  entityKey. Mobile `issue` narrows the fleet before paging; IoT `health`
+  filters rows within each entityKey page, both during an own scan and after
+  the dashboard scan completes, so its offsets never change meaning between
+  those sources. IoT pagination counts all IoT Hotspots, including pages with
+  no health matches. Offsets apply to the current live dataset,
   not a frozen snapshot.
 
 ## Testing
@@ -211,7 +216,9 @@ boundaries. Tests cover schema validation, useful errors, registration and
 hook cleanup (including late asynchronous factories), shared cancellation,
 transaction metadata/failures, complete and stable fleet pagination, Mobile
 worker stop and settle, and the abort helpers' fallbacks for browsers
-without `AbortSignal.any`/`AbortSignal.timeout`. No test sends on-chain
+without `AbortSignal.any`/`AbortSignal.timeout` or native `throwIfAborted`.
+Ownership checks keep stale cleanup from removing replacement registrations
+in both registerTool and provideContext hosts. No test sends on-chain
 transactions. Frontend checks run
 `npm ci`, `npm test`, and `npm run build` on pull requests and main pushes.
 

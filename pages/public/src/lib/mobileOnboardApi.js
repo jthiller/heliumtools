@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
 const API_BASE = import.meta.env?.DEV
@@ -22,7 +23,7 @@ async function post(path, body) {
 
 /** Current wifiDataOnly onboarding fees (DC). */
 export async function fetchMobileFees({ signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/fees`, { signal });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || `Server returned ${res.status}`);

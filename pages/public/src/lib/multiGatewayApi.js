@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
 const API_BASE = import.meta.env?.DEV
@@ -26,7 +27,7 @@ export async function fetchGateways() {
 }
 
 export async function fetchGatewayPackets(mac, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/gateways/${mac}/packets`, { signal });
   const data = await parseJson(res);
   if (!res.ok) throw new Error(data?.error || "Failed to fetch packets");

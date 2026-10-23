@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson } from "./api.js";
 
 const API_BASE = import.meta.env?.DEV
@@ -10,7 +11,7 @@ const API_BASE = import.meta.env?.DEV
  * @param {string} gatewayPubkey Helium-format entity key
  */
 export async function fetchHotspotStatus(gatewayPubkey, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/status`, {
     signal,
     method: "POST",

@@ -167,6 +167,21 @@ test("pre-aborted execution cannot validate or act, preserving its custom reason
   await assert.rejects(tool.execute({}, { signal: controller.signal }), (err) => err === reason);
 });
 
+test("wrapped executions work and honour cancellation without native throwIfAborted", async (t) => {
+  const original = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "throwIfAborted");
+  delete AbortSignal.prototype.throwIfAborted;
+  t.after(() => Object.defineProperty(AbortSignal.prototype, "throwIfAborted", original));
+  let executions = 0;
+  const tool = wrappedTool(t, descriptor("portable-abort", () => ++executions));
+  assert.equal((await tool.execute({}, { signal: new AbortController().signal })).content[0].text, "1");
+  const reason = new Error("cancelled on an older browser");
+  const controller = new AbortController();
+  controller.abort(reason);
+  await assert.rejects(tool.execute({}, { signal: controller.signal }), (err) => err === reason);
+  assert.equal(executions, 1);
+  await assert.rejects(tool.execute({}, { signal: { aborted: true } }), { name: "AbortError" });
+});
+
 test("cancellation during async validation cannot start execution", async (t) => {
   const controller = new AbortController();
   let finishValidation;
@@ -319,4 +334,16 @@ test("provideContext fallback maintains the union and cleans up independently", 
   first();
   second();
   assert.deepEqual(snapshots, [["site"], ["site", "page"], ["page"], []]);
+});
+
+test("provideContext cleanup preserves a newer tool with the same name", async (t) => {
+  let current;
+  surfaces(t, { provideContext: ({ tools }) => { current = tools; } });
+  const first = registerWebMcpTools([descriptor("shared-fallback", () => "old")]);
+  const second = registerWebMcpTools([descriptor("shared-fallback", () => "replacement")]);
+  first();
+  assert.equal(current.length, 1);
+  assert.equal((await current[0].execute({})).content[0].text, "replacement");
+  second();
+  assert.equal(current.length, 0);
 });

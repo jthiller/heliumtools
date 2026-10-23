@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { dedupeAsync } from "./requestDedupe.js";
+import { fetchBalanceForOui } from "./api.js";
+import { lookupHotspot } from "./hotspotClaimerApi.js";
+import { fetchOnboardDates } from "./hotspotMapApi.js";
 
 function deferred() {
   let resolve;
@@ -142,4 +145,65 @@ test("expired results are dropped before a live one is evicted for room", async 
   assert.equal(await read("third"), "third");
   assert.equal(await read("slow"), "slow");
   assert.equal(calls, 3);
+});
+
+
+/** Simulate the abort APIs absent on the older browsers shared UI reads support. */
+function olderAbortApis(t) {
+  for (const [owner, name] of [[AbortSignal.prototype, "throwIfAborted"], [AbortSignal, "any"], [AbortSignal, "timeout"]]) {
+    const descriptor = Object.getOwnPropertyDescriptor(owner, name);
+    delete owner[name];
+    t.after(() => Object.defineProperty(owner, name, descriptor));
+  }
+  // Fallback request deadlines use timers; keep 30-second deadlines from
+  // holding this test process open after mocked reads finish immediately.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+}
+
+test("real shared UI reads fetch successfully without native abort convenience APIs", async (t) => {
+  olderAbortApis(t);
+  const urls = [];
+  t.mock.method(globalThis, "fetch", async (url, { signal }) => {
+    urls.push(url);
+    assert.equal(signal.aborted, false);
+    return new Response(JSON.stringify({ ok: true, onboarded: { iot: "2024-01-01T00:00:00.000Z" } }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  assert.equal((await fetchBalanceForOui(420001)).ok, true);
+  assert.equal((await lookupHotspot("old-browser-shared-success")).ok, true);
+  assert.deepEqual(await fetchOnboardDates("old-browser-onboard-success", "iot"), { iot: "2024-01-01T00:00:00.000Z" });
+  assert.equal(urls.length, 3);
+});
+
+test("real pre-aborted shared reads never fetch on older abort APIs", async (t) => {
+  olderAbortApis(t);
+  const fetchMock = t.mock.method(globalThis, "fetch", () => assert.fail("pre-aborted reads must not fetch"));
+  const controller = new AbortController();
+  const reason = new Error("caller stopped before fetch");
+  controller.abort(reason);
+  await assert.rejects(lookupHotspot("old-browser-pre-aborted", { signal: controller.signal }), (error) => error === reason);
+  const oldSignal = { aborted: true };
+  await assert.rejects(fetchBalanceForOui(420002, { signal: oldSignal }), { name: "AbortError" });
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("real shared read cancellation preserves its reason without native abort APIs", async (t) => {
+  olderAbortApis(t);
+  let started;
+  const ready = new Promise((resolve) => { started = resolve; });
+  let requestSignal;
+  t.mock.method(globalThis, "fetch", (url, { signal }) => {
+    requestSignal = signal;
+    started();
+    return new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  });
+  const controller = new AbortController();
+  const pending = lookupHotspot("old-browser-cancelled-in-flight", { signal: controller.signal });
+  await ready;
+  const reason = new Error("caller stopped during fetch");
+  controller.abort(reason);
+  await assert.rejects(pending, (error) => error === reason);
+  assert.equal(requestSignal.aborted, true);
+  assert.equal(requestSignal.reason, reason);
 });

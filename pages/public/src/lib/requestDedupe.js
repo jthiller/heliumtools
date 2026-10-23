@@ -1,3 +1,5 @@
+import { throwIfAborted } from "./abort.js";
+
 /**
  * Share identical in-flight GETs and reuse fresh results for a few
  * seconds. WebMCP tools drive the page UI and return data in one call, so
@@ -47,7 +49,11 @@ function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
   return (...args) => {
     const options = args[signalIndex] || {};
     const signal = options.signal;
-    if (signal?.aborted) return Promise.reject(signal.reason);
+    try {
+      throwIfAborted(signal);
+    } catch (reason) {
+      return Promise.reject(reason);
+    }
 
     const keyArgs = [...args];
     const { signal: ignoredSignal, ...keyOptions } = options;
@@ -76,7 +82,7 @@ function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
       const requestArgs = [...args];
       requestArgs[signalIndex] = { ...options, signal: entry.controller.signal };
       entry.promise = Promise.resolve().then(() => {
-        ownedEntry.controller.signal.throwIfAborted();
+        throwIfAborted(ownedEntry.controller.signal);
         return fn(...requestArgs);
       });
       entry.evict = () => {
@@ -102,11 +108,15 @@ function dedupeCancellable(fn, ttlMs, { max, keep, signalIndex }) {
       };
       const abort = () => {
         release();
-        if (!entry.settled && entry.consumers.size === 0) {
-          entry.evict();
-          entry.controller.abort(signal.reason);
+        try {
+          throwIfAborted(signal);
+        } catch (reason) {
+          if (!entry.settled && entry.consumers.size === 0) {
+            entry.evict();
+            entry.controller.abort(reason);
+          }
+          reject(reason);
         }
-        reject(signal.reason);
       };
       signal?.addEventListener("abort", abort, { once: true });
       entry.promise.then((value) => { release(); resolve(value); }, (error) => { release(); reject(error); });

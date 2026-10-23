@@ -26,7 +26,7 @@ export const TOOL_CATALOG = [
     entry: "spa",
     title: "Wallet Dashboard",
     summary:
-      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and on-chain onboard dates, IoT connectivity and traffic, Mobile activity, unclaimed rewards, governance, and recent transactions. Fleet, rewards, onboarding, IoT and Mobile lists accept offset/limit; follow pagination.nextOffset for every page. For triage, IoT filters by health and Mobile by issue. aggregateScope identifies page totals versus fleet totals. No wallet connection needed.",
+      "Read-only overview of any Helium wallet (Solana base58 address): token balances with USD values, Hotspot fleet with locations and on-chain onboard dates, IoT connectivity and traffic, Mobile activity, unclaimed rewards, governance, and recent transactions. Lists accept offset/limit; follow pagination.nextOffset for every page. IoT health filters each page after paging the full IoT fleet, so an empty matching page can still have a nextOffset. Mobile issue filters before paging. aggregateScope identifies page totals versus fleet totals. No wallet connection needed.",
     tools: [
       "open-wallet-dashboard",
       "get-wallet-summary",

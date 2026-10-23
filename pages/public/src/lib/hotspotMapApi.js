@@ -1,6 +1,6 @@
 import { parseJson } from "./api.js";
 import { dedupeAsync } from "./requestDedupe.js";
-import { withTimeout } from "./abort.js";
+import { withTimeout, throwIfAborted } from "./abort.js";
 
 export const API_BASE = import.meta.env?.DEV
   ? "/api/hotspot-map"
@@ -10,7 +10,7 @@ export const API_BASE = import.meta.env?.DEV
  * POST /resolve — batch resolve entity keys to on-chain locations.
  */
 export async function resolveLocations(entityKeys, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const res = await fetch(`${API_BASE}/resolve`, {
     signal,
     method: "POST",
@@ -36,7 +36,7 @@ export async function resolveLocations(entityKeys, { signal } = {}) {
  */
 export const fetchOnboardDates = dedupeAsync(
   async (entityKey, networks, { signal } = {}) => {
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const query = new URLSearchParams({ entityKey, networks });
     const res = await fetch(`${API_BASE}/onboarded?${query.toString()}`, { signal: withTimeout(signal, 30_000) });
     const data = await parseJson(res);
@@ -50,7 +50,7 @@ export const fetchOnboardDates = dedupeAsync(
  * GET /wallet — fetch entity keys for a wallet address.
  */
 export async function fetchWalletHotspots(address, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams({ address });
   const res = await fetch(`${API_BASE}/wallet?${query.toString()}`, { signal });
   const data = await parseJson(res);

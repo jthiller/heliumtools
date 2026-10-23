@@ -1,3 +1,4 @@
+import { throwIfAborted } from "./abort.js";
 import { parseJson, throwIfApiError } from "./api.js";
 
 export const API_BASE = import.meta.env?.DEV
@@ -5,7 +6,7 @@ export const API_BASE = import.meta.env?.DEV
   : "https://api.heliumtools.org/vote";
 
 async function get(path, params, { signal } = {}) {
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const query = new URLSearchParams(params).toString();
   const res = await fetch(`${API_BASE}${path}${query ? `?${query}` : ""}`, { signal });
   const data = await parseJson(res);

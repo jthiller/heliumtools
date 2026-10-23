@@ -146,7 +146,7 @@ test("IoT page membership stays the same when dashboard data replaces own scans"
   assert.equal(onscreen.pagination.nextOffset, null);
 });
 
-test("IoT health filter finds the fleet's Hotspots in that state in one dashboard call", async () => {
+test("IoT health filter narrows each stable entityKey page in both scan modes", async () => {
   fleet = hotspots(250);
   const status = entriesFor(fleet.map((h) => h.entityKey));
   // Not connected on the latest day, but had messages: inactiveTraffic, at the last entityKey.
@@ -163,17 +163,66 @@ test("IoT health filter finds the fleet's Hotspots in that state in one dashboar
   assert(!unfiltered.hotspots.some((h) => h.entityKey === "key0249"));
   const triage = await tool.execute({ health: "inactiveTraffic" });
   assert.equal(triage.aggregateScope, "fleet");
-  assert.deepEqual(triage.hotspots.map((h) => h.entityKey), ["key0249"]);
-  assert.equal(triage.pagination.total, 1);
-  assert.equal(triage.pagination.nextOffset, null);
+  assert.deepEqual(triage.hotspots, []);
+  assert.equal(triage.pagination.total, 250);
+  assert.equal(triage.pagination.nextOffset, 200);
+  const next = await tool.execute({ health: "inactiveTraffic", offset: triage.pagination.nextOffset });
+  assert.deepEqual(next.hotspots.map((h) => h.entityKey), ["key0249"]);
+  assert.equal(next.pagination.nextOffset, null);
 
-  // An own scan can only filter the page it looked up.
-  const offscreen = await tools()["get-wallet-iot-status"].execute({ address: "wallet", health: "inactiveTraffic" });
+  gatewayScan = async (keys) => ({
+    statusByKey: Object.fromEntries(keys.map((key) => [key, status[key]])),
+    dataThrough: "2026-10-18T00:00:00.000Z",
+  });
+  const ownTool = tools()["get-wallet-iot-status"];
+  const offscreen = await ownTool.execute({ address: "wallet", health: "inactiveTraffic" });
   assert.equal(offscreen.aggregateScope, "page");
   assert.deepEqual(offscreen.hotspots, []);
   assert.equal(offscreen.pagination.total, 250);
   assert.equal(offscreen.pagination.nextOffset, 200);
   assert(offscreen.notes.some((n) => n.includes("open-wallet-dashboard")));
+  const ownNext = await ownTool.execute({ address: "wallet", health: "inactiveTraffic", offset: offscreen.pagination.nextOffset });
+  assert.deepEqual(ownNext.hotspots.map((h) => h.entityKey), next.hotspots.map((h) => h.entityKey));
+  assert.equal(ownNext.pagination.nextOffset, null);
+});
+
+test("IoT health-filtered traversal reaches every match when the dashboard finishes between pages", async () => {
+  fleet = hotspots(6);
+  const status = entriesFor(fleet.map((h) => h.entityKey));
+  for (const key of ["key0002", "key0004"]) status[key] = { ...status[key], status: 1 };
+  gatewayScan = async (keys) => ({
+    statusByKey: Object.fromEntries(keys.map((key) => [key, status[key]])),
+    dataThrough: "2026-10-18T00:00:00.000Z",
+  });
+  let iot = null;
+  const tool = makeWalletDashboardTools(() => {}, () => "wallet", () => iot, () => null)
+    .find((entry) => entry.name === "get-wallet-iot-status");
+  const first = await tool.execute({ health: "inactiveTraffic", limit: 2 });
+  assert.equal(first.aggregateScope, "page");
+  assert.deepEqual(first.hotspots, []);
+  assert.equal(first.pagination.nextOffset, 2);
+
+  iot = {
+    wallet: "wallet",
+    done: true,
+    hotspots: fleet,
+    iotStatus: aggregateIotStatus(fleet, status, "2026-10-18T00:00:00.000Z", {
+      key0002: { iot: null }, key0004: { iot: null },
+    }),
+  };
+  const found = [];
+  let offset = first.pagination.nextOffset;
+  do {
+    const result = await tool.execute({ health: "inactiveTraffic", offset, limit: 2 });
+    assert.equal(result.aggregateScope, "fleet");
+    assert.equal(result.pagination.total, 6);
+    assert.equal(result.pagination.returned, 2);
+    assert.equal(result.health.inactiveTraffic, 2);
+    found.push(...result.hotspots.map((h) => h.entityKey));
+    offset = result.pagination.nextOffset;
+  } while (offset !== null);
+  assert.deepEqual(found, ["key0002", "key0004"]);
+  assert.equal(new Set(found).size, 2);
 });
 
 test("Mobile rows beyond 200 remain reachable with deterministic ties and fleet counts", async () => {

@@ -5,7 +5,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { resolveSolanaWallet } from "../lib/solanaAddress.js";
-import { raceAbort } from "../lib/abort.js";
+import { raceAbort, throwIfAborted } from "../lib/abort.js";
 import {
   ArrowTopRightOnSquareIcon,
   BoltIcon,
@@ -730,7 +730,7 @@ export default function VeHnt() {
   // only its own wait: the page's load keeps going and renders, so a
   // cancelled call can't leave the page on an abort error.
   const analyzeWallet = useCallback((wallet, { signal } = {}) => {
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     setInput(wallet);
     const resolved = resolveSolanaWallet(wallet).toBase58();
     lastLoadedRef.current = resolved;
