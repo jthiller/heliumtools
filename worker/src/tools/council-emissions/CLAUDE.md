@@ -1,7 +1,7 @@
 # Council Emissions (HIP-149 Advisory Council emissions)
 
-Blind page `/council-emissions` (routed, in the WebMCP catalog, not on the
-landing page). It shows every HNT emission to the five compensated HIP-149
+`/council-emissions`, listed on the landing page in its own Governance section
+(see Landing preview) and in the WebMCP catalog. It shows every HNT emission to the five compensated HIP-149
 Advisory Council seats on a per-seat timeline, and follows each emission to where
 it went:
 still held, swapped, sent to an exchange, locked in veHNT, burned for Data
@@ -242,7 +242,7 @@ says so.
 | `EmissionsTimeline.jsx` | SVG lanes on a shared UTC axis, with a pattern legend. Emissions above each lane's line, stacked by fate; outflows below it. The bars are too thin for patterns, so every mark's fates are also given as text: the tooltip, a polite live region for screen readers, the seat ledger and the table. Hover or focus links an emission to the transfers that carried it (`lotIdx`), and back. Arrow, Home and End keys move between marks; Enter opens the seat at that mark. Fits the screen below 560 px |
 | `FateBars.jsx` | 100% bars (council and per seat), plus the same numbers as a table |
 | `patterns.jsx` | One fill pattern per fate (`PatternDefs`/`PatternSheet`), `FateFill` and `Swatch`. Bars, legends and seat swatches use them so nothing relies on color alone |
-| `SeatDetail.jsx` | Header and reconciliation; a cumulative emitted vs still-held chart (recharts `stepAfter`); every emission with each part's fate, date, days held and hop path (tx links); outflows with the emissions they carried; other inflows, with veHNT claims folded per day |
+| `SeatDetail.jsx` | Header (wallet, Solscan and Wallet Dashboard links; the reconciliation is in the API and agent tools, not shown as a pill); a cumulative emitted vs still-held chart (recharts `stepAfter`); every emission with each part's fate, date, days held and hop path; outflows with the emissions they carried; other inflows, with veHNT claims folded per day. Every swap, transfer and hop links to its transaction on Solscan (a fate links the transaction that moved it out of the seat), and each emission and transfer row has a "Link here" permalink (`?seat=&lot=` / `?seat=&tx=`) that scrolls to and highlights it |
 | `DistributionRuns.jsx` | Lazy `/runs` table and the explanation of 0/1/2-day runs |
 | `format.js` | Base-unit formatting, UTC dates (day counts are UTC calendar days), the `FATES` vocabulary (labels, Okabe-Ito hues, a pattern per fate), destination wording |
 | `webmcpTools.js` | Agent tools |
@@ -314,9 +314,25 @@ traffic adds no RPC load. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
 ## Landing preview
 
-None. This is a blind page, like `/vote`. Promoting it to the landing page needs
-the full new-card checklist (`pages/public/src/pages/landing/CLAUDE.md`): a
-`slug` in `sections.js`, a capture script, a composition, baked prints and the
-next Holders tone. It also needs the owner's explicit approval to add the council
-wallets to `scripts/tool-previews/lib.mjs` `WALLETS`, since the capture rules
-forbid wallets the owner didn't choose.
+The card (`pages/public/src/pages/landing/previews/council-emissions.js`, slug
+`council-emissions`) sits in its own **Governance** section, after HNT Holders,
+on the sea green tone (`TONES.governance`, h 180). It isn't a fourth HNT
+Holders card because the palette has no room: Holders' arc is full at 30°
+steps, and every placement among them touches a same-hue card or crowds
+Brand's orchid. h 180 is the one free gap, between jade (166) and teal (195),
+and the card touches neither at 3, 2 or 1 columns.
+
+Three prints, from `scripts/tool-previews/capture/council-emissions.mjs`:
+- `timeline` (back): the emissions timeline's five seat lanes, without the legend
+  and month axis.
+- `bars` (middle): "Where it went, by seat": legend, the all-seats bar and the
+  five per-seat bars.
+- `emitted` (top, the anchor): the "Emitted to seats" stat tile, shot at dpr 3.
+
+The capture loads `/council-emissions` at 1024 px and clicks nothing. It
+connects no wallet; the five seat wallets show because they are the fanout's
+recipients on chain, and the owner approved showing them on the card
+(2026-10-28). Light and dark come from one page state. The figures are live,
+so the anchor's number grows a little every day; re-capture when the card's
+components change (the timeline lanes, the fate bars, the stat tiles, the fate
+palette or patterns in `format.js` / `patterns.jsx`), not for the numbers.

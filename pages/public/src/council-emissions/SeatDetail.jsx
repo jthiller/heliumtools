@@ -42,33 +42,50 @@ function hopName(h) {
   return h.label?.name || shortAddress(h.to) || "Burned";
 }
 
+const SETTLED = new Set(["swapped", "exchange", "vehnt", "dc_burn", "program_other", "not_traced"]);
+
+const TX_LABEL = { swapped: "Swap tx", dc_burn: "Burn tx", vehnt: "Lock tx", program_other: "Transaction" };
+
+// Opens a transaction on Solscan in a new tab.
+function TxLink({ sig, children, className = "" }) {
+  return (
+    <a href={txUrl(sig)} target="_blank" rel="noopener noreferrer" className={`underline decoration-dotted underline-offset-2 hover:text-accent-text ${className}`}>
+      {children}
+      <span className="sr-only"> (transaction, opens in a new tab)</span>
+    </a>
+  );
+}
+
 function FateLine({ fate, lot, outflowsBySig, split, dark }) {
   const swap = fate.kind === "swapped" ? outflowsBySig.get(fate.sig) : null;
   const left = fate.leftAt && fate.kind !== "held";
+  // The link goes where the text points: a settled fate (swapped, sent to an
+  // exchange, locked, burned, stopped) links the transaction that settled it;
+  // HNT still sitting somewhere links the move that took it out of the seat.
+  // The path below links every hop.
+  const settled = SETTLED.has(fate.kind) && !fate.unswept;
+  const linkSig = fate.kind === "held" ? null : settled ? fate.sig ?? fate.path[0]?.sig : fate.path[0]?.sig ?? fate.sig;
   return (
     <div className="flex items-start gap-2">
       <span className="mt-0.5"><Swatch kind={fate.kind} dark={dark} size={11} /></span>
       <div className="min-w-0">
         <p className="text-content">
           {split && <span className="font-mono tabular-nums">{fmtHnt(fate.amount, { unit: false })}: </span>}
-          {fateText(fate)}
+          {linkSig ? <TxLink sig={linkSig}>{fateText(fate)}</TxLink> : fateText(fate)}
           {left && <span className="text-content-tertiary">, {fmtDay(fate.leftAt)} ({fmtDays(daysBetween(lot.t, fate.leftAt))})</span>}
         </p>
         {swap?.swapOut?.length > 0 && (
           <p className="text-content-tertiary">
-            Part of a {fmtHnt(swap.amount)} swap for {swap.swapOut.map(fmtSwapOut).join(" + ")}
+            Part of a <TxLink sig={swap.sig}>{fmtHnt(swap.amount)} swap</TxLink> for {swap.swapOut.map(fmtSwapOut).join(" + ")}
           </p>
         )}
-        {fate.path.length > 0 && (fate.path.length > 1 || fate.kind !== "swapped") && (
+        {fate.path.length > 1 && (
           <p className="mt-0.5 flex flex-wrap items-center gap-x-1 text-content-tertiary">
             <span>Seat</span>
             {fate.path.map((h) => (
               <span key={h.sig} className="inline-flex items-center gap-1">
                 <span aria-hidden="true">→</span>
-                <a href={txUrl(h.sig)} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-accent-text">
-                  {hopName(h)}
-                  <span className="sr-only"> (transaction, opens in a new tab)</span>
-                </a>
+                <TxLink sig={h.sig}>{hopName(h)}</TxLink>
               </span>
             ))}
           </p>
@@ -124,13 +141,6 @@ function SeatChart({ detail, dark }) {
     </div>
   );
 }
-
-const RECONCILED = {
-  ok: "Matches the on-chain balance",
-  mismatch: "Doesn't match the on-chain balance yet",
-  indexing: "History still indexing",
-  unknown: "Balance not checked yet",
-};
 
 const INFLOW_LABEL = {
   vehnt_rewards: "veHNT delegation rewards",
@@ -200,9 +210,6 @@ function SeatDetail({ detail, focusLot, focusTx, onBack }) {
               {seat.nameSource && <ExtLink href={seat.nameSource}>Source for this name</ExtLink>}
             </div>
           </div>
-          <span className={`rounded-full border px-2.5 py-1 text-[11px] ${seat.reconciled === "ok" ? "border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300" : "border-border text-content-tertiary"}`}>
-            {RECONCILED[seat.reconciled] || RECONCILED.unknown}
-          </span>
         </div>
 
         {seat.label?.custodial && (
@@ -268,9 +275,10 @@ function SeatDetail({ detail, focusLot, focusTx, onBack }) {
               <li key={lot.sig} ref={focused ? focusRef : undefined} className={`grid grid-cols-1 gap-2 py-3 text-sm sm:grid-cols-[9rem_7rem_1fr] ${focused ? "-mx-3 rounded-xl bg-accent-surface px-3" : ""}`}>
                 <div>
                   <p className="text-content">{fmtDay(lot.t)}</p>
-                  <a href={txUrl(lot.sig)} target="_blank" rel="noopener noreferrer" className="text-xs text-content-tertiary underline decoration-dotted underline-offset-2 hover:text-accent-text">
-                    Emission tx<span className="sr-only"> (opens in a new tab)</span>
-                  </a>
+                  <p className="flex gap-3 text-xs text-content-tertiary">
+                    <TxLink sig={lot.sig}>Emission tx</TxLink>
+                    <Link to={`/council-emissions?seat=${seat.wallet}&lot=${lot.sig}`} className="hover:text-accent-text">Link here</Link>
+                  </p>
                 </div>
                 <div>
                   <p className="font-mono tabular-nums text-content">{fmtHnt(lot.amount)}</p>
@@ -299,9 +307,10 @@ function SeatDetail({ detail, focusLot, focusTx, onBack }) {
                 <li key={`${o.sig}:${i}`} ref={focused ? focusRef : undefined} className={`grid grid-cols-1 gap-2 py-3 text-sm sm:grid-cols-[11rem_8rem_1fr] ${focused ? "-mx-3 rounded-xl bg-accent-surface px-3" : ""}`}>
                   <div>
                     <p className="text-content">{fmtDateTime(o.t)}</p>
-                    <a href={txUrl(o.sig)} target="_blank" rel="noopener noreferrer" className="text-xs text-content-tertiary underline decoration-dotted underline-offset-2 hover:text-accent-text">
-                      Transaction<span className="sr-only"> (opens in a new tab)</span>
-                    </a>
+                    <p className="flex gap-3 text-xs text-content-tertiary">
+                      <TxLink sig={o.sig}>{TX_LABEL[o.kind] ?? "Transfer tx"}</TxLink>
+                      <Link to={`/council-emissions?seat=${seat.wallet}&tx=${o.sig}`} className="hover:text-accent-text">Link here</Link>
+                    </p>
                   </div>
                   <p className="font-mono tabular-nums text-content">{fmtHnt(o.amount)}</p>
                   <div className="text-xs">

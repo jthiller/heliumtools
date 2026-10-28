@@ -8,7 +8,7 @@
 // Section: { id, title, description, tools }. `id` names the section's region
 // (its h2's id). Tool: { slug, name, description, href, badge, featured?,
 // disabled? }. `badge: "New"` marks the three most recently added tools only
-// (today Mobile WiFi Onboarding, HNT Price API and Brand Guidelines): a new
+// (today HNT Price API, Brand Guidelines and Council Emissions): a new
 // tool takes it from the oldest of the three. `featured`: the card spans two grid columns wherever the grid
 // has two or more (its preview config then needs a `featured` print set).
 // `disabled`: shown as a plain, unfocusable "Coming Soon" card. `hidden`: left
@@ -16,9 +16,10 @@
 //
 // The order is also the layout: a featured card that reaches the end of a row
 // with only one column left wraps to the next row and leaves a hole, which the
-// bake reports. Add a Hotspot sits third in its section for that reason: at
-// three columns every row fills, and the palette's neighbour rule holds at 3,
-// 2 and 1 columns.
+// bake reports. Add a Hotspot sits third in its section for that reason: no
+// featured card wraps (every row fills at two columns; at three only the last
+// row, Brand alone, is short), and the palette's neighbour rule holds at 3, 2
+// and 1 columns.
 
 const ALL_SECTIONS = [
   {
@@ -90,7 +91,7 @@ const ALL_SECTIONS = [
         description:
           "Convert a WiFi network into a Helium Mobile Hotspot. Register it on-chain, retrieve RadSec certificates, and manage onboarded networks.",
         href: "/mobile-onboard",
-        badge: "New",
+        badge: null,
       },
       {
         slug: "multi-gateway",
@@ -154,6 +155,25 @@ const ALL_SECTIONS = [
         description: "Migrate legacy Helium L1 accounts to Solana. Derive both addresses and seed the wallet on-chain.",
         href: "/l1-migration",
         badge: null,
+      },
+    ],
+  },
+  {
+    // Its own section because the palette has no room for a fourth HNT Holders
+    // hue: Holders' arc is full at 30° steps and every placement among them
+    // touches a same-hue card or crowds Brand. Governance takes the free gap
+    // between jade (166) and teal (195); its card never touches either.
+    id: "governance",
+    title: "Governance",
+    description: "Follow Helium governance on chain",
+    tools: [
+      {
+        slug: "council-emissions",
+        name: "Council Emissions",
+        description:
+          "Every HNT emission to the five HIP-149 Advisory Council seats, and where that HNT went next: held, swapped, staked, or sent to an exchange.",
+        href: "/council-emissions",
+        badge: "New",
       },
     ],
   },

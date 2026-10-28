@@ -10,9 +10,9 @@ October 2026 and set these rules; don't revert them without asking:
 - No "Open tool" CTA, pill or arrow. The card is the affordance.
 - The "New" badge is straight (never tilted) and sits in the same slot on
   every card. Recurring elements stay in one place card to card.
-- Only the three most recently added tools carry "New" (today Mobile WiFi
-  Onboarding, HNT Price API and Brand Guidelines); a new tool takes it from
-  the oldest of the three.
+- Only the three most recently added tools carry "New" (today HNT Price API,
+  Brand Guidelines and Council Emissions); a new tool takes it from the oldest
+  of the three.
 - No meta labels on the page (direction names, counts, designer notes).
 - Dark grounds are clearly colored mid-tone fields, not near-black tints.
 - The page opens on a compact header on the page background (no shader or
@@ -144,8 +144,8 @@ Featured cards constrain the order. A featured card that reaches a row with one
 column left wraps to the next row and leaves a hole, so `placeCards(cols)`
 mirrors CSS grid's placement and the bake fails on any empty cell before the
 last row at 3 or 2 columns. Today Add a Hotspot sits third in its section
-(after Mobile WiFi), which fills every row at 3 columns and leaves only the last
-cell empty at 2.
+(after Mobile WiFi), so no featured card wraps: every row fills at 2 columns,
+and at 3 columns only the last row is short (Brand ends the grid alone).
 
 ## Palette
 
@@ -165,6 +165,17 @@ exempt from the hue step and stands apart from any neighbour by being
 colorless. The bake holds a neutral to that (every ground stop under chroma
 .02) and fails if two neutrals ever touch. Adding, removing or reordering
 tools in `sections.js` moves every later card; run the bake.
+
+The wheel is now nearly full: six arcs (Wallet 8, Hotspot 44–166,
+Governance 180, Network 195–228, Holders 244–306, Brand 342). Governance's
+one card took the last gap wide enough to stand apart (14° from jade, 15°
+from teal, neither of which it touches) because a fourth HNT Holders card had
+no hue that kept 30° from every neighbour. The next new tool will likely need
+a second shade step of an existing hue placed where its twin never touches
+(as in Hotspot), or a re-spacing; search the placements with the bake's
+neighbour check rather than guessing. The sea green's dark grounds sit at
+chroma ~.09, under the usual .10, because that is all sRGB holds at that
+lightness and hue.
 
 Light grounds are pastels with same-hue dark ink. Dark grounds are clearly
 colored mid-dark fields (L .45–.54, C .10–.15), not near-blacks: warm darks stay

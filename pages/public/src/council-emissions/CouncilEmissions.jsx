@@ -149,7 +149,10 @@ export default function CouncilEmissions() {
 
   const t = summary?.totals;
   const held = summary ? sumKind(summary.seats, (k) => k === "held" || k === "held_by_seat") : null;
-  const left = summary ? (BigInt(t.emitted) - BigInt(held)).toString() : null;
+  // `?? "0"`: Pages and the Worker deploy separately, so a page can briefly meet
+  // a snapshot from the other side of a field change; it should degrade, not crash.
+  const emitted = BigInt(t?.emitted ?? "0");
+  const left = summary && t?.emitted != null ? (emitted - BigInt(held)).toString() : null;
   // One empty run (the distribution beating the mint) means a 48 h gap is normal.
   const staleEmission = summary?.backfill.done && t?.lastEmissionAt && Date.now() / 1000 - t.lastEmissionAt > 54 * 3600;
 
@@ -162,7 +165,7 @@ export default function CouncilEmissions() {
             <div className="max-w-3xl">
               <h1 className="font-display text-3xl font-semibold tracking-tight text-content sm:text-4xl">HIP-149 Council Emissions</h1>
               <p className="mt-3 text-content-secondary">
-                HIP-149 mints {t?.perSeatPerDay ? fmtHnt(BigInt(t.perSeatPerDay) * BigInt(t.seats)) : "HNT"} a day for the five elected Advisory Council seats and distributes it to each seat at 00:00 UTC. This page tracks every emission and where it went.
+                HIP-149 mints {t?.perSeatPerDay && t?.seats ? fmtHnt(BigInt(t.perSeatPerDay) * BigInt(t.seats)) : "HNT"} a day for the five elected Advisory Council seats and distributes it to each seat at 00:00 UTC. This page tracks every emission and where it went.
               </p>
             </div>
             {summary && (
@@ -217,11 +220,11 @@ export default function CouncilEmissions() {
             ) : (
               <>
                 <dl className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-                  <Stat label="Emitted to seats" value={fmtHnt(t.emitted)} sub={summary.lanes[0]?.lots[0] ? `since ${fmtDay(summary.lanes[0].lots[0].t)}` : null} />
+                  <Stat label="Emitted to seats" value={fmtHnt(t.emitted ?? null)} sub={summary.lanes[0]?.lots[0] ? `since ${fmtDay(summary.lanes[0].lots[0].t)}` : null} />
                   <Stat label="Waiting in the fanout" value={fmtHnt(t.waiting)} sub={<>distributed at 00:00 UTC, <Countdown to={nextDistributionAt()} /></>} />
                   <Stat label="Per seat per day" value={t.perSeatPerDay ? fmtHnt(t.perSeatPerDay) : "Not known"} sub={`average of the last ${t.recentEpochs} days of mints`} />
-                  <Stat label="Still held by seats" value={fmtHnt(held)} sub={BigInt(t.emitted) > 0n ? `${Math.round((Number(held) / Number(t.emitted)) * 100)}% of everything emitted` : null} />
-                  <Stat label="Left the seat wallets" value={fmtHnt(left)} sub={price ? `about ${fmtUsd(toHnt(left) * price)} at today's HNT price` : null} />
+                  <Stat label="Still held by seats" value={fmtHnt(held)} sub={emitted > 0n ? `${Math.round((Number(held) / Number(emitted)) * 100)}% of everything emitted` : null} />
+                  <Stat label="Left the seat wallets" value={fmtHnt(left)} sub={price && left != null ? `about ${fmtUsd(toHnt(left) * price)} at today's HNT price` : null} />
                 </dl>
 
                 <Section
