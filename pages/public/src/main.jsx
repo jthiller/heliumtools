@@ -113,6 +113,7 @@ const UpdateLocation = lazy(() => import("./update-location/UpdateLocation.jsx")
 const VeHnt = lazy(() => import("./ve-hnt/VeHnt.jsx"));
 const Vote = lazy(() => import("./vote/Vote.jsx"));
 const VotesIndex = lazy(() => import("./vote/VotesIndex.jsx"));
+const CouncilEmissions = lazy(() => import("./council-emissions/CouncilEmissions.jsx"));
 const WalletDashboard = lazy(() => import("./wallet-dashboard/WalletDashboard.jsx"));
 const BrandGuidelines = lazy(() => import("./brand/BrandGuidelines.jsx"));
 const SolanaProvider = lazy(() => import("./multi-gateway/SolanaProvider.jsx"));
@@ -146,6 +147,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/vote" element={<Vote />} />
             <Route path="/vote/:proposalId" element={<Vote />} />
             <Route path="/votes" element={<VotesIndex />} />
+            {/* Blind page: HIP-149 council emissions and where that HNT goes,
+                served from the worker's cron-built snapshot. */}
+            <Route path="/council-emissions" element={<CouncilEmissions />} />
             <Route path="/wallet-dashboard" element={<WalletDashboard />} />
             <Route path="/wallet-dashboard/:address" element={<WalletDashboard />} />
             {/* Static brand guidelines + direct-link logo assets (served from

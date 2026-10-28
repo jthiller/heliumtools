@@ -7,16 +7,5 @@ export { isValidWalletAddress } from "../hotspot-claimer/utils.js";
 // they aren't duplicated per tool — re-export to keep this module's API stable.
 export { rpc } from "../../lib/solanaRpc.js";
 export { kvGetJson, kvPutJson } from "../../lib/kv.js";
-
-/**
- * Extract the Helius `api-key` query param from SOLANA_RPC_URL so we can reach
- * the Helius enhanced-transactions REST API (a different host than the RPC).
- * Returns null if the URL has no api-key (e.g. a non-Helius RPC).
- */
-export function getHeliusApiKey(env) {
-  try {
-    return new URL(env.SOLANA_RPC_URL).searchParams.get("api-key");
-  } catch {
-    return null;
-  }
-}
+// Shared with council-emissions (wallet identity); lives in lib/helius.js.
+export { getHeliusApiKey } from "../../lib/helius.js";

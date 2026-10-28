@@ -27,6 +27,10 @@ import {
 import { HntPriceHub } from "./tools/hnt-price/hub.js";
 import { handleVoteRequest, runVoteSnapshots } from "./tools/vote/index.js";
 import { handleWalletDashboardRequest } from "./tools/wallet-dashboard/index.js";
+import {
+  handleCouncilEmissionsRequest,
+  runCouncilEmissionsIndex,
+} from "./tools/council-emissions/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
 
@@ -50,6 +54,7 @@ const routes = [
   { prefix: "/hnt-price", handler: handleHntPriceRequest },
   { prefix: "/vote", handler: handleVoteRequest },
   { prefix: "/wallet-dashboard", handler: handleWalletDashboardRequest },
+  { prefix: "/council-emissions", handler: handleCouncilEmissionsRequest },
   { prefix: "/shared", handler: handleSharedRequest },
 ];
 
@@ -97,6 +102,10 @@ export default {
       // WebSocket hub refreshes it every 15s while anyone is streaming; this is
       // the backstop for the (common) case where nobody is.
       run("hnt-price-snapshot", refreshHntPriceSnapshot(env));
+      // Index HIP-149 council emissions and follow where that HNT goes. The
+      // fanout distributes at 00:00 UTC, so this tick picks each emission up within
+      // 15 min; the run is budgeted and single-flight (KV lock).
+      run("council-emissions-index", runCouncilEmissionsIndex(env));
       return;
     }
     // Everything else runs on the 6-hourly tick ("0 0,6,12,18 * * *"). minute is
