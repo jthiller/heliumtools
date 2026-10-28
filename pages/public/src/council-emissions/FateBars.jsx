@@ -27,20 +27,16 @@ const pct = (part, total) => {
 };
 
 /**
- * Where each seat's emissions went: a 100% bar per seat (and for the whole
- * council) over everything emitted to it, plus the same numbers as a table.
+ * Where each seat's emissions went: a 100% bar per seat over everything
+ * emitted to it, plus the same numbers as a table.
  */
 function FateBars({ summary, onOpenSeat }) {
   const dark = useDarkMode();
-  const councilByKind = useMemo(() => {
-    const out = {};
-    for (const s of summary.seats) {
-      for (const [k, v] of Object.entries(s.byKind)) out[k] = (BigInt(out[k] || "0") + BigInt(v)).toString();
-    }
-    return out;
-  }, [summary]);
-  const councilTotal = summary.seats.reduce((acc, s) => acc + BigInt(s.received), 0n).toString();
-  const kinds = FATES.filter((f) => councilByKind[f.kind] && BigInt(councilByKind[f.kind]) > 0n);
+  // The fates any seat has, for the legend and the table's columns.
+  const kinds = useMemo(
+    () => FATES.filter((f) => summary.seats.some((s) => s.byKind[f.kind] && BigInt(s.byKind[f.kind]) > 0n)),
+    [summary],
+  );
 
   return (
     <div className="space-y-5">
@@ -55,13 +51,6 @@ function FateBars({ summary, onOpenSeat }) {
       </ul>
 
       <div className="space-y-3">
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
-            <span className="font-semibold text-content">All five seats</span>
-            <span className="font-mono text-xs tabular-nums text-content-tertiary">{fmtHnt(councilTotal)}</span>
-          </div>
-          <Bar byKind={councilByKind} total={councilTotal} dark={dark} label="Where all council emissions went" />
-        </div>
         {summary.seats.map((s) => (
           <div key={s.wallet}>
             <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
