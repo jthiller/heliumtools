@@ -57,6 +57,9 @@ Entry point: `index.js` → routes to handlers under `handlers/`.
 | `MAX_CLAIMS_PER_DAY_GLOBAL` | 100 | Total claims across all users |
 | `MAX_RECIPIENT_INITS_PER_DAY` | 1 | ATA creation budget (costs ~0.002 SOL each) |
 
+### Claims and client disconnects
+When a client disconnects, Cloudflare may cancel a request's remaining work unless it is passed to `ctx.waitUntil()` (Workers limits docs). A claim broadcasts one transaction per token, so a closed tab or an aborted request could otherwise stop the loop after a token's claim was sent and skip the bookkeeping. `handleClaim` therefore runs the broadcasting (`claimHotspot`) under `ctx.waitUntil`, which keeps it going up to 30 s after a disconnect while the response still waits for it. It also records the claim (the per-Hotspot cooldown key and the global daily count) as soon as the first token is broadcast, then stores the full per-token results once the loop ends, so even a request cut off past those 30 s keeps its cooldown. `handlers/claim.test.js` covers both (`cd worker && npm test`, Node.js 24.15+; the services are mocked, nothing is sent).
+
 ## Environment / Secrets
 
 - `SOLANA_RPC_URL` — Helius staked endpoint (never log or expose)

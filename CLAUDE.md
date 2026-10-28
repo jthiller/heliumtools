@@ -107,6 +107,9 @@ cd pages/public && npm test
 # Worker dev
 cd worker && wrangler dev
 
+# Worker tests (Node.js 24.15+; services mocked, nothing broadcast)
+cd worker && npm test
+
 # Query production D1
 cd worker && npx wrangler d1 execute heliumtools-prod --env production --remote --command "SELECT ..."
 
