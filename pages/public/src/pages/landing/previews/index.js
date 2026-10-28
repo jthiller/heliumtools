@@ -49,6 +49,7 @@ import hotspotMap from "./hotspot-map.js";
 import hntPrice from "./hnt-price.js";
 import veHnt from "./ve-hnt.js";
 import l1Migration from "./l1-migration.js";
+import councilEmissions from "./council-emissions.js";
 import brand from "./brand.js";
 
 export const PREVIEWS = {
@@ -65,5 +66,6 @@ export const PREVIEWS = {
   "hnt-price": hntPrice,
   "ve-hnt": veHnt,
   "l1-migration": l1Migration,
+  "council-emissions": councilEmissions,
   brand,
 };

@@ -47,7 +47,7 @@ OUT_DIR=$(mktemp -d) node capture/brand.mjs    # write the shots somewhere else
 node capture/dc-mint.mjs macros                # only the card's macros (see below)
 ```
 
-There is one script per tool, for all 14 tools. Each creates its `manifest.json` when there is none, so it runs into an empty `OUT_DIR`. Every script is read-only. It runs through `lib.mjs`'s `run()`, which enforces a hard timeout, and every page gets the side-effect guard. A fake wallet is read-only, so any signing call throws. Post-action states come from local `page.route()` mocks. Light and dark are shot from one page state with `emulateMedia`.
+There is one script per tool, for all 15 tools. Each creates its `manifest.json` when there is none, so it runs into an empty `OUT_DIR`. Every script is read-only. It runs through `lib.mjs`'s `run()`, which enforces a hard timeout, and every page gets the side-effect guard. A fake wallet is read-only, so any signing call throws. Post-action states come from local `page.route()` mocks. Light and dark are shot from one page state with `emulateMedia`.
 
 The data is live, so the figures change between runs. After a re-shoot, check the card's crop rects in `previews/<slug>.js` again. Each script writes `manifest.json` itself: the css sizes come from the PNGs, and the `describes` text records the reference capture.
 
@@ -67,6 +67,7 @@ Four scripts finish with a macro pass: `dc-mint`, `hotspot-claimer`, `iot-onboar
 | `multi-gateway` | Gateway `647FDAFFFE02E8A7` after about 10 minutes of live stream, then frozen: the hovered track band, the tooltip and the packet table. Takes about 10 minutes. | None. `Date.now` is pinned and worker broadcasts are dropped. |
 | `oui-notifier` | OUI 6 lookup with the 30-day chart hovered, an alternate hero for OUI 12, and the subscribe card with a fake label and webhook (never submitted, no email). | None. |
 | `update-location` | (A) A metadata edit on Fancy Shadow Elephant. (B) A new lat/lng typed for Huge Lava Raccoon. (C) The 26-Hotspot list. Macros: the field grid and a map portrait at 390 px (dpr 4). | `mixed` for A, B and the macros; `iotOnly` for C. All fake-connected, never submitted. |
+| `council-emissions` | The emissions timeline (five seat lanes) and the "Where it went, by seat" bars at 1024 px, plus the "Emitted to seats" stat tile at dpr 3. Nothing is clicked. | None. The page shows the five HIP-149 council seat wallets from chain; the owner approved them for the card. |
 | `ve-hnt` | Macros only: the summary ledger and the two position cards (delegated to MOBILE, undelegated) at 412 px (dpr 3). | `empty`, by URL. |
 | `wallet-dashboard` | Three phases (`nyc`, `large`, `main`): viewport and hero, the fleet map, Mobile and timeline cards, and a coverage footprint. Pass phase names to run only those. | By URL: `nyc`, `large`, `main`. `BASE` must serve the Mobile engine deps (see the script header). |
 

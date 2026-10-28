@@ -4,7 +4,8 @@
 //   Wallet   rose 8           Network  teal 195, cyan 228, neutral stone
 //   Hotspot  orange 48, amber 80, green 134, jade 166, then orange 44 and
 //            amber 75 as second shade steps     Holders  azure 244, indigo 276,
-//            violet 306                         Brand    orchid 342
+//            violet 306                         Governance  sea green 180
+//   Brand    orchid 342
 //
 // `hue` is the OKLCH hue a tone was generated at; `null` marks a neutral (no
 // visible hue). Every card flows through one grid in ../sections.js order (3
@@ -131,10 +132,23 @@ const HOLDERS = [
   },
 ];
 
+const GOVERNANCE = [
+  {
+    // sea green (Council Emissions): the one free gap left on the wheel, 14° from
+    // jade and 15° from teal, neither of which it ever touches. Generated at
+    // h 180 from the midpoint of the jade and teal tones' L and C per token.
+    hue: 180,
+    light: { g1: "#CDF0E8", g2: "#B0E3D8", glow: "#EDFAF7", ink: "#002E27", shade: "1 116 101" },
+    dark: { g1: "#016759", g2: "#017768", glow: "#039885B3", ink: "#F2FDFA", shade: "0 20 16" },
+  },
+];
+
 const BRAND = [
   {
-    // orchid: >= 30° from L1 Migration's violet, the card before it, at every
-    // width. Wallet's rose is 26° away but they never touch.
+    // orchid: >= 30° from every card it touches: Council Emissions' sea green
+    // before it (162°), L1 Migration's violet above it at 2 columns (36°) and
+    // veHNT's indigo above it at 3 (66°). Wallet's rose is 26° away but they
+    // never touch.
     hue: 342,
     light: { g1: "#FADCEE", g2: "#F2C5E0", glow: "#FFF3FA", ink: "#3C1730", shade: "137 74 115" },
     dark: { g1: "#833269", g2: "#99407C", glow: "#BF589DB3", ink: "#FFF8FC", shade: "29 5 21" },
@@ -152,10 +166,11 @@ export const SECTION_RULES = {
   "network-operators": { hue: 210, light: "#0590A2", dark: "#00C0D7" },
   "hotspot-operators": { hue: 62, light: "#B96A00", dark: "#E5974C" },
   "hnt-holders": { hue: 275, light: "#6875D8", dark: "#93A3FC" },
+  governance: { hue: 180, light: "#029583", dark: "#1DC5AE" },
   brand: { hue: 342, light: "#BA5799", dark: "#E288C2" },
 };
 
 // The description's ink strength per theme; must match landing.css --desc.
 export const DESC_INK = { light: 0.8, dark: 0.94 };
 
-export const TONES = { wallet: WALLET, network: NETWORK, hotspot: HOTSPOT, holders: HOLDERS, brand: BRAND };
+export const TONES = { wallet: WALLET, network: NETWORK, hotspot: HOTSPOT, holders: HOLDERS, governance: GOVERNANCE, brand: BRAND };

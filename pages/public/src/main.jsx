@@ -134,6 +134,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/hotspot-map" element={<HotspotMap />} />
             {/* Read-only API demo + docs. No wallet, so no SolanaProvider. */}
             <Route path="/hnt-price" element={<HntPriceTool />} />
+            {/* HIP-149 council emissions and where that HNT goes, served from
+                the worker's cron-built snapshot. Read-only, no wallet. */}
+            <Route path="/council-emissions" element={<CouncilEmissions />} />
             <Route path="/multi-gateway" element={<SolanaProvider><MultiGateway /></SolanaProvider>} />
             <Route path="/dc-mint" element={<SolanaProvider><DcMintTool /></SolanaProvider>} />
             <Route path="/iot-onboard" element={<SolanaProvider><IotOnboard /></SolanaProvider>} />
@@ -147,9 +150,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/vote" element={<Vote />} />
             <Route path="/vote/:proposalId" element={<Vote />} />
             <Route path="/votes" element={<VotesIndex />} />
-            {/* Blind page: HIP-149 council emissions and where that HNT goes,
-                served from the worker's cron-built snapshot. */}
-            <Route path="/council-emissions" element={<CouncilEmissions />} />
             <Route path="/wallet-dashboard" element={<WalletDashboard />} />
             <Route path="/wallet-dashboard/:address" element={<WalletDashboard />} />
             {/* Static brand guidelines + direct-link logo assets (served from
