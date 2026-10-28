@@ -123,3 +123,49 @@ CREATE TABLE IF NOT EXISTS mobile_onboard_artifacts (
 );
 CREATE INDEX IF NOT EXISTS idx_mobile_onboard_artifacts_expires ON mobile_onboard_artifacts (expires_at);
 CREATE INDEX IF NOT EXISTS idx_mobile_onboard_artifacts_hotspot ON mobile_onboard_artifacts (hotspot);
+
+-- Council Emissions (HIP-149 Advisory Council emissions). The cron indexer keeps
+-- a signature cursor per indexed address and stores each transaction's parsed
+-- record; the FIFO trace is replayed from ce_tx into KV views (no viewer RPC).
+-- Self-provisions via CREATE TABLE IF NOT EXISTS in
+-- src/tools/council-emissions/services/db.js.
+CREATE TABLE IF NOT EXISTS ce_cursors (
+  address TEXT PRIMARY KEY,       -- token account (or the fanout PDA) being indexed
+  role TEXT NOT NULL,             -- fanout_pda | fanout_token | seat_token | node_token
+  owner TEXT,                     -- owner wallet of the token account
+  depth INTEGER NOT NULL DEFAULT 0, -- hops from a seat (0 for the fanout and seats)
+  from_time INTEGER,              -- index window start, unix seconds
+  from_slot INTEGER,              -- downstream accounts: slot of the first traced receipt
+  newest_sig TEXT,
+  oldest_sig TEXT,
+  backfill_done INTEGER NOT NULL DEFAULT 0,
+  sig_count INTEGER NOT NULL DEFAULT 0,
+  busy INTEGER NOT NULL DEFAULT 0, -- too busy to follow (NODE_SIG_CAP)
+  live_raw TEXT,                  -- current HNT balance, base units
+  discovered_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ce_tx (
+  signature TEXT PRIMARY KEY,
+  slot INTEGER NOT NULL,
+  block_time INTEGER,
+  version INTEGER NOT NULL,       -- parse.js RECORD_VERSION (older rows are re-fetched)
+  record_json TEXT NOT NULL       -- parsed record: HNT moves, balances, programs, deltas
+);
+CREATE INDEX IF NOT EXISTS idx_ce_tx_slot ON ce_tx (slot);
+CREATE TABLE IF NOT EXISTS ce_pending (
+  signature TEXT PRIMARY KEY,
+  slot INTEGER NOT NULL,
+  added_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ce_failed (
+  signature TEXT PRIMARY KEY,     -- failed distribution attempt on the fanout
+  slot INTEGER NOT NULL,
+  block_time INTEGER,
+  error TEXT                      -- the signature list's err object, JSON
+);
+CREATE TABLE IF NOT EXISTS ce_labels (
+  address TEXT PRIMARY KEY,       -- owner wallet
+  identity_json TEXT NOT NULL,    -- trimmed Helius wallet identity, or {"none":true}
+  fetched_at INTEGER NOT NULL     -- ms
+);

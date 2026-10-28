@@ -149,8 +149,9 @@
             // snapshot/history poll (so viewers read cached data and never hit
             // the RPC), the mobile-onboard agent-artifact purge, and the
             // hnt-price snapshot refresh (the backstop that keeps
-            // /hnt-price/current warm when nobody is on the WebSocket). The
-            // 6-hourly tasks do NOT run on this tick.
+            // /hnt-price/current warm when nobody is on the WebSocket), and the
+            // council-emissions indexer (HIP-149 council emissions and where the
+            // HNT goes). The 6-hourly tasks do NOT run on this tick.
             "*/15 * * * *"
         ]
     },

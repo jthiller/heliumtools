@@ -126,7 +126,9 @@ re-implementing on-chain logic.
   so Jupiter alone suffices. CoinGecko is intentionally avoided (blocks Worker
   egress IPs). KV-cached ~60s.
 - `services/transactions.js` — Helius enhanced-transactions REST API (api-key
-  parsed from `SOLANA_RPC_URL`), falling back to `getSignaturesForAddress`.
+  parsed from `SOLANA_RPC_URL` by `getHeliusApiKey`, which lives in
+  `worker/src/lib/helius.js` and is re-exported from `utils.js`; council-emissions
+  uses it too), falling back to `getSignaturesForAddress`.
 
 ### Frontend
 - `pages/public/src/wallet-dashboard/WalletDashboard.jsx` — bento shell; the

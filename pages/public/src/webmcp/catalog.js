@@ -84,6 +84,14 @@ export const TOOL_CATALOG = [
     tools: ["list-vote-proposals", "get-vote-details", "get-voter-history", "open-vote"],
   },
   {
+    path: "/council-emissions",
+    entry: "spa",
+    title: "HIP-149 Council Emissions",
+    summary:
+      "HNT minted for the five HIP-149 Advisory Council seats, every daily emission to each seat wallet, and where each emission went (held, swapped, sent to an exchange, locked in veHNT, followed through other wallets), with FIFO attribution and transaction links.",
+    tools: ["get-council-emissions", "get-council-seat-emissions", "get-council-distribution-runs", "open-council-emissions"],
+  },
+  {
     path: "/dc-mint",
     entry: "spa",
     title: "Mint Data Credits",
