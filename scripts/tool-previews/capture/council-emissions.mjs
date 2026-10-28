@@ -16,8 +16,8 @@
 // From one page state at 1024x900, light then dark (emulateMedia):
 //   timeline.png      the emissions timeline: colour legend and the five seat
 //                     lanes (emission bars above each line, transfers below)
-//   fate-bars.png     "Where it went, by seat": legend, the all-seats bar and the
-//                     five per-seat bars (held / swapped / sent to an exchange)
+//   fate-bars.png     "Where it went, by seat": legend and the five per-seat bars
+//                     (held / swapped / sent to an exchange)
 // Macro, dpr 3:
 //   stat-emitted.png  the "Emitted to seats" stat tile (the card's anchor number)
 import fs from 'node:fs';
@@ -82,7 +82,7 @@ await run(async ({ newPage, shootRect, settle, sleep }) => {
   };
   const texts = {
     'timeline.png': `Emissions timeline at ${WIDTH}px: legend and five seat lanes. ${(await timeline.innerText()).replace(/\s+/g, ' ').slice(0, 160)}`,
-    'fate-bars.png': `Where it went, by seat: legend, the all-seats bar and five per-seat 100% bars. ${(await barsStack.innerText()).replace(/\s+/g, ' ').slice(0, 160)}`,
+    'fate-bars.png': `Where it went, by seat: legend and five per-seat 100% bars. ${(await barsStack.innerText()).replace(/\s+/g, ' ').slice(0, 160)}`,
   };
   for (const theme of THEMES) {
     await page.emulateMedia({ colorScheme: theme });

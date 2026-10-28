@@ -240,7 +240,7 @@ says so.
 |---|---|
 | `CouncilEmissions.jsx` | Shell. Polls `/summary` every 60 s while visible. View state lives in the query: `?seat=<wallet>&lot=<sig>&tx=<sig>`. Also stats, banners (backfill, drift, no emission for 54 h), elected members and method notes |
 | `EmissionsTimeline.jsx` | SVG lanes on a shared UTC axis, with a pattern legend. Emissions above each lane's line, stacked by fate; outflows below it. The bars are too thin for patterns, so every mark's fates are also given as text: the tooltip, a polite live region for screen readers, the seat ledger and the table. Hover or focus links an emission to the transfers that carried it (`lotIdx`), and back. Arrow, Home and End keys move between marks; Enter opens the seat at that mark. Fits the screen below 560 px |
-| `FateBars.jsx` | 100% bars (council and per seat), plus the same numbers as a table |
+| `FateBars.jsx` | A 100% bar per seat, plus the same numbers as a table |
 | `patterns.jsx` | One fill pattern per fate (`PatternDefs`/`PatternSheet`), `FateFill` and `Swatch`. Bars, legends and seat swatches use them so nothing relies on color alone |
 | `SeatDetail.jsx` | Header (wallet, Solscan and Wallet Dashboard links; the reconciliation is in the API and agent tools, not shown as a pill); a cumulative emitted vs still-held chart (recharts `stepAfter`); every emission with each part's fate, date, days held and hop path; outflows with the emissions they carried; other inflows, with veHNT claims folded per day. Every swap, transfer and hop links to its transaction on Solscan (a fate links the transaction that moved it out of the seat), and each emission and transfer row has a "Link here" permalink (`?seat=&lot=` / `?seat=&tx=`) that scrolls to and highlights it |
 | `DistributionRuns.jsx` | Lazy `/runs` table and the explanation of 0/1/2-day runs |
@@ -325,8 +325,7 @@ and the card touches neither at 3, 2 or 1 columns.
 Three prints, from `scripts/tool-previews/capture/council-emissions.mjs`:
 - `timeline` (back): the emissions timeline's five seat lanes, without the legend
   and month axis.
-- `bars` (middle): "Where it went, by seat": legend, the all-seats bar and the
-  five per-seat bars.
+- `bars` (middle): "Where it went, by seat": legend and the five per-seat bars.
 - `emitted` (top, the anchor): the "Emitted to seats" stat tile, shot at dpr 3.
 
 The capture loads `/council-emissions` at 1024 px and clicks nothing. It
