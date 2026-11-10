@@ -69,8 +69,10 @@ Pure API tools export an array; tools that drive the page export a
   effects do the loading, so the user watches the agent work.
 - **URL-seeded-once pages** (ve-hnt, multi-gateway): tools call the page's
   setter (`setInput`, `selectMac`) — a later URL change would not propagate.
-- **Local-state pages** (oui-notifier, l1-migration, hotspot-map): tools
-  call setters/handlers passed in from the component.
+- **Local-state pages** (oui-notifier, l1-migration, hotspot-map,
+  lorawan-traffic): tools call setters/handlers passed in from the component.
+  lorawan-traffic also mirrors its filters into the URL, but only reads them
+  once on load, so its tool drives the setters.
 
 Register with one `useWebMcpTools(() => makeXTools(...), [])` call in the
 page component. Handlers that close over only stable setters can be

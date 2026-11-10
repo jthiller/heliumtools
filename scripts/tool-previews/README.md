@@ -47,7 +47,7 @@ OUT_DIR=$(mktemp -d) node capture/brand.mjs    # write the shots somewhere else
 node capture/dc-mint.mjs macros                # only the card's macros (see below)
 ```
 
-There is one script per tool, for all 15 tools. Each creates its `manifest.json` when there is none, so it runs into an empty `OUT_DIR`. Every script is read-only. It runs through `lib.mjs`'s `run()`, which enforces a hard timeout, and every page gets the side-effect guard. A fake wallet is read-only, so any signing call throws. Post-action states come from local `page.route()` mocks. Light and dark are shot from one page state with `emulateMedia`.
+There is one script per tool, for all 16 tools. Each creates its `manifest.json` when there is none, so it runs into an empty `OUT_DIR`. Every script is read-only. It runs through `lib.mjs`'s `run()`, which enforces a hard timeout, and every page gets the side-effect guard. A fake wallet is read-only, so any signing call throws. Post-action states come from local `page.route()` mocks. Light and dark are shot from one page state with `emulateMedia`.
 
 The data is live, so the figures change between runs. After a re-shoot, check the card's crop rects in `previews/<slug>.js` again. Each script writes `manifest.json` itself: the css sizes come from the PNGs, and the `describes` text records the reference capture.
 
@@ -61,6 +61,7 @@ Four scripts finish with a macro pass: `dc-mint`, `hotspot-claimer`, `iot-onboar
 | `hnt-price` | The live SSE ticker frozen on one real frame, the `/current` and `/instant` Try-it JSON, and the endpoint, code and schema cards as transparent crops. | None. An init script freezes EventSource and `Date.now`. |
 | `hotspot-claimer` | Wallet-mode rewards table (10 Hotspots) and the richest Hotspot in Hotspot mode. Macros: Pending Rewards (dpr 4), the phone list and the desktop table (dpr 3). | `main`, by URL. The guard blocks the bulk `POST …/wallet/rewards`; the page falls back to per-Hotspot GETs. |
 | `hotspot-map` | Wallet lookup, then Add to Map for 2,172 NYC Hotspots: framed hero, pitched perspective, a selected Hotspot, and a dpr-3 hover tooltip. | `nyc`, typed into the lookup (no connect). The pulse is held via `Date.now`. |
+| `lorawan-traffic` | Every operator's file loaded, 30d: the map area as framed on load and with the camera on Europe, plus dpr-3 macros of the filter card and the operator picker's first rows. Nothing is clicked or hovered, so no single Hotspot is named. | None. Live network data; operator names from Helium's well-known list. |
 | `iot-onboard` | A paired Hotspot: Diagnostics, WiFi scan with Rooftop-Mesh-5G picked, Full Onboard mode, and the location step in Barcelona. Macros: identity bar, WiFi card and mode block (dpr 3). | `single`, fake-connected. `navigator.bluetooth` is mocked (`iot-onboard.ble-mock.mjs`). `POST /iot-onboard/lookup` is mocked. |
 | `l1-migration` | A legacy B58 address typed in, the derived Helium/Solana pair, and the "Migration successful!" banner. | `main`, typed (no connect). `POST /l1-migration/migrate` is mocked. |
 | `mobile-onboard` | Manage list and detail (location moved one cell north, not submitted), the Token-step name grind, the Location step, and the AP Setup Guide's RadSec and Passpoint blocks. | `nyc`, fake-connected. `POST /mobile-onboard/status` is mocked for the freshly ground key. |

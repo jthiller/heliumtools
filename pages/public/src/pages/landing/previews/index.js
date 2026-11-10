@@ -46,6 +46,7 @@ import updateLocation from "./update-location.js";
 import multiGateway from "./multi-gateway.js";
 import hotspotClaimer from "./hotspot-claimer.js";
 import hotspotMap from "./hotspot-map.js";
+import lorawanTraffic from "./lorawan-traffic.js";
 import hntPrice from "./hnt-price.js";
 import veHnt from "./ve-hnt.js";
 import l1Migration from "./l1-migration.js";
@@ -63,6 +64,7 @@ export const PREVIEWS = {
   "multi-gateway": multiGateway,
   "hotspot-claimer": hotspotClaimer,
   "hotspot-map": hotspotMap,
+  "lorawan-traffic": lorawanTraffic,
   "hnt-price": hntPrice,
   "ve-hnt": veHnt,
   "l1-migration": l1Migration,

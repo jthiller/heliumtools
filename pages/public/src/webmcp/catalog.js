@@ -148,6 +148,14 @@ export const TOOL_CATALOG = [
     tools: ["map-wallet-hotspots", "map-hotspots", "get-hotspot-onboard-dates"],
   },
   {
+    path: "/lorawan-traffic",
+    entry: "spa",
+    title: "LoRaWAN Traffic Map",
+    summary:
+      "Network-wide map of Helium LoRaWAN (IoT) traffic: every Hotspot that delivered packets in the last 1, 7 or 30 full UTC days, colored by the network operator that received them. Operators are identified by OUI (the ID an operator registers on Helium) and named where Helium's well-known list has a name. Read network and per-operator totals, list the Hotspots delivering for one operator, or set the map's operators, time range and packet range. Filters live in the URL (?window=7d&ouis=12,492&min=100&max=5000). Data is rebuilt daily; no wallet.",
+    tools: ["get-lorawan-traffic-summary", "show-lorawan-traffic", "get-operator-hotspots"],
+  },
+  {
     path: "/brand",
     entry: "spa",
     title: "Brand Guidelines",

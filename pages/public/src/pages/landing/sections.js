@@ -8,7 +8,7 @@
 // Section: { id, title, description, tools }. `id` names the section's region
 // (its h2's id). Tool: { slug, name, description, href, badge, featured?,
 // disabled? }. `badge: "New"` marks the three most recently added tools only
-// (today HNT Price API, Brand Guidelines and Council Emissions): a new
+// (today Brand Guidelines, Council Emissions and LoRaWAN Traffic Map): a new
 // tool takes it from the oldest of the three. `featured`: the card spans two grid columns wherever the grid
 // has two or more (its preview config then needs a `featured` print set).
 // `disabled`: shown as a plain, unfocusable "Coming Soon" card. `hidden`: left
@@ -17,9 +17,10 @@
 // The order is also the layout: a featured card that reaches the end of a row
 // with only one column left wraps to the next row and leaves a hole, which the
 // bake reports. Add a Hotspot sits third in its section for that reason: no
-// featured card wraps (every row fills at two columns; at three only the last
-// row, Brand alone, is short), and the palette's neighbour rule holds at 3, 2
-// and 1 columns.
+// featured card wraps (at two columns every row fills but the last, Brand
+// alone; at three only the last row, Council Emissions and Brand, is short),
+// and the palette's neighbour rule holds at 3, 2 and 1 columns. A card added
+// ahead of Add a Hotspot would make it wrap at two columns.
 
 const ALL_SECTIONS = [
   {
@@ -126,6 +127,14 @@ const ALL_SECTIONS = [
         href: "/hotspot-map",
         badge: null,
       },
+      {
+        slug: "lorawan-traffic",
+        name: "LoRaWAN Traffic Map",
+        description:
+          "See where LoRaWAN traffic lands on Helium. Every Hotspot that delivered packets in the last 1, 7, or 30 days, colored by the network operator (OUI) that received them.",
+        href: "/lorawan-traffic",
+        badge: "New",
+      },
     ],
   },
   {
@@ -139,7 +148,7 @@ const ALL_SECTIONS = [
         description:
           "A public, keyless price API. Live market price plus the on-chain oracle price the Data Credits mint pays, over HTTP, WebSocket, or SSE.",
         href: "/hnt-price",
-        badge: "New",
+        badge: null,
       },
       {
         slug: "ve-hnt",
