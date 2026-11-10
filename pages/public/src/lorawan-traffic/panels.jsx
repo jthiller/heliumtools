@@ -523,8 +523,8 @@ export function LocationRows({ group, rowsByOui }) {
 
 export function LocationCard({ group, rowsByOui, win, onClose }) {
   return (
-    <div className="flex max-h-full flex-col overflow-hidden rounded-xl bg-surface-raised shadow-soft">
-      <div className="flex items-center justify-between gap-3 border-b border-border-muted px-4 py-2.5">
+    <div className="pointer-events-auto flex max-h-full min-h-0 flex-col overflow-hidden rounded-xl bg-surface-raised shadow-soft">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border-muted px-4 py-2.5">
         <div>
           <p className="text-sm font-semibold text-content">{locationTitle(group)}</p>
           <p className="text-[11px] text-content-tertiary">Packets delivered per operator, {win}</p>

@@ -226,6 +226,22 @@ export function hitsNear({ layers, enabled, win, range, x, y, project, unproject
   return hits;
 }
 
+/** Whether a point draws a dot under the filters: packets in the window, inside the packet range. */
+export function isShown(point, win, { lo, hi, open }) {
+  const p = point[PROP[win]];
+  return p > 0 && inRange(p, lo, hi, open);
+}
+
+/**
+ * The clicked dots the map still shows under the current filters: operator
+ * switched on, packets in the window, inside the packet range. A clicked
+ * spot's list is built from these, so it never names a Hotspot whose dot is
+ * gone. Returns [] when nothing at the spot is shown any more.
+ */
+export function shownHits(hits, { enabled, win, range }) {
+  return hits.filter(({ oui, point }) => enabled.has(oui) && isShown(point, win, range));
+}
+
 /**
  * Clicked dots grouped into one row per Hotspot, busiest first: { address,
  * lng, lat, total, per: [{ oui, packets }] } with `per` busiest first too.

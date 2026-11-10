@@ -24,8 +24,10 @@ import {
   groupHits,
   hitsNear,
   inRange,
+  isShown,
   radiusFor,
   readUrlState,
+  shownHits,
   writeUrlState,
 } from "./data.js";
 import { AboutData, FiltersPanel, LocationCard, LocationRows, MapTooltip, OperatorPicker, Spinner, locationTitle } from "./panels.jsx";
@@ -150,7 +152,21 @@ export default function LorawanTrafficMap() {
     () => [...rows].sort((a, b) => b.hotspots["30d"] - a.hotspots["30d"] || a.oui - b.oui),
     [rows],
   );
-  const group = useMemo(() => (selection ? groupHits(selection.hits, win) : null), [selection, win]);
+  // A clicked spot keeps the dots that were under the click, and lists the ones
+  // the map still shows: change the window, the range or the operators and the
+  // list follows. With none left there is no card and no ring.
+  const group = useMemo(() => {
+    if (!selection) return null;
+    const hits = shownHits(selection.hits, { enabled, win, range: drawnRange });
+    return hits.length ? groupHits(hits, win) : null;
+  }, [selection, enabled, win, drawnRange]);
+  // Likewise the tooltip: the pointer can rest on a dot that a filter just hid.
+  const shownHover = hover && enabled.has(hover.row.oui) && isShown(hover.point, win, drawnRange) ? hover : null;
+  // A reload replaces every point, so what was clicked or hovered is gone.
+  useEffect(() => {
+    setSelection(null);
+    setHover(null);
+  }, [index]);
 
   const deckLayers = useMemo(() => {
     const key = PROP[win];
@@ -182,7 +198,7 @@ export default function LorawanTrafficMap() {
         }),
       );
     }
-    if (selection) {
+    if (group) {
       out.push(
         new ScatterplotLayer({
           id: "selection",
@@ -199,7 +215,7 @@ export default function LorawanTrafficMap() {
       );
     }
     return out;
-  }, [drawOrder, layers, enabled, win, drawnRange, isDark, selection]);
+  }, [drawOrder, layers, enabled, win, drawnRange, isDark, selection, group]);
 
   const handleHover = useCallback(
     (info) => {
@@ -376,8 +392,8 @@ export default function LorawanTrafficMap() {
           </MapGL>
         </DeckGL>
 
-        {!isMobile && hover && (
-          <MapTooltip hover={{ ...hover, packets: hover.point[PROP[win]] }} win={win} tooltipRef={tooltipRef} initialPos={hoverPos.current} />
+        {!isMobile && shownHover && (
+          <MapTooltip hover={{ ...shownHover, packets: shownHover.point[PROP[win]] }} win={win} tooltipRef={tooltipRef} initialPos={hoverPos.current} />
         )}
 
         {/* Desktop: filters and the operator picker float on the left, a clicked spot on the right. */}
@@ -394,10 +410,12 @@ export default function LorawanTrafficMap() {
           )}
         </div>
         {group && (
-          <div className="pointer-events-none absolute bottom-16 right-4 top-4 z-10 hidden w-[360px] md:block">
-            <div className="pointer-events-auto max-h-full">
-              <LocationCard group={group} rowsByOui={rowsByOui} win={win} onClose={() => setSelection(null)} />
-            </div>
+          // A flex column with a definite height (top and bottom are set), so the
+          // card can shrink to it and scroll its rows. An auto-height wrapper in
+          // between would leave the card's max-height unresolved and a long list
+          // would run off the map.
+          <div className="pointer-events-none absolute bottom-16 right-4 top-4 z-10 hidden w-[360px] flex-col md:flex">
+            <LocationCard group={group} rowsByOui={rowsByOui} win={win} onClose={() => setSelection(null)} />
           </div>
         )}
 

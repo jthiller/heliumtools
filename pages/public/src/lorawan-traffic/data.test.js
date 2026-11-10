@@ -12,10 +12,12 @@ import {
   groupHits,
   hitsNear,
   inRange,
+  isShown,
   ouiLabel,
   radiusFor,
   rangeLabel,
   readUrlState,
+  shownHits,
   sliderToThreshold,
   thresholdToSlider,
   writeUrlState,
@@ -171,6 +173,30 @@ test("clicked dots group into one row per Hotspot, busiest first", () => {
   assert.deepEqual(groupHits(hits, "7d").rows[0].per, [{ oui: 12, packets: 50 }, { oui: 44, packets: 9 }]);
   const spread = groupHits([...hits, { oui: 12, point: layers.get(12).points[1] }], "30d");
   assert.equal(spread.sameSpot, false);
+});
+
+test("a clicked spot lists only the dots the current filters still show", () => {
+  const { layers } = fixture();
+  const any = { lo: 1, hi: 1, open: true };
+  const all = new Set([12, 44]);
+  const hits = hitsNear({ layers, enabled: all, win: "30d", range: any, x: 0, y: 0, project, unproject });
+  const left = (filters) => shownHits(hits, { enabled: all, win: "30d", range: any, ...filters }).map((h) => `${h.oui}:${h.point.address}`).sort();
+
+  assert.deepEqual(left({}), ["12:a", "12:c", "44:a"]);
+  // "a" delivered nothing for OUI 44 that day: it leaves the list, not a zero row.
+  assert.deepEqual(left({ win: "1d" }), ["12:a", "12:c"]);
+  assert.deepEqual(groupHits(shownHits(hits, { enabled: all, win: "1d", range: any }), "1d").rows.map((r) => [r.address, r.total]), [["a", 5], ["c", 1]]);
+  // A switched-off operator and an out-of-range dot go too.
+  assert.deepEqual(left({ enabled: new Set([44]) }), ["44:a"]);
+  assert.deepEqual(left({ range: { lo: 100, hi: 1, open: true } }), ["12:a"]);
+  assert.deepEqual(left({ range: { lo: 4, hi: 100, open: false } }), ["44:a"]);
+  // Every operator off: nothing is left, so there is no card.
+  assert.deepEqual(left({ enabled: new Set() }), []);
+
+  const dot = layers.get(12).points[1]; // 20 packets in 30d, none in 7d
+  assert.equal(isShown(dot, "30d", any), true);
+  assert.equal(isShown(dot, "7d", any), false);
+  assert.equal(isShown(dot, "30d", { lo: 21, hi: 1, open: true }), false);
 });
 
 test("URL filters round-trip and fall back to defaults", () => {
