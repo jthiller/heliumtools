@@ -10,6 +10,8 @@ import { withTimeout, throwIfAborted } from "./abort.js";
 // Request budget: ONLY `/v1/gateways/{a}` is built for one-request-per-row
 // dashboard bursts. Everything else here is per wallet (the utilization index)
 // or per opened Hotspot (detail, coverage) — never fan those out across a fleet.
+// The network-wide reads at the end (the full index and one file per OUI) are
+// per page load of /lorawan-traffic, never per Hotspot.
 //
 // Semantics (see the service's docs/API.md):
 //   - `status: 0` = active = "connected to the Helium Packet Router during the
@@ -260,3 +262,131 @@ async function requestCoverage(address, { signal } = {}) {
  * Only one footprint is shown at a time, so a few are kept for back-and-forth.
  */
 export const fetchGatewayCoverage = dedupeAsync(requestCoverage, CACHE_TTL_MS, { max: 10, signalIndex: 1 });
+
+// ── Network-wide traffic (/lorawan-traffic: the index + one file per OUI) ────
+
+/** The utilization layer's time windows, shortest first. */
+export const TRAFFIC_WINDOWS = ["1d", "7d", "30d"];
+
+const count = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+const perWindow = (read) => Object.fromEntries(TRAFFIC_WINDOWS.map((w) => [w, count(read(w))]));
+
+async function requestNetworkTraffic({ signal } = {}) {
+  // `no-cache` revalidates every time: the edge can hand the browser a max-age
+  // of hours, and a stale index beside fresh per-OUI files would describe
+  // another day. (fetchUtilizationIndex above reads only completeness and can
+  // live with the browser's copy.)
+  const res = await fetch(`${IOT_STATUS_API_BASE}/v1/iot/utilization`, {
+    cache: "no-cache",
+    signal: withTimeout(signal, 15_000),
+  });
+  if (res.status === 404) return { published: false };
+  const data = await parseJson(res);
+  throwIfApiError(res, data);
+  const windows = data?.windows;
+  if (
+    !DATA_DAY_RE.test(data?.dataThrough || "") ||
+    !data.window ||
+    typeof data.files?.oui !== "string" ||
+    !TRAFFIC_WINDOWS.every((w) => DATA_DAY_RE.test(windows?.[w]?.start || "") && DATA_DAY_RE.test(windows?.[w]?.end || ""))
+  ) {
+    throw new Error("Malformed utilization index");
+  }
+  const ouis = (Array.isArray(data.ouis) ? data.ouis : [])
+    .filter((o) => Number.isInteger(o?.oui) && o.oui >= 0)
+    .map((o) => ({
+      oui: o.oui,
+      hotspots: perWindow((w) => o[`gateways${w}`]),
+      packets: perWindow((w) => o[`packets${w}`]),
+    }));
+  const listed = new Set(ouis.map((o) => o.oui));
+  return {
+    published: true,
+    dataThrough: data.dataThrough,
+    // The build's id. Goes into every per-OUI file URL (below).
+    version: typeof data.version === "string" ? data.version : "",
+    windows: Object.fromEntries(TRAFFIC_WINDOWS.map((w) => [w, { start: windows[w].start, end: windows[w].end }])),
+    days: Number(data.window.days) || 30,
+    daysComplete: Number(data.window.daysComplete),
+    missingDays: Array.isArray(data.window.missingDays) ? data.window.missingDays.filter((d) => DATA_DAY_RE.test(d)) : [],
+    totals: {
+      hotspots: perWindow((w) => data.totals?.gateways?.[w]),
+      packets: perWindow((w) => data.totals?.packets?.[w]),
+    },
+    // The busiest single Hotspot-on-one-OUI count per window (the top of the
+    // map's packet slider).
+    maxPackets: perWindow((w) => data.maxPackets?.[w]),
+    ouis,
+    files: {
+      oui: data.files.oui,
+      // The OUIs that have a file. Kept to the listed ones, so a file can never
+      // arrive for an OUI the index has no row for.
+      ouis: (Array.isArray(data.files.ouis) ? data.files.ouis : []).filter((id) => listed.has(id)),
+    },
+  };
+}
+
+/**
+ * The network-wide utilization index: the data-through day, each window's
+ * dates, network totals, and one row per OUI ({ oui, hotspots, packets }, each
+ * keyed by window), plus where the per-OUI files live. The API says "gateways";
+ * this site says Hotspots. Returns `{ published: false }` on 404 (no build
+ * published); throws on any other failure. Shared for 30 s so the page and its
+ * WebMCP tools make one request between them.
+ */
+export const fetchNetworkTraffic = dedupeAsync(requestNetworkTraffic, 30_000, { signalIndex: 0 });
+
+/**
+ * A per-OUI FeatureCollection as plain point records: { address, lng, lat,
+ * p1, p7, p30 } (packets delivered in the 1/7/30-day windows). Anything
+ * malformed yields []; features without a Point geometry, finite coordinates
+ * or an address are skipped.
+ */
+export function normalizeTrafficPoints(geojson) {
+  const features = Array.isArray(geojson?.features) ? geojson.features : [];
+  const out = [];
+  for (const f of features) {
+    const g = f?.geometry;
+    const p = f?.properties;
+    if (!g || g.type !== "Point" || !Array.isArray(g.coordinates) || g.coordinates.length < 2) continue;
+    const [lng, lat] = g.coordinates;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    if (!p || typeof p.address !== "string" || !p.address) continue;
+    out.push({ address: p.address, lng, lat, p1: count(p.packets1d), p7: count(p.packets7d), p30: count(p.packets30d) });
+  }
+  return out;
+}
+
+/**
+ * A per-OUI file's URL. `template` is the index's `files.oui`
+ * ("/v1/iot/utilization/oui/{oui}.geojson"), a path on the API's origin.
+ * `version` goes in as `?v=`: the API ignores it, but it gives every build its
+ * own URL, so the browser's cache (max-age=300 + stale-while-revalidate) can
+ * never pair a file from an older build with a newer index.
+ */
+export function ouiTrafficUrl(template, oui, version) {
+  const url = new URL(template.replace("{oui}", String(oui)), IOT_STATUS_API_BASE);
+  if (url.origin !== IOT_STATUS_API_BASE) throw new Error("Unexpected utilization file location");
+  if (version) url.searchParams.set("v", version);
+  return url.toString();
+}
+
+async function requestOuiTraffic(oui, template, version, { signal } = {}) {
+  // The files are application/geo+json, so not api.js's parseJson. The largest
+  // is ~1.5 MB on the wire (~8 MB of JSON), hence the longer deadline.
+  const res = await fetch(ouiTrafficUrl(template, oui, version), { signal: withTimeout(signal, 45_000) });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return normalizeTrafficPoints(await res.json());
+}
+
+/**
+ * One OUI's located Hotspots with their packet counts, from the per-OUI file
+ * the index names (`index.files.oui`, `index.version`). `[]` on 404: the OUI
+ * has no located Hotspots. Throws on any other failure. Results are immutable
+ * per build, so they are kept for the session and shared by the map and its
+ * WebMCP tools (the bound covers two builds' worth of OUIs across a nightly
+ * publish). One request per OUI per page load (~60 files, a few at a time):
+ * never per Hotspot.
+ */
+export const fetchOuiTraffic = dedupeAsync(requestOuiTraffic, Infinity, { signalIndex: 3, max: 160 });

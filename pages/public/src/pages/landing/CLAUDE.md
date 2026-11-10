@@ -10,9 +10,9 @@ October 2026 and set these rules; don't revert them without asking:
 - No "Open tool" CTA, pill or arrow. The card is the affordance.
 - The "New" badge is straight (never tilted) and sits in the same slot on
   every card. Recurring elements stay in one place card to card.
-- Only the three most recently added tools carry "New" (today HNT Price API,
-  Brand Guidelines and Council Emissions); a new tool takes it from the oldest
-  of the three.
+- Only the three most recently added tools carry "New" (today Brand
+  Guidelines, Council Emissions and LoRaWAN Traffic Map); a new tool takes it
+  from the oldest of the three.
 - No meta labels on the page (direction names, counts, designer notes).
 - Dark grounds are clearly colored mid-tone fields, not near-black tints.
 - The page opens on a compact header on the page background (no shader or
@@ -113,8 +113,7 @@ works the slots out from `placeCards(cols)`; Landing.jsx marks each slot
 `tc-line-N`, `tc-join-N` and `tc-run-N` per column count, and `landing.css`
 picks the set for the grid's width (a named size container, `tc-grid`, at the
 same 954px / 630px thresholds as the column count). Today the running heads
-are Mint Data Credits, Reward Claimer and veHNT Positions at 3 columns and
-Hotspot Map at 2; the bake lists them. The order is set by where the featured
+are Mint Data Credits at 3 columns and L1 Migration at 2; the bake lists them. The order is set by where the featured
 cards fit and by the palette, so don't reorder just to dodge a running head.
 A new section needs a `SECTION_RULES` entry keyed by its `id` (without one its
 rule falls back to the border color).
@@ -144,8 +143,11 @@ Featured cards constrain the order. A featured card that reaches a row with one
 column left wraps to the next row and leaves a hole, so `placeCards(cols)`
 mirrors CSS grid's placement and the bake fails on any empty cell before the
 last row at 3 or 2 columns. Today Add a Hotspot sits third in its section
-(after Mobile WiFi), so no featured card wraps: every row fills at 2 columns,
-and at 3 columns only the last row is short (Brand ends the grid alone).
+(after Mobile WiFi), so no featured card wraps: at 2 columns every row fills
+but the last (Brand alone), and at 3 columns only the last row is short
+(Council Emissions and Brand). A card added anywhere ahead of Add a Hotspot
+shifts it one cell and makes it wrap at 2 columns, which is one reason LoRaWAN
+Traffic Map went in after it, at the end of the Hotspot section.
 
 ## Palette
 
@@ -156,9 +158,10 @@ through one grid, that includes cards of different sections that share a row
 or sit above one another. Each tone carries the OKLCH `hue` it was generated
 at, and **the bake checks every adjacency at 3, 2 and 1 columns** on the
 `placeCards` layout, featured spans included (and that each hued ground
-measures its declared hue); it exits 1 and names the pair on a violation. The Hotspot section has six tools
-and four hues; IoT Setup/Reward Claimer and Mobile WiFi/Hotspot Map share a hue
-at two shade steps because those pairs never touch. The stone tone (Buy Data
+measures its declared hue); it exits 1 and names the pair on a violation. The Hotspot section has seven tools
+and four hues; IoT Setup/Reward Claimer, Mobile WiFi/Hotspot Map and Add a
+Hotspot/LoRaWAN Traffic Map share a hue at two shade steps because those pairs
+never touch. The stone tone (Buy Data
 Credits, hidden for now) is neutral (`hue: null`, chroma under .012): it has
 no hue to see, so it is
 exempt from the hue step and stands apart from any neighbour by being
@@ -166,11 +169,15 @@ colorless. The bake holds a neutral to that (every ground stop under chroma
 .02) and fails if two neutrals ever touch. Adding, removing or reordering
 tools in `sections.js` moves every later card; run the bake.
 
-The wheel is now nearly full: six arcs (Wallet 8, Hotspot 44–166,
+The wheel is now nearly full: six arcs (Wallet 8, Hotspot 44–168,
 Governance 180, Network 195–228, Holders 244–306, Brand 342). Governance's
 one card took the last gap wide enough to stand apart (14° from jade, 15°
 from teal, neither of which it touches) because a fourth HNT Holders card had
-no hue that kept 30° from every neighbour. The next new tool will likely need
+no hue that kept 30° from every neighbour. LoRaWAN Traffic Map took a second
+jade step (168) at the end of the Hotspot section for the same kind of reason:
+as a third Network Operators card it would touch both the teal (195) and the
+cyan (228) card at some width, and nothing inside that arc keeps 30° from
+both. The next new tool will likely need
 a second shade step of an existing hue placed where its twin never touches
 (as in Hotspot), or a re-spacing; search the placements with the bake's
 neighbour check rather than guessing. The sea green's dark grounds sit at

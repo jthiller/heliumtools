@@ -2,9 +2,9 @@
 // no other section uses, and each tool in it takes the next step:
 //
 //   Wallet   rose 8           Network  teal 195, cyan 228, neutral stone
-//   Hotspot  orange 48, amber 80, green 134, jade 166, then orange 44 and
-//            amber 75 as second shade steps     Holders  azure 244, indigo 276,
-//            violet 306                         Governance  sea green 180
+//   Hotspot  orange 48, amber 80, green 134, jade 166, then orange 44,
+//            amber 75 and jade 168 as second shade steps
+//   Holders  azure 244, indigo 276, violet 306   Governance  sea green 180
 //   Brand    orchid 342
 //
 // `hue` is the OKLCH hue a tone was generated at; `null` marks a neutral (no
@@ -17,10 +17,11 @@
 // (it differs by chroma, not hue), but two neutrals may never touch.
 // scripts/tool-previews/bake.mjs checks every adjacency at all three widths,
 // that each hued ground measures its declared `hue`, and that a neutral's
-// grounds stay under chroma .02. The Hotspot section has six tools and
-// four hues, so two pairs share a hue at a second shade step: IoT Setup and
-// Reward Claimer, Mobile WiFi and Hotspot Map. Neither pair touches at any
-// width; reordering sections.js can change that, and the bake will say so.
+// grounds stay under chroma .02. The Hotspot section has seven tools and
+// four hues, so three pairs share a hue at a second shade step: IoT Setup and
+// Reward Claimer, Mobile WiFi and Hotspot Map, Add a Hotspot and LoRaWAN
+// Traffic Map. No pair touches at any width; reordering sections.js can change
+// that, and the bake will say so.
 //
 // Tokens, per theme:
 //   g1 → g2  the ground gradient (top → bottom)
@@ -108,6 +109,17 @@ const HOTSPOT = [
     hue: 75,
     light: { g1: "#FFDDAF", g2: "#F9CA87", glow: "#FFF5E8", ink: "#362200", shade: "132 90 15" },
     dark: { g1: "#7E5401", g2: "#8D5E02", glow: "#B37903B3", ink: "#FFF9F2", shade: "24 13 0" },
+  },
+  {
+    // jade, step 2 (LoRaWAN Traffic Map): 2° up from Add a Hotspot's jade, not
+    // down, because Update Hotspot Location's green (134) sits above this card
+    // at 3 columns and needs its 30°. Light grounds a shade deeper (L .912/.862,
+    // C .05/.07), dark ones a shade lighter (L .475/.525), since jade's dark
+    // ground is already at the family's floor. It never touches its twin, nor
+    // Council Emissions' sea green 12° away.
+    hue: 168,
+    light: { g1: "#C3EDDC", g2: "#A5E1C9", glow: "#EDFAF4", ink: "#002F21", shade: "5 117 88" },
+    dark: { g1: "#046D52", g2: "#007D5E", glow: "#009E78B3", ink: "#F3FDF8", shade: "0 20 12" },
   },
 ];
 

@@ -104,6 +104,7 @@ const DcPurchaseTool = lazy(() => import("./dc-purchase/DcPurchaseTool.jsx"));
 const OrderStatus = lazy(() => import("./dc-purchase/OrderStatus.jsx"));
 const HotspotClaimer = lazy(() => import("./hotspot-claimer/HotspotClaimer.jsx"));
 const HotspotMap = lazy(() => import("./hotspot-map/HotspotMap.jsx"));
+const LorawanTrafficMap = lazy(() => import("./lorawan-traffic/LorawanTrafficMap.jsx"));
 const HntPriceTool = lazy(() => import("./hnt-price/HntPriceTool.jsx"));
 const MultiGateway = lazy(() => import("./multi-gateway/MultiGateway.jsx"));
 const DcMintTool = lazy(() => import("./dc-mint/DcMintTool.jsx"));
@@ -132,6 +133,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="/dc-purchase/order/:orderId" element={<OrderStatus />} />
             <Route path="/hotspot-claimer" element={<HotspotClaimer />} />
             <Route path="/hotspot-map" element={<HotspotMap />} />
+            {/* Network-wide LoRaWAN traffic by operator (OUI), read browser-side
+                from api-iot.heliumtools.org. No worker, no wallet. */}
+            <Route path="/lorawan-traffic" element={<LorawanTrafficMap />} />
             {/* Read-only API demo + docs. No wallet, so no SolanaProvider. */}
             <Route path="/hnt-price" element={<HntPriceTool />} />
             {/* HIP-149 council emissions and where that HNT goes, served from

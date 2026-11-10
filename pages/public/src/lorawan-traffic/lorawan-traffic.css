@@ -1,0 +1,77 @@
+/* LoRaWAN Traffic Map: the packet range's two-handle slider. Two native range
+   inputs share one track; only their thumbs take the pointer, so either handle
+   can be grabbed wherever it sits. Theme tokens only (index.css). */
+.lt-range {
+  position: relative;
+  height: 28px;
+}
+.lt-range-track,
+.lt-range-fill {
+  position: absolute;
+  top: 12px;
+  height: 4px;
+  border-radius: 2px;
+}
+.lt-range-track {
+  left: 0;
+  right: 0;
+  background: rgb(var(--color-border));
+}
+.lt-range-fill {
+  background: rgb(var(--color-accent-text));
+}
+.lt-range input[type="range"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: none;
+}
+.lt-range input[type="range"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+.lt-range input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+.lt-range input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+.lt-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: rgb(var(--color-surface-raised));
+  border: 2px solid rgb(var(--color-accent-text));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+.lt-range input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgb(var(--color-surface-raised));
+  border: 2px solid rgb(var(--color-accent-text));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+.lt-range input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgb(var(--color-accent-text) / 0.25);
+}
+.lt-range input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgb(var(--color-accent-text) / 0.25);
+}
