@@ -17,7 +17,7 @@ Most people don't know what an OUI is, so the page leads with **operator** and n
 ## Files
 
 - `LorawanTrafficMap.jsx`: the page. State (time range, packet range, operators shown, clicked spot, camera), the deck.gl layers, click and hover handling, URL sync, the desktop sidebar and the phone sheet.
-- `panels.jsx`: presentational pieces. `WindowPicker`, `PacketRange` (two-handle log slider + exact bounds), `ShownStats`, `OperatorPicker`, `AboutData`, `LocationCard` / `LocationRows`, `MapTooltip`.
+- `panels.jsx`: presentational pieces. `FiltersPanel` (the title, and under it the time range, the packet range as a two-handle log slider with exact bounds, and the shown totals; it folds to a two-line summary), `OperatorPicker`, `AboutData`, `LocationCard` / `LocationRows`, `MapTooltip`.
 - `useTraffic.js`: loads everything (below) and exposes `{ status, index, rows, layers, loaded, total, hotspotIds, failed, namesLoaded, reload }`.
 - `data.js`: the pure view model, with no DOM, fetch, React or map library, so it runs under `npm test`: operator rows and palette, range math, dot radius, shown counts, click hit-testing, URL state, date formatting.
 - `webmcpTools.js`: the page's agent tools.
@@ -64,6 +64,7 @@ Semantics, which the notes and tool descriptions must keep saying:
 ## Layout
 
 - Desktop: a floating sidebar on the left (filters and totals, then the operator picker with the notes), a clicked spot's card on the right, zoom control bottom right.
+- The filters card folds ("Hide filters" / "Show filters" beside the title, owner's request): once the filters are set, the operator list is where people work, and folding hands it the card's height (5 rows to 12 at 1440x900). Folded, the card keeps the title and two lines: the filters in words ("7d, Nov 3 to Nov 9. At least 1,000 packets.") and the shown totals, which still change as operators are switched. It starts open on every load and the state is not saved; the phone sheet shares it.
 - Phones (< 768px): one bottom sheet. Collapsed it shows the shown count; expanded, the filters and picker; with a spot clicked, that spot's Hotspots with a "Filters" back button.
 - The operator list's scroller is absolutely positioned inside a box that has a floor (three rows on desktop, a fixed 256px in the sheet), so the rows never add to the picker's own height. The picker card has no `overflow-hidden` and no fixed minimum: its minimum is the picker plus the notes, so opening "About this data" in a short window makes the card taller and the sidebar scroll. Don't put `min-h-0` or `overflow-hidden` back on the card or the picker: the notes then take the list's height, the list collapses, and the buttons spill over the notes.
 - Boxes use `shadow-soft`, not borders (root rule).
@@ -76,7 +77,7 @@ Three tools from `webmcpTools.js` (`makeLorawanTrafficTools({ showTraffic })`), 
 - `show-lorawan-traffic`: sets the page's filters in one call (operators by OUI, window, packet range; an omitted field goes back to its default), frames the map, and returns what it then shows. It goes through the page's `showTraffic`, which waits for every layer (`abortableDelay` polling, so cancelling ends only the wait) and computes the counts with the same `countShown`. An unknown OUI or an inverted range is an error, not a silent no-op.
 - `get-operator-hotspots` (read-only): one operator's located Hotspots for a window, busiest first, paged (`offset`/`limit`, at most 200, `pagination.nextOffset`).
 
-The two reads use the page's client and caches, so nothing the map already loaded is fetched again. The clicked-spot list and hover tooltip are UI-only. Framework: `pages/public/src/webmcp/CLAUDE.md`.
+The two reads use the page's client and caches, so nothing the map already loaded is fetched again. The clicked-spot list, the hover tooltip and the folded state of the filters card are UI-only. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
 ## Landing preview
 

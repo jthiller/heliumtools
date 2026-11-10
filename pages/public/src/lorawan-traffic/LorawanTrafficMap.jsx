@@ -28,18 +28,7 @@ import {
   readUrlState,
   writeUrlState,
 } from "./data.js";
-import {
-  AboutData,
-  LocationCard,
-  LocationRows,
-  MapTooltip,
-  OperatorPicker,
-  PacketRange,
-  ShownStats,
-  Spinner,
-  WindowPicker,
-  locationTitle,
-} from "./panels.jsx";
+import { AboutData, FiltersPanel, LocationCard, LocationRows, MapTooltip, OperatorPicker, Spinner, locationTitle } from "./panels.jsx";
 import "./lorawan-traffic.css";
 
 const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -65,6 +54,7 @@ export default function LorawanTrafficMap() {
   const [selection, setSelection] = useState(null); // { lng, lat, hits } for a clicked spot
   const [hover, setHover] = useState(null); // { row, point }
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const hoverPos = useRef({ x: 0, y: 0 });
   const tooltipRef = useRef(null);
   const mapBoxRef = useRef(null);
@@ -322,17 +312,18 @@ export default function LorawanTrafficMap() {
     ) : null;
 
   const filters = index && (
-    <div className="space-y-3.5 px-4 py-3.5">
-      <div>
-        <h1 className="font-display text-base font-semibold tracking-[-0.01em] text-content">LoRaWAN traffic by operator</h1>
-        <p className="mt-0.5 text-xs leading-snug text-content-secondary">
-          Hotspots that delivered LoRaWAN packets, colored by the network operator (OUI) that received them.
-        </p>
-      </div>
-      <WindowPicker index={index} win={win} onChange={setWin} />
-      <PacketRange range={range} max={max} win={win} onChange={setStoredRange} />
-      <ShownStats shown={shown} index={index} win={win} loading={loadingLayers} />
-    </div>
+    <FiltersPanel
+      index={index}
+      win={win}
+      onWin={setWin}
+      range={range}
+      max={max}
+      onRange={setStoredRange}
+      shown={shown}
+      loading={loadingLayers}
+      open={filtersOpen}
+      onToggle={() => setFiltersOpen((v) => !v)}
+    />
   );
 
   const picker = (listClassName) =>

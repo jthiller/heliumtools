@@ -1,9 +1,9 @@
 // The LoRaWAN Traffic Map's panels: filters, the operator picker, the notes, and
 // the list of Hotspots at a clicked spot. Presentational: state lives in
 // LorawanTrafficMap.jsx.
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import animalHash from "angry-purple-tiger";
-import { ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { ArrowTopRightOnSquareIcon, ChevronUpIcon, MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import CopyButton from "../components/CopyButton.jsx";
 import Tooltip from "../components/Tooltip.jsx";
 import { numberFormatter, truncateString } from "../lib/utils.js";
@@ -43,7 +43,7 @@ function SectionLabel({ children, id }) {
 
 // ---- time range ----
 
-export function WindowPicker({ index, win, onChange }) {
+function WindowPicker({ index, win, onChange }) {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
@@ -106,7 +106,7 @@ function BoundField({ label, value, max, onCommit }) {
  * is { lo, hi, open } already clamped to `max`; `open` means the upper handle
  * sits at the end of the track (no upper bound).
  */
-export function PacketRange({ range, max, win, onChange }) {
+function PacketRange({ range, max, win, onChange }) {
   const loPos = thresholdToSlider(range.lo, max);
   const hiPos = range.open ? SLIDER_MAX : thresholdToSlider(range.hi, max);
 
@@ -179,7 +179,7 @@ function Stat({ value, label, sub }) {
 }
 
 /** What the map shows now, beside the network-wide totals for the window. */
-export function ShownStats({ shown, index, win, loading }) {
+function ShownStats({ shown, index, win, loading }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       <Stat
@@ -192,6 +192,57 @@ export function ShownStats({ shown, index, win, loading }) {
         label="Packets they delivered"
         sub={`of ${fmt(index.totals.packets[win])} network-wide`}
       />
+    </div>
+  );
+}
+
+// ---- the filters card ----
+
+const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/**
+ * The page's title with its filters under it: time range, packet range and what
+ * the map shows. "Hide filters" folds the controls into two lines (the filters
+ * in words, then the shown totals), which hands their height to the operator
+ * list below: once the filters are set, that list is where people work.
+ */
+export function FiltersPanel({ index, win, onWin, range, max, onRange, shown, loading, open, onToggle }) {
+  const bodyId = useId();
+  return (
+    <div className="px-4 py-3.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h1 className="font-display text-base font-semibold tracking-[-0.01em] text-content">LoRaWAN traffic by operator</h1>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-content-tertiary transition hover:text-content-secondary"
+        >
+          {open ? "Hide filters" : "Show filters"}
+          <ChevronUpIcon className={`h-3.5 w-3.5 transition-transform ${open ? "" : "rotate-180"}`} aria-hidden="true" />
+        </button>
+      </div>
+      {open ? (
+        <div id={bodyId} className="space-y-3.5">
+          <p className="mt-0.5 text-xs leading-snug text-content-secondary">
+            Hotspots that delivered LoRaWAN packets, colored by the network operator (OUI) that received them.
+          </p>
+          <WindowPicker index={index} win={win} onChange={onWin} />
+          <PacketRange range={range} max={max} win={win} onChange={onRange} />
+          <ShownStats shown={shown} index={index} win={win} loading={loading} />
+        </div>
+      ) : (
+        <div id={bodyId} className="mt-1 text-xs leading-snug">
+          <p className="text-content-secondary">
+            {win}, {fmtWindow(index.windows[win])}. {sentence(rangeLabel(range))}.
+          </p>
+          <p className="mt-0.5 text-content">
+            <span className="font-mono font-semibold tabular-nums">{loading ? "…" : fmt(shown.unique)}</span> Hotspots shown,{" "}
+            <span className="font-mono font-semibold tabular-nums">{loading ? "…" : fmt(shown.packets)}</span> packets
+          </p>
+        </div>
+      )}
     </div>
   );
 }
