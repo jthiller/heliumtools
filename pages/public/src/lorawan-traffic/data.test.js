@@ -6,6 +6,7 @@ import {
   assignHotspotIds,
   boundsOf,
   buildOuiRows,
+  buildScene,
   clampRange,
   countShown,
   fmtWindow,
@@ -17,9 +18,11 @@ import {
   radiusFor,
   rangeLabel,
   readUrlState,
+  sceneSizes,
   shownHits,
   sliderToThreshold,
   thresholdToSlider,
+  topDotAt,
   writeUrlState,
 } from "./data.js";
 
@@ -144,14 +147,71 @@ test("bounds cover the given operators' points", () => {
 // 10 px per degree, north up.
 const project = ([lng, lat]) => [lng * 10, -lat * 10];
 const unproject = ([x, y]) => [x / 10, -y / 10];
+const ANY = { lo: 1, hi: 1, open: true };
+
+// The fixture as the map draws it: OUI 12 first (more Hotspots), OUI 44 on top.
+function drawn(filters = {}) {
+  const { rows, layers } = fixture();
+  const scene = buildScene(rows, layers, 184);
+  const { radius, lineWidth } = sceneSizes(scene, { enabled: new Set([12, 44]), win: "30d", range: ANY, ...filters });
+  return { layers, scene, radius, lineWidth };
+}
+const label = (h) => `${h.oui}:${h.point.address}`;
+
+test("the scene is every loaded dot in draw order, colored by operator", () => {
+  const { rows, layers } = fixture();
+  const scene = buildScene(rows, layers, 184);
+  assert.equal(scene.length, 5);
+  assert.deepEqual(scene.points.map((p) => p.address), ["a", "b", "c", "a", "d"]);
+  assert.deepEqual([...scene.positions], [0, 0, 10, 10, 0, 0, 0, 0, -20, 5]);
+  // OUI 492 has no located Hotspots, so it has no place in the scene.
+  assert.deepEqual(scene.rows.map((r) => r.oui), [12, 44]);
+  assert.deepEqual([...scene.rowIndex], [0, 0, 0, 1, 1]);
+  assert.deepEqual([...scene.colors.slice(0, 4)], [...rows[0].rgb, 184]);
+  assert.deepEqual([...scene.colors.slice(12, 16)], [...rows[1].rgb, 184]);
+  // An operator whose file hasn't arrived is simply not there yet.
+  assert.equal(buildScene(rows, new Map([[44, layers.get(44)]]), 184).length, 2);
+  assert.equal(buildScene(rows, new Map()).length, 0);
+});
+
+test("a dot the filters hide has no radius and no outline", () => {
+  const sized = (filters) => {
+    const { radius, lineWidth } = drawn(filters);
+    assert.deepEqual([...lineWidth].map((w) => w > 0), [...radius].map((r) => r > 0), "outline and radius go together");
+    return [...radius].map((r) => +r.toFixed(2));
+  };
+  assert.deepEqual(sized(), [500, 20, 3, 90, 8].map((p) => +radiusFor(p).toFixed(2)));
+  // No packets in the window, operator switched off, outside the range.
+  assert.deepEqual(sized({ win: "1d" }).map((r) => r > 0), [true, false, true, false, true]);
+  assert.deepEqual(sized({ enabled: new Set([44]) }).map((r) => r > 0), [false, false, false, true, true]);
+  assert.deepEqual(sized({ range: { lo: 10, hi: 100, open: false } }).map((r) => r > 0), [false, true, false, true, false]);
+});
+
+test("hovering names the dot drawn on top", () => {
+  const top = (x, y, filters) => {
+    const { scene, radius } = drawn(filters);
+    const i = topDotAt(scene, radius, { x, y, project, unproject });
+    return i < 0 ? null : label({ oui: scene.rows[scene.rowIndex[i]].oui, point: scene.points[i] });
+  };
+  // Three dots share (0, 0): OUI 44's is drawn last, so it is on top.
+  assert.equal(top(0, 0), "44:a");
+  assert.equal(top(0, 0, { enabled: new Set([12]) }), "12:c");
+  assert.equal(top(0, 0, { enabled: new Set([12]), range: { lo: 100, hi: 1, open: true } }), "12:a");
+  assert.equal(top(50, -50), null, "empty map");
+  // "b" is a 20-packet dot (~3.5 px) at (100, -100): the pointer has to be on it, with no click pad.
+  assert.equal(top(103, -100), "12:b");
+  assert.equal(top(106, -100), null);
+  assert.equal(top(100, -100, { win: "7d" }), null, "no packets in that window, no dot");
+});
 
 test("a click lists every shown dot under it, across operators", () => {
-  const { layers } = fixture();
-  const at = (x, y, extra) =>
-    hitsNear({ layers, enabled: new Set([12, 44]), win: "30d", range: { lo: 1, hi: 1, open: true }, x, y, project, unproject, ...extra });
+  const at = (x, y, filters) => {
+    const { scene, radius } = drawn(filters);
+    return hitsNear(scene, radius, { x, y, project, unproject });
+  };
 
   const stack = at(0, 0);
-  assert.deepEqual(stack.map((h) => `${h.oui}:${h.point.address}`).sort(), ["12:a", "12:c", "44:a"]);
+  assert.deepEqual(stack.map(label), ["12:a", "12:c", "44:a"], "in draw order");
   assert.equal(at(50, -50).length, 0, "empty map");
   // "b" has a 20-packet dot (~3.5 px) at (100, -100): 9 px away is within the click pad, 12 is not.
   assert.equal(at(109, -100).length, 1);
@@ -163,8 +223,8 @@ test("a click lists every shown dot under it, across operators", () => {
 });
 
 test("clicked dots group into one row per Hotspot, busiest first", () => {
-  const { layers } = fixture();
-  const hits = hitsNear({ layers, enabled: new Set([12, 44]), win: "30d", range: { lo: 1, hi: 1, open: true }, x: 0, y: 0, project, unproject });
+  const { layers, scene, radius } = drawn();
+  const hits = hitsNear(scene, radius, { x: 0, y: 0, project, unproject });
   const { rows, sameSpot } = groupHits(hits, "30d");
   assert.equal(sameSpot, true);
   assert.deepEqual(rows.map((r) => [r.address, r.total]), [["a", 590], ["c", 3]]);
@@ -176,10 +236,10 @@ test("clicked dots group into one row per Hotspot, busiest first", () => {
 });
 
 test("a clicked spot lists only the dots the current filters still show", () => {
-  const { layers } = fixture();
-  const any = { lo: 1, hi: 1, open: true };
+  const { layers, scene, radius } = drawn();
+  const any = ANY;
   const all = new Set([12, 44]);
-  const hits = hitsNear({ layers, enabled: all, win: "30d", range: any, x: 0, y: 0, project, unproject });
+  const hits = hitsNear(scene, radius, { x: 0, y: 0, project, unproject });
   const left = (filters) => shownHits(hits, { enabled: all, win: "30d", range: any, ...filters }).map((h) => `${h.oui}:${h.point.address}`).sort();
 
   assert.deepEqual(left({}), ["12:a", "12:c", "44:a"]);
