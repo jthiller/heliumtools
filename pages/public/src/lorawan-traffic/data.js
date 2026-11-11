@@ -185,43 +185,129 @@ export function boundsOf(layers, ouis) {
   return Number.isFinite(w) ? [w, s, e, n] : null;
 }
 
-// ---- clicking the map ----
+// ---- the drawn scene ----
+
+/** Outline width (px) around every dot. */
+export const STROKE_WIDTH = 0.6;
+
+/**
+ * Every loaded dot as flat arrays, in the order the map draws them: operator
+ * by operator along `order` (a later one on top), each in its file's order.
+ * One layer draws the whole network from these in a single call, and the
+ * page's own hit test reads the same arrays, so what is drawn and what can be
+ * hovered or clicked can't drift apart.
+ *   positions  Float64Array, [lng, lat] per dot
+ *   colors     Uint8Array, [r, g, b, alpha] per dot: its operator's color
+ *   points     the point objects, for what a hit names
+ *   rowIndex   Uint16Array, each dot's operator as an index into `rows`
+ */
+export function buildScene(order, layers, alpha = 255) {
+  let length = 0;
+  for (const row of order) length += layers.get(row.oui)?.points.length ?? 0;
+  const positions = new Float64Array(length * 2);
+  const colors = new Uint8Array(length * 4);
+  const points = new Array(length);
+  const rowIndex = new Uint16Array(length);
+  const rows = [];
+  let i = 0;
+  for (const row of order) {
+    const list = layers.get(row.oui)?.points;
+    if (!list?.length) continue;
+    const r = rows.push(row) - 1;
+    const [red, green, blue] = row.rgb;
+    for (const point of list) {
+      positions[i * 2] = point.lng;
+      positions[i * 2 + 1] = point.lat;
+      colors[i * 4] = red;
+      colors[i * 4 + 1] = green;
+      colors[i * 4 + 2] = blue;
+      colors[i * 4 + 3] = alpha;
+      points[i] = point;
+      rowIndex[i] = r;
+      i++;
+    }
+  }
+  return { length, positions, colors, points, rowIndex, rows };
+}
+
+/**
+ * Each dot's drawn size under the filters, index-aligned with the scene:
+ * `radius` (px, by its packets in the window) and `lineWidth` (its outline).
+ * Both are 0 for a dot the filters hide (operator switched off, no packets in
+ * the window, outside the packet range), so it draws nothing and can't be hit.
+ * These two arrays are all that is rebuilt when a filter moves.
+ */
+export function sceneSizes(scene, { enabled, win, range }) {
+  const key = PROP[win];
+  const { lo, hi, open } = range;
+  const { length, points, rowIndex } = scene;
+  const on = scene.rows.map((row) => enabled.has(row.oui));
+  const radius = new Float32Array(length);
+  const lineWidth = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    if (!on[rowIndex[i]]) continue;
+    const p = points[i][key];
+    if (p <= 0 || !inRange(p, lo, hi, open)) continue;
+    radius[i] = radiusFor(p);
+    lineWidth[i] = STROKE_WIDTH;
+  }
+  return { radius, lineWidth };
+}
+
+// ---- hovering and clicking the map ----
 
 /** How far (px) around the click a dot still counts as clicked. */
 export const CLICK_PAD = 6;
-const STROKE = 0.6;
 
 /**
- * Every shown dot under a click: dots of enabled OUIs, inside the packet
- * range, whose drawn circle comes within CLICK_PAD px of (x, y). `project`
- * maps [lng, lat] to screen px and `unproject` the reverse (a deck.gl
- * viewport's). Returns [{ oui, point }].
+ * A test for "does dot i's drawn circle come within `pad` px of (x, y)".
+ * `project` maps [lng, lat] to screen px and `unproject` the reverse (a
+ * deck.gl viewport's). Only dots inside the lng/lat box that can reach the
+ * spot are projected; the rest are skipped on two comparisons.
  */
-export function hitsNear({ layers, enabled, win, range, x, y, project, unproject }) {
-  const key = PROP[win];
-  const { lo, hi, open } = range;
-  // Only points inside this lng/lat box can reach the click; skip the rest
-  // without projecting them.
-  const reach = CLICK_PAD + MAX_RADIUS + STROKE;
+function reachTest(scene, radius, { x, y, pad, project, unproject }) {
+  const reach = pad + MAX_RADIUS + STROKE_WIDTH;
   const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => unproject([x + sx * reach, y + sy * reach]));
   const west = Math.min(...corners.map((c) => c[0]));
   const east = Math.max(...corners.map((c) => c[0]));
   const south = Math.min(...corners.map((c) => c[1]));
   const north = Math.max(...corners.map((c) => c[1]));
+  const { positions } = scene;
+  return (i) => {
+    const size = radius[i];
+    if (size === 0) return false;
+    const lng = positions[i * 2];
+    if (lng < west || lng > east) return false;
+    const lat = positions[i * 2 + 1];
+    if (lat < south || lat > north) return false;
+    const [px, py] = project([lng, lat]);
+    const dx = Math.max(Math.abs(px - x) - pad, 0);
+    const dy = Math.max(Math.abs(py - y) - pad, 0);
+    const r = size + STROKE_WIDTH;
+    return dx * dx + dy * dy <= r * r;
+  };
+}
+
+/**
+ * The dot drawn on top at (x, y): the index of the last drawn dot whose circle
+ * covers that spot, or -1 over empty map. `radius` is sceneSizes().radius. The
+ * map's hover reads this instead of a GPU picking pass.
+ */
+export function topDotAt(scene, radius, { x, y, project, unproject }) {
+  const touches = reachTest(scene, radius, { x, y, pad: 0, project, unproject });
+  for (let i = scene.length - 1; i >= 0; i--) if (touches(i)) return i;
+  return -1;
+}
+
+/**
+ * Every shown dot under a click: the dots whose drawn circle comes within
+ * CLICK_PAD px of (x, y), as [{ oui, point }] in draw order.
+ */
+export function hitsNear(scene, radius, { x, y, project, unproject }) {
+  const touches = reachTest(scene, radius, { x, y, pad: CLICK_PAD, project, unproject });
   const hits = [];
-  for (const oui of enabled) {
-    const points = layers.get(oui)?.points;
-    if (!points) continue;
-    for (const point of points) {
-      if (point.lng < west || point.lng > east || point.lat < south || point.lat > north) continue;
-      const p = point[key];
-      if (p <= 0 || !inRange(p, lo, hi, open)) continue;
-      const [px, py] = project([point.lng, point.lat]);
-      const dx = Math.max(Math.abs(px - x) - CLICK_PAD, 0);
-      const dy = Math.max(Math.abs(py - y) - CLICK_PAD, 0);
-      const r = radiusFor(p) + STROKE;
-      if (dx * dx + dy * dy <= r * r) hits.push({ oui, point });
-    }
+  for (let i = 0; i < scene.length; i++) {
+    if (touches(i)) hits.push({ oui: scene.rows[scene.rowIndex[i]].oui, point: scene.points[i] });
   }
   return hits;
 }

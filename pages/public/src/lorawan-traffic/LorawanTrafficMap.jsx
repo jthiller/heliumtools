@@ -3,11 +3,6 @@
 // Docs: ./CLAUDE.md.
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import MapGL, { NavigationControl } from "react-map-gl/maplibre";
-import { DeckGL } from "@deck.gl/react";
-import { WebMercatorViewport } from "@deck.gl/core";
-import { ScatterplotLayer } from "@deck.gl/layers";
-import "maplibre-gl/dist/maplibre-gl.css";
 import { ArrowLeftIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 import useDarkMode from "../lib/useDarkMode.js";
 import useMediaQuery from "../lib/useMediaQuery.js";
@@ -16,28 +11,12 @@ import { numberFormatter } from "../lib/utils.js";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeLorawanTrafficTools } from "./webmcpTools.js";
 import useTraffic from "./useTraffic.js";
-import {
-  PROP,
-  boundsOf,
-  clampRange,
-  countShown,
-  groupHits,
-  hitsNear,
-  inRange,
-  isShown,
-  radiusFor,
-  readUrlState,
-  shownHits,
-  writeUrlState,
-} from "./data.js";
-import { AboutData, FiltersPanel, LocationCard, LocationRows, MapTooltip, OperatorPicker, Spinner, locationTitle } from "./panels.jsx";
+import MapCanvas from "./MapCanvas.jsx";
+import { boundsOf, buildScene, clampRange, countShown, groupHits, hitsNear, readUrlState, sceneSizes, shownHits, writeUrlState } from "./data.js";
+import { AboutData, FiltersPanel, LocationCard, LocationRows, OperatorPicker, Spinner, locationTitle } from "./panels.jsx";
 import "./lorawan-traffic.css";
 
-const BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
-const BASEMAP_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-const INITIAL_VIEW = { longitude: 5, latitude: 40, zoom: 1.6, pitch: 0, bearing: 0 };
 const FILL_ALPHA = 184; // 72%
-const STROKE_WIDTH = 0.6;
 const fmt = (n) => numberFormatter.format(n);
 
 export default function LorawanTrafficMap() {
@@ -52,15 +31,16 @@ export default function LorawanTrafficMap() {
   const [storedRange, setStoredRange] = useState({ lo: seed.min ?? 1, hi: seed.max ?? 1, open: seed.max == null });
   const [picked, setPicked] = useState(seed.ouis ? new Set(seed.ouis) : null); // null = every OUI
 
-  const [viewState, setViewState] = useState(INITIAL_VIEW);
+  // The camera and the hover live in MapCanvas, so neither re-renders this page.
   const [selection, setSelection] = useState(null); // { lng, lat, hits } for a clicked spot
-  const [hover, setHover] = useState(null); // { row, point }
   const [sheetOpen, setSheetOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
-  const hoverPos = useRef({ x: 0, y: 0 });
-  const tooltipRef = useRef(null);
+  const mapRef = useRef(null);
   const mapBoxRef = useRef(null);
   const userMoved = useRef(false);
+  const noteUserMove = useCallback(() => {
+    userMoved.current = true;
+  }, []);
 
   const allOuis = useMemo(() => rows.map((r) => r.oui), [rows]);
   const rowsByOui = useMemo(() => new Map(rows.map((r) => [r.oui, r])), [rows]);
@@ -95,31 +75,10 @@ export default function LorawanTrafficMap() {
   // ---- camera ----
   const fitTo = useCallback(
     (ouis) => {
-      const box = mapBoxRef.current;
       const bounds = boundsOf(layers, ouis.length ? ouis : allOuis);
-      if (!box || !bounds) return;
-      const [w, s, e, n] = bounds;
-      // Keep the data clear of the sidebar (desktop) or the sheet (phones).
-      const padding = isMobile ? { top: 32, bottom: 120, left: 24, right: 24 } : { top: 48, bottom: 48, left: 436, right: 56 };
-      let target;
-      try {
-        target = new WebMercatorViewport({ width: box.clientWidth, height: box.clientHeight }).fitBounds(
-          [[w, s], [e, n]],
-          { padding, maxZoom: 10 },
-        );
-      } catch {
-        // A box smaller than the padding: centre without it.
-        target = { longitude: (w + e) / 2, latitude: (s + n) / 2, zoom: 2 };
-      }
-      setViewState((prev) => ({
-        ...prev,
-        longitude: target.longitude,
-        latitude: target.latitude,
-        zoom: Math.max(0.5, target.zoom),
-        transitionDuration: 600,
-      }));
+      if (bounds) mapRef.current?.fitBounds(bounds);
     },
-    [layers, allOuis, isMobile],
+    [layers, allOuis],
   );
   const fitRef = useRef(fitTo);
   fitRef.current = fitTo;
@@ -146,12 +105,18 @@ export default function LorawanTrafficMap() {
   );
   const setMany = useCallback((want) => setPicked(new Set(rows.filter(want).map((r) => r.oui))), [rows]);
 
-  // ---- map layers ----
+  // ---- the map's dots ----
   const drawOrder = useMemo(
-    // Largest layers first, so smaller operators draw on top.
+    // Largest operators first, so smaller ones draw on top.
     () => [...rows].sort((a, b) => b.hotspots["30d"] - a.hotspots["30d"] || a.oui - b.oui),
     [rows],
   );
+  // Every loaded dot as flat arrays (rebuilt as files arrive), and each dot's
+  // size under the filters (rebuilt when a filter moves). MapCanvas draws them
+  // and hit-tests hovers against them; clicks are hit-tested here.
+  const scene = useMemo(() => buildScene(drawOrder, layers, FILL_ALPHA), [drawOrder, layers]);
+  const sizes = useMemo(() => sceneSizes(scene, { enabled, win, range: drawnRange }), [scene, enabled, win, drawnRange]);
+
   // A clicked spot keeps the dots that were under the click, and lists the ones
   // the map still shows: change the window, the range or the operators and the
   // list follows. With none left there is no card and no ring.
@@ -160,94 +125,17 @@ export default function LorawanTrafficMap() {
     const hits = shownHits(selection.hits, { enabled, win, range: drawnRange });
     return hits.length ? groupHits(hits, win) : null;
   }, [selection, enabled, win, drawnRange]);
-  // Likewise the tooltip: the pointer can rest on a dot that a filter just hid.
-  const shownHover = hover && enabled.has(hover.row.oui) && isShown(hover.point, win, drawnRange) ? hover : null;
-  // A reload replaces every point, so what was clicked or hovered is gone.
+  // A reload replaces every point, so what was clicked is gone.
   useEffect(() => {
     setSelection(null);
-    setHover(null);
   }, [index]);
 
-  const deckLayers = useMemo(() => {
-    const key = PROP[win];
-    const { lo, hi, open } = drawnRange;
-    const stroke = isDark ? [17, 17, 19, 220] : [255, 255, 255, 255];
-    const filterKey = [key, lo, hi, open];
-    const out = [];
-    for (const row of drawOrder) {
-      const points = layers.get(row.oui)?.points;
-      if (!points?.length) continue;
-      out.push(
-        new ScatterplotLayer({
-          id: `oui-${row.oui}`,
-          data: points,
-          visible: enabled.has(row.oui),
-          pickable: true,
-          radiusUnits: "pixels",
-          lineWidthUnits: "pixels",
-          stroked: true,
-          getPosition: (d) => [d.lng, d.lat],
-          // A point outside the packet range gets no radius and no outline, so it
-          // draws nothing and can't be picked. Only these two attributes are
-          // rebuilt when a filter moves.
-          getRadius: (d) => (inRange(d[key], lo, hi, open) ? radiusFor(d[key]) : 0),
-          getLineWidth: (d) => (inRange(d[key], lo, hi, open) ? STROKE_WIDTH : 0),
-          getFillColor: [...row.rgb, FILL_ALPHA],
-          getLineColor: stroke,
-          updateTriggers: { getRadius: filterKey, getLineWidth: filterKey },
-        }),
-      );
-    }
-    if (group) {
-      out.push(
-        new ScatterplotLayer({
-          id: "selection",
-          data: [selection],
-          getPosition: (d) => [d.lng, d.lat],
-          getRadius: 15,
-          radiusUnits: "pixels",
-          filled: false,
-          stroked: true,
-          getLineWidth: 2,
-          lineWidthUnits: "pixels",
-          getLineColor: isDark ? [255, 255, 255, 235] : [28, 25, 23, 235],
-        }),
-      );
-    }
-    return out;
-  }, [drawOrder, layers, enabled, win, drawnRange, isDark, selection, group]);
-
-  const handleHover = useCallback(
-    (info) => {
-      const row = info.object && info.layer?.id?.startsWith("oui-") ? rowsByOui.get(Number(info.layer.id.slice(4))) : null;
-      if (!row) {
-        setHover(null);
-        return;
-      }
-      hoverPos.current = { x: info.x, y: info.y };
-      // Move the tooltip through the DOM so a mouse move doesn't re-render the page.
-      if (tooltipRef.current) {
-        tooltipRef.current.style.left = `${info.x + 12}px`;
-        tooltipRef.current.style.top = `${info.y - 12}px`;
-      }
-      setHover((prev) => (prev && prev.point === info.object && prev.row === row ? prev : { row, point: info.object }));
-    },
-    [rowsByOui],
-  );
-
   // A click lists every shown Hotspot under it, not just the top dot.
-  const handleClick = useCallback(
-    (info, event) => {
-      if (event?.srcEvent?.target?.closest?.(".maplibregl-ctrl")) return;
-      const { viewport } = info;
-      if (!viewport || info.x == null) return;
-      const hits = hitsNear({
-        layers,
-        enabled,
-        win,
-        range,
-        x: info.x,
-        y: info.y,
+  const handlePick = useCallback(
+    ({ x, y, viewport }) => {
+      const hits = hitsNear(scene, sizes.radius, {
+        x,
+        y,
         project: (c) => viewport.project(c),
         unproject: (c) => viewport.unproject(c),
       });
@@ -256,11 +144,11 @@ export default function LorawanTrafficMap() {
         return;
       }
       const found = groupHits(hits, win);
-      const [lng, lat] = found.sameSpot ? [found.rows[0].lng, found.rows[0].lat] : viewport.unproject([info.x, info.y]);
+      const [lng, lat] = found.sameSpot ? [found.rows[0].lng, found.rows[0].lat] : viewport.unproject([x, y]);
       setSelection({ lng, lat, hits });
       setSheetOpen(true);
     },
-    [layers, enabled, win, range],
+    [scene, sizes, win],
   );
 
   // ---- WebMCP ----
@@ -375,26 +263,18 @@ export default function LorawanTrafficMap() {
       </header>
 
       <div ref={mapBoxRef} className="relative flex-1 overflow-hidden">
-        <DeckGL
-          viewState={viewState}
-          onViewStateChange={({ viewState: next, interactionState }) => {
-            if (interactionState?.isDragging || interactionState?.isZooming || interactionState?.isPanning) userMoved.current = true;
-            setViewState(next);
-          }}
-          layers={deckLayers}
-          onHover={handleHover}
-          onClick={handleClick}
-          controller={true}
-          getCursor={({ isHovering, isDragging }) => (isDragging ? "grabbing" : isHovering ? "pointer" : "grab")}
-        >
-          <MapGL mapStyle={isDark ? BASEMAP_DARK : BASEMAP_LIGHT}>
-            <NavigationControl position={isMobile ? "top-left" : "bottom-right"} showCompass={false} />
-          </MapGL>
-        </DeckGL>
-
-        {!isMobile && shownHover && (
-          <MapTooltip hover={{ ...shownHover, packets: shownHover.point[PROP[win]] }} win={win} tooltipRef={tooltipRef} initialPos={hoverPos.current} />
-        )}
+        <MapCanvas
+          ref={mapRef}
+          boxRef={mapBoxRef}
+          scene={scene}
+          sizes={sizes}
+          ring={group ? selection : null}
+          win={win}
+          isDark={isDark}
+          isMobile={isMobile}
+          onPick={handlePick}
+          onUserMove={noteUserMove}
+        />
 
         {/* Desktop: filters and the operator picker float on the left, a clicked spot on the right. */}
         <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 hidden w-[412px] flex-col gap-3 overflow-y-auto p-4 md:flex">
