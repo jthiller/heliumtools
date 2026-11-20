@@ -23,7 +23,7 @@ export async function handleHotspotClaimerRequest(request, env, ctx) {
   }
 
   if (pathname === "/claim" && request.method === "POST") {
-    return handleClaim(request, env);
+    return handleClaim(request, env, ctx);
   }
 
   if (pathname === "/wallet" && request.method === "GET") {
