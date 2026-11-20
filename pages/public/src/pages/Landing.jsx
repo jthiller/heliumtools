@@ -23,6 +23,10 @@ const VIEWS = [
 ];
 const storedView = () => (getLocalStorageItem(VIEW_KEY) === "list" ? "list" : "cards");
 
+// The page's eyebrow type (mono capitals), shared with the list view's section
+// names so the two stay the same.
+const EYEBROW = "font-mono text-[11.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary";
+
 // Tone tokens for both themes ride on the card as custom properties;
 // landing.css picks the pair that matches prefers-color-scheme.
 function toneStyle(tone) {
@@ -168,12 +172,6 @@ function useCardMotion() {
   return { onPointerEnter, onPointerMove, onPointerLeave, onFocus, onBlur };
 }
 
-// The whole card is the link (no separate CTA); its accessible name is the
-// <h3> (name + badge), the description is its description. The disabled
-// Coming-soon card is a plain, unfocusable block. A featured card also carries
-// its wide print set (shown while it spans two columns). `eager`: in the first
-// row, so its prints aren't lazy-loaded; `priority`: the page's first card,
-// whose top print is fetched at high priority.
 // A tool's name as its <h3>, in either view. The badge rides on the name's last
 // word, so a wrapped name never strands it.
 function ToolName({ feature, id, className, badgeClassName }) {
@@ -195,6 +193,12 @@ function ToolName({ feature, id, className, badgeClassName }) {
   );
 }
 
+// The whole card is the link (no separate CTA); its accessible name is the
+// <h3> (name + badge), the description is its description. The disabled
+// Coming-soon card is a plain, unfocusable block. A featured card also carries
+// its wide print set (shown while it spans two columns). `eager`: in the first
+// row, so its prints aren't lazy-loaded; `priority`: the page's first card,
+// whose top print is fetched at high priority.
 function ToolCard({ feature, eager, priority }) {
   const preview = previewFor(feature.slug);
   const motion = useCardMotion();
@@ -360,10 +364,12 @@ function ToolList() {
         const headId = `section-${section.id}`;
         return (
           <section key={section.id} className="tl-section" style={sectionStyle(section.id)} aria-labelledby={headId}>
-            <h2 id={headId} className="tl-head font-mono">
+            <h2 id={headId} className={`tl-head ${EYEBROW}`}>
               {section.title}
             </h2>
-            <ul className="tl-items">
+            {/* role="list": Safari drops a list's semantics once its markers
+                are off (Tailwind's preflight turns them off). */}
+            <ul role="list">
               {section.tools.map((feature) => (
                 <li key={feature.slug}>
                   <ToolRow feature={feature} />
@@ -402,10 +408,10 @@ function ViewSwitch({ view, onChange }) {
 
 export default function Landing() {
   const [view, setView] = useState(storedView);
-  const chooseView = useCallback((next) => {
+  const chooseView = (next) => {
     setView(next);
     setLocalStorageItem(VIEW_KEY, next);
-  }, []);
+  };
   return (
     <div className="min-h-screen bg-surface">
       <Header maxWidth="max-w-6xl" />
@@ -413,7 +419,7 @@ export default function Landing() {
       <main className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 sm:pb-10 lg:px-12">
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5 pb-2 pt-9 sm:pb-3 sm:pt-[50px]">
           <div>
-            <p className="mb-3.5 font-mono text-[11.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary">
+            <p className={`mb-3.5 ${EYEBROW}`}>
               Open-source operator tools
             </p>
             <h1 className="max-w-[16ch] font-display text-[length:clamp(30px,9.4vw,36px)] font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[43px] lg:text-[47px]">

@@ -23,9 +23,14 @@
    grid's items; it keeps its region role and name (aria-labelledby), and the
    section's rule colors (--rule-l / --rule-d, tones.js SECTION_RULES), which
    its cells inherit. */
+/* The space above a row with a section heading. The list view (below) starts
+   its first rules that far down too, so switching views doesn't move them. */
+.tc-grid,
+.tl-list {
+  --tc-break: 28px;
+}
 .tc-grid {
   --tc-gap: 18px; /* between cards, both ways */
-  --tc-break: 28px; /* added above a row with a section heading */
   /* Its width tells the cells the column count (container queries below). */
   container: tc-grid / inline-size;
   display: grid;
@@ -173,6 +178,9 @@
 @media (max-width: 639px) {
   .tc-grid {
     --tc-gap: 16px;
+  }
+  .tc-grid,
+  .tl-list {
     --tc-break: 24px;
   }
 }
@@ -494,15 +502,18 @@ a.tool-card:focus-visible .tc-print::after {
    the page header (Landing.jsx; the choice is kept in localStorage). Theme
    tokens only: no tones, no prints.
 
-   Multi-column layout: up to three columns, none narrower than 294px, so the
-   column count changes at the card grid's widths (3 x 294 + 2 x 36 = 954,
-   2 x 294 + 36 = 624). A section never splits across columns and the browser
-   balances them, so adding a tool or a section needs no layout work here.
-   Each section's space is padding, not margin, so it stays with the section
-   when a column breaks. The top margin puts the first rules on the line the
-   card grid's first rules sit on, so switching views doesn't move them. */
+   Multi-column layout: up to three columns, none narrower than 294px, a
+   comfortable measure for the descriptions. With the 36px gap that gives
+   three columns from 954px (3 x 294 + 2 x 36), where the card grid also
+   goes to three, and two from 624px (the grid's two start at 630px); nothing
+   depends on the two agreeing. A section never splits across columns and the
+   browser balances them, so adding a tool or a section needs no layout work
+   here. Each section's space is padding, not margin, so it stays with the
+   section when a column breaks. The top margin is the card grid's heading
+   break (--tc-break, above), so the first rules sit on the same line in both
+   views. */
 .tl-list {
-  margin-top: 28px;
+  margin-top: var(--tc-break);
   columns: 3 294px;
   column-gap: 36px;
 }
@@ -511,23 +522,11 @@ a.tool-card:focus-visible .tc-print::after {
   max-width: 504px; /* the single column's cap, as for the cards */
   padding-bottom: 22px;
 }
-/* The section name, set like the page's eyebrow so it can't be taken for a
-   tool: mono capitals under the section's rule. */
+/* The section name under the section's rule. Its type is the page eyebrow's
+   (Landing.jsx EYEBROW), so it can't be taken for a tool. */
 .tl-head {
   position: relative;
-  margin: 0;
   padding: 13px 0 5px;
-  color: rgb(var(--color-content-secondary));
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.tl-items {
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 /* One tool: the whole row is the link. It reaches 10px past the text on each
    side so the hover ground has room while the text stays on the rule's edge.
@@ -542,19 +541,24 @@ a.tool-card:focus-visible .tc-print::after {
   color: rgb(var(--color-content));
   text-decoration: none;
 }
-/* The global `a` rule recolors and dims links; a row keeps its ink. */
-a.tl-item,
+/* The global `a` rule dims links on hover; a row answers with its ground. */
 a.tl-item:hover {
-  color: rgb(var(--color-content));
   opacity: 1;
 }
 a.tl-item:focus-visible {
   outline: 2px solid rgb(var(--color-content));
   outline-offset: 1px;
 }
+/* The hover ground takes contrast from the secondary ink (in light, 4.59:1
+   falls to about 4.2:1), so the description and badge step up to a stronger
+   ink on it and stay above 4.5:1 in both themes. */
 @media (hover: hover) {
   a.tl-item:hover {
     background: rgb(var(--color-content) / 0.05);
+  }
+  a.tl-item:hover .tl-desc,
+  a.tl-item:hover .tl-badge {
+    color: rgb(var(--color-content) / 0.7);
   }
 }
 .tl-name {
@@ -577,7 +581,6 @@ a.tl-item:focus-visible {
   line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 .tl-desc {
   margin: 2px 0 0;
@@ -594,9 +597,6 @@ a.tl-item:focus-visible {
 }
 /* Phones: the list is the screen's width, so its text is a step larger. */
 @media (max-width: 639px) {
-  .tl-list {
-    margin-top: 24px;
-  }
   .tl-item {
     padding: 11px 10px;
   }

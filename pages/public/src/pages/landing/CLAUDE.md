@@ -137,7 +137,7 @@ the list runs 1.4 screens with thirteen of fifteen tool names on the first one
 (3 screens against the cards' 9.4 on a 375 × 812 phone).
 
 - **The switch.** `ViewSwitch` in Landing.jsx: two toggle buttons ("Cards",
-  "List", each with a 16px heroicon) in a `role="group"` labelled "Show tools
+  "List", each with a heroicon drawn at 14px) in a `role="group"` labelled "Show tools
   as", the current view `aria-pressed`. It sits in the page header's row,
   right-aligned on the lede's last line; where the row is too narrow it wraps
   under the lede, left-aligned. Styled like the site's other segmented
@@ -147,8 +147,9 @@ the list runs 1.4 screens with thirteen of fifteen tool names on the first one
   through `lib/utils.js`'s safe helpers. Anything else, or storage that
   throws, means cards. It never leaves the browser.
 - **What the list shows.** The same `SECTIONS`, in the same order: each
-  section's title (mono capitals in the eyebrow's type, under the section's
-  colored rule from `SECTION_RULES`), then one row per tool with its name
+  section's title (mono capitals in the page eyebrow's type, both from
+  Landing.jsx's `EYEBROW` classes, under the section's colored rule from
+  `SECTION_RULES`), then one row per tool with its name
   (`font-display` 15.5px/600), its badge (a bordered mono pill in the same
   slot after the name's last word), and its full description (13px/1.45,
   secondary ink, never shortened). Section descriptions are left out. The
@@ -161,13 +162,21 @@ the list runs 1.4 screens with thirteen of fifteen tool names on the first one
   version (14px), where a column read as one run of text; don't tighten it to
   fit more rows on a screen. The hover ground fills that padding and reaches
   10px past the text on each side.
+- **Contrast.** Description, badge and section-name ink is the secondary
+  token, 4.59:1 on the page background in light. The hover ground (content
+  ink at 5%) would take that to about 4.2:1, so a hovered row's description
+  and badge step up to content ink at 70%. Keep the two in step if either
+  changes. Each section's `<ul>` carries `role="list"` because Safari drops
+  list semantics once the markers are off.
 - **Layout.** `.tl-list` is CSS multi-column: `columns: 3 294px` with a 36px
-  gap, so it changes column count at the card grid's widths (954px and
-  ~630px). A section never splits (`break-inside: avoid`) and the browser
-  balances the columns; today that is Wallet + Network Operators, Hotspot
-  Operators, then HNT Holders + Governance + Brand. A single column stops at
-  504px, like the cards'. The list's top margin equals the card grid's
-  heading break, so the first rules sit on the same line in both views.
+  gap. 294px is a comfortable measure for the descriptions; it gives three
+  columns from 954px, where the card grid also goes to three, and two from
+  624px (the grid's two start at 630px). Nothing depends on the two agreeing.
+  A section never splits (`break-inside: avoid`) and the browser balances the
+  columns; today that is Wallet + Network Operators, Hotspot Operators, then
+  HNT Holders + Governance + Brand. A single column stops at 504px, like the
+  cards'. The list's top margin is the card grid's heading break (the shared
+  `--tc-break`), so the first rules sit on the same line in both views.
 - **Nothing per tool.** The list reads `sections.js` only. Adding, renaming,
   hiding or reordering a tool or section needs no list work, no capture and
   no bake. Only one view is in the DOM at a time, so the two share the
