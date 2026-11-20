@@ -1,14 +1,31 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ListBulletIcon, Squares2X2Icon } from "@heroicons/react/16/solid";
 import Header from "../components/Header.jsx";
 import ToolPreview from "./landing/ToolPreview.jsx";
 import { SECTIONS, placeCards, headingSlots } from "./landing/sections.js";
 import { PREVIEWS } from "./landing/previews/index.js";
 import { TONES, SECTION_RULES } from "./landing/previews/tones.js";
+import { getLocalStorageItem, setLocalStorageItem } from "../lib/utils.js";
 import "./landing/landing.css";
 
 // The tool list itself lives in ./landing/sections.js (plain data, so the
 // preview bake can check the palette against the same order). Layout and card
 // docs: ./landing/CLAUDE.md.
+
+// The page shows the tools one of two ways: the picture cards (the default) or
+// a text-only list, for visitors who come to find a tool rather than to browse.
+// The switch sits in the page header; the choice is kept in this browser's
+// localStorage, so it holds across visits and is never sent anywhere.
+const VIEW_KEY = "heliumtools:landing:view:v1";
+const VIEWS = [
+  { id: "cards", label: "Cards", Icon: Squares2X2Icon },
+  { id: "list", label: "List", Icon: ListBulletIcon },
+];
+const storedView = () => (getLocalStorageItem(VIEW_KEY) === "list" ? "list" : "cards");
+
+// The page's eyebrow type (mono capitals), shared with the list view's section
+// names so the two stay the same.
+const EYEBROW = "font-mono text-[11.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary";
 
 // Tone tokens for both themes ride on the card as custom properties;
 // landing.css picks the pair that matches prefers-color-scheme.
@@ -155,6 +172,27 @@ function useCardMotion() {
   return { onPointerEnter, onPointerMove, onPointerLeave, onFocus, onBlur };
 }
 
+// A tool's name as its <h3>, in either view. The badge rides on the name's last
+// word, so a wrapped name never strands it.
+function ToolName({ feature, id, className, badgeClassName }) {
+  const words = feature.name.split(" ");
+  const last = words.pop();
+  return (
+    <h3 id={id} className={className}>
+      {words.length > 0 && `${words.join(" ")} `}
+      <span className="tc-nowrap">
+        {last}
+        {feature.badge && (
+          <>
+            {" "}
+            <span className={badgeClassName}>{feature.badge}</span>
+          </>
+        )}
+      </span>
+    </h3>
+  );
+}
+
 // The whole card is the link (no separate CTA); its accessible name is the
 // <h3> (name + badge), the description is its description. The disabled
 // Coming-soon card is a plain, unfocusable block. A featured card also carries
@@ -166,24 +204,10 @@ function ToolCard({ feature, eager, priority }) {
   const motion = useCardMotion();
   const nameId = `tool-${feature.slug}-name`;
   const descId = `tool-${feature.slug}-desc`;
-  // The badge rides on the name's last word, so a wrapped name never strands it.
-  const words = feature.name.split(" ");
-  const last = words.pop();
   const body = (
     <>
       <div className="tc-text">
-        <h3 id={nameId} className="tc-name font-display">
-          {words.length > 0 && `${words.join(" ")} `}
-          <span className="tc-nowrap">
-            {last}
-            {feature.badge && (
-              <>
-                {" "}
-                <span className="tc-badge font-mono">{feature.badge}</span>
-              </>
-            )}
-          </span>
-        </h3>
+        <ToolName feature={feature} id={nameId} className="tc-name font-display" badgeClassName="tc-badge font-mono" />
         <p id={descId} className="tc-desc font-sans">
           {feature.description}
         </p>
@@ -215,6 +239,34 @@ function ToolCard({ feature, eager, priority }) {
       aria-labelledby={nameId}
       aria-describedby={descId}
     >
+      {body}
+    </a>
+  );
+}
+
+// The list view's row for one tool: its name and full description as one link,
+// named and described the way a card is. No tone and no preview, so the list
+// loads no prints. A disabled tool is a plain, unfocusable block here too.
+function ToolRow({ feature }) {
+  const nameId = `tool-${feature.slug}-name`;
+  const descId = `tool-${feature.slug}-desc`;
+  const body = (
+    <>
+      <ToolName feature={feature} id={nameId} className="tl-name font-display" badgeClassName="tl-badge font-mono" />
+      <p id={descId} className="tl-desc font-sans">
+        {feature.description}
+      </p>
+    </>
+  );
+  if (feature.disabled) {
+    return (
+      <div data-tool={feature.slug} className="tl-item is-disabled">
+        {body}
+      </div>
+    );
+  }
+  return (
+    <a data-tool={feature.slug} href={feature.href} className="tl-item" aria-labelledby={nameId} aria-describedby={descId}>
       {body}
     </a>
   );
@@ -253,68 +305,135 @@ const sectionStyle = (id) =>
 const FIRST_ROW = new Set(placeCards(3).filter((card) => card.row === 0).map((card) => card.slug));
 const FIRST_CARD = SECTIONS[0].tools[0].slug;
 
+function ToolGrid() {
+  return (
+    <div className="tc-grid">
+      {SECTIONS.map((section) => {
+        const headId = `section-${section.id}`;
+        const descId = `section-${section.id}-desc`;
+        return (
+          <section
+            key={section.id}
+            className="tc-section"
+            style={sectionStyle(section.id)}
+            aria-labelledby={headId}
+            aria-describedby={descId}
+          >
+            {section.tools.map((feature, i) => {
+              const slot = slotClasses(feature.slug);
+              return (
+                <div key={feature.slug} className={`tc-cell${feature.featured ? " is-featured" : ""}`}>
+                  {i === 0 && (
+                    <div className={["tc-head", ...slot.filter((c) => c.startsWith("tc-join-"))].join(" ")}>
+                      <h2 id={headId} className="font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content">
+                        {section.title}
+                      </h2>
+                      <p id={descId} className="mt-1 text-[13px] leading-[18px] text-content-tertiary">
+                        {section.description}
+                      </p>
+                    </div>
+                  )}
+                  {i > 0 && slot.length > 0 && (
+                    <div aria-hidden="true" className={["tc-slot", ...slot].join(" ")}>
+                      {slot.some((c) => c.startsWith("tc-run-")) && (
+                        <p className="tc-runtext font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary">
+                          {section.title}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <ToolCard feature={feature} eager={FIRST_ROW.has(feature.slug)} priority={feature.slug === FIRST_CARD} />
+                </div>
+              );
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+// The list view (.tl-list in landing.css): the same sections and tools in the
+// same order, as text. Each section is a named region that stays whole and
+// flows into as many columns as fit (three at the card grid's three-column
+// width), under its section's colored rule.
+function ToolList() {
+  return (
+    <div className="tl-list">
+      {SECTIONS.map((section) => {
+        const headId = `section-${section.id}`;
+        return (
+          <section key={section.id} className="tl-section" style={sectionStyle(section.id)} aria-labelledby={headId}>
+            <h2 id={headId} className={`tl-head ${EYEBROW}`}>
+              {section.title}
+            </h2>
+            {/* role="list": Safari drops a list's semantics once its markers
+                are off (Tailwind's preflight turns them off). */}
+            <ul role="list">
+              {section.tools.map((feature) => (
+                <li key={feature.slug}>
+                  <ToolRow feature={feature} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+// Cards / List: two toggle buttons in a labelled group, the pressed one being
+// the current view.
+function ViewSwitch({ view, onChange }) {
+  return (
+    <div role="group" aria-label="Show tools as" className="inline-flex rounded-lg border border-border p-0.5">
+      {VIEWS.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          type="button"
+          aria-pressed={view === id}
+          onClick={() => onChange(id)}
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium sm:px-2.5 sm:py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-content ${
+            view === id ? "bg-surface-inset text-content" : "text-content-secondary hover:text-content"
+          }`}
+        >
+          <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Landing() {
+  const [view, setView] = useState(storedView);
+  const chooseView = (next) => {
+    setView(next);
+    setLocalStorageItem(VIEW_KEY, next);
+  };
   return (
     <div className="min-h-screen bg-surface">
       <Header maxWidth="max-w-6xl" />
 
       <main className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 sm:pb-10 lg:px-12">
-        <div className="pb-2 pt-9 sm:pb-3 sm:pt-[50px]">
-          <p className="mb-3.5 font-mono text-[11.5px] font-medium uppercase leading-none tracking-[0.08em] text-content-secondary">
-            Open-source operator tools
-          </p>
-          <h1 className="max-w-[16ch] font-display text-[length:clamp(30px,9.4vw,36px)] font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[43px] lg:text-[47px]">
-            Keep Helium running&nbsp;smoothly.
-          </h1>
-          <p className="mt-3.5 max-w-[56ch] text-base leading-[1.55] text-content-secondary">
-            Monitor escrow balances, claim rewards, map your Hotspot fleet, and
-            migrate legacy wallets. Free, open-source, no login required.
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5 pb-2 pt-9 sm:pb-3 sm:pt-[50px]">
+          <div>
+            <p className={`mb-3.5 ${EYEBROW}`}>
+              Open-source operator tools
+            </p>
+            <h1 className="max-w-[16ch] font-display text-[length:clamp(30px,9.4vw,36px)] font-bold leading-[1.05] tracking-[-0.035em] text-content sm:text-[43px] lg:text-[47px]">
+              Keep Helium running&nbsp;smoothly.
+            </h1>
+            <p className="mt-3.5 max-w-[56ch] text-base leading-[1.55] text-content-secondary">
+              Monitor escrow balances, claim rewards, map your Hotspot fleet, and
+              migrate legacy wallets. Free, open-source, no login required.
+            </p>
+          </div>
+          <ViewSwitch view={view} onChange={chooseView} />
         </div>
 
-        <div className="tc-grid">
-          {SECTIONS.map((section) => {
-            const headId = `section-${section.id}`;
-            const descId = `section-${section.id}-desc`;
-            return (
-              <section
-                key={section.id}
-                className="tc-section"
-                style={sectionStyle(section.id)}
-                aria-labelledby={headId}
-                aria-describedby={descId}
-              >
-                {section.tools.map((feature, i) => {
-                  const slot = slotClasses(feature.slug);
-                  return (
-                    <div key={feature.slug} className={`tc-cell${feature.featured ? " is-featured" : ""}`}>
-                      {i === 0 && (
-                        <div className={["tc-head", ...slot.filter((c) => c.startsWith("tc-join-"))].join(" ")}>
-                          <h2 id={headId} className="font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content">
-                            {section.title}
-                          </h2>
-                          <p id={descId} className="mt-1 text-[13px] leading-[18px] text-content-tertiary">
-                            {section.description}
-                          </p>
-                        </div>
-                      )}
-                      {i > 0 && slot.length > 0 && (
-                        <div aria-hidden="true" className={["tc-slot", ...slot].join(" ")}>
-                          {slot.some((c) => c.startsWith("tc-run-")) && (
-                            <p className="tc-runtext font-display text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-content-tertiary">
-                              {section.title}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      <ToolCard feature={feature} eager={FIRST_ROW.has(feature.slug)} priority={feature.slug === FIRST_CARD} />
-                    </div>
-                  );
-                })}
-              </section>
-            );
-          })}
-        </div>
+        {view === "list" ? <ToolList /> : <ToolGrid />}
       </main>
 
       <footer className="border-t border-border px-4 py-8 sm:px-6">

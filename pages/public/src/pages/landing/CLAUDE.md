@@ -24,17 +24,19 @@ October 2026 and set these rules; don't revert them without asking:
 - Heading rows carry section-colored rules (from exploration D) so wrapped
   sections read as groups, and a mouse moving over a card nudges its prints
   (parallax) on top of the hover fan.
+- The cards are the default view. A visitor can switch to a text-only list
+  (below, "List view"); the cards' rules above are not relaxed for it.
 
 | File | Role |
 |---|---|
 | `sections.js` | The tool list as plain data (section `id`, title, description → `tools`, each with `slug`, name, description, href, badge, `featured`, `disabled`, `hidden`). `SECTIONS` is the visible list (hidden tools dropped); its order is the card order. Also `placeCards(cols)`, where every card lands, `headingSlots(cols)`, the heading-row slots (rule, join, label), and `runningHeads(cols)`, the cards that get a running head. Read by the page and by the bake's palette and layout checks. |
-| `../Landing.jsx` | The page: the compact header, the card grid, `ToolCard`. |
+| `../Landing.jsx` | The page: the compact header with the Cards / List switch, the card grid (`ToolGrid`, `ToolCard`) and the list view (`ToolList`, `ToolRow`). |
 | `previews/<slug>.js` | One tool's composition: `tone` + `prints` (+ `featured` for a featured card). Schema in `previews/index.js`. |
 | `previews/index.js` | slug → config registry, and the schema/composition rules. |
 | `previews/tones.js` | The ground palette (OKLCH-derived, each tone with its `hue`, `null` for the neutral stone), `SECTION_RULES` (each section's rule color) and `DESC_INK`. |
 | `previews/layout.js` | Stage geometry: `STAGE_RATIO`, `FEATURED_RATIO`, `TOP_MARGIN`, `fan()` (hover pose), `topEdge()`, and the mouse parallax (`PARALLAX`, `depthOf()`, `hoverTop()`). Shared with the bake lint. |
 | `ToolPreview.jsx` | Renders the stage and prints as `<figure><picture>`; a featured card gets its wide stage too. |
-| `landing.css` | Grid, card, frames, hover, dark mode, reduced motion. |
+| `landing.css` | Grid, card, frames, hover, dark mode, reduced motion; the list view (`.tl-*`). |
 | `../../assets/previews/<slug>/<id>-<light\|dark>.webp` | Baked prints (committed; Vite fingerprints them). |
 | `scripts/tool-previews/` | The capture → bake → shoot kit. Its README covers the workflow. |
 
@@ -123,6 +125,64 @@ region named by its h2 and described by the description under it, with
 `display: contents` so its cells are the grid's items (current browsers keep
 a `display: contents` element's role and name). DOM order is reading order: a
 section's heading, then its cards.
+
+## List view
+
+Added November 2026 after a returning visitor reported that the cards made the
+page slower to scan: at 1440 × 900 the card page ran 3.9 screens with two of
+fifteen tools on the first one, and the stage took 66–75% of every card. The
+list is for a visitor who comes to find a tool they know; the cards stay the
+default because they show a newcomer what each tool is. Measured the same way,
+the list runs 1.4 screens with thirteen of fifteen tool names on the first one
+(3 screens against the cards' 9.4 on a 375 × 812 phone).
+
+- **The switch.** `ViewSwitch` in Landing.jsx: two toggle buttons ("Cards",
+  "List", each with a heroicon drawn at 14px) in a `role="group"` labelled "Show tools
+  as", the current view `aria-pressed`. It sits in the page header's row,
+  right-aligned on the lede's last line; where the row is too narrow it wraps
+  under the lede, left-aligned. Styled like the site's other segmented
+  controls (border on the group, `bg-surface-inset` on the pressed button).
+- **The choice** is kept in `localStorage` under
+  `heliumtools:landing:view:v1` (`"cards"` or `"list"`), read once on mount
+  through `lib/utils.js`'s safe helpers. Anything else, or storage that
+  throws, means cards. It never leaves the browser.
+- **What the list shows.** The same `SECTIONS`, in the same order: each
+  section's title (mono capitals in the page eyebrow's type, both from
+  Landing.jsx's `EYEBROW` classes, under the section's colored rule from
+  `SECTION_RULES`), then one row per tool with its name
+  (`font-display` 15.5px/600), its badge (a bordered mono pill in the same
+  slot after the name's last word), and its full description (13px/1.45,
+  secondary ink, never shortened). Section descriptions are left out. The
+  whole row is the link, named by its `<h3>` and described by its description
+  like a card; a `disabled` tool is a plain block. Theme tokens only: no
+  tones, no prints (`ToolPreview` isn't rendered, so no print is fetched).
+- **Row spacing.** A row's own padding (10px, 11px on phones) spaces the
+  rows, which leaves 20px between one tool's description and the next tool's
+  name: more than a line of text. The owner asked for this after the first
+  version (14px), where a column read as one run of text; don't tighten it to
+  fit more rows on a screen. The hover ground fills that padding and reaches
+  10px past the text on each side.
+- **Contrast.** Description, badge and section-name ink is the secondary
+  token, 4.59:1 on the page background in light. The hover ground (content
+  ink at 5%) would take that to about 4.2:1, so a hovered row's description
+  and badge step up to content ink at 70%. Keep the two in step if either
+  changes. Each section's `<ul>` carries `role="list"` because Safari drops
+  list semantics once the markers are off.
+- **Layout.** `.tl-list` is CSS multi-column: `columns: 3 294px` with a 36px
+  gap. 294px is a comfortable measure for the descriptions; it gives three
+  columns from 954px, where the card grid also goes to three, and two from
+  624px (the grid's two start at 630px). Nothing depends on the two agreeing.
+  A section never splits (`break-inside: avoid`) and the browser balances the
+  columns; today that is Wallet + Network Operators, Hotspot Operators, then
+  HNT Holders + Governance + Brand. A single column stops at 504px, like the
+  cards'. The list's top margin is the card grid's heading break (the shared
+  `--tc-break`), so the first rules sit on the same line in both views.
+- **Nothing per tool.** The list reads `sections.js` only. Adding, renaming,
+  hiding or reordering a tool or section needs no list work, no capture and
+  no bake. Only one view is in the DOM at a time, so the two share the
+  `tool-<slug>-name` / `-desc` and `section-<id>` ids.
+- The kit's `shoot.mjs` and every capture script open the page with empty
+  storage, so they always get the cards.
 
 ## Featured cards
 
