@@ -34,10 +34,15 @@
 }
 .tc-section {
   display: contents;
+}
+/* The section's rule color, in the card grid and in the list view below. */
+.tc-section,
+.tl-section {
   --rule: var(--rule-l, rgb(var(--color-border)));
 }
 @media (prefers-color-scheme: dark) {
-  .tc-section {
+  .tc-section,
+  .tl-section {
     --rule: var(--rule-d, rgb(var(--color-border)));
   }
 }
@@ -81,9 +86,10 @@
   display: none;
 }
 /* A hairline in the section's color, softened so it groups the cards without
-   competing with the headings. */
+   competing with the headings. The list view's headings carry the same one. */
 .tc-head::before,
-.tc-slot::before {
+.tc-slot::before,
+.tl-head::before {
   content: "";
   position: absolute;
   top: 0;
@@ -480,6 +486,125 @@ a.tool-card:focus-visible .tc-print::after {
   }
   .tc-desc {
     font-size: 15px;
+  }
+}
+
+/* ---- List view ----
+   The same sections and tools as text only, for a visitor who chose "List" in
+   the page header (Landing.jsx; the choice is kept in localStorage). Theme
+   tokens only: no tones, no prints.
+
+   Multi-column layout: up to three columns, none narrower than 294px, so the
+   column count changes at the card grid's widths (3 x 294 + 2 x 36 = 954,
+   2 x 294 + 36 = 624). A section never splits across columns and the browser
+   balances them, so adding a tool or a section needs no layout work here.
+   Each section's space is padding, not margin, so it stays with the section
+   when a column breaks. The top margin puts the first rules on the line the
+   card grid's first rules sit on, so switching views doesn't move them. */
+.tl-list {
+  margin-top: 28px;
+  columns: 3 294px;
+  column-gap: 36px;
+}
+.tl-section {
+  break-inside: avoid;
+  max-width: 504px; /* the single column's cap, as for the cards */
+  padding-bottom: 22px;
+}
+/* The section name, set like the page's eyebrow so it can't be taken for a
+   tool: mono capitals under the section's rule. */
+.tl-head {
+  position: relative;
+  margin: 0;
+  padding: 13px 0 5px;
+  color: rgb(var(--color-content-secondary));
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tl-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* One tool: the whole row is the link. It reaches 10px past the text on each
+   side so the hover ground has room while the text stays on the rule's edge.
+   Its own padding spaces the rows: 20px from one tool's description to the
+   next tool's name, more than a line of text, so a column reads as separate
+   entries rather than one run of text (the owner asked for this). */
+.tl-item {
+  display: block;
+  margin: 0 -10px;
+  padding: 10px;
+  border-radius: 12px;
+  color: rgb(var(--color-content));
+  text-decoration: none;
+}
+/* The global `a` rule recolors and dims links; a row keeps its ink. */
+a.tl-item,
+a.tl-item:hover {
+  color: rgb(var(--color-content));
+  opacity: 1;
+}
+a.tl-item:focus-visible {
+  outline: 2px solid rgb(var(--color-content));
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  a.tl-item:hover {
+    background: rgb(var(--color-content) / 0.05);
+  }
+}
+.tl-name {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+}
+.tl-badge {
+  display: inline-block;
+  margin-left: 2.5px; /* + the word space before it */
+  vertical-align: 2px;
+  padding: 2.75px 7px 3.25px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 999px;
+  color: rgb(var(--color-content-secondary));
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tl-desc {
+  margin: 2px 0 0;
+  color: rgb(var(--color-content-secondary));
+  font-size: 13px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.tl-item.is-disabled {
+  cursor: default;
+}
+.tl-item.is-disabled .tl-name {
+  opacity: 0.72;
+}
+/* Phones: the list is the screen's width, so its text is a step larger. */
+@media (max-width: 639px) {
+  .tl-list {
+    margin-top: 24px;
+  }
+  .tl-item {
+    padding: 11px 10px;
+  }
+  .tl-name {
+    font-size: 16.5px;
+  }
+  .tl-desc {
+    font-size: 14px;
   }
 }
 
