@@ -73,8 +73,8 @@ region per instance, so each port is a separate instance):
 `lib/host.js` resolves the host (`MULTI_GATEWAY_HOST` env override, default
 `hotspot.heliumtools.org`). All region calls fan out in parallel and merge
 (`/gateways` sums; `findGateway` / `/packets` returns the first region that has
-the mac). Region calls use plain `http://` (`index.js`, `lib/findGateway.js`,
-`hub.js`).
+the mac). Region calls use plain `http://` (`lib/upstream.js`,
+`lib/findGateway.js`, `hub.js`).
 
 ## Architecture
 
@@ -111,13 +111,14 @@ every 6-hourly tick.
 
 **Files:**
 - `index.js` — prefix router + the `/gateways` and `/packets` handlers.
-- `lib/upstream.js` — `fetchUpstream` (parses JSON, treats non-JSON as an
-  error) and `fetchAllGateways` (the per-region `/gateways` fan-out, shared by
-  the `/gateways` handler and the last-seen cron; a region that fails
-  contributes nothing).
+- `lib/upstream.js` — `fetchRegions(env, path)`, the one per-region GET
+  fan-out: the parsed bodies of the regions that answered ok, in `REGIONS`
+  order (non-JSON counts as a failure, and a region that fails contributes
+  nothing). `/packets` takes its first hit; `fetchAllGateways` concatenates
+  every region's `/gateways`, for the `/gateways` handler and the last-seen
+  cron.
 - `last-seen.js` — which gateways `/gateways` lists, and the KV record behind
-  that (below). Unit-tested in `last-seen.test.js`
-  (`cd worker && node --test "src/tools/multi-gateway/*.test.js"`).
+  that (below). Unit-tested in `last-seen.test.js` (`cd worker && npm test`).
 - `hub.js` — the `MultiGatewayHub` Durable Object (see below).
 - `regions.js` — the region→port table above (single source of truth).
 - `oui-cache.js` — calls the Helium IoT config service over **gRPC-web**
@@ -163,8 +164,9 @@ and a gateway is listed again as soon as it reconnects. The per-mac endpoints
   `kvGetJson`: a failed read must throw, since merging into an empty record
   would write away what the aggregator no longer remembers. Entries are never
   pruned (keys are never deleted upstream).
-- **Request path** reads the record best-effort (`readLastSeen`); if KV can't be
-  read, the rule runs on the aggregator's report alone.
+- **Request path** (`fetchListedGateways`) reads the record best-effort, in
+  parallel with the fan-out; if KV can't be read, the rule runs on the
+  aggregator's report alone.
 - **Limits**: last-seen is "connected at a poll, or last uplink", so it is
   accurate to the 6-hour poll. A gateway that connects for the first time and
   drops again with no uplink and no poll in between has no last-seen and goes

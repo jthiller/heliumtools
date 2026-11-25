@@ -140,7 +140,8 @@ function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
   const [gatewaysLoaded, setGatewaysLoaded] = useState(false);
   const [sseStatus, setSseStatus] = useState("connecting");
-  // The stream's listener is registered once; it reads the current list here.
+  // The current list, for callbacks registered once: the stream's listener
+  // below and the page's agent tools.
   const gatewaysRef = useRef(gateways);
   gatewaysRef.current = gateways;
 
@@ -282,7 +283,7 @@ function useMultiGateway() {
     };
   }, [gateways]);
 
-  return { gateways, summary, sseStatus, gatewaysLoaded };
+  return { gateways, gatewaysRef, summary, sseStatus, gatewaysLoaded };
 }
 
 // ---------------------------------------------------------------------------
@@ -2110,7 +2111,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
-  const { gateways, summary, sseStatus, gatewaysLoaded } = useMultiGateway();
+  const { gateways, gatewaysRef, summary, sseStatus, gatewaysLoaded } = useMultiGateway();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMac, setSelectedMac] = useState(
     () => searchParams.get("mac") || null,
@@ -2145,11 +2146,9 @@ export default function MultiGateway() {
     }
   };
 
-  // Agent tools read the live gateway list through a ref so the
+  // Agent tools read the live gateway list through the hook's ref so the
   // once-registered tools stay current across SSE updates; selectMac closes
   // over only stable setters, so passing it directly is safe.
-  const gatewaysRef = useRef(gateways);
-  gatewaysRef.current = gateways;
   useWebMcpTools(() => makeMultiGatewayTools(selectMac, () => gatewaysRef.current), []);
 
   // Fetch OUI → DevAddr mapping once

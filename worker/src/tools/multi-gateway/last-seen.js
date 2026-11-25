@@ -18,7 +18,7 @@
 import { kvGetJson } from "../../lib/kv.js";
 import { fetchAllGateways } from "./lib/upstream.js";
 
-export const STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** `{ [mac]: lastSeenMs }`. No TTL: it has to outlive any gap in the cron. */
 export const LAST_SEEN_KV_KEY = "multi-gateway:last-seen";
@@ -32,22 +32,16 @@ function observedLastSeen(gateway, now) {
 
 /** The later of the recorded and the reported last-seen time, or null. */
 export function lastSeenOf(gateway, record, now) {
-  const observed = observedLastSeen(gateway, now);
-  const stored = record?.[gateway.mac];
-  const recorded = Number.isFinite(stored) ? stored : null;
-  if (observed == null) return recorded;
-  return recorded == null ? observed : Math.max(recorded, observed);
+  const times = [observedLastSeen(gateway, now), record?.[gateway.mac]].filter(
+    Number.isFinite,
+  );
+  return times.length ? Math.max(...times) : null;
 }
 
 export function isStale(gateway, record, now) {
   if (gateway.connected) return false;
   const seen = lastSeenOf(gateway, record, now);
   return seen == null || now - seen >= STALE_AFTER_MS;
-}
-
-/** The gateways /gateways returns: everything not stale. */
-export function listedGateways(gateways, record, now) {
-  return gateways.filter((g) => !isStale(g, record, now));
 }
 
 /**
@@ -65,9 +59,17 @@ export function mergeLastSeen(record, gateways, now) {
   return next;
 }
 
-/** The last-seen record for a request: best-effort, null when KV can't be read. */
-export function readLastSeen(env) {
-  return kvGetJson(env, LAST_SEEN_KV_KEY);
+/**
+ * Request path: the fleet minus the stale. The record is read best-effort; if
+ * KV can't be read, the rule runs on the aggregator's report alone.
+ */
+export async function fetchListedGateways(env) {
+  const [gateways, record] = await Promise.all([
+    fetchAllGateways(env),
+    kvGetJson(env, LAST_SEEN_KV_KEY),
+  ]);
+  const now = Date.now();
+  return gateways.filter((g) => !isStale(g, record, now));
 }
 
 /** Cron (6-hourly): fold the fleet's current state into the last-seen record. */

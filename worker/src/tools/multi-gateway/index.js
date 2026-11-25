@@ -2,10 +2,8 @@ import { corsHeaders, jsonResponse } from "../../lib/response.js";
 import { getOuiCache } from "./oui-cache.js";
 import { handleBatchOnchainStatus } from "./handlers/onchain.js";
 import { handleIssueAndOnboard, handleOnboard } from "./handlers/issue.js";
-import { REGIONS } from "./regions.js";
-import { getHost } from "./lib/host.js";
-import { fetchAllGateways, fetchUpstream } from "./lib/upstream.js";
-import { listedGateways, readLastSeen } from "./last-seen.js";
+import { fetchRegions } from "./lib/upstream.js";
+import { fetchListedGateways } from "./last-seen.js";
 
 export async function handleMultiGatewayRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -15,22 +13,14 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  const apiKey = env.MULTI_GATEWAY_API_KEY;
-  if (!apiKey) {
+  if (!env.MULTI_GATEWAY_API_KEY) {
     return jsonResponse({ error: "Multi-gateway API is not configured" }, 500);
   }
-
-  const host = getHost(env);
-  const headers = { "X-API-Key": apiKey };
 
   if (pathname === "/gateways" && request.method === "GET") {
     // Gateways offline for 30 days are left out, and the counts are taken
     // from what's left, so they always describe the list. See last-seen.js.
-    const [all, lastSeen] = await Promise.all([
-      fetchAllGateways(env),
-      readLastSeen(env),
-    ]);
-    const gateways = listedGateways(all, lastSeen, Date.now());
+    const gateways = await fetchListedGateways(env);
 
     return jsonResponse({
       gateways,
@@ -43,17 +33,9 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
     /^\/gateways\/([A-Fa-f0-9]{16})\/packets$/,
   );
   if (packetsMatch && request.method === "GET") {
-    const mac = packetsMatch[1];
-    const results = await Promise.allSettled(
-      REGIONS.map(({ port }) =>
-        fetchUpstream(`http://${host}:${port}/gateways/${mac}/packets`, headers),
-      ),
-    );
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value.ok) {
-        return jsonResponse(result.value.data);
-      }
-    }
+    // Only the region that has this gateway answers ok.
+    const found = await fetchRegions(env, `/gateways/${packetsMatch[1]}/packets`);
+    if (found.length > 0) return jsonResponse(found[0]);
     return jsonResponse({ error: "Gateway not found" }, 404);
   }
 

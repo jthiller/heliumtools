@@ -1,7 +1,7 @@
 import { REGIONS } from "../regions.js";
 import { getHost } from "./host.js";
 
-export async function fetchUpstream(url, headers) {
+async function fetchUpstream(url, headers) {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(5_000) });
   const text = await res.text();
   try {
@@ -12,23 +12,23 @@ export async function fetchUpstream(url, headers) {
 }
 
 /**
- * Every region's gateway list, concatenated. A region that fails or times out
- * contributes nothing, so the result can be a partial fleet (or empty).
+ * GET `path` on every region's instance: the parsed bodies of the regions that
+ * answered ok, in REGIONS order. A region that fails or times out contributes
+ * nothing, so the result can cover part of the fleet, or none of it.
  */
-export async function fetchAllGateways(env) {
+export async function fetchRegions(env, path) {
   const host = getHost(env);
   const headers = { "X-API-Key": env.MULTI_GATEWAY_API_KEY };
   const results = await Promise.allSettled(
-    REGIONS.map(({ port }) =>
-      fetchUpstream(`http://${host}:${port}/gateways`, headers),
-    ),
+    REGIONS.map(({ port }) => fetchUpstream(`http://${host}:${port}${path}`, headers)),
   );
+  return results.flatMap((r) =>
+    r.status === "fulfilled" && r.value.ok ? [r.value.data] : [],
+  );
+}
 
-  let gateways = [];
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value.ok) {
-      gateways = gateways.concat(result.value.data.gateways || []);
-    }
-  }
-  return gateways;
+/** Every reachable region's gateway list, concatenated. */
+export async function fetchAllGateways(env) {
+  const regions = await fetchRegions(env, "/gateways");
+  return regions.flatMap((data) => data?.gateways || []);
 }

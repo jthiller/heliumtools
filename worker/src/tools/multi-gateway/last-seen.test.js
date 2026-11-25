@@ -2,10 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   LAST_SEEN_KV_KEY,
-  STALE_AFTER_MS,
+  fetchListedGateways,
   isStale,
   lastSeenOf,
-  listedGateways,
   mergeLastSeen,
   recordGatewayLastSeen,
 } from "./last-seen.js";
@@ -21,6 +20,8 @@ const gw = (mac, fields = {}) => ({
   ...fields,
 });
 
+// --- the rule ---------------------------------------------------------------
+
 test("a connected gateway is always listed", () => {
   assert.equal(isStale(gw("A", { connected: true }), null, NOW), false);
   // Even with no uplink for longer than the window.
@@ -30,17 +31,12 @@ test("a connected gateway is always listed", () => {
   );
 });
 
-test("offline gateways are measured from their last uplink", () => {
-  assert.equal(isStale(gw("A", { last_uplink_seconds_ago: 1 * DAY_S }), null, NOW), false);
-  assert.equal(isStale(gw("A", { last_uplink_seconds_ago: 38.5 * DAY_S }), null, NOW), true);
-});
-
-test("the window closes at exactly 30 days", () => {
-  const justInside = gw("A", { last_uplink_seconds_ago: 30 * DAY_S - 1 });
-  const onTheLine = gw("A", { last_uplink_seconds_ago: 30 * DAY_S });
-  assert.equal(isStale(justInside, null, NOW), false);
-  assert.equal(isStale(onTheLine, null, NOW), true);
-  assert.equal(STALE_AFTER_MS, 30 * DAY_MS);
+test("an offline gateway is listed until its last uplink is 30 days old", () => {
+  const offlineFor = (seconds) => gw("A", { last_uplink_seconds_ago: seconds });
+  assert.equal(isStale(offlineFor(1 * DAY_S), null, NOW), false);
+  assert.equal(isStale(offlineFor(30 * DAY_S - 1), null, NOW), false);
+  assert.equal(isStale(offlineFor(30 * DAY_S), null, NOW), true);
+  assert.equal(isStale(offlineFor(38.5 * DAY_S), null, NOW), true);
 });
 
 test("an offline gateway with no uplink and no record is not listed", () => {
@@ -67,17 +63,9 @@ test("the later of record and report wins", () => {
   assert.equal(lastSeenOf(quiet, { B: NOW - 3 * DAY_MS }, NOW), NOW - 3 * DAY_MS);
 });
 
-test("listedGateways drops only the stale ones, in order", () => {
-  const fleet = [
-    gw("ONLINE", { connected: true, last_uplink_seconds_ago: 10 }),
-    gw("OILY_BIRD", { last_uplink_seconds_ago: 1 * DAY_S }),
-    gw("RACCOON", { last_uplink_seconds_ago: 38.5 * DAY_S }),
-    gw("NEVER"),
-  ];
-  assert.deepEqual(
-    listedGateways(fleet, null, NOW).map((g) => g.mac),
-    ["ONLINE", "OILY_BIRD"],
-  );
+test("a malformed record entry is ignored", () => {
+  assert.equal(isStale(gw("A"), { A: "yesterday" }, NOW), true);
+  assert.equal(lastSeenOf(gw("A", { last_uplink_seconds_ago: 60 }), { A: null }, NOW), NOW - 60_000);
 });
 
 test("mergeLastSeen records what it can and never moves a time back", () => {
@@ -106,52 +94,79 @@ test("mergeLastSeen records what it can and never moves a time back", () => {
   assert.deepEqual(record, { KEPT: NOW - 5 * DAY_MS, ELSEWHERE: NOW - 9 * DAY_MS });
 });
 
-// --- the cron ---------------------------------------------------------------
+// --- the request path and the cron ------------------------------------------
 
-function fakeKv(initial) {
-  const store = new Map(initial ? [[LAST_SEEN_KV_KEY, JSON.stringify(initial)]] : []);
+function fakeKv(record = null) {
   const puts = [];
   return {
-    store,
     puts,
-    async get(key, type) {
-      const raw = store.get(key) ?? null;
-      return raw && type === "json" ? JSON.parse(raw) : raw;
-    },
-    async put(key, value, options) {
-      puts.push({ key, value, options });
-      store.set(key, value);
-    },
+    get: async () => record,
+    put: async (key, value, options) => void puts.push({ key, value, options }),
   };
 }
+
+const failingKv = () => ({
+  ...fakeKv(),
+  get: async () => {
+    throw new Error("KV GET failed: 503");
+  },
+});
 
 /** Serve `byPort[port]` as that region's gateway list; other regions fail. */
 function mockRegions(t, byPort) {
   t.mock.method(globalThis, "fetch", async (url) => {
     const port = new URL(url).port;
     if (!(port in byPort)) throw new Error("connect ECONNREFUSED");
-    const gateways = byPort[port];
-    return new Response(JSON.stringify({ gateways, total: gateways.length }));
+    return new Response(JSON.stringify({ gateways: byPort[port] }));
   });
 }
 
-const cronEnv = (kv) => ({ KV: kv, MULTI_GATEWAY_API_KEY: "test-key" });
+const envWith = (kv) => ({ KV: kv, MULTI_GATEWAY_API_KEY: "test-key" });
+
+const TWO_REGIONS = {
+  4468: [gw("ONLINE", { connected: true }), gw("RESTARTED")],
+  4469: [
+    gw("OILY_BIRD", { last_uplink_seconds_ago: 1 * DAY_S }),
+    gw("RACCOON", { last_uplink_seconds_ago: 38.5 * DAY_S }),
+    gw("NEVER"),
+  ],
+};
+
+test("/gateways lists every reachable region's gateways, minus the stale", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  mockRegions(t, TWO_REGIONS);
+  const kv = fakeKv({ RESTARTED: NOW - 5 * DAY_MS });
+
+  const listed = await fetchListedGateways(envWith(kv));
+
+  assert.deepEqual(listed.map((g) => g.mac), ["ONLINE", "RESTARTED", "OILY_BIRD"]);
+  assert.equal(kv.puts.length, 0);
+});
+
+test("/gateways runs on the aggregator's report when KV can't be read", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  mockRegions(t, TWO_REGIONS);
+
+  const listed = await fetchListedGateways(envWith(failingKv()));
+
+  // RESTARTED has no reported uplink, and its record is out of reach.
+  assert.deepEqual(listed.map((g) => g.mac), ["ONLINE", "OILY_BIRD"]);
+});
 
 test("the cron folds every reachable region into the record, with no TTL", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   mockRegions(t, {
-    4468: [gw("ONLINE", { connected: true }), gw("RESTARTED")],
-    4469: [gw("UPLINKED", { last_uplink_seconds_ago: 2 * DAY_S }), gw("NEVER")],
+    4468: [gw("ONLINE", { connected: true })],
+    4469: [gw("UPLINKED", { last_uplink_seconds_ago: 2 * DAY_S })],
   });
-  const kv = fakeKv({ RESTARTED: NOW - 5 * DAY_MS, DOWN_REGION: NOW - 9 * DAY_MS });
+  const kv = fakeKv({ DOWN_REGION: NOW - 9 * DAY_MS });
 
-  await recordGatewayLastSeen(cronEnv(kv));
+  await recordGatewayLastSeen(envWith(kv));
 
   assert.equal(kv.puts.length, 1);
   assert.equal(kv.puts[0].key, LAST_SEEN_KV_KEY);
   assert.equal(kv.puts[0].options, undefined);
   assert.deepEqual(JSON.parse(kv.puts[0].value), {
-    RESTARTED: NOW - 5 * DAY_MS,
     DOWN_REGION: NOW - 9 * DAY_MS,
     ONLINE: NOW,
     UPLINKED: NOW - 2 * DAY_MS,
@@ -163,19 +178,16 @@ test("the cron starts a record when there is none", async (t) => {
   mockRegions(t, { 4468: [gw("ONLINE", { connected: true })] });
   const kv = fakeKv();
 
-  await recordGatewayLastSeen(cronEnv(kv));
+  await recordGatewayLastSeen(envWith(kv));
 
-  assert.deepEqual(JSON.parse(kv.store.get(LAST_SEEN_KV_KEY)), { ONLINE: NOW });
+  assert.deepEqual(JSON.parse(kv.puts[0].value), { ONLINE: NOW });
 });
 
 test("the cron writes nothing when KV can't be read", async (t) => {
   mockRegions(t, { 4468: [gw("ONLINE", { connected: true })] });
-  const kv = fakeKv({ OFFLINE: NOW - 5 * DAY_MS });
-  kv.get = async () => {
-    throw new Error("KV GET failed: 503");
-  };
+  const kv = failingKv();
 
-  await assert.rejects(recordGatewayLastSeen(cronEnv(kv)), /KV GET failed/);
+  await assert.rejects(recordGatewayLastSeen(envWith(kv)), /KV GET failed/);
   assert.equal(kv.puts.length, 0);
 });
 
@@ -183,12 +195,7 @@ test("the cron writes nothing when no region answers", async (t) => {
   mockRegions(t, {});
   const kv = fakeKv({ OFFLINE: NOW - 5 * DAY_MS });
 
-  await recordGatewayLastSeen(cronEnv(kv));
+  await recordGatewayLastSeen(envWith(kv));
 
   assert.equal(kv.puts.length, 0);
-});
-
-test("a malformed record entry is ignored", () => {
-  assert.equal(isStale(gw("A"), { A: "yesterday" }, NOW), true);
-  assert.equal(lastSeenOf(gw("A", { last_uplink_seconds_ago: 60 }), { A: null }, NOW), NOW - 60_000);
 });
