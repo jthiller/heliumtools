@@ -56,6 +56,7 @@ import {
 } from "./packetWorkerClient.js";
 import PacketScatter, { ColoredSelect, assignNetIdFamilies, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
+import { createListRefresher } from "./gatewayList.js";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeMultiGatewayTools } from "./webmcpTools.js";
 import SpectrumChart from "./SpectrumChart.jsx";
@@ -140,10 +141,17 @@ function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
   const [gatewaysLoaded, setGatewaysLoaded] = useState(false);
   const [sseStatus, setSseStatus] = useState("connecting");
+  // The current list, for callbacks registered once: the stream's listener
+  // below and the page's agent tools.
+  const gatewaysRef = useRef(gateways);
+  gatewaysRef.current = gateways;
 
-  const refreshGateways = () =>
-    fetchGateways()
-      .then((data) => {
+  // The list's REST loads. Only the newest request's answer is applied, and
+  // the stream's requests for a reload are folded into one (gatewayList.js).
+  const [list] = useState(() =>
+    createListRefresher({
+      load: fetchGateways,
+      apply: (data) => {
         const now = Date.now();
         setGateways(
           data.gateways.map((g) => ({
@@ -157,9 +165,11 @@ function useMultiGateway() {
                 : null,
           })),
         );
-      })
-      .catch((err) => console.error("Failed to fetch gateways:", err))
-      .finally(() => setGatewaysLoaded(true));
+      },
+      onError: (err) => console.error("Failed to fetch gateways:", err),
+      onSettled: () => setGatewaysLoaded(true),
+    }),
+  );
 
   // Initial REST load + refresh on visibility return. The worker's SSE
   // keeps gateway state live even when the tab is backgrounded, but mobile
@@ -168,14 +178,17 @@ function useMultiGateway() {
   // refreshes the gateway list via REST and pokes the worker to rebuild
   // its SSE connection from scratch so live updates resume.
   useEffect(() => {
-    refreshGateways();
+    list.refresh();
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      refreshGateways();
+      list.refresh();
       reconnectSse();
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      list.cancel();
+    };
   }, []);
 
   // SSE lives in the worker. Subscribe to its broadcast stream and apply
@@ -185,9 +198,20 @@ function useMultiGateway() {
     const off = onWorkerEvent((event) => {
       switch (event.type) {
         case "sse_status":
+          // What the stream sent before it opened, or while it was down,
+          // never arrives, a gateway_connect included. So each time it comes
+          // up, the list is read again.
+          if (event.status === "connected") list.refreshSoon();
           setSseStatus(event.status);
           break;
         case "gateway_connect":
+          // A mac the list doesn't have is a new gateway, or one the worker
+          // left out for being offline 30 days and that just came back. The
+          // event carries no public key or counts, so the row below is a
+          // nameless stand-in until the list is fetched again.
+          if (!gatewaysRef.current.some((g) => g.mac === event.mac)) {
+            list.refreshSoon();
+          }
           setGateways((prev) => {
             const existing = prev.find((g) => g.mac === event.mac);
             if (existing) {
@@ -272,7 +296,7 @@ function useMultiGateway() {
     };
   }, [gateways]);
 
-  return { gateways, summary, sseStatus, gatewaysLoaded };
+  return { gateways, gatewaysRef, summary, sseStatus, gatewaysLoaded };
 }
 
 // ---------------------------------------------------------------------------
@@ -2100,7 +2124,7 @@ function OnboardModal({ gateway, onClose, initialStep = "issue" }) {
 // ---------------------------------------------------------------------------
 
 export default function MultiGateway() {
-  const { gateways, summary, sseStatus, gatewaysLoaded } = useMultiGateway();
+  const { gateways, gatewaysRef, summary, sseStatus, gatewaysLoaded } = useMultiGateway();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMac, setSelectedMac] = useState(
     () => searchParams.get("mac") || null,
@@ -2135,11 +2159,9 @@ export default function MultiGateway() {
     }
   };
 
-  // Agent tools read the live gateway list through a ref so the
+  // Agent tools read the live gateway list through the hook's ref so the
   // once-registered tools stay current across SSE updates; selectMac closes
   // over only stable setters, so passing it directly is safe.
-  const gatewaysRef = useRef(gateways);
-  gatewaysRef.current = gateways;
   useWebMcpTools(() => makeMultiGatewayTools(selectMac, () => gatewaysRef.current), []);
 
   // Fetch OUI → DevAddr mapping once

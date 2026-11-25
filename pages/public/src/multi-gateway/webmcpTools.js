@@ -29,7 +29,7 @@ export function makeMultiGatewayTools(selectMac, getGateways) {
       name: "list-gateways",
       title: "List gateways",
       description:
-        "List the LoRaWAN gateways on this dashboard with their live status (from the page's stream): MAC, name, connection state, and packet counts. Use a MAC with select-gateway or get-gateway-packets.",
+        "List the LoRaWAN gateways on this dashboard with their live status (from the page's stream): MAC, name, connection state, and packet counts. Gateways that have been offline for 30 days are not listed; they return when they reconnect. Use a MAC with select-gateway or get-gateway-packets.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
       execute() {
