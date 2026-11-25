@@ -140,6 +140,9 @@ function useMultiGateway() {
   const [gateways, setGateways] = useState([]);
   const [gatewaysLoaded, setGatewaysLoaded] = useState(false);
   const [sseStatus, setSseStatus] = useState("connecting");
+  // The stream's listener is registered once; it reads the current list here.
+  const gatewaysRef = useRef(gateways);
+  gatewaysRef.current = gateways;
 
   const refreshGateways = () =>
     fetchGateways()
@@ -188,6 +191,13 @@ function useMultiGateway() {
           setSseStatus(event.status);
           break;
         case "gateway_connect":
+          // A mac the list doesn't have is a new gateway, or one the worker
+          // left out for being offline 30 days and that just came back. The
+          // event carries no public key or counts, so the row below is a
+          // nameless stand-in until the list is fetched again.
+          if (!gatewaysRef.current.some((g) => g.mac === event.mac)) {
+            refreshGateways();
+          }
           setGateways((prev) => {
             const existing = prev.find((g) => g.mac === event.mac);
             if (existing) {

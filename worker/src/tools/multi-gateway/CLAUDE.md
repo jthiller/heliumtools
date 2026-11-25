@@ -85,8 +85,9 @@ require `MULTI_GATEWAY_API_KEY`; the worker injects it as `X-API-Key` on every
 upstream call and never forwards it to clients.
 
 **Endpoints:**
-- `GET /gateways` — fan out to all regions, concat `gateways[]`, sum
-  `total`/`connected`.
+- `GET /gateways` — fan out to all regions, concat `gateways[]`, drop the
+  gateways that have been offline for 30 days (see "Unlisted gateways" below),
+  and count `total`/`connected` over what's left.
 - `GET /gateways/:mac/packets` — 16-hex-char mac; first region with the gateway
   wins, else 404. Initial backfill the chart paints before SSE takes over.
 - `GET /events` — **WebSocket** upgrade (not raw SSE). Forwarded to the
@@ -104,12 +105,19 @@ upstream call and never forwards it to clients.
 - `GET /ouis` — Helium OUI → DevAddr-range catalog (KV cached, see `oui-cache.js`).
   Lets the table label which operator a DevAddr belongs to.
 
-**Cron:** `oui-cache.js` `refreshOuiCache` runs once daily at 00:00 UTC
-(scheduled in `worker/src/index.js`).
+**Cron** (scheduled in `worker/src/index.js`): `oui-cache.js` `refreshOuiCache`
+runs once daily at 00:00 UTC; `last-seen.js` `recordGatewayLastSeen` runs on
+every 6-hourly tick.
 
 **Files:**
-- `index.js` — prefix router + `/gateways` and `/packets` fan-out (`fetchUpstream`
-  parses JSON, treats non-JSON as an error).
+- `index.js` — prefix router + the `/gateways` and `/packets` handlers.
+- `lib/upstream.js` — `fetchUpstream` (parses JSON, treats non-JSON as an
+  error) and `fetchAllGateways` (the per-region `/gateways` fan-out, shared by
+  the `/gateways` handler and the last-seen cron; a region that fails
+  contributes nothing).
+- `last-seen.js` — which gateways `/gateways` lists, and the KV record behind
+  that (below). Unit-tested in `last-seen.test.js`
+  (`cd worker && node --test "src/tools/multi-gateway/*.test.js"`).
 - `hub.js` — the `MultiGatewayHub` Durable Object (see below).
 - `regions.js` — the region→port table above (single source of truth).
 - `oui-cache.js` — calls the Helium IoT config service over **gRPC-web**
@@ -124,6 +132,46 @@ upstream call and never forwards it to clients.
   and read its `public_key`.
 - `handlers/onchain.js` — batch on-chain status (above).
 - `handlers/issue.js` — issue + onboard transaction builders (below).
+
+### Unlisted gateways (`last-seen.js`)
+
+The aggregator keeps a key for every gateway that ever connected and lists them
+all. `GET /gateways` leaves out the ones that have been **offline for 30 days**
+(`STALE_AFTER_MS`), from the list and from `total`/`connected`; the page's fleet
+totals, map and agent tools all read that list, so they follow. Nothing is
+removed upstream: the keys stay on the server (the fork has no delete endpoint),
+and a gateway is listed again as soon as it reconnects. The per-mac endpoints
+(`/gateways/:mac/packets`, `/issue`, `/onboard`) are not filtered, so
+`/multi-gateway?mac=…` still opens an unlisted gateway's inspector.
+
+- **Rule** (`isStale`): a connected gateway is always listed. An offline one is
+  measured from its last-seen time, the later of the worker's record and
+  `now − last_uplink_seconds_ago`; at 30 days or more it is left out. An offline
+  gateway with neither a record nor a reported uplink has nothing to measure
+  from and is left out too.
+- **Why the worker keeps a record**: the aggregator holds `last_uplink` and its
+  packet counters in memory (`Instant`s in the fork's `gateway_table.rs`) and
+  never records a disconnect time. A restart of a region's instance resets every
+  gateway there to `last_uplink_seconds_ago: null` and zero counts. Without a
+  record, a gateway hidden for being 40 days offline would come back after a
+  restart, and one that went offline yesterday would be indistinguishable from it.
+- **Record**: KV key `multi-gateway:last-seen`, `{ [mac]: lastSeenMs }`, no TTL.
+  `recordGatewayLastSeen` (6-hourly cron, the only writer) folds one fetch of the
+  fleet into it with `mergeLastSeen`: connected ⇒ now, else the reported uplink
+  time, never moving a time back, and leaving alone any mac missing from the
+  fetch (its region was unreachable). It reads KV directly, not through
+  `kvGetJson`: a failed read must throw, since merging into an empty record
+  would write away what the aggregator no longer remembers. Entries are never
+  pruned (keys are never deleted upstream).
+- **Request path** reads the record best-effort (`readLastSeen`); if KV can't be
+  read, the rule runs on the aggregator's report alone.
+- **Limits**: last-seen is "connected at a poll, or last uplink", so it is
+  accurate to the 6-hour poll. A gateway that connects for the first time and
+  drops again with no uplink and no poll in between has no last-seen and goes
+  unlisted until it reconnects.
+- **Frontend**: a `gateway_connect` event for a mac the list doesn't have (a new
+  gateway, or an unlisted one coming back) refetches `/gateways`, since the event
+  carries no public key or counts.
 
 ### Durable Object: `MultiGatewayHub` (`hub.js`)
 
@@ -437,7 +485,8 @@ ECC verification HTTP endpoint: `https://ecc-verifier.web.helium.io`.
 - `SOLANA_RPC_URL` — Helius staked endpoint for on-chain reads and DAS (never log
   or expose).
 - `MULTI_GATEWAY_HUB` — Durable Object binding (`MultiGatewayHub`).
-- `KV` binding — OUI/DevAddr catalog cache (`oui-devaddr-map`, 24h TTL).
+- `KV` binding — OUI/DevAddr catalog cache (`oui-devaddr-map`, 24h TTL) and the
+  gateway last-seen record (`multi-gateway:last-seen`, no TTL).
 - Frontend: `VITE_SOLANA_URL` for the wallet-adapter connection.
 
 ## Gotchas
@@ -481,7 +530,7 @@ ECC verification HTTP endpoint: `https://ecc-verifier.web.helium.io`.
 
 ## WebMCP
 
-The /multi-gateway page registers agent tools `list-gateways` (live page state, no refetch), `select-gateway` (drives the inspector via `selectMac`), and `get-gateway-packets` (capped, default 25) from `pages/public/src/multi-gateway/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.
+The /multi-gateway page registers agent tools `list-gateways` (live page state, no refetch; like the page, it leaves out gateways offline for 30 days, and its description says so), `select-gateway` (drives the inspector via `selectMac`), and `get-gateway-packets` (capped, default 25) from `pages/public/src/multi-gateway/webmcpTools.js`. Framework: `pages/public/src/webmcp/CLAUDE.md`.
 
 Packet reads forward the WebMCP execution signal to fetch. An already-cancelled invocation does not change the selected gateway or affect the page's independent live stream.
 

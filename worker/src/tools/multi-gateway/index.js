@@ -4,16 +4,8 @@ import { handleBatchOnchainStatus } from "./handlers/onchain.js";
 import { handleIssueAndOnboard, handleOnboard } from "./handlers/issue.js";
 import { REGIONS } from "./regions.js";
 import { getHost } from "./lib/host.js";
-
-async function fetchUpstream(url, headers) {
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(5_000) });
-  const text = await res.text();
-  try {
-    return { ok: res.ok, status: res.status, data: JSON.parse(text) };
-  } catch {
-    return { ok: false, status: res.status, data: { error: "Upstream returned non-JSON response" } };
-  }
-}
+import { fetchAllGateways, fetchUpstream } from "./lib/upstream.js";
+import { listedGateways, readLastSeen } from "./last-seen.js";
 
 export async function handleMultiGatewayRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -32,26 +24,19 @@ export async function handleMultiGatewayRequest(request, env, ctx) {
   const headers = { "X-API-Key": apiKey };
 
   if (pathname === "/gateways" && request.method === "GET") {
-    const results = await Promise.allSettled(
-      REGIONS.map(({ port }) =>
-        fetchUpstream(`http://${host}:${port}/gateways`, headers),
-      ),
-    );
+    // Gateways offline for 30 days are left out, and the counts are taken
+    // from what's left, so they always describe the list. See last-seen.js.
+    const [all, lastSeen] = await Promise.all([
+      fetchAllGateways(env),
+      readLastSeen(env),
+    ]);
+    const gateways = listedGateways(all, lastSeen, Date.now());
 
-    let gateways = [];
-    let total = 0;
-    let connected = 0;
-
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value.ok) {
-        const v = result.value.data;
-        gateways = gateways.concat(v.gateways || []);
-        total += v.total || 0;
-        connected += v.connected || 0;
-      }
-    }
-
-    return jsonResponse({ gateways, total, connected });
+    return jsonResponse({
+      gateways,
+      total: gateways.length,
+      connected: gateways.filter((g) => g.connected).length,
+    });
   }
 
   const packetsMatch = pathname.match(

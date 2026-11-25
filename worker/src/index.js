@@ -33,6 +33,7 @@ import {
 } from "./tools/council-emissions/index.js";
 import { handleSharedRequest } from "./tools/shared/index.js";
 import { refreshOuiCache } from "./tools/multi-gateway/oui-cache.js";
+import { recordGatewayLastSeen } from "./tools/multi-gateway/last-seen.js";
 
 // The high-frequency trigger, branched on in scheduled(). MUST match the entry
 // in wrangler.jsonc triggers.crons. Owned here rather than by any one tool —
@@ -119,6 +120,10 @@ export default {
       run("dc-purchase-scheduled", runDcPurchaseScheduled(env, ctx));
       run("iot-onboard-fees", refreshOnboardFees(env));
       run("mobile-onboard-fees", refreshMobileOnboardFees(env));
+      // The aggregator forgets when it last heard a gateway on every restart,
+      // so keep our own record: /multi-gateway/gateways hides gateways that
+      // have been offline for 30 days.
+      run("multi-gateway-last-seen", recordGatewayLastSeen(env));
     }
     // OUI data changes infrequently — refresh once daily at midnight UTC.
     if (hour === 0) run("multi-gateway-oui-cache", refreshOuiCache(env));
