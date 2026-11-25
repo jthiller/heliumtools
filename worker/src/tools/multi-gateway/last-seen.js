@@ -20,8 +20,20 @@ import { fetchAllGateways } from "./lib/upstream.js";
 
 const STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** `{ [mac]: lastSeenMs }`. No TTL: it has to outlive any gap in the cron. */
+/**
+ * `{ ["REGION:MAC"]: lastSeenMs }`, holding only times inside the window. No
+ * TTL: it has to outlive any gap in the cron.
+ */
 export const LAST_SEEN_KV_KEY = "multi-gateway:last-seen";
+
+/**
+ * A gateway's key in the record, or null. Each region is its own aggregator
+ * instance with its own keypair per MAC, so a MAC that has connected to two
+ * regions is two gateways, and each is measured on its own.
+ */
+function recordKey({ region, mac }) {
+  return typeof region === "string" && typeof mac === "string" ? `${region}:${mac}` : null;
+}
 
 /** When the aggregator's own report says this gateway was last alive, or null. */
 function observedLastSeen(gateway, now) {
@@ -32,29 +44,39 @@ function observedLastSeen(gateway, now) {
 
 /** The later of the recorded and the reported last-seen time, or null. */
 export function lastSeenOf(gateway, record, now) {
-  const times = [observedLastSeen(gateway, now), record?.[gateway.mac]].filter(
+  const key = recordKey(gateway);
+  const times = [observedLastSeen(gateway, now), key && record?.[key]].filter(
     Number.isFinite,
   );
   return times.length ? Math.max(...times) : null;
 }
 
+const insideWindow = (seen, now) => now - seen < STALE_AFTER_MS;
+
 export function isStale(gateway, record, now) {
   if (gateway.connected) return false;
   const seen = lastSeenOf(gateway, record, now);
-  return seen == null || now - seen >= STALE_AFTER_MS;
+  return seen == null || !insideWindow(seen, now);
 }
 
 /**
  * The record brought up to date with one fetch of the fleet. Times only move
  * forward, and a gateway missing from `gateways` (its region was unreachable)
  * keeps what it had.
+ *
+ * Times past the window are dropped, here and from what was stored: an offline
+ * gateway that old is stale with or without an entry, so they change no
+ * verdict and would only make the record grow for ever.
  */
 export function mergeLastSeen(record, gateways, now) {
-  const next = { ...record };
+  const next = {};
+  for (const [key, seen] of Object.entries(record || {})) {
+    if (insideWindow(seen, now)) next[key] = seen;
+  }
   for (const g of gateways) {
-    if (typeof g.mac !== "string") continue;
+    const key = recordKey(g);
     const seen = lastSeenOf(g, record, now);
-    if (seen != null) next[g.mac] = seen;
+    if (key && seen != null && insideWindow(seen, now)) next[key] = seen;
   }
   return next;
 }

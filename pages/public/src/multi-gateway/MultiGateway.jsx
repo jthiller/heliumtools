@@ -56,6 +56,7 @@ import {
 } from "./packetWorkerClient.js";
 import PacketScatter, { ColoredSelect, assignNetIdFamilies, swatchColorForNetId } from "./PacketScatter.jsx";
 import EventsBar from "./EventsBar.jsx";
+import { createListRefresher } from "./gatewayList.js";
 import { useWebMcpTools } from "../webmcp/useWebMcpTools.js";
 import { makeMultiGatewayTools } from "./webmcpTools.js";
 import SpectrumChart from "./SpectrumChart.jsx";
@@ -145,9 +146,12 @@ function useMultiGateway() {
   const gatewaysRef = useRef(gateways);
   gatewaysRef.current = gateways;
 
-  const refreshGateways = () =>
-    fetchGateways()
-      .then((data) => {
+  // The list's REST loads. Only the newest request's answer is applied, and
+  // the stream's requests for a reload are folded into one (gatewayList.js).
+  const [list] = useState(() =>
+    createListRefresher({
+      load: fetchGateways,
+      apply: (data) => {
         const now = Date.now();
         setGateways(
           data.gateways.map((g) => ({
@@ -161,9 +165,11 @@ function useMultiGateway() {
                 : null,
           })),
         );
-      })
-      .catch((err) => console.error("Failed to fetch gateways:", err))
-      .finally(() => setGatewaysLoaded(true));
+      },
+      onError: (err) => console.error("Failed to fetch gateways:", err),
+      onSettled: () => setGatewaysLoaded(true),
+    }),
+  );
 
   // Initial REST load + refresh on visibility return. The worker's SSE
   // keeps gateway state live even when the tab is backgrounded, but mobile
@@ -172,14 +178,17 @@ function useMultiGateway() {
   // refreshes the gateway list via REST and pokes the worker to rebuild
   // its SSE connection from scratch so live updates resume.
   useEffect(() => {
-    refreshGateways();
+    list.refresh();
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      refreshGateways();
+      list.refresh();
       reconnectSse();
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      list.cancel();
+    };
   }, []);
 
   // SSE lives in the worker. Subscribe to its broadcast stream and apply
@@ -189,6 +198,10 @@ function useMultiGateway() {
     const off = onWorkerEvent((event) => {
       switch (event.type) {
         case "sse_status":
+          // What the stream sent before it opened, or while it was down,
+          // never arrives, a gateway_connect included. So each time it comes
+          // up, the list is read again.
+          if (event.status === "connected") list.refreshSoon();
           setSseStatus(event.status);
           break;
         case "gateway_connect":
@@ -197,7 +210,7 @@ function useMultiGateway() {
           // event carries no public key or counts, so the row below is a
           // nameless stand-in until the list is fetched again.
           if (!gatewaysRef.current.some((g) => g.mac === event.mac)) {
-            refreshGateways();
+            list.refreshSoon();
           }
           setGateways((prev) => {
             const existing = prev.find((g) => g.mac === event.mac);

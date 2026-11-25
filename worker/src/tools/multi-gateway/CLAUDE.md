@@ -39,9 +39,10 @@ aggregator**, not from heliumtools-owned code. The deployment runs a fork:
 
 The worker injects `X-API-Key` (from `env.MULTI_GATEWAY_API_KEY`) on every
 upstream call and does not forward it to clients:
-- `GET /gateways` and `GET /gateways/:mac` (`index.js`, `lib/findGateway.js`)
-- `GET /gateways/:mac/packets` (`index.js`) — initial backfill the chart paints
-  before the live stream takes over
+- `GET /gateways` (`lib/upstream.js`, for the `/gateways` handler and the
+  last-seen cron) and `GET /gateways/:mac` (`lib/findGateway.js`)
+- `GET /gateways/:mac/packets` (`lib/upstream.js`, for the `/packets` handler) —
+  initial backfill the chart paints before the live stream takes over
 - the per-region `/events` SSE stream (`hub.js`) — `data:` envelopes of the form
   `{ type: "uplink" | "downlink" | "gateway_connect" | "gateway_disconnect", ... }`;
   for uplink/downlink the client spreads `data.metadata` into the packet
@@ -72,8 +73,8 @@ region per instance, so each port is a separate instance):
 
 `lib/host.js` resolves the host (`MULTI_GATEWAY_HOST` env override, default
 `hotspot.heliumtools.org`). All region calls fan out in parallel and merge
-(`/gateways` sums; `findGateway` / `/packets` returns the first region that has
-the mac). Region calls use plain `http://` (`lib/upstream.js`,
+(`/gateways` concatenates the regions' lists; `findGateway` / `/packets` returns
+the first region that has the mac). Region calls use plain `http://` (`lib/upstream.js`,
 `lib/findGateway.js`, `hub.js`).
 
 ## Architecture
@@ -156,14 +157,20 @@ and a gateway is listed again as soon as it reconnects. The per-mac endpoints
   gateway there to `last_uplink_seconds_ago: null` and zero counts. Without a
   record, a gateway hidden for being 40 days offline would come back after a
   restart, and one that went offline yesterday would be indistinguishable from it.
-- **Record**: KV key `multi-gateway:last-seen`, `{ [mac]: lastSeenMs }`, no TTL.
-  `recordGatewayLastSeen` (6-hourly cron, the only writer) folds one fetch of the
-  fleet into it with `mergeLastSeen`: connected ⇒ now, else the reported uplink
-  time, never moving a time back, and leaving alone any mac missing from the
-  fetch (its region was unreachable). It reads KV directly, not through
-  `kvGetJson`: a failed read must throw, since merging into an empty record
-  would write away what the aggregator no longer remembers. Entries are never
-  pruned (keys are never deleted upstream).
+- **Record**: KV key `multi-gateway:last-seen`, `{ ["REGION:MAC"]: lastSeenMs }`,
+  no TTL. It is keyed by region and MAC, not MAC alone: each region is its own
+  aggregator instance with its own keypair per MAC, so a gateway that moved
+  from one region's port to another's is two gateways, and the one left behind
+  must age out on its own. `recordGatewayLastSeen` (6-hourly cron, the only
+  writer) folds one fetch of the fleet into it with `mergeLastSeen`: connected
+  ⇒ now, else the reported uplink time, never moving a time back, and leaving
+  alone any gateway missing from the fetch (its region was unreachable). It
+  reads KV directly, not through `kvGetJson`: a failed read must throw, since
+  merging into an empty record would write away what the aggregator no longer
+  remembers. The merge drops times past the 30-day window: an offline gateway
+  that old is stale with or without an entry, so the record holds only what
+  can change a verdict and stays bounded by the gateways seen in the last 30
+  days.
 - **Request path** (`fetchListedGateways`) reads the record best-effort, in
   parallel with the fan-out; if KV can't be read, the rule runs on the
   aggregator's report alone.
@@ -171,9 +178,19 @@ and a gateway is listed again as soon as it reconnects. The per-mac endpoints
   accurate to the 6-hour poll. A gateway that connects for the first time and
   drops again with no uplink and no poll in between has no last-seen and goes
   unlisted until it reconnects.
-- **Frontend**: a `gateway_connect` event for a mac the list doesn't have (a new
-  gateway, or an unlisted one coming back) refetches `/gateways`, since the event
-  carries no public key or counts.
+- **Frontend** (`gatewayList.js`, `useMultiGateway`): the page's list is a
+  `/gateways` snapshot that stream events then patch, so it is read again
+  whenever the stream may have said something the page can't act on: a
+  `gateway_connect` for a mac the list doesn't have (a new gateway, or an
+  unlisted one coming back; the event carries no public key or counts), and
+  every time the stream reports `connected` (what it sent before opening or
+  during a gap never arrives). Those reloads go through `refreshSoon()`: one
+  request `REFRESH_DELAY_MS` (1 s) after the first ask, however many events ask.
+  Every load, the visibility one included, is latest-wins: an answer that lands
+  after a newer request started is dropped, so an older snapshot can't undo a
+  newer one. Not covered: one region's upstream dropping while others stay up
+  (the hub reports only all-or-nothing status), and stream events that arrive
+  between the worker reading the aggregator and the page applying the answer.
 
 ### Durable Object: `MultiGatewayHub` (`hub.js`)
 
@@ -257,6 +274,9 @@ upstream/fork footer links.
 The 1Hz `nowTick` heartbeat lives in the chart subtree and is rate-limited (not
 memo-gated) to avoid a re-render cascade.
 
+- `gatewayList.js` — `createListRefresher`, the gateway list's REST loads:
+  latest-wins `refresh()` and the coalesced `refreshSoon()` (see "Unlisted
+  gateways" above). Pure module, no React; unit-tested in `gatewayList.test.js`.
 - `packetWorkerClient.js` — main-thread API for the packet Web Worker.
   Request/response calls (`subscribePackets`/`unsubscribePackets`) are matched by
   `requestId`; broadcasts (`subscribed_packet`, `cached_packets`, `sse_uplink`,

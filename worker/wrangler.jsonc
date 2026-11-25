@@ -141,9 +141,9 @@
     },
     "triggers": {
         "crons": [
-            // 6-hourly batch tick. scheduled() runs OUI notifier, DC purchase, and
-            // IoT/Mobile fees at hour % 6 === 0 (00/06/12/18 UTC) and the multi-gateway
-            // OUI cache at 00:00.
+            // 6-hourly batch tick. scheduled() runs OUI notifier, DC purchase,
+            // IoT/Mobile fees and the multi-gateway last-seen record at
+            // hour % 6 === 0 (00/06/12/18 UTC) and the multi-gateway OUI cache at 00:00.
             "0 0,6,12,18 * * *", // UTC at 00/06/12/18
             // Fast tick. Branched on in scheduled() against FAST_CRON: the Vote
             // snapshot/history poll (so viewers read cached data and never hit
